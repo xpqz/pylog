@@ -16,12 +16,12 @@ import pytest
 from dataclasses import dataclass
 from typing import Literal, Optional, Any
 
+from prolog.unify.store import Cell, Store
+
 
 # Test Cell dataclass before it exists (TDD)
 def test_cell_unbound_creation():
     """Test creating an unbound cell."""
-    from prolog.unify.store import Cell
-    
     cell = Cell(tag="unbound", ref=0, term=None)
     assert cell.tag == "unbound"
     assert cell.ref == 0
@@ -31,8 +31,6 @@ def test_cell_unbound_creation():
 
 def test_cell_bound_creation():
     """Test creating a bound cell."""
-    from prolog.unify.store import Cell
-    
     # Mock term for testing
     mock_term = "atom_a"
     cell = Cell(tag="bound", ref=5, term=mock_term, rank=2)
@@ -44,8 +42,6 @@ def test_cell_bound_creation():
 
 def test_cell_rank_default():
     """Test that rank defaults to 0."""
-    from prolog.unify.store import Cell
-    
     cell = Cell(tag="unbound", ref=3, term=None)
     assert cell.rank == 0
 
@@ -53,8 +49,6 @@ def test_cell_rank_default():
 # Test Store.new_var() before it exists (TDD)
 def test_store_new_var_returns_sequential_ids():
     """Test that new_var returns sequential IDs starting from 0."""
-    from prolog.unify.store import Store
-    
     store = Store()
     vid1 = store.new_var()
     vid2 = store.new_var()
@@ -67,8 +61,6 @@ def test_store_new_var_returns_sequential_ids():
 
 def test_store_new_var_creates_unbound_cell():
     """Test that new_var creates an unbound cell with self-reference."""
-    from prolog.unify.store import Store
-    
     store = Store()
     vid = store.new_var()
     
@@ -80,8 +72,6 @@ def test_store_new_var_creates_unbound_cell():
 
 def test_store_new_var_sets_rank_to_zero():
     """Test that new_var sets rank to 0."""
-    from prolog.unify.store import Store
-    
     store = Store()
     vid = store.new_var()
     
@@ -91,8 +81,6 @@ def test_store_new_var_sets_rank_to_zero():
 
 def test_store_new_var_hint_is_optional():
     """Test that hint parameter is optional and not stored in cell."""
-    from prolog.unify.store import Store
-    
     store = Store()
     vid1 = store.new_var()
     vid2 = store.new_var(hint="X")
@@ -111,8 +99,6 @@ def test_store_new_var_hint_is_optional():
 # Test Store.deref() basic functionality
 def test_deref_unbound_root():
     """Test deref of unbound root returns ('UNBOUND', varid)."""
-    from prolog.unify.store import Store
-    
     store = Store()
     vid = store.new_var()
     
@@ -122,8 +108,6 @@ def test_deref_unbound_root():
 
 def test_deref_bound_var():
     """Test deref of bound var returns ('BOUND', varid, term)."""
-    from prolog.unify.store import Store, Cell
-    
     store = Store()
     vid = store.new_var()
     
@@ -137,8 +121,6 @@ def test_deref_bound_var():
 
 def test_deref_follows_single_parent_link():
     """Test deref follows a single parent link."""
-    from prolog.unify.store import Store, Cell
-    
     store = Store()
     child = store.new_var()
     parent = store.new_var()
@@ -152,8 +134,6 @@ def test_deref_follows_single_parent_link():
 
 def test_deref_follows_chain_of_links():
     """Test deref follows a chain of parent links."""
-    from prolog.unify.store import Store
-    
     store = Store()
     v0 = store.new_var()
     v1 = store.new_var()
@@ -171,8 +151,6 @@ def test_deref_follows_chain_of_links():
 
 def test_deref_without_compress_has_no_side_effects():
     """Test that deref without compress doesn't modify the store."""
-    from prolog.unify.store import Store
-    
     store = Store()
     v0 = store.new_var()
     v1 = store.new_var()
@@ -199,8 +177,6 @@ def test_deref_without_compress_has_no_side_effects():
 # Test Store.deref() with path compression
 def test_deref_compression_requires_compress_and_trail():
     """Test compression only happens when compress=True AND trail provided."""
-    from prolog.unify.store import Store
-    
     store = Store()
     trail = []
     
@@ -222,8 +198,6 @@ def test_deref_compression_requires_compress_and_trail():
 
 def test_deref_no_compression_short_path():
     """Test no compression for paths < 4 nodes."""
-    from prolog.unify.store import Store
-    
     store = Store()
     trail = []
     
@@ -246,8 +220,6 @@ def test_deref_no_compression_short_path():
 
 def test_deref_compression_long_path():
     """Test compression for paths >= 4 nodes updates parents."""
-    from prolog.unify.store import Store
-    
     store = Store()
     trail = []
     
@@ -268,8 +240,6 @@ def test_deref_compression_long_path():
 
 def test_deref_compression_adds_trail_entries():
     """Test compression adds trail entries for each compressed link."""
-    from prolog.unify.store import Store
-    
     store = Store()
     trail = []
     
@@ -295,8 +265,6 @@ def test_deref_compression_adds_trail_entries():
 
 def test_deref_compression_undoability():
     """Test that compression can be undone via trail."""
-    from prolog.unify.store import Store
-    
     store = Store()
     trail = []
     
@@ -328,8 +296,6 @@ def test_deref_compression_undoability():
 
 def test_deref_no_op_compression():
     """Test that re-compressing doesn't add trail entries."""
-    from prolog.unify.store import Store
-    
     store = Store()
     trail = []
     
@@ -351,8 +317,6 @@ def test_deref_no_op_compression():
 
 def test_deref_compression_to_bound_root():
     """Test compression when chain ends at bound variable."""
-    from prolog.unify.store import Store, Cell
-    
     store = Store()
     trail = []
     
@@ -387,8 +351,6 @@ def test_deref_compression_to_bound_root():
 
 def test_deref_invalid_varid():
     """Test that invalid varids raise appropriate errors."""
-    from prolog.unify.store import Store
-    
     store = Store()
     
     # Test negative varid
@@ -402,8 +364,6 @@ def test_deref_invalid_varid():
 
 def test_deref_compression_preserves_rank():
     """Test that compression doesn't modify rank values."""
-    from prolog.unify.store import Store
-    
     store = Store()
     trail = []
     
