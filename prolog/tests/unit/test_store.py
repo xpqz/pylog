@@ -1,4 +1,16 @@
-"""Unit tests for Store and Cell classes."""
+"""Unit tests for Store and Cell classes.
+
+Store.deref() API:
+- Returns ("UNBOUND", root_vid) for unbound variables
+- Returns ("BOUND", root_vid, term) for bound variables
+- Path compression only when compress=True AND trail provided
+- Compression threshold: paths >= 4 nodes
+
+Trail format:
+- ("parent", varid, old_parent): parent link change
+- ("bind", varid, old_cell): variable binding
+- ("rank", varid, old_rank): rank change (for union operations)
+"""
 
 import pytest
 from dataclasses import dataclass
@@ -271,8 +283,144 @@ def test_deref_compression_adds_trail_entries():
     # Should have trail entries for compressed nodes
     assert len(trail) == 4  # v0, v1, v2, v3 compressed
     
-    # Check trail entries
-    for i, entry in enumerate(trail):
-        assert entry[0] == "parent"
-        assert entry[1] == vars[i]  # Variable being modified
-        assert entry[2] == vars[i+1]  # Old parent
+    # Check trail entries (order-agnostic)
+    expected_entries = {
+        ("parent", vars[0], vars[1]),
+        ("parent", vars[1], vars[2]),
+        ("parent", vars[2], vars[3]),
+        ("parent", vars[3], vars[4])
+    }
+    assert set(trail) == expected_entries
+
+
+def test_deref_compression_undoability():
+    """Test that compression can be undone via trail."""
+    from prolog.unify.store import Store
+    
+    store = Store()
+    trail = []
+    
+    # Create chain of 5: v0 -> v1 -> v2 -> v3 -> v4
+    vars = [store.new_var() for _ in range(5)]
+    for i in range(4):
+        store.cells[vars[i]].ref = vars[i+1]
+    
+    # Remember original refs
+    orig_refs = [store.cells[v].ref for v in vars]
+    
+    # Compress
+    store.deref(vars[0], compress=True, trail=trail)
+    
+    # Verify compression happened
+    for i in range(4):
+        assert store.cells[vars[i]].ref == vars[4]
+    
+    # Undo via trail (in reverse order)
+    for entry in reversed(trail):
+        tag, vid, old_val = entry
+        if tag == "parent":
+            store.cells[vid].ref = old_val
+    
+    # Verify restoration
+    current_refs = [store.cells[v].ref for v in vars]
+    assert current_refs == orig_refs
+
+
+def test_deref_no_op_compression():
+    """Test that re-compressing doesn't add trail entries."""
+    from prolog.unify.store import Store
+    
+    store = Store()
+    trail = []
+    
+    # Create and compress a chain
+    vars = [store.new_var() for _ in range(5)]
+    for i in range(4):
+        store.cells[vars[i]].ref = vars[i+1]
+    
+    # First compression
+    store.deref(vars[0], compress=True, trail=trail)
+    first_trail_len = len(trail)
+    
+    # Second compression (should be no-op)
+    store.deref(vars[0], compress=True, trail=trail)
+    
+    # Trail shouldn't grow
+    assert len(trail) == first_trail_len
+
+
+def test_deref_compression_to_bound_root():
+    """Test compression when chain ends at bound variable."""
+    from prolog.unify.store import Store, Cell
+    
+    store = Store()
+    trail = []
+    
+    # Create chain ending in bound var
+    vars = [store.new_var() for _ in range(5)]
+    for i in range(4):
+        store.cells[vars[i]].ref = vars[i+1]
+    
+    # Bind the root
+    mock_term = "test_atom"
+    store.cells[vars[4]] = Cell(tag="bound", ref=vars[4], term=mock_term)
+    
+    # Deref with compression
+    result = store.deref(vars[0], compress=True, trail=trail)
+    
+    # Should return bound result
+    assert result == ("BOUND", vars[4], mock_term)
+    
+    # All intermediate nodes should point to bound root
+    for i in range(4):
+        assert store.cells[vars[i]].ref == vars[4]
+    
+    # Undo and verify restoration
+    for entry in reversed(trail):
+        if entry[0] == "parent":
+            store.cells[entry[1]].ref = entry[2]
+    
+    # Chain should be restored
+    for i in range(4):
+        assert store.cells[vars[i]].ref == vars[i+1]
+
+
+def test_deref_invalid_varid():
+    """Test that invalid varids raise appropriate errors."""
+    from prolog.unify.store import Store
+    
+    store = Store()
+    
+    # Test negative varid
+    with pytest.raises(IndexError):
+        store.deref(-1)
+    
+    # Test varid beyond range
+    with pytest.raises(IndexError):
+        store.deref(100)
+
+
+def test_deref_compression_preserves_rank():
+    """Test that compression doesn't modify rank values."""
+    from prolog.unify.store import Store
+    
+    store = Store()
+    trail = []
+    
+    # Create chain with custom ranks
+    vars = [store.new_var() for _ in range(5)]
+    for i, v in enumerate(vars):
+        store.cells[v].rank = i * 2  # Set custom ranks
+    
+    for i in range(4):
+        store.cells[vars[i]].ref = vars[i+1]
+    
+    # Remember original ranks
+    orig_ranks = [store.cells[v].rank for v in vars]
+    
+    # Compress
+    store.deref(vars[0], compress=True, trail=trail)
+    
+    # Verify ranks unchanged
+    current_ranks = [store.cells[v].rank for v in vars]
+    assert current_ranks == orig_ranks

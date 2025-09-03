@@ -5,37 +5,45 @@
 ### 1. Store Implementation
 
 #### Cell Dataclass
-- [ ] Write test for Cell creation with unbound state
-- [ ] Write test for Cell creation with bound state  
-- [ ] Write test for Cell rank field default
-- [ ] Implement Cell dataclass
-- [ ] Verify tests pass
+- [x] Write test for Cell creation with unbound state
+- [x] Write test for Cell creation with bound state  
+- [x] Write test for Cell rank field default
+- [x] Implement Cell dataclass
+- [x] Verify tests pass
 
 #### Store.new_var()
-- [ ] Write test: new_var returns sequential IDs starting from 0
-- [ ] Write test: new_var creates unbound cell with self-reference
-- [ ] Write test: new_var sets rank to 0
-- [ ] Write test: hint parameter is optional and not stored
-- [ ] Implement Store.__init__ 
-- [ ] Implement Store.new_var()
-- [ ] Verify tests pass
+- [x] Write test: new_var returns sequential IDs starting from 0
+- [x] Write test: new_var creates unbound cell with self-reference
+- [x] Write test: new_var sets rank to 0
+- [x] Write test: hint parameter is optional and not stored
+- [x] Implement Store.__init__ 
+- [x] Implement Store.new_var()
+- [x] Verify tests pass
 
 #### Store.deref() - Basic
-- [ ] Write test: deref of unbound root returns ("UNBOUND", varid)
-- [ ] Write test: deref of bound var returns ("BOUND", varid, term)
-- [ ] Write test: deref follows single parent link
-- [ ] Write test: deref follows chain of parent links
-- [ ] Write test: deref without compress has no side effects
-- [ ] Implement Store.deref() without compression
-- [ ] Verify tests pass
+- [x] Write test: deref of unbound root returns ("UNBOUND", varid)
+- [x] Write test: deref of bound var returns ("BOUND", varid, term)
+- [x] Write test: deref follows single parent link
+- [x] Write test: deref follows chain of parent links
+- [x] Write test: deref without compress has no side effects
+- [x] Implement Store.deref() without compression
+- [x] Verify tests pass
 
 #### Store.deref() - Path Compression
-- [ ] Write test: compression only when compress=True AND trail provided
-- [ ] Write test: no compression for paths < 4 nodes
-- [ ] Write test: compression for paths >= 4 nodes updates parents
-- [ ] Write test: compression adds trail entries for each compressed link
-- [ ] Implement path compression in Store.deref()
-- [ ] Verify tests pass
+- [x] Write test: compression only when compress=True AND trail provided
+- [x] Write test: no compression for paths < 4 nodes
+- [x] Write test: compression for paths >= 4 nodes updates parents
+- [x] Write test: compression adds trail entries for each compressed link
+- [x] Implement path compression in Store.deref()
+- [x] Verify tests pass
+
+#### Store.deref() - Additional Tests
+- [x] Write test: order-agnostic trail assertions
+- [x] Write test: undoability of compression
+- [x] Write test: no-op compression (re-compress already compressed)
+- [x] Write test: compression to bound root
+- [x] Write test: invalid varid handling
+- [x] Write test: rank invariants during compression
 
 ### 2. Term Representation
 
