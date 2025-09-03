@@ -14,7 +14,12 @@
       "Bash(python -m pytest prolog/tests/unit/test_clauses.py -xvs)",
       "Bash(python -m pytest prolog/tests/unit/test_goals.py -xvs)",
       "Bash(python -m pytest prolog/tests/unit/test_choicepoint.py -xvs)",
-      "Bash(python -m pytest prolog/tests/unit/test_clauses.py prolog/tests/unit/test_goals.py prolog/tests/unit/test_choicepoint.py -v)"
+      "Bash(python -m pytest prolog/tests/unit/test_clauses.py prolog/tests/unit/test_goals.py prolog/tests/unit/test_choicepoint.py -v)",
+      "Bash(python -m pytest prolog/tests/ -v --tb=short)",
+      "Bash(python -m pytest prolog/tests/unit/test_rename.py -xvs)",
+      "Bash(python -m pytest prolog/tests/unit/test_engine.py::TestEngineInitialization -xvs)",
+      "Bash(python -m pytest prolog/tests/unit/test_engine.py::TestSolutionRecording -xvs)",
+      "Bash(python:*)"
     ],
     "deny": [],
     "ask": []
