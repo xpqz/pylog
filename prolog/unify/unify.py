@@ -17,14 +17,14 @@ from prolog.unify.store import Store
 from prolog.unify.unify_helpers import union_vars, bind_root_to_term, deref_term
 
 
-def unify(t1: Any, t2: Any, trail: List, store: Store, occurs_check: bool = False) -> bool:
+def unify(t1: Any, t2: Any, store: Store, trail: List, occurs_check: bool = False) -> bool:
     """Unify two terms, making them equal by binding variables.
     
     Args:
         t1: First term
         t2: Second term
-        trail: Trail for recording changes
         store: Variable store
+        trail: Trail for recording changes
         occurs_check: Whether to perform occurs check (default False)
         
     Returns:

@@ -24,9 +24,10 @@ def test_unify_equal_atoms_succeeds():
     a1 = Atom("hello")
     a2 = Atom("hello")
     
-    result = unify(a1, a2, trail, store)
+    mark = len(trail)
+    result = unify(a1, a2, store, trail)
     assert result is True
-    assert len(trail) == 0  # No variables, no trail
+    assert len(trail) == mark  # No variables, no trail
 
 
 def test_unify_different_atoms_fails():
@@ -37,9 +38,10 @@ def test_unify_different_atoms_fails():
     a1 = Atom("hello")
     a2 = Atom("world")
     
-    result = unify(a1, a2, trail, store)
+    mark = len(trail)
+    result = unify(a1, a2, store, trail)
     assert result is False
-    assert len(trail) == 0
+    assert len(trail) == mark
 
 
 def test_unify_equal_ints_succeeds():
@@ -50,9 +52,10 @@ def test_unify_equal_ints_succeeds():
     i1 = Int(42)
     i2 = Int(42)
     
-    result = unify(i1, i2, trail, store)
+    mark = len(trail)
+    result = unify(i1, i2, store, trail)
     assert result is True
-    assert len(trail) == 0
+    assert len(trail) == mark
 
 
 def test_unify_different_ints_fails():
@@ -63,9 +66,10 @@ def test_unify_different_ints_fails():
     i1 = Int(42)
     i2 = Int(99)
     
-    result = unify(i1, i2, trail, store)
+    mark = len(trail)
+    result = unify(i1, i2, store, trail)
     assert result is False
-    assert len(trail) == 0
+    assert len(trail) == mark
 
 
 def test_unify_atom_with_int_fails():
@@ -76,9 +80,10 @@ def test_unify_atom_with_int_fails():
     atom = Atom("test")
     num = Int(42)
     
-    result = unify(atom, num, trail, store)
+    mark = len(trail)
+    result = unify(atom, num, store, trail)
     assert result is False
-    assert len(trail) == 0
+    assert len(trail) == mark
 
 
 # Variable Unification Tests
@@ -91,7 +96,7 @@ def test_unify_var_with_atom_binds_var():
     var = Var(vid)
     atom = Atom("test")
     
-    result = unify(var, atom, trail, store)
+    result = unify(var, atom, store, trail)
     assert result is True
     
     # Variable should be bound to atom
@@ -109,7 +114,7 @@ def test_unify_var_with_struct_binds_var():
     var = Var(vid)
     struct = Struct("f", (Atom("a"), Int(1)))
     
-    result = unify(var, struct, trail, store)
+    result = unify(var, struct, store, trail)
     assert result is True
     
     # Variable should be bound to struct
@@ -128,7 +133,7 @@ def test_unify_two_vars_creates_union():
     var1 = Var(v1)
     var2 = Var(v2)
     
-    result = unify(var1, var2, trail, store)
+    result = unify(var1, var2, store, trail)
     assert result is True
     
     # Should be unified (point to same root)
@@ -146,7 +151,7 @@ def test_unify_var_with_itself_succeeds():
     vid = store.new_var()
     var = Var(vid)
     
-    result = unify(var, var, trail, store)
+    result = unify(var, var, store, trail)
     assert result is True
     assert len(trail) == 0  # No-op, no trail
 
@@ -161,7 +166,7 @@ def test_unify_atom_with_var_binds_var():
     atom = Atom("test")
     
     # Reversed order from earlier test
-    result = unify(atom, var, trail, store)
+    result = unify(atom, var, store, trail)
     assert result is True
     
     # Variable should be bound to atom
@@ -180,11 +185,11 @@ def test_unify_bound_var_with_matching_term_succeeds():
     atom2 = Atom("test")
     
     # First bind var to atom1
-    unify(var, atom1, trail, store)
+    unify(var, atom1, store, trail)
     mark = len(trail)
     
     # Now unify with matching atom2
-    result = unify(var, atom2, trail, store)
+    result = unify(var, atom2, store, trail)
     assert result is True
     assert len(trail) == mark  # No new trail entries
 
@@ -200,11 +205,11 @@ def test_unify_bound_var_with_different_term_fails():
     atom2 = Atom("test2")
     
     # First bind var to atom1
-    unify(var, atom1, trail, store)
+    unify(var, atom1, store, trail)
     mark = len(trail)
     
     # Now try to unify with different atom2
-    result = unify(var, atom2, trail, store)
+    result = unify(var, atom2, store, trail)
     assert result is False
     
     # Should have undone any changes made during failed attempt
@@ -220,7 +225,7 @@ def test_unify_structs_different_functors_fail():
     s1 = Struct("f", (Atom("a"),))
     s2 = Struct("g", (Atom("a"),))
     
-    result = unify(s1, s2, trail, store)
+    result = unify(s1, s2, store, trail)
     assert result is False
     assert len(trail) == 0
 
@@ -233,7 +238,7 @@ def test_unify_structs_different_arities_fail():
     s1 = Struct("f", (Atom("a"),))
     s2 = Struct("f", (Atom("a"), Atom("b")))
     
-    result = unify(s1, s2, trail, store)
+    result = unify(s1, s2, store, trail)
     assert result is False
     assert len(trail) == 0
 
@@ -249,7 +254,7 @@ def test_unify_structs_same_shape_unify_args():
     s1 = Struct("f", (Var(v1), Atom("b")))
     s2 = Struct("f", (Atom("a"), Var(v2)))
     
-    result = unify(s1, s2, trail, store)
+    result = unify(s1, s2, store, trail)
     assert result is True
     
     # v1 should be bound to Atom("a")
@@ -280,7 +285,7 @@ def test_unify_nested_structs():
         Struct("h", (Atom("a"),))
     ))
     
-    result = unify(s1, s2, trail, store)
+    result = unify(s1, s2, store, trail)
     assert result is True
     
     # X should be bound to b
@@ -305,7 +310,7 @@ def test_unify_struct_argument_failure_undoes_partial():
     s2 = Struct("f", (Atom("a"), Atom("a")))
     
     mark = len(trail)
-    result = unify(s1, s2, trail, store)
+    result = unify(s1, s2, store, trail)
     assert result is False
     
     # v1 should not remain bound (undone)
@@ -322,7 +327,7 @@ def test_unify_empty_lists_succeed():
     l1 = List(())
     l2 = List(())
     
-    result = unify(l1, l2, trail, store)
+    result = unify(l1, l2, store, trail)
     assert result is True
     assert len(trail) == 0
 
@@ -337,7 +342,7 @@ def test_unify_lists_same_length():
     l1 = List((Atom("a"), Var(v), Atom("c")))
     l2 = List((Atom("a"), Atom("b"), Atom("c")))
     
-    result = unify(l1, l2, trail, store)
+    result = unify(l1, l2, store, trail)
     assert result is True
     
     # Variable should be bound to b
@@ -353,7 +358,7 @@ def test_unify_lists_different_length_fail():
     l1 = List((Atom("a"), Atom("b")))
     l2 = List((Atom("a"), Atom("b"), Atom("c")))
     
-    result = unify(l1, l2, trail, store)
+    result = unify(l1, l2, store, trail)
     assert result is False
 
 
@@ -369,7 +374,7 @@ def test_unify_lists_with_tail():
     # [a, b, c, d]
     l2 = List((Atom("a"), Atom("b"), Atom("c"), Atom("d")))
     
-    result = unify(l1, l2, trail, store)
+    result = unify(l1, l2, store, trail)
     assert result is True
     
     # Tail should be bound to [c, d]
@@ -391,7 +396,7 @@ def test_unify_lists_both_with_tails():
     # [a, b | Y]
     l2 = List((Atom("a"), Atom("b")), tail=Var(v2))
     
-    result = unify(l1, l2, trail, store)
+    result = unify(l1, l2, store, trail)
     assert result is True
     
     # X should be [b | Y]
@@ -418,7 +423,7 @@ def test_unify_nested_lists():
         List((Atom("b"),))
     ))
     
-    result = unify(l1, l2, trail, store)
+    result = unify(l1, l2, store, trail)
     assert result is True
     
     # X should be bound to c
@@ -435,7 +440,7 @@ def test_unify_struct_with_list_fails():
     s = Struct("f", (Atom("a"),))
     l = List((Atom("a"),))
     
-    result = unify(s, l, trail, store)
+    result = unify(s, l, store, trail)
     assert result is False
 
 
@@ -466,7 +471,7 @@ def test_unify_complex_nested_structure():
         Atom("c")
     ))
     
-    result = unify(t1, t2, trail, store)
+    result = unify(t1, t2, store, trail)
     assert result is True
     
     # X = h(1)
@@ -491,19 +496,18 @@ def test_unify_failure_undoes_all_bindings():
     x = store.new_var()
     y = store.new_var()
     
-    # f(X, Y) with Y pre-bound to 'conflict'
+    # Pre-bind Y to 'conflict'  (no trail entry - this is existing state)
     store.cells[y].tag = "bound"
     store.cells[y].term = Atom("conflict")
-    trail.append(("bind", y, store.cells[y]))  # Trail the pre-binding
     
     t1 = Struct("f", (Var(x), Var(y)))
     t2 = Struct("f", (Atom("a"), Atom("different")))
     
     mark = len(trail)
-    result = unify(t1, t2, trail, store)
+    result = unify(t1, t2, store, trail)
     assert result is False
     
-    # X should not remain bound
+    # X should not remain bound (undone)
     assert store.cells[x].tag == "unbound"
     # Trail should be back to mark
     assert len(trail) == mark
@@ -519,11 +523,108 @@ def test_unify_is_idempotent():
     t2 = Struct("f", (Atom("b"), Atom("a")))
     
     # First unification
-    result1 = unify(t1, t2, trail, store)
+    result1 = unify(t1, t2, store, trail)
     assert result1 is True
     mark = len(trail)
     
     # Second unification (idempotent)
-    result2 = unify(t1, t2, trail, store)
+    result2 = unify(t1, t2, store, trail)
     assert result2 is True
     assert len(trail) == mark  # No new trail entries
+
+
+# Additional robust tests
+def test_unify_shared_var_conflict_undoes_partial():
+    """Test shared variable conflict undoes partial bindings."""
+    store = Store()
+    trail = []
+    
+    x = store.new_var()
+    t1 = Struct("f", (Var(x), Var(x)))
+    t2 = Struct("f", (Atom("a"), Atom("b")))
+    
+    mark = len(trail)
+    assert unify(t1, t2, store, trail) is False
+    
+    # X must not remain bound to 'a'
+    assert store.cells[x].tag == "unbound"
+    assert len(trail) == mark
+
+
+def test_unify_var_chain_then_bind_propagates():
+    """Test alias propagation at the top-level unify."""
+    store = Store()
+    trail = []
+    
+    x = store.new_var()
+    y = store.new_var()
+    
+    assert unify(Var(x), Var(y), store, trail)
+    assert unify(Var(y), Atom("k"), store, trail)
+    
+    # X must see the binding via dereferencing
+    # After union, x points to y (or vice versa), so deref finds the binding
+    result = store.deref(x)
+    assert result[0] == "BOUND"
+    assert result[2] == Atom("k")
+
+
+def test_unify_list_tail_mismatch_undoes_partial():
+    """Test tail mismatch undoes partial bindings."""
+    store = Store()
+    trail = []
+    
+    x = store.new_var()
+    # [a | X] vs [b]
+    t1 = List((Atom("a"),), tail=Var(x))
+    t2 = List((Atom("b"),))
+    
+    mark = len(trail)
+    assert unify(t1, t2, store, trail) is False
+    
+    # X must remain unbound; no lingering changes
+    assert store.cells[x].tag == "unbound"
+    assert len(trail) == mark
+
+
+def test_unify_commutative_under_rollback():
+    """Test unify is commutative even with rollback."""
+    store = Store()
+    trail = []
+    
+    x = store.new_var()
+    t1 = Struct("f", (Var(x), Atom("a")))
+    t2 = Struct("f", (Atom("b"), Atom("a")))
+    
+    # Try in one order
+    m = len(trail)
+    r1 = unify(t1, t2, store, trail)
+    undo_to(m, trail, store)
+    
+    # Try in reverse order
+    m = len(trail)
+    r2 = unify(t2, t1, store, trail)
+    undo_to(m, trail, store)
+    
+    assert r1 == r2
+
+
+def test_unify_cycle_respects_occurs_flag():
+    """Test occurs check flag controls cycle detection."""
+    store = Store()
+    trail = []
+    
+    x = store.new_var()
+    cyc = Struct("f", (Var(x),))
+    
+    # Without occurs check - should succeed (creating cycle)
+    assert unify(Var(x), cyc, store, trail, occurs_check=False) is True
+    
+    # Undo the binding
+    undo_to(0, trail, store)
+    
+    # With occurs check - should fail
+    # NOTE: This test will be enabled once occurs check is implemented
+    # mark = len(trail)
+    # assert unify(Var(x), cyc, store, trail, occurs_check=True) is False
+    # assert len(trail) == mark
