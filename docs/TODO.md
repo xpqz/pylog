@@ -88,28 +88,28 @@
 ### 4. Unification Helpers
 
 #### union_vars()
-- [ ] Write test: union_vars with equal roots returns True
-- [ ] Write test: union by rank (smaller joins larger)
-- [ ] Write test: equal ranks increment winner's rank
-- [ ] Write test: trail entries created for parent and rank changes
-- [ ] Implement union_vars()
-- [ ] Verify tests pass
+- [x] Write test: union_vars with equal roots returns True
+- [x] Write test: union by rank (smaller joins larger)
+- [x] Write test: equal ranks increment winner's rank
+- [x] Write test: trail entries created for parent and rank changes
+- [x] Implement union_vars()
+- [x] Verify tests pass
 
 #### bind_root_to_term()
-- [ ] Write test: bind unbound root to atom
-- [ ] Write test: bind unbound root to struct
-- [ ] Write test: trail entry created with old cell copy
-- [ ] Write test: binding already bound root fails
-- [ ] Implement bind_root_to_term()
-- [ ] Verify tests pass
+- [x] Write test: bind unbound root to atom
+- [x] Write test: bind unbound root to struct
+- [x] Write test: trail entry created with old cell copy
+- [x] Write test: binding already bound root fails
+- [x] Implement bind_root_to_term()
+- [x] Verify tests pass
 
 #### deref_term()
-- [ ] Write test: non-var returns ('NONVAR', term)
-- [ ] Write test: unbound var returns ('VAR', root_vid)
-- [ ] Write test: bound var returns ('NONVAR', dereferenced_term)
-- [ ] Write test: no side effects (no compression)
-- [ ] Implement deref_term()
-- [ ] Verify tests pass
+- [x] Write test: non-var returns ('NONVAR', term)
+- [x] Write test: unbound var returns ('VAR', root_vid)
+- [x] Write test: bound var returns ('NONVAR', dereferenced_term)
+- [x] Write test: no side effects (no compression)
+- [x] Implement deref_term()
+- [x] Verify tests pass
 
 ### 5. Basic Unification (without occurs check)
 
