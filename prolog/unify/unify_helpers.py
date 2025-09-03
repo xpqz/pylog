@@ -16,23 +16,38 @@ from prolog.unify.store import Cell, Store
 def union_vars(v1: int, v2: int, trail: List, store: Store) -> bool:
     """Union two variables using union-by-rank.
     
+    Contract:
+    - Dereferences both v1 and v2 to find their roots
+    - Raises ValueError if either root is bound (union is only for unbound roots)
+    - Performs union-by-rank with trail entries:
+      - ("parent", child_root, old_parent): parent link change
+      - ("rank", new_root, old_rank): rank increment (only if ranks were equal)
+    - Returns True on success
+    
     Args:
         v1: First variable ID
-        v2: Second variable ID
+        v2: Second variable ID  
         trail: Trail for recording changes
         store: Variable store
         
     Returns:
-        True (always succeeds for union of unbound vars)
+        True (always succeeds for valid unbound vars)
         
-    This function finds the roots of both variables and unions them.
-    Union-by-rank optimization keeps trees shallow:
-    - Smaller rank joins larger rank
-    - Equal ranks: arbitrary choice, increment winner's rank
+    Raises:
+        ValueError: If either root is bound
     """
     # Find roots
-    _, root1 = store.deref(v1)
-    _, root2 = store.deref(v2)
+    result1 = store.deref(v1)
+    result2 = store.deref(v2)
+    
+    # Check if either is bound
+    if result1[0] == "BOUND":
+        raise ValueError(f"Cannot union bound variable {v1}")
+    if result2[0] == "BOUND":
+        raise ValueError(f"Cannot union bound variable {v2}")
+    
+    root1 = result1[1]
+    root2 = result2[1]
     
     # If already same root, nothing to do
     if root1 == root2:
@@ -61,23 +76,30 @@ def union_vars(v1: int, v2: int, trail: List, store: Store) -> bool:
 
 
 def bind_root_to_term(vid: int, term: Any, trail: List, store: Store) -> None:
-    """Bind an unbound root variable to a term.
+    """Bind an unbound root variable to a non-var term.
+    
+    Contract:
+    - Requires vid is an unbound root
+    - Requires term is not a Var (must be non-var term)
+    - Pushes exactly one ("bind", vid, old_cell_copy) entry to trail
+    - Sets cell to Cell(tag="bound", ref=vid, term=term)
     
     Args:
         vid: Variable ID (must be unbound root)
-        term: Term to bind to (non-Var)
+        term: Term to bind to (must not be Var)
         trail: Trail for recording changes
         store: Variable store
         
     Raises:
-        ValueError: If variable is already bound
-        
-    This function binds an unbound root to a term, trailing the old cell.
+        ValueError: If variable is already bound or term is a Var
     """
     cell = store.cells[vid]
     
     if cell.tag == "bound":
         raise ValueError(f"Variable {vid} is already bound")
+    
+    if isinstance(term, Var):
+        raise ValueError(f"Cannot bind to Var term - use union_vars for var-var binding")
     
     # Create a snapshot of the old cell for the trail
     old_cell = Cell(tag=cell.tag, ref=cell.ref, term=cell.term, rank=cell.rank)
@@ -92,6 +114,14 @@ def bind_root_to_term(vid: int, term: Any, trail: List, store: Store) -> None:
 def deref_term(term: Any, store: Store) -> Tuple[str, Any]:
     """Dereference a term to find its value or unbound root.
     
+    Contract:
+    - If term is not a Var, returns ("NONVAR", term) unchanged
+    - If term is a Var:
+      - Returns ("VAR", root_vid) if root is unbound
+      - Returns ("NONVAR", bound_term) if root is bound
+    - No path compression or side effects
+    - May raise IndexError/ValueError for invalid variable IDs
+    
     Args:
         term: Term to dereference
         store: Variable store
@@ -100,7 +130,8 @@ def deref_term(term: Any, store: Store) -> Tuple[str, Any]:
         ("NONVAR", term) if term is not a variable or is bound
         ("VAR", root_vid) if term is an unbound variable
         
-    This function does not perform path compression (no side effects).
+    Raises:
+        IndexError/ValueError: If Var has invalid ID
     """
     if not isinstance(term, Var):
         # Non-variable terms return as-is

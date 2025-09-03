@@ -133,6 +133,70 @@ def test_union_vars_with_non_roots_follows_chains():
     assert root1 == root2
 
 
+def test_union_vars_idempotent_no_trail_growth():
+    """Test that union of already unified vars is a no-op."""
+    store = Store()
+    trail = []
+    
+    a = store.new_var()
+    b = store.new_var()
+    
+    # First union
+    assert union_vars(a, b, trail, store) is True
+    before = len(trail)
+    
+    # Second union of already unified roots is a no-op
+    assert union_vars(a, b, trail, store) is True
+    assert len(trail) == before
+
+
+def test_union_vars_raises_if_either_is_bound():
+    """Test union_vars raises error if either root is bound."""
+    store = Store()
+    trail = []
+    
+    a = store.new_var()
+    b = store.new_var()
+    
+    # Bind b to an atom
+    store.cells[b] = Cell(tag="bound", ref=b, term=Atom("x"))
+    
+    with pytest.raises(ValueError, match="union.*bound"):
+        union_vars(a, b, trail, store)
+    
+    # Also test with a bound
+    store = Store()
+    trail = []
+    a = store.new_var()
+    b = store.new_var()
+    store.cells[a] = Cell(tag="bound", ref=a, term=Int(42))
+    
+    with pytest.raises(ValueError, match="union.*bound"):
+        union_vars(a, b, trail, store)
+
+
+def test_union_vars_equal_ranks_trail_precise():
+    """Test equal ranks produce exactly one parent and one rank change."""
+    store = Store()
+    trail = []
+    
+    a = store.new_var()
+    b = store.new_var()
+    
+    assert union_vars(a, b, trail, store) is True
+    
+    # Exactly 2 entries: one parent, one rank
+    assert len(trail) == 2
+    tags = sorted(e[0] for e in trail)
+    assert tags == ["parent", "rank"]
+    
+    # After undo, both are pristine roots with rank 0
+    mark = 0
+    undo_to(mark, trail, store)
+    assert store.cells[a].ref == a and store.cells[a].rank == 0
+    assert store.cells[b].ref == b and store.cells[b].rank == 0
+
+
 # Test bind_root_to_term()
 def test_bind_root_to_atom():
     """Test bind unbound root to atom."""
@@ -230,6 +294,46 @@ def test_bind_root_undoable():
     assert store.cells[v].tag == "unbound"
     assert store.cells[v].term is None
     assert store.cells[v].ref == v
+
+
+def test_bind_root_rejects_var_term():
+    """Test bind_root_to_term rejects Var terms."""
+    store = Store()
+    trail = []
+    
+    v = store.new_var()
+    w = Var(store.new_var())
+    
+    with pytest.raises(ValueError, match="Cannot bind to Var"):
+        bind_root_to_term(v, w, trail, store)
+
+
+def test_bind_trail_is_snapshot_not_reference():
+    """Test trailed cell is a snapshot, not a reference."""
+    store = Store()
+    trail = []
+    
+    v = store.new_var()
+    
+    # Take a reference to the current cell
+    old_ref = store.cells[v]
+    
+    bind_root_to_term(v, Atom("a"), trail, store)
+    
+    # Try to mutate the old_ref AFTER pushing the bind entry
+    # This tests that the implementation copied the cell
+    # Note: Cell is not frozen, so we can mutate it
+    old_ref.ref = -999
+    old_ref.tag = "bound"  # Try to corrupt it
+    
+    # Undo should restore to pristine state regardless of mutation
+    undo_to(0, trail, store)
+    
+    c = store.cells[v]
+    assert c.tag == "unbound"
+    assert c.ref == v
+    assert c.term is None
+    assert c.rank == 0
 
 
 # Test deref_term()
@@ -337,3 +441,30 @@ def test_deref_term_with_hint():
     
     result = deref_term(var, store)
     assert result == ("VAR", vid)
+
+
+def test_deref_term_invalid_var_id_raises():
+    """Test deref_term raises on invalid variable IDs."""
+    store = Store()
+    
+    with pytest.raises((IndexError, ValueError)):
+        deref_term(Var(-1), store)
+    
+    with pytest.raises((IndexError, ValueError)):
+        deref_term(Var(999), store)
+
+
+def test_deref_term_var_alias_chain():
+    """Test deref_term follows chains of unbound variables."""
+    store = Store()
+    
+    v1 = store.new_var()
+    v2 = store.new_var()
+    v3 = store.new_var()
+    
+    # v1 -> v2 -> v3 (all unbound)
+    store.cells[v1].ref = v2
+    store.cells[v2].ref = v3
+    
+    tag, root = deref_term(Var(v1), store)
+    assert tag == "VAR" and root == v3
