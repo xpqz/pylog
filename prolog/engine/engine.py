@@ -104,6 +104,9 @@ class Engine:
             # Also clear trail since we're resetting query vars
             self.trail = []
         
+        # Reset cut barrier after query completes
+        self._cut_barrier = None
+        
         return self.solutions
     
     def _allocate_query_vars(self, term: Term) -> Term:
@@ -196,8 +199,15 @@ class Engine:
         # Try first clause
         clause_idx = cursor.take()
         
+        # Determine cut barrier for this clause
+        clause_cut_barrier = None
+        
         # If there are more clauses, create choicepoint
         if cursor.has_more():
+            # Capture cut barrier BEFORE creating choicepoint
+            # This allows cut to remove the choicepoint for this goal
+            clause_cut_barrier = self.choices.size()
+            
             # Pre-goal snapshot (goal still on stack)
             self.goals.push(goal)
             goal_snapshot = self.goals.snapshot()
@@ -213,15 +223,17 @@ class Engine:
             )
             cp_id = self.choices.push(cp)
         
-        # Try the clause with the goal term
-        return self._try_clause(clause_idx, goal.term)
+        # Try the clause with the goal term, passing the cut barrier
+        return self._try_clause(clause_idx, goal.term, clause_cut_barrier)
     
-    def _try_clause(self, clause_idx: int, goal_term: Term) -> bool:
+    def _try_clause(self, clause_idx: int, goal_term: Term, 
+                     clause_cut_barrier: Optional[int] = None) -> bool:
         """Try to apply a clause.
         
         Args:
             clause_idx: Index of clause in program.
             goal_term: The goal term to unify with clause head.
+            clause_cut_barrier: Cut barrier for this clause (before its choicepoint).
             
         Returns:
             True if successful, False to backtrack.
@@ -232,9 +244,11 @@ class Engine:
         renamer = VarRenamer(self.store)
         renamed_clause = renamer.rename_clause(clause)
         
-        # Set cut barrier to current choice point (for cut implementation)
+        # Set cut barrier (for cut implementation)
+        # Only set if this clause was selected from multiple alternatives
         old_cut_barrier = self._cut_barrier
-        self._cut_barrier = self.choices.top_id()
+        if clause_cut_barrier is not None:
+            self._cut_barrier = clause_cut_barrier
         
         # Try to unify with clause head
         if unify(renamed_clause.head, goal_term, self.store, self.trail, 
@@ -292,8 +306,13 @@ class Engine:
             )
             self.choices.push(new_cp)
         
-        # Try the clause
-        return self._try_clause(clause_idx, goal.term)
+        # Try the clause with same cut barrier (size before this choicepoint)
+        # The cut barrier should be the stack size when this goal was first tried
+        clause_cut_barrier = self.choices.size()  # Current size after re-pushing
+        if cp.cursor.has_more():
+            # We just re-pushed, so subtract 1
+            clause_cut_barrier = max(0, clause_cut_barrier - 1)
+        return self._try_clause(clause_idx, goal.term, clause_cut_barrier)
     
     def _restore_from_choicepoint(self, cp: Choicepoint):
         """Restore engine state from a choicepoint.
@@ -397,7 +416,9 @@ class Engine:
         Returns:
             True if it's a builtin, False otherwise.
         """
-        # For now, no builtins implemented
+        # Check for cut (!)
+        if isinstance(term, Atom) and term.name == "!":
+            return True
         return False
     
     def _execute_builtin(self, term: Term) -> bool:
@@ -409,5 +430,12 @@ class Engine:
         Returns:
             True to continue, False to backtrack.
         """
-        # For now, no builtins implemented
+        if isinstance(term, Atom) and term.name == "!":
+            # Execute cut: remove choicepoints newer than cut barrier
+            if self._cut_barrier is not None:
+                self.choices.cut_to(self._cut_barrier)
+            # Cut always succeeds
+            return True
+        
+        # Unknown builtin
         return False

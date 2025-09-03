@@ -103,3 +103,11 @@ class ChoiceStack:
             The next sequential ID to be assigned
         """
         return self._next_id
+    
+    def size(self) -> int:
+        """Return the number of choicepoints on the stack.
+        
+        Returns:
+            The current stack size
+        """
+        return len(self._stack)
