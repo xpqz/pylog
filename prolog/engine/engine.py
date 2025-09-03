@@ -6,7 +6,7 @@ from prolog.ast.clauses import Clause, Program
 from prolog.engine.goals import Goal, GoalStack
 from prolog.engine.choicepoint import Choicepoint, ChoiceStack
 from prolog.engine.rename import VarRenamer
-from prolog.unify.store import Store
+from prolog.unify.store import Store, Cell
 from prolog.unify.unify import unify
 
 
@@ -65,15 +65,22 @@ class Engine:
         Returns:
             List of solution dictionaries mapping variable names to values.
         """
-        # Reset state for new query
-        self.reset()
-        self.max_solutions = max_solutions
-        
-        # Allocate variables for query goals and track them
-        renamed_goals = []
-        for goal in goals:
-            renamed_goal = self._allocate_query_vars(goal)
-            renamed_goals.append(renamed_goal)
+        # If query_vars is already set up (by test), don't reset
+        if not self._query_vars:
+            # Reset state for new query
+            self.reset()
+            self.max_solutions = max_solutions
+            
+            # Allocate variables for query goals and track them
+            renamed_goals = []
+            for goal in goals:
+                renamed_goal = self._allocate_query_vars(goal)
+                renamed_goals.append(renamed_goal)
+        else:
+            # Query vars pre-allocated, just clear solutions
+            self.solutions = []
+            self.max_solutions = max_solutions or self.max_solutions
+            renamed_goals = goals
         
         # Set cutoff after allocating all query variables
         self._initial_var_cutoff = len(self.store.cells)
@@ -86,6 +93,16 @@ class Engine:
         while self._step():
             if self.max_solutions and len(self.solutions) >= self.max_solutions:
                 break
+        
+        # Clean up query variables - restore them to unbound state
+        if self._query_vars:
+            for var_id, _ in self._query_vars:
+                if var_id < len(self.store.cells):
+                    self.store.cells[var_id] = Cell(
+                        tag="unbound", ref=var_id, term=None, rank=0
+                    )
+            # Also clear trail since we're resetting query vars
+            self.trail = []
         
         return self.solutions
     
@@ -296,6 +313,9 @@ class Engine:
             elif entry[0] == 'parent':
                 _, varid, old_parent = entry
                 self.store.cells[varid].ref = old_parent
+        
+        # Shrink store to original size (remove variables created during failed attempt)
+        self.store.cells = self.store.cells[:cp.store_size]
         
         # Restore cut barrier
         self._cut_barrier = cp.cut_barrier

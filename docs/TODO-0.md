@@ -153,40 +153,40 @@
 - [x] Extend run loop for rules
 - [x] Verify tests pass
 
-## Phase 3: Backtracking
+## Phase 3: Backtracking ✅
 
-### 8. Choicepoint Creation
+### 8. Choicepoint Creation ✅
 
-#### Multiple Clauses
-- [ ] Write test: choicepoint created when multiple clauses match
-- [ ] Write test: no choicepoint when single clause matches
-- [ ] Write test: choicepoint preserves pre-goal snapshot (goal on top)
-- [ ] Write test: choicepoint cursor positioned at next clause
-- [ ] Write test: goal retry correctness (3 clauses → 3 solutions in order)
-- [ ] Implement choicepoint creation with pre-goal snapshot
-- [ ] Verify tests pass
+#### Multiple Clauses ✅
+- [x] Write test: choicepoint created when multiple clauses match
+- [x] Write test: no choicepoint when single clause matches
+- [x] Write test: choicepoint preserves pre-goal snapshot (goal on top)
+- [x] Write test: choicepoint cursor positioned at next clause
+- [x] Write test: goal retry correctness (3 clauses → 3 solutions in order)
+- [x] Implement choicepoint creation with pre-goal snapshot
+- [x] Verify tests pass
 
-### 9. Backtracking Implementation
+### 9. Backtracking Implementation ✅
 
-#### _backtrack Method
-- [ ] Write test: backtrack restores store state exactly (undo_to + shrink)
-- [ ] Write test: backtrack restores goal stack from snapshot
-- [ ] Write test: backtrack restores cut_barrier
-- [ ] Write test: backtrack re-selects same goal and tries next clause
-- [ ] Write test: backtrack chains to earlier choicepoint when exhausted
-- [ ] Write test: backtrack returns false when no choicepoints
-- [ ] Write test: state fully restored between solution attempts
-- [ ] Implement _backtrack method using _try_clause
-- [ ] Verify tests pass
+#### _backtrack Method ✅
+- [x] Write test: backtrack restores store state exactly (undo_to + shrink)
+- [x] Write test: backtrack restores goal stack from snapshot
+- [x] Write test: backtrack restores cut_barrier
+- [x] Write test: backtrack re-selects same goal and tries next clause
+- [x] Write test: backtrack chains to earlier choicepoint when exhausted
+- [x] Write test: backtrack returns false when no choicepoints
+- [x] Write test: state fully restored between solution attempts
+- [x] Implement _backtrack method using _try_clause
+- [x] Verify tests pass
 
-#### Multiple Solutions
-- [ ] Write test: collect all solutions for multi-clause predicate
-- [ ] Write test: solutions in source clause order (left-to-right, depth-first)
-- [ ] Write test: max_solutions limits results and stops searching
-- [ ] Write test: backtracking through nested rules preserves order
-- [ ] Write test: state isolation (failing branch doesn't affect later success)
-- [ ] Verify backtracking produces all solutions
-- [ ] Verify tests pass
+#### Multiple Solutions ✅
+- [x] Write test: collect all solutions for multi-clause predicate
+- [x] Write test: solutions in source clause order (left-to-right, depth-first)
+- [x] Write test: max_solutions limits results and stops searching
+- [x] Write test: backtracking through nested rules preserves order
+- [x] Write test: state isolation (failing branch doesn't affect later success)
+- [x] Verify backtracking produces all solutions
+- [x] Verify tests pass
 
 ## Phase 4: Cut Implementation
 
