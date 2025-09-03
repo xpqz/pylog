@@ -215,40 +215,40 @@
 - [x] Integrate cut into builtin system
 - [x] Verify tests pass
 
-## Phase 5: Core Builtins
+## Phase 5: Core Builtins ✅
 
-### 12. Builtin Infrastructure
+### 12. Builtin Infrastructure ✅
 
-#### Builtin Registration
-- [ ] Write test: _is_builtin recognizes builtins by name+arity
-- [ ] Write test: _execute_builtin dispatches correctly
-- [ ] Write test: unknown builtin returns false
-- [ ] Write test: user predicate vs builtin precedence (decide & test)
-- [ ] Write test: builtins win over user predicates (or vice versa)
-- [ ] Implement builtin registration system (dict lookup)
-- [ ] Verify tests pass
+#### Builtin Registration ✅
+- [x] Write test: _is_builtin recognizes builtins by name+arity
+- [x] Write test: _execute_builtin dispatches correctly
+- [x] Write test: unknown builtin returns false
+- [x] Write test: user predicate vs builtin precedence (decide & test)
+- [x] Write test: builtins win over user predicates (or vice versa)
+- [x] Implement builtin registration system (dict lookup)
+- [x] Verify tests pass
 
-### 13. Basic Builtins
+### 13. Basic Builtins ✅
 
-#### true/0 and fail/0
-- [ ] Write test: true always succeeds
-- [ ] Write test: fail always fails
-- [ ] Write test: true in conjunction continues
-- [ ] Write test: fail causes backtracking
-- [ ] Write test: no trail entries from true/fail (pure)
-- [ ] Implement builtin_true and builtin_fail
-- [ ] Verify tests pass
+#### true/0 and fail/0 ✅
+- [x] Write test: true always succeeds
+- [x] Write test: fail always fails
+- [x] Write test: true in conjunction continues
+- [x] Write test: fail causes backtracking
+- [x] Write test: no trail entries from true/fail (pure)
+- [x] Implement builtin_true and builtin_fail
+- [x] Verify tests pass
 
-#### call/1
-- [ ] Write test: call with atom goal (0-arity)
-- [ ] Write test: call with struct goal
-- [ ] Write test: call with variable bound to goal (deref)
-- [ ] Write test: call with unbound variable fails
-- [ ] Write test: call with non-callable (int, list) fails
-- [ ] Write test: call(!) executes cut
-- [ ] Write test: call pushes goal (doesn't execute immediately)
-- [ ] Implement builtin_call with full dereferencing
-- [ ] Verify tests pass
+#### call/1 ✅
+- [x] Write test: call with atom goal (0-arity)
+- [x] Write test: call with struct goal
+- [x] Write test: call with variable bound to goal (deref)
+- [x] Write test: call with unbound variable fails
+- [x] Write test: call with non-callable (int, list) fails
+- [x] Write test: call(!) executes cut
+- [x] Write test: call pushes goal (doesn't execute immediately)
+- [x] Implement builtin_call with full dereferencing
+- [x] Verify tests pass
 
 ## Phase 6: Integration and Stress Tests
 
