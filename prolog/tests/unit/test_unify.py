@@ -624,7 +624,6 @@ def test_unify_cycle_respects_occurs_flag():
     undo_to(0, trail, store)
     
     # With occurs check - should fail
-    # NOTE: This test will be enabled once occurs check is implemented
-    # mark = len(trail)
-    # assert unify(Var(x), cyc, store, trail, occurs_check=True) is False
-    # assert len(trail) == mark
+    mark = len(trail)
+    assert unify(Var(x), cyc, store, trail, occurs_check=True) is False
+    assert len(trail) == mark

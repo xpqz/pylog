@@ -15,6 +15,7 @@ from typing import Any, List, Tuple
 from prolog.ast.terms import Atom, Int, Var, Struct, List as PrologList
 from prolog.unify.store import Store
 from prolog.unify.unify_helpers import union_vars, bind_root_to_term, deref_term
+from prolog.unify.occurs import occurs
 
 
 def unify(t1: Any, t2: Any, store: Store, trail: List, occurs_check: bool = False) -> bool:
@@ -64,14 +65,14 @@ def unify(t1: Any, t2: Any, store: Store, trail: List, occurs_check: bool = Fals
         # Case 2: One is a variable
         elif tag1 == "VAR":
             # val1 is unbound var ID, val2 is the term
-            if occurs_check and _occurs(val1, val2, store):
+            if occurs_check and occurs(val1, val2, store):
                 _undo_and_fail(mark, trail, store)
                 return False
             bind_root_to_term(val1, val2, trail, store)
             
         elif tag2 == "VAR":
             # val2 is unbound var ID, val1 is the term
-            if occurs_check and _occurs(val2, val1, store):
+            if occurs_check and occurs(val2, val1, store):
                 _undo_and_fail(mark, trail, store)
                 return False
             bind_root_to_term(val2, val1, trail, store)
@@ -182,20 +183,3 @@ def _undo_and_fail(mark: int, trail: List, store: Store) -> None:
     undo_to(mark, trail, store)
 
 
-def _occurs(vid: int, term: Any, store: Store) -> bool:
-    """Check if variable occurs in term (stub for now).
-    
-    Args:
-        vid: Variable ID to check for
-        term: Term to search in
-        store: Variable store
-        
-    Returns:
-        True if variable occurs in term, False otherwise
-        
-    This is a stub implementation. The real occurs check will be
-    implemented in the next section.
-    """
-    # Stub: always return False (no occurs check)
-    # This will be implemented properly in section 6
-    return False

@@ -141,21 +141,21 @@
 ### 6. Occurs Check
 
 #### occurs() Function
-- [ ] Write test: var doesn't occur in atom
-- [ ] Write test: var doesn't occur in different var
-- [ ] Write test: var occurs in itself
-- [ ] Write test: var occurs in struct containing it
-- [ ] Write test: var occurs in deeply nested structure
-- [ ] Write test: handles cyclic structures safely
-- [ ] Implement occurs() function
-- [ ] Verify tests pass
+- [x] Write test: var doesn't occur in atom
+- [x] Write test: var doesn't occur in different var
+- [x] Write test: var occurs in itself
+- [x] Write test: var occurs in struct containing it
+- [x] Write test: var occurs in deeply nested structure
+- [x] Write test: handles cyclic structures safely
+- [x] Implement occurs() function
+- [x] Verify tests pass
 
 #### Unification with Occurs Check
-- [ ] Write test: X = f(X) fails when occurs_check=True
-- [ ] Write test: X = f(X) succeeds when occurs_check=False
-- [ ] Write test: X = Y, Y = f(X) fails when occurs_check=True
-- [ ] Integrate occurs check into unify()
-- [ ] Verify tests pass
+- [x] Write test: X = f(X) fails when occurs_check=True
+- [x] Write test: X = f(X) succeeds when occurs_check=False
+- [x] Write test: X = Y, Y = f(X) fails when occurs_check=True
+- [x] Integrate occurs check into unify()
+- [x] Verify tests pass
 
 ### 7. Property Tests
 
