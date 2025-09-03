@@ -43,6 +43,10 @@ class Engine:
         # Configuration
         self.trace = trace
         self._cut_barrier: Optional[int] = None
+        
+        # Builtin registry: maps (name, arity) -> callable
+        self._builtins = {}
+        self._register_builtins()
     
     def reset(self):
         """Reset engine state for reuse."""
@@ -54,6 +58,14 @@ class Engine:
         self._initial_var_cutoff = 0
         self.solutions = []
         self._cut_barrier = None
+    
+    def _register_builtins(self):
+        """Register all builtin predicates."""
+        # Core control flow
+        self._builtins[("!", 0)] = self._builtin_cut
+        self._builtins[("true", 0)] = self._builtin_true
+        self._builtins[("fail", 0)] = self._builtin_fail
+        self._builtins[("call", 1)] = self._builtin_call
     
     def run(self, goals: List[Term], max_solutions: Optional[int] = None) -> List[Dict[str, Any]]:
         """Run a query with given goals.
@@ -416,9 +428,10 @@ class Engine:
         Returns:
             True if it's a builtin, False otherwise.
         """
-        # Check for cut (!)
-        if isinstance(term, Atom) and term.name == "!":
-            return True
+        if isinstance(term, Atom):
+            return (term.name, 0) in self._builtins
+        elif isinstance(term, Struct):
+            return (term.functor, len(term.args)) in self._builtins
         return False
     
     def _execute_builtin(self, term: Term) -> bool:
@@ -430,12 +443,88 @@ class Engine:
         Returns:
             True to continue, False to backtrack.
         """
-        if isinstance(term, Atom) and term.name == "!":
-            # Execute cut: remove choicepoints newer than cut barrier
-            if self._cut_barrier is not None:
-                self.choices.cut_to(self._cut_barrier)
-            # Cut always succeeds
-            return True
+        if isinstance(term, Atom):
+            key = (term.name, 0)
+            args = ()
+        elif isinstance(term, Struct):
+            key = (term.functor, len(term.args))
+            args = term.args
+        else:
+            return False
+        
+        # Dispatch to builtin handler
+        if key in self._builtins:
+            return self._builtins[key](args)
         
         # Unknown builtin
         return False
+    
+    def _builtin_cut(self, args: tuple) -> bool:
+        """Execute cut (!).
+        
+        Args:
+            args: Arguments (should be empty for !).
+            
+        Returns:
+            Always True (cut always succeeds).
+        """
+        # Execute cut: remove choicepoints newer than cut barrier
+        if self._cut_barrier is not None:
+            self.choices.cut_to(self._cut_barrier)
+        # Cut always succeeds
+        return True
+    
+    def _builtin_true(self, args: tuple) -> bool:
+        """Execute true/0.
+        
+        Args:
+            args: Arguments (should be empty).
+            
+        Returns:
+            Always True.
+        """
+        return True
+    
+    def _builtin_fail(self, args: tuple) -> bool:
+        """Execute fail/0.
+        
+        Args:
+            args: Arguments (should be empty).
+            
+        Returns:
+            Always False.
+        """
+        return False
+    
+    def _builtin_call(self, args: tuple) -> bool:
+        """Execute call/1.
+        
+        Args:
+            args: Single argument - the goal to call.
+            
+        Returns:
+            True if goal pushed successfully, False otherwise.
+        """
+        if len(args) != 1:
+            return False
+        
+        goal_term = args[0]
+        
+        # Dereference the goal term to handle variables
+        if isinstance(goal_term, Var):
+            result = self.store.deref(goal_term.id)
+            if result[0] == 'UNBOUND':
+                # Unbound variable - fail
+                return False
+            elif result[0] == 'BOUND':
+                # Bound variable - use the bound term
+                _, _, goal_term = result
+        
+        # Check if the dereferenced term is callable
+        if not isinstance(goal_term, (Atom, Struct)):
+            # Not callable (e.g., Int, List)
+            return False
+        
+        # Push the goal onto the stack
+        self.goals.push(Goal(goal_term))
+        return True
