@@ -48,18 +48,18 @@
 ### 2. Term Representation
 
 #### Basic Terms
-- [ ] Write test for Atom creation and immutability
-- [ ] Write test for Int creation and immutability
-- [ ] Write test for Var creation with id and optional hint
-- [ ] Implement Atom, Int, Var classes
-- [ ] Verify tests pass
+- [x] Write test for Atom creation and immutability
+- [x] Write test for Int creation and immutability
+- [x] Write test for Var creation with id and optional hint
+- [x] Implement Atom, Int, Var classes
+- [x] Verify tests pass
 
 #### Compound Terms
-- [ ] Write test for Struct creation and immutability
-- [ ] Write test for List creation with default empty tail
-- [ ] Write test for List creation with custom tail
-- [ ] Implement Struct, List classes
-- [ ] Verify tests pass
+- [x] Write test for Struct creation and immutability
+- [x] Write test for List creation with default empty tail
+- [x] Write test for List creation with custom tail
+- [x] Implement Struct, List classes
+- [x] Verify tests pass
 
 ### 3. Trail Implementation
 
