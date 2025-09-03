@@ -148,6 +148,7 @@ The project follows a staged development plan where each stage builds on stable 
 3. **No backwards compatibility** - Focus on clean design for new features
 4. **No backup files** - Git handles versioning, no suffixes or backup copies
 5. **Direct communication** - No unnecessary affirmations or compliments
+6. **Frequent commits** - Commit working code frequently, small logical changes
 
 ### When Adding New Features
 1. Keep files small and single-purpose
@@ -172,3 +173,4 @@ The project follows a staged development plan where each stage builds on stable 
 - Bitset representation for domains ≤64 values
 - First-argument indexing for clause selection
 - Trail segmentation per choicepoint for fast undo
+- For each new development stage, create a new git branch first.
