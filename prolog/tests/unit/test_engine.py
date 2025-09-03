@@ -225,24 +225,36 @@ class TestSolutionRecording:
         prog = program()
         engine = Engine(prog)
         
-        # Create chain: X -> Y -> Z -> atom("result")
+        # Create variables
         x_id = engine.store.new_var("X")
         y_id = engine.store.new_var("Y")
         z_id = engine.store.new_var("Z")
         
-        # Build chain
+        # Build union chain
         from prolog.unify.unify_helpers import union_vars, bind_root_to_term
         union_vars(x_id, y_id, engine.trail, engine.store)
         union_vars(y_id, z_id, engine.trail, engine.store)
-        bind_root_to_term(z_id, Atom("result"), engine.trail, engine.store)
+        
+        # Find the actual root after unions (could be any of x, y, or z)
+        root_result = engine.store.deref(x_id)
+        assert root_result[0] == 'UNBOUND'
+        root_id = root_result[1]
+        
+        # Bind the root to result
+        bind_root_to_term(root_id, Atom("result"), engine.trail, engine.store)
+        
+        # Snapshot store state before reify
+        before = [c.ref for c in engine.store.cells]
         
         # Reify should follow chain to get result
         result = engine._reify_var(x_id)
-        assert result == Atom("result")
         
-        # No side effects (no compression)
-        # Check by looking at store - X should still point to Y, not directly to Z
-        assert engine.store.cells[x_id].ref != z_id
+        # Check no side effects (no compression)
+        after = [c.ref for c in engine.store.cells]
+        assert before == after, "reify_var should not modify store"
+        
+        # Check result is correct
+        assert result == Atom("result")
     
     def test_solution_format_stable(self):
         """Test solution format is stable (e.g., Var(vid, hint) or _G123)."""
