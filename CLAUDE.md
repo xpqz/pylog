@@ -174,3 +174,4 @@ The project follows a staged development plan where each stage builds on stable 
 - First-argument indexing for clause selection
 - Trail segmentation per choicepoint for fast undo
 - For each new development stage, create a new git branch first.
+- We practice TDD: write tests first that demonstrate the desired behaviour, show that the tests fail, and then progress the implementation until the tests succeed. NEVER tweak a test to "fit" the behaviour, unless the test is demonstrably broken.
