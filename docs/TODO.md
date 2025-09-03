@@ -64,26 +64,26 @@
 ### 3. Trail Implementation
 
 #### Basic Trail Operations
-- [ ] Write test: push adds entry to trail
-- [ ] Write test: mark returns current position
-- [ ] Write test: clear empties trail
-- [ ] Implement Trail class with push, mark, clear
-- [ ] Verify tests pass
+- [x] Write test: push adds entry to trail
+- [x] Write test: mark returns current position
+- [x] Write test: clear empties trail
+- [x] Implement Trail class with push, mark, clear
+- [x] Verify tests pass
 
 #### Trail Undo
-- [ ] Write test: undo_to with 'parent' entry restores ref
-- [ ] Write test: undo_to with 'bind' entry restores cell
-- [ ] Write test: undo_to with 'rank' entry restores rank
-- [ ] Write test: undo_to removes entries back to mark
-- [ ] Implement undo_to function
-- [ ] Verify tests pass
+- [x] Write test: undo_to with 'parent' entry restores ref
+- [x] Write test: undo_to with 'bind' entry restores cell
+- [x] Write test: undo_to with 'rank' entry restores rank
+- [x] Write test: undo_to removes entries back to mark
+- [x] Implement undo_to function
+- [x] Verify tests pass
 
 #### Trail Context Manager
-- [ ] Write test: trail_guard yields mark
-- [ ] Write test: trail_guard calls undo_to on exception
-- [ ] Write test: trail_guard doesn't undo on success
-- [ ] Implement trail_guard context manager
-- [ ] Verify tests pass
+- [x] Write test: trail_guard yields mark
+- [x] Write test: trail_guard calls undo_to on exception
+- [x] Write test: trail_guard doesn't undo on success
+- [x] Implement trail_guard context manager
+- [x] Verify tests pass
 
 ### 4. Unification Helpers
 
