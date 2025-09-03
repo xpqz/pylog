@@ -10,30 +10,8 @@ from prolog.engine.goals import Goal, GoalStack
 from prolog.engine.choicepoint import Choicepoint, ChoiceStack
 from prolog.unify.store import Store
 
-# Test helpers from test_clauses.py
-def mk_fact(functor: str, *args) -> Clause:
-    """Create a fact (clause with no body)."""
-    if args:
-        head = Struct(functor, args)
-    else:
-        head = Atom(functor)
-    return Clause(head=head, body=())
-
-
-def mk_rule(functor: str, head_args: tuple, *body_terms) -> Clause:
-    """Create a rule (clause with body)."""
-    head = Struct(functor, head_args) if head_args else Atom(functor)
-    return Clause(head=head, body=body_terms)
-
-
-def program(*clauses) -> Program:
-    """Create a Program from clauses."""
-    return Program(clauses=clauses)
-
-
-def run_query(engine: Engine, *goals) -> List[Dict]:
-    """Helper to run a query on the engine."""
-    return engine.run(list(goals))
+# Test helpers
+from prolog.tests.helpers import mk_fact, mk_rule, program, run_query
 
 
 class TestEngineInitialization:

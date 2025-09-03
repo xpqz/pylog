@@ -6,29 +6,11 @@ validate cut behavior once implemented.
 """
 
 from prolog.ast.terms import Atom, Var, Struct
-from prolog.ast.clauses import Clause, Program
 from prolog.engine.engine import Engine
 
 
 # Test helpers
-def mk_fact(functor: str, *args) -> Clause:
-    """Create a fact (clause with no body)."""
-    if args:
-        head = Struct(functor, args)
-    else:
-        head = Atom(functor)
-    return Clause(head=head, body=())
-
-
-def mk_rule(functor: str, head_args: tuple, *body_terms) -> Clause:
-    """Create a rule (clause with body)."""
-    head = Struct(functor, head_args) if head_args else Atom(functor)
-    return Clause(head=head, body=body_terms)
-
-
-def program(*clauses) -> Program:
-    """Create a Program from clauses."""
-    return Program(clauses=clauses)
+from prolog.tests.helpers import mk_fact, mk_rule, program
 
 
 class TestCutBarrierTracking:

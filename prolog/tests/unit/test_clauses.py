@@ -13,37 +13,7 @@ from prolog.ast.clauses import Clause, Program, ClauseCursor
 # Test Helpers
 # =============================================================================
 
-def mk_fact(functor: str, *args) -> Clause:
-    """Create a fact (clause with no body)."""
-    if args:
-        head = Struct(functor, args)
-    else:
-        # 0-arity functor represented as Atom
-        head = Atom(functor)
-    return Clause(head=head, body=())
-
-
-def mk_rule(functor: str, head_args: Tuple, *body_terms) -> Clause:
-    """Create a rule (clause with body)."""
-    head = Struct(functor, head_args) if head_args else Atom(functor)
-    return Clause(head=head, body=body_terms)
-
-
-def program(*clauses) -> Program:
-    """Create a Program from clauses."""
-    return Program(clauses=clauses)
-
-
-def assert_no_recursion():
-    """Verify we're not approaching Python recursion limit."""
-    frame = sys._getframe()
-    depth = 0
-    while frame is not None:
-        depth += 1
-        frame = frame.f_back
-    limit = sys.getrecursionlimit()
-    # Ensure we're nowhere near the limit (using less than 10%)
-    assert depth < limit * 0.1, f"Recursion depth {depth} approaching limit {limit}"
+from prolog.tests.helpers import mk_fact, mk_rule, program
 
 
 # =============================================================================
