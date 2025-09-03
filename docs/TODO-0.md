@@ -1,92 +1,96 @@
 # TODO: Stage 0 (Core Shapes & Explicit Stacks)
 
-## Phase 1: Basic Structures
+## Phase 1: Basic Structures ✅
 
-### 1. Test Helpers and Fixtures
-- [ ] Write helper: mk_fact(functor, *args) for creating facts
-- [ ] Write helper: mk_rule(functor, head_args, *body_terms) for rules
-- [ ] Write helper: program(*clauses) for creating Programs
-- [ ] Write helper: run_query(engine, *goals) for running queries
-- [ ] Write helper: assert_no_recursion() to verify no Python recursion
-- [ ] Verify helpers work correctly
+### 1. Test Helpers and Fixtures ✅
+- [x] Write helper: mk_fact(functor, *args) for creating facts
+- [x] Write helper: mk_rule(functor, head_args, *body_terms) for rules
+- [x] Write helper: program(*clauses) for creating Programs
+- [ ] Write helper: run_query(engine, *goals) for running queries (Phase 2)
+- [x] Write helper: assert_no_recursion() to verify no Python recursion
+- [x] Verify helpers work correctly
 
-### 2. Clause and Program Representation
+### 2. Clause and Program Representation ✅
 
-#### Clause Dataclass
-- [ ] Write test: Clause with head and empty body (fact)
-- [ ] Write test: Clause with head and body (rule)
-- [ ] Write test: Clause immutability (frozen, tuples)
-- [ ] Write test: Atom heads supported as 0-arity functors
-- [ ] Implement Clause dataclass (frozen=True)
-- [ ] Verify tests pass
+#### Clause Dataclass ✅
+- [x] Write test: Clause with head and empty body (fact)
+- [x] Write test: Clause with head and body (rule)
+- [x] Write test: Clause immutability (frozen, tuples)
+- [x] Write test: Atom heads supported as 0-arity functors
+- [x] Implement Clause dataclass (frozen=True)
+- [x] Verify tests pass
 
-#### Program Class
-- [ ] Write test: Program stores clauses in order
-- [ ] Write test: clauses_for returns matching functor/arity
-- [ ] Write test: clauses_for discriminates by arity (f/1 vs f/2)
-- [ ] Write test: clauses_for returns empty list for no matches
-- [ ] Write test: clauses_for preserves order
-- [ ] Write test: Repeated calls return same order & indices
-- [ ] Write test: Program clauses immutable (tuple)
-- [ ] Implement Program class with clauses_for method
-- [ ] Consider caching _index[(functor, arity)] = [clause_idx,...]
-- [ ] Verify tests pass
+#### Program Class ✅
+- [x] Write test: Program stores clauses in order
+- [x] Write test: clauses_for returns matching functor/arity
+- [x] Write test: clauses_for discriminates by arity (f/1 vs f/2)
+- [x] Write test: clauses_for returns empty list for no matches
+- [x] Write test: clauses_for preserves order
+- [x] Write test: Repeated calls return same order & indices
+- [x] Write test: Program clauses immutable (tuple)
+- [x] Implement Program class with clauses_for method
+- [x] Consider caching _index[(functor, arity)] = [clause_idx,...]
+- [x] Verify tests pass
 
-#### ClauseCursor
-- [ ] Write test: cursor initialization with matches list
-- [ ] Write test: has_more returns true when clauses available
-- [ ] Write test: has_more returns false when exhausted
-- [ ] Write test: peek returns next without advancing
-- [ ] Write test: peek after take reflects next element
-- [ ] Write test: peek/take when empty returns None
-- [ ] Write test: take returns next and advances exactly once
-- [ ] Write test: clone preserves position
-- [ ] Write test: clone isolation (mutations don't affect original)
-- [ ] Write test: exhausts exactly matches list (no duplicates/skips)
-- [ ] Implement ClauseCursor with {matches: list[int], pos: int}
-- [ ] Implement has_more/peek/take/clone methods
-- [ ] Verify tests pass
+#### ClauseCursor ✅
+- [x] Write test: cursor initialization with matches list
+- [x] Write test: has_more returns true when clauses available
+- [x] Write test: has_more returns false when exhausted
+- [x] Write test: peek returns next without advancing
+- [x] Write test: peek after take reflects next element
+- [x] Write test: peek/take when empty returns None
+- [x] Write test: take returns next and advances exactly once
+- [x] Write test: clone preserves position
+- [x] Write test: clone isolation (mutations don't affect original)
+- [x] Write test: exhausts exactly matches list (no duplicates/skips)
+- [x] Implement ClauseCursor with {matches: list[int], pos: int}
+- [x] Implement has_more/peek/take/clone methods
+- [x] Verify tests pass
 
-### 3. Goal Stack Implementation
+### 3. Goal Stack Implementation ✅
 
-#### Goal Dataclass
-- [ ] Write test: Goal creation with term
-- [ ] Write test: Goal immutability (frozen=True)
-- [ ] Implement Goal dataclass (frozen=True)
-- [ ] Verify tests pass
+#### Goal Dataclass ✅
+- [x] Write test: Goal creation with term
+- [x] Write test: Goal immutability (frozen=True)
+- [x] Implement Goal dataclass (frozen=True)
+- [x] Verify tests pass
 
-#### GoalStack Class
-- [ ] Write test: push adds goal to stack
-- [ ] Write test: pop returns top goal (LIFO)
-- [ ] Write test: pop returns None when empty
-- [ ] Write test: push_body adds goals in reverse order (left-to-right execution)
-- [ ] Write test: snapshot creates immutable copy (tuple)
-- [ ] Write test: snapshot unaffected by future push/pop
-- [ ] Write test: restore from snapshot yields identical pop order
-- [ ] Implement GoalStack class with _stack: List[Goal]
-- [ ] Consider GoalStack(snapshot=None) constructor for clean restore
-- [ ] Verify tests pass
+#### GoalStack Class ✅
+- [x] Write test: push adds goal to stack
+- [x] Write test: pop returns top goal (LIFO)
+- [x] Write test: pop returns None when empty
+- [x] Write test: push_body adds goals in reverse order (left-to-right execution)
+- [x] Write test: snapshot creates immutable copy (tuple)
+- [x] Write test: snapshot unaffected by future push/pop
+- [x] Write test: restore from snapshot yields identical pop order
+- [x] Write test: stack supports len()
+- [x] Write test: peek returns top without removing
+- [x] Write test: GoalStack constructor copies snapshot
+- [x] Implement GoalStack class with _stack: List[Goal]
+- [x] Consider GoalStack(snapshot=None) constructor for clean restore
+- [x] Verify tests pass
 
-### 4. Choicepoint System
+### 4. Choicepoint System ✅
 
-#### Choicepoint Dataclass
-- [ ] Write test: Choicepoint creation with all fields
-- [ ] Write test: Choicepoint stores immutable goal snapshot (tuple)
-- [ ] Write test: Pre-goal snapshot semantics (goal still on top)
-- [ ] Implement Choicepoint dataclass (frozen=True)
-- [ ] Verify tests pass
+#### Choicepoint Dataclass ✅
+- [x] Write test: Choicepoint creation with all fields
+- [x] Write test: Choicepoint stores immutable goal snapshot (tuple)
+- [x] Write test: Pre-goal snapshot semantics (goal still on top)
+- [x] Implement Choicepoint dataclass (frozen=True)
+- [x] Verify tests pass
 
-#### ChoiceStack Class
-- [ ] Write test: push assigns unique sequential ID
-- [ ] Write test: pop returns most recent choicepoint (LIFO)
-- [ ] Write test: pop returns None when empty
-- [ ] Write test: cut_to removes exactly choicepoints newer than barrier
-- [ ] Write test: cut_to preserves choicepoints at/before barrier
-- [ ] Write test: cut_to with None barrier is no-op
-- [ ] Write test: find locates choicepoint by ID
-- [ ] Write test: top_id returns current top ID or None
-- [ ] Implement ChoiceStack with _stack and _next_id
-- [ ] Verify tests pass
+#### ChoiceStack Class ✅
+- [x] Write test: push returns unique sequential ID (not mutating CP)
+- [x] Write test: pop returns most recent choicepoint (LIFO)
+- [x] Write test: pop returns None when empty
+- [x] Write test: cut_to removes exactly choicepoints newer than barrier
+- [x] Write test: cut_to preserves choicepoints at/before barrier
+- [x] Write test: cut_to with None barrier is no-op
+- [x] Write test: find locates choicepoint by ID
+- [x] Write test: top_id returns current top ID or None
+- [x] Write test: current_id returns next ID to be assigned
+- [x] Implement ChoiceStack with _stack and _next_id
+- [x] Verify tests pass
 
 ## Phase 2: Core Engine Loop
 
