@@ -22,11 +22,11 @@ def test_trail_push_adds_entry():
     
     trail.push(("parent", 1, 2))
     assert len(trail) == 1
-    assert trail.entries[0] == ("parent", 1, 2)
+    assert trail[0] == ("parent", 1, 2)
     
     trail.push(("bind", 3, Cell("unbound", 3, None)))
     assert len(trail) == 2
-    assert trail.entries[1][0] == "bind"
+    assert trail[1][0] == "bind"
 
 
 def test_trail_append_alias():
@@ -35,7 +35,7 @@ def test_trail_append_alias():
     
     trail.append(("parent", 5, 6))
     assert len(trail) == 1
-    assert trail.entries[0] == ("parent", 5, 6)
+    assert trail[0] == ("parent", 5, 6)
 
 
 def test_trail_mark_returns_position():
@@ -67,7 +67,9 @@ def test_trail_clear_empties():
     
     trail.clear()
     assert len(trail) == 0
-    assert trail.entries == []
+    # Verify it's truly empty by checking we can't index
+    with pytest.raises(IndexError):
+        _ = trail[0]
 
 
 def test_trail_indexing():
@@ -355,3 +357,153 @@ def test_trail_guard_reraises_exception():
     with pytest.raises(CustomError, match="Original"):
         with trail_guard(trail, store):
             raise CustomError("Original error")
+
+
+# Additional robustness tests
+def test_undo_to_idempotent():
+    """Test that undoing twice to same mark is a no-op."""
+    store = Store()
+    trail = []
+    
+    v = store.new_var()
+    mark = len(trail)
+    
+    trail.append(("parent", v, v))
+    store.cells[v].ref = 42
+    
+    # First undo
+    undo_to(mark, trail, store)
+    assert store.cells[v].ref == v
+    
+    # Second undo should be no-op
+    undo_to(mark, trail, store)
+    assert store.cells[v].ref == v
+    assert len(trail) == mark
+
+
+def test_trail_guard_nested_marks():
+    """Test nested trail_guard contexts roll back only their segment."""
+    store = Store()
+    trail = []
+    
+    v = store.new_var()
+    
+    with trail_guard(trail, store):
+        trail.append(("parent", v, v))
+        store.cells[v].ref = 111
+        
+        try:
+            with trail_guard(trail, store):
+                trail.append(("rank", v, store.cells[v].rank))
+                store.cells[v].rank = 9
+                raise RuntimeError("inner exception")
+        except RuntimeError:
+            pass
+        
+        # Inner undone, outer change remains
+        assert store.cells[v].ref == 111
+        assert store.cells[v].rank == 0
+    
+    # After exiting outer guard, changes persist
+    assert store.cells[v].ref == 111
+
+
+def test_bind_trails_full_cell_snapshot_not_reference():
+    """Test that bind trail should store a snapshot, not a live reference.
+    
+    This test documents that the current implementation stores references,
+    which means callers must pass copies when trailing bind entries.
+    """
+    store = Store()
+    trail = []
+    
+    v = store.new_var()
+    # When trailing a bind, we should pass a copy
+    old_cell = store.cells[v]
+    # Create a proper snapshot
+    old_snapshot = Cell(tag=old_cell.tag, ref=old_cell.ref, 
+                       term=old_cell.term, rank=old_cell.rank)
+    mark = len(trail)
+    
+    # Push snapshot (not the live cell)
+    trail.append(("bind", v, old_snapshot))
+    
+    # Mutate the store
+    store.cells[v] = Cell(tag="bound", ref=v, term="a", rank=7)
+    
+    # Even if we mutate old_cell (the original reference), 
+    # old_snapshot remains unchanged
+    old_cell.ref = -999
+    old_cell.tag = "bound"
+    
+    # Undo should restore from snapshot
+    undo_to(mark, trail, store)
+    
+    # Must restore original unbound state
+    assert store.cells[v].tag == "unbound"
+    assert store.cells[v].ref == v
+    assert store.cells[v].term is None
+    assert store.cells[v].rank == 0
+
+
+def test_undo_to_invalid_mark_behavior():
+    """Test undo_to behavior with invalid marks."""
+    store = Store()
+    trail = []
+    
+    # Undoing to current position (0) should be no-op
+    undo_to(0, trail, store)
+    assert len(trail) == 0
+    
+    # Undoing to mark > len(trail) should be no-op or safe
+    # (Implementation choice: we'll make it a no-op)
+    undo_to(10, trail, store)
+    assert len(trail) == 0
+    
+    # Add some entries
+    v = store.new_var()
+    trail.append(("parent", v, v))
+    store.cells[v].ref = 42
+    
+    # Undo to mark beyond current length (should be no-op)
+    undo_to(10, trail, store)
+    assert len(trail) == 1  # No change
+    assert store.cells[v].ref == 42  # No change
+
+
+def test_undo_mixed_entries_lifo():
+    """Test that undo processes mixed entry types in strict LIFO order."""
+    store = Store()
+    trail = []
+    
+    v = store.new_var()
+    w = store.new_var()
+    mark = len(trail)
+    
+    # 1) parent on v
+    trail.append(("parent", v, v))
+    store.cells[v].ref = w
+    
+    # 2) rank on v
+    trail.append(("rank", v, 0))
+    store.cells[v].rank = 3
+    
+    # 3) bind on w
+    old_w = Cell("unbound", w, None, 0)
+    trail.append(("bind", w, old_w))
+    store.cells[w] = Cell("bound", w, "term", 0)
+    
+    # Verify changes took effect
+    assert store.cells[v].ref == w
+    assert store.cells[v].rank == 3
+    assert store.cells[w].tag == "bound"
+    
+    # Undo in LIFO order
+    undo_to(mark, trail, store)
+    
+    # All should be restored
+    assert store.cells[v].ref == v
+    assert store.cells[v].rank == 0
+    assert store.cells[w].tag == "unbound"
+    assert store.cells[w].term is None
+    assert len(trail) == mark
