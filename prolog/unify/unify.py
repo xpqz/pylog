@@ -1,0 +1,201 @@
+"""Main unification algorithm.
+
+Unification is the pattern-matching heart of Prolog. It attempts to make
+two terms equal by binding variables. The algorithm is iterative (using
+an explicit stack) to avoid Python recursion limits.
+
+Key invariants:
+- All mutations go through the trail for backtracking
+- Failed unification undoes all changes made during the attempt
+- Unification is symmetric: unify(A, B) == unify(B, A)
+"""
+
+from typing import Any, List, Tuple
+
+from prolog.ast.terms import Atom, Int, Var, Struct, List as PrologList
+from prolog.unify.store import Store
+from prolog.unify.unify_helpers import union_vars, bind_root_to_term, deref_term
+
+
+def unify(t1: Any, t2: Any, trail: List, store: Store, occurs_check: bool = False) -> bool:
+    """Unify two terms, making them equal by binding variables.
+    
+    Args:
+        t1: First term
+        t2: Second term
+        trail: Trail for recording changes
+        store: Variable store
+        occurs_check: Whether to perform occurs check (default False)
+        
+    Returns:
+        True if unification succeeds, False otherwise
+        
+    The algorithm uses an explicit stack to avoid recursion. Each stack
+    entry is a pair of terms to unify. The algorithm processes pairs
+    iteratively until the stack is empty (success) or a pair fails.
+    
+    On failure, all changes made during this unification attempt are
+    undone via the trail.
+    """
+    # Mark trail position for potential undo
+    mark = len(trail)
+    
+    # Stack of term pairs to unify
+    stack = [(t1, t2)]
+    
+    while stack:
+        term1, term2 = stack.pop()
+        
+        # Dereference both terms
+        tag1, val1 = deref_term(term1, store)
+        tag2, val2 = deref_term(term2, store)
+        
+        # Case 1: Both are variables
+        if tag1 == "VAR" and tag2 == "VAR":
+            if val1 != val2:  # Different variables
+                try:
+                    union_vars(val1, val2, trail, store)
+                except ValueError:
+                    # One is bound (shouldn't happen after deref, but be safe)
+                    _undo_and_fail(mark, trail, store)
+                    return False
+            # Same variable: no-op, continue
+            
+        # Case 2: One is a variable
+        elif tag1 == "VAR":
+            # val1 is unbound var ID, val2 is the term
+            if occurs_check and _occurs(val1, val2, store):
+                _undo_and_fail(mark, trail, store)
+                return False
+            bind_root_to_term(val1, val2, trail, store)
+            
+        elif tag2 == "VAR":
+            # val2 is unbound var ID, val1 is the term
+            if occurs_check and _occurs(val2, val1, store):
+                _undo_and_fail(mark, trail, store)
+                return False
+            bind_root_to_term(val2, val1, trail, store)
+            
+        # Case 3: Both are non-variables
+        else:
+            # Now val1 and val2 are the actual terms
+            if not _unify_nonvars(val1, val2, stack):
+                _undo_and_fail(mark, trail, store)
+                return False
+    
+    # Stack empty: unification succeeded
+    return True
+
+
+def _unify_nonvars(t1: Any, t2: Any, stack: List[Tuple[Any, Any]]) -> bool:
+    """Unify two non-variable terms.
+    
+    Args:
+        t1: First non-variable term
+        t2: Second non-variable term
+        stack: Stack to push subterm pairs onto
+        
+    Returns:
+        True if terms can potentially unify, False if definitely incompatible
+        
+    This function handles the structural cases: atoms, integers, structs, lists.
+    For compound terms, it pushes subterm pairs onto the stack for later processing.
+    """
+    # Atoms
+    if isinstance(t1, Atom) and isinstance(t2, Atom):
+        return t1.name == t2.name
+    
+    # Integers
+    if isinstance(t1, Int) and isinstance(t2, Int):
+        return t1.value == t2.value
+    
+    # Structs
+    if isinstance(t1, Struct) and isinstance(t2, Struct):
+        if t1.functor != t2.functor:
+            return False
+        if len(t1.args) != len(t2.args):
+            return False
+        # Push argument pairs onto stack
+        for a1, a2 in zip(t1.args, t2.args):
+            stack.append((a1, a2))
+        return True
+    
+    # Lists
+    if isinstance(t1, PrologList) and isinstance(t2, PrologList):
+        return _unify_lists(t1, t2, stack)
+    
+    # Type mismatch
+    return False
+
+
+def _unify_lists(l1: PrologList, l2: PrologList, stack: List[Tuple[Any, Any]]) -> bool:
+    """Unify two lists, handling tails properly.
+    
+    Args:
+        l1: First list
+        l2: Second list
+        stack: Stack to push element pairs onto
+        
+    Returns:
+        True if lists can potentially unify, False otherwise
+    
+    Prolog lists can have custom tails (e.g., [H|T]). The algorithm:
+    1. Match elements from the front as long as both have elements
+    2. When one runs out of elements, unify remaining with the other's tail
+    """
+    items1 = list(l1.items)
+    items2 = list(l2.items)
+    tail1 = l1.tail
+    tail2 = l2.tail
+    
+    # Match items from the front
+    while items1 and items2:
+        stack.append((items1.pop(0), items2.pop(0)))
+    
+    # Now at least one items list is empty
+    if items1:
+        # l1 has remaining items, l2 is exhausted
+        # Unify remaining items1 + tail1 with tail2
+        remaining = PrologList(tuple(items1), tail=tail1)
+        stack.append((remaining, tail2))
+    elif items2:
+        # l2 has remaining items, l1 is exhausted
+        # Unify tail1 with remaining items2 + tail2
+        remaining = PrologList(tuple(items2), tail=tail2)
+        stack.append((tail1, remaining))
+    else:
+        # Both exhausted, unify tails
+        stack.append((tail1, tail2))
+    
+    return True
+
+
+def _undo_and_fail(mark: int, trail: List, store: Store) -> None:
+    """Undo trail entries back to mark on unification failure.
+    
+    Args:
+        mark: Trail position to restore to
+        trail: Trail with entries to undo
+        store: Store to restore
+    """
+    from prolog.unify.trail import undo_to
+    undo_to(mark, trail, store)
+
+
+def _occurs(vid: int, term: Any, store: Store) -> bool:
+    """Check if variable occurs in term (stub for now).
+    
+    Args:
+        vid: Variable ID to check for
+        term: Term to search in
+        store: Variable store
+        
+    Returns:
+        True if variable occurs in term, False otherwise
+        
+    This is a stub implementation. The real occurs check will be
+    implemented in the next section.
+    """
+    # Stub: always return False (no occurs check)
+    # This will be implemented properly in section 6
+    return False

@@ -114,29 +114,29 @@
 ### 5. Basic Unification (without occurs check)
 
 #### Atomic Unification
-- [ ] Write test: unify equal atoms succeeds
-- [ ] Write test: unify different atoms fails
-- [ ] Write test: unify equal ints succeeds
-- [ ] Write test: unify different ints fails
-- [ ] Implement atom/int cases in unify()
-- [ ] Verify tests pass
+- [x] Write test: unify equal atoms succeeds
+- [x] Write test: unify different atoms fails
+- [x] Write test: unify equal ints succeeds
+- [x] Write test: unify different ints fails
+- [x] Implement atom/int cases in unify()
+- [x] Verify tests pass
 
 #### Variable Unification
-- [ ] Write test: unify var with atom binds var
-- [ ] Write test: unify var with struct binds var
-- [ ] Write test: unify two vars creates union
-- [ ] Write test: unify var with itself succeeds (no-op)
-- [ ] Implement variable cases in unify()
-- [ ] Verify tests pass
+- [x] Write test: unify var with atom binds var
+- [x] Write test: unify var with struct binds var
+- [x] Write test: unify two vars creates union
+- [x] Write test: unify var with itself succeeds (no-op)
+- [x] Implement variable cases in unify()
+- [x] Verify tests pass
 
 #### Structural Unification
-- [ ] Write test: structs with different functors fail
-- [ ] Write test: structs with different arities fail
-- [ ] Write test: structs with same shape unify args
-- [ ] Write test: nested structs unify recursively
-- [ ] Write test: lists unify items and tails
-- [ ] Implement structural cases in unify()
-- [ ] Verify tests pass
+- [x] Write test: structs with different functors fail
+- [x] Write test: structs with different arities fail
+- [x] Write test: structs with same shape unify args
+- [x] Write test: nested structs unify recursively
+- [x] Write test: lists unify items and tails
+- [x] Implement structural cases in unify()
+- [x] Verify tests pass
 
 ### 6. Occurs Check
 
