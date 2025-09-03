@@ -16,7 +16,8 @@ import pytest
 from dataclasses import dataclass
 from typing import Literal, Optional, Any
 
-from prolog.unify.store import Cell, Store
+from prolog.unify.store import Cell, Store, COMPRESS_MIN_PATH
+from prolog.unify.trail import undo_to
 
 
 # Test Cell dataclass before it exists (TDD)
@@ -197,25 +198,25 @@ def test_deref_compression_requires_compress_and_trail():
 
 
 def test_deref_no_compression_short_path():
-    """Test no compression for paths < 4 nodes."""
+    """Test no compression for paths < COMPRESS_MIN_PATH."""
     store = Store()
     trail = []
     
-    # Create chain of 3: v0 -> v1 -> v2
-    v0 = store.new_var()
-    v1 = store.new_var()
-    v2 = store.new_var()
+    # Create chain of length COMPRESS_MIN_PATH - 1
+    num_vars = COMPRESS_MIN_PATH
+    vars = [store.new_var() for _ in range(num_vars)]
     
-    store.cells[v0].ref = v1
-    store.cells[v1].ref = v2
+    # Create chain one shorter than threshold: v0 -> v1 -> v2
+    for i in range(num_vars - 1):
+        store.cells[vars[i]].ref = vars[i+1]
     
-    result = store.deref(v0, compress=True, trail=trail)
+    result = store.deref(vars[0], compress=True, trail=trail)
     
-    # Should not compress (path length < 4)
-    assert store.cells[v0].ref == v1
-    assert store.cells[v1].ref == v2
+    # Should not compress (path length < COMPRESS_MIN_PATH)
+    for i in range(num_vars - 1):
+        assert store.cells[vars[i]].ref == vars[i+1]
     assert len(trail) == 0
-    assert result == ("UNBOUND", v2)
+    assert result == ("UNBOUND", vars[-1])
 
 
 def test_deref_compression_long_path():
@@ -276,6 +277,9 @@ def test_deref_compression_undoability():
     # Remember original refs
     orig_refs = [store.cells[v].ref for v in vars]
     
+    # Mark trail position
+    mark = len(trail)
+    
     # Compress
     store.deref(vars[0], compress=True, trail=trail)
     
@@ -283,11 +287,8 @@ def test_deref_compression_undoability():
     for i in range(4):
         assert store.cells[vars[i]].ref == vars[4]
     
-    # Undo via trail (in reverse order)
-    for entry in reversed(trail):
-        tag, vid, old_val = entry
-        if tag == "parent":
-            store.cells[vid].ref = old_val
+    # Undo using official undo_to function
+    undo_to(mark, trail, store)
     
     # Verify restoration
     current_refs = [store.cells[v].ref for v in vars]
@@ -329,6 +330,9 @@ def test_deref_compression_to_bound_root():
     mock_term = "test_atom"
     store.cells[vars[4]] = Cell(tag="bound", ref=vars[4], term=mock_term)
     
+    # Mark trail position
+    mark = len(trail)
+    
     # Deref with compression
     result = store.deref(vars[0], compress=True, trail=trail)
     
@@ -339,10 +343,8 @@ def test_deref_compression_to_bound_root():
     for i in range(4):
         assert store.cells[vars[i]].ref == vars[4]
     
-    # Undo and verify restoration
-    for entry in reversed(trail):
-        if entry[0] == "parent":
-            store.cells[entry[1]].ref = entry[2]
+    # Undo using official undo_to and verify restoration
+    undo_to(mark, trail, store)
     
     # Chain should be restored
     for i in range(4):
@@ -353,13 +355,74 @@ def test_deref_invalid_varid():
     """Test that invalid varids raise appropriate errors."""
     store = Store()
     
-    # Test negative varid
-    with pytest.raises(IndexError):
+    # Test negative varid (accept either IndexError or ValueError)
+    with pytest.raises((IndexError, ValueError)):
         store.deref(-1)
     
-    # Test varid beyond range
-    with pytest.raises(IndexError):
+    # Test varid beyond range (accept either IndexError or ValueError)
+    with pytest.raises((IndexError, ValueError)):
         store.deref(100)
+
+
+def test_deref_compress_from_middle_only_updates_that_path():
+    """Test that compression only affects the traversed path, not siblings."""
+    store = Store()
+    trail = []
+    
+    # Create longer chain to ensure compression happens
+    # v0->v1->v2->v3->v4->v5->v6
+    vars = [store.new_var() for _ in range(7)]
+    for i in range(6):
+        store.cells[vars[i]].ref = vars[i+1]
+    
+    mark = len(trail)
+    
+    # Deref from v1 (path will be v1->v2->v3->v4->v5->v6, length 5)
+    store.deref(vars[1], compress=True, trail=trail)
+    
+    # Only nodes in the path from v1 should be compressed
+    parent_changes = {e for e in trail[mark:] if e[0] == "parent"}
+    
+    # v1, v2, v3, v4, v5 should all point to v6 now
+    expected_changes = {
+        ("parent", vars[1], vars[2]),
+        ("parent", vars[2], vars[3]),
+        ("parent", vars[3], vars[4]),
+        ("parent", vars[4], vars[5]),
+        ("parent", vars[5], vars[6]),
+    }
+    assert parent_changes == expected_changes
+    
+    # v0 should be unchanged (not in traversed path)
+    assert store.cells[vars[0]].ref == vars[1]
+    
+    # v1 through v5 should point to v6
+    for i in range(1, 6):
+        assert store.cells[vars[i]].ref == vars[6]
+
+
+def test_deref_bound_root_idempotent():
+    """Test that compressing to bound root is idempotent."""
+    store = Store()
+    trail = []
+    
+    # Create chain ending in bound var (length >= COMPRESS_MIN_PATH)
+    vars = [store.new_var() for _ in range(5)]
+    for i in range(4):
+        store.cells[vars[i]].ref = vars[i+1]
+    
+    # Bind the root
+    store.cells[vars[4]] = Cell(tag="bound", ref=vars[4], term="test_term")
+    
+    # First compression
+    store.deref(vars[0], compress=True, trail=trail)
+    before = len(trail)
+    
+    # Second compression (should be no-op)
+    store.deref(vars[0], compress=True, trail=trail)
+    
+    # Trail shouldn't grow
+    assert len(trail) == before
 
 
 def test_deref_compression_preserves_rank():

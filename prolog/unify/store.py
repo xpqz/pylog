@@ -4,6 +4,10 @@ from dataclasses import dataclass
 from typing import Literal, Optional, Any, List, Tuple
 
 
+# Minimum path length for compression
+COMPRESS_MIN_PATH = 4
+
+
 @dataclass
 class Cell:
     """A cell in the store representing a variable's state."""
@@ -67,7 +71,7 @@ class Store:
         # Path compression if requested
         # Path length check: we have len(path) nodes that need compression
         # For a chain v0->v1->v2->v3->v4, path = [v0, v1, v2, v3]
-        if compress and trail is not None and len(path) >= 4:
+        if compress and trail is not None and len(path) >= COMPRESS_MIN_PATH:
             # Compress all nodes in path to point directly to root
             root_vid = root[1]
             for p in path:
