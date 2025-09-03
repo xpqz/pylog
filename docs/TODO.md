@@ -160,37 +160,37 @@
 ### 7. Property Tests
 
 #### Symmetry
-- [ ] Write property test: unify(A, B) == unify(B, A)
-- [ ] Generate random terms of various types
-- [ ] Run 1000+ cases
-- [ ] Verify property holds
+- [x] Write property test: unify(A, B) == unify(B, A)
+- [x] Generate random terms of various types
+- [x] Run 1000+ cases
+- [x] Verify property holds
 
 #### Idempotence  
-- [ ] Write property test: second unify produces no trail entries
-- [ ] Test on successful unifications
-- [ ] Verify property holds
+- [x] Write property test: second unify produces no trail entries
+- [x] Test on successful unifications
+- [x] Verify property holds
 
 #### Trail Invertibility
-- [ ] Write property test: undo_to(mark) restores exact state
-- [ ] Test with random unification sequences
-- [ ] Verify property holds
+- [x] Write property test: undo_to(mark) restores exact state
+- [x] Test with random unification sequences
+- [x] Verify property holds
 
 ### 8. Stress Tests
 
 #### Large Structures
-- [ ] Write test: 10000-element list unification
-- [ ] Write test: 1000-level nested structures
-- [ ] Verify no stack overflow (iterative)
+- [x] Write test: 10000-element list unification
+- [x] Write test: 1000-level nested structures
+- [x] Verify no stack overflow (iterative)
 
 #### Many Variables
-- [ ] Write test: create 100000 variables
-- [ ] Write test: long union chains
-- [ ] Verify performance acceptable
+- [x] Write test: create 100000 variables
+- [x] Write test: long union chains
+- [x] Verify performance acceptable
 
 ## Completion Criteria
 
-- [ ] All unit tests pass
-- [ ] All property tests pass with 1000+ cases
-- [ ] No Python recursion in implementation
-- [ ] Stress tests complete without errors
-- [ ] Code committed with tests
+- [x] All unit tests pass
+- [x] All property tests pass with 1000+ cases
+- [x] No Python recursion in implementation
+- [x] Stress tests complete without errors
+- [x] Code committed with tests
