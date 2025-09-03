@@ -188,32 +188,32 @@
 - [x] Verify backtracking produces all solutions
 - [x] Verify tests pass
 
-## Phase 4: Cut Implementation
+## Phase 4: Cut Implementation ✅
 
-### 10. Cut Barrier Tracking
+### 10. Cut Barrier Tracking ✅
 
-#### Cut Barrier Installation
-- [ ] Write test: cut barrier set on clause entry (after head unify)
-- [ ] Write test: cut barrier = choices.top_id() or None
-- [ ] Write test: cut barrier restored on backtrack from choicepoint
-- [ ] Write test: nested cut barriers (inner cut doesn't affect outer)
-- [ ] Write test: cut barrier preserved in choicepoint
-- [ ] Implement cut barrier tracking in _try_clause
-- [ ] Verify tests pass
+#### Cut Barrier Installation ✅
+- [x] Write test: cut barrier set on clause entry (after head unify)
+- [x] Write test: cut barrier = choices.size() before creating choicepoint
+- [x] Write test: cut barrier restored on backtrack from choicepoint
+- [x] Write test: nested cut barriers (inner cut doesn't affect outer)
+- [x] Write test: cut barrier preserved in choicepoint
+- [x] Implement cut barrier tracking in _try_clause
+- [x] Verify tests pass
 
-### 11. Cut Builtin
+### 11. Cut Builtin ✅
 
-#### builtin_cut Implementation
-- [ ] Write test: cut removes exactly choicepoints newer than barrier
-- [ ] Write test: cut preserves choicepoints at/before barrier
-- [ ] Write test: cut with None barrier is no-op
-- [ ] Write test: green cut (doesn't change semantics)
-- [ ] Write test: red cut (changes semantics)  
-- [ ] Write test: cut in Kth clause removes N-K alternatives
-- [ ] Write test: (!, fail ; true) only prunes pre-cut alternatives
-- [ ] Implement builtin_cut using choices.cut_to(_cut_barrier)
-- [ ] Integrate cut into builtin system
-- [ ] Verify tests pass
+#### builtin_cut Implementation ✅
+- [x] Write test: cut removes exactly choicepoints newer than barrier
+- [x] Write test: cut preserves choicepoints at/before barrier
+- [x] Write test: cut with None barrier is no-op
+- [x] Write test: green cut (doesn't change semantics)
+- [x] Write test: red cut (changes semantics)  
+- [x] Write test: cut in Kth clause removes N-K alternatives
+- [x] Write test: (!, fail ; true) only prunes pre-cut alternatives
+- [x] Implement builtin_cut using choices.cut_to(_cut_barrier)
+- [x] Integrate cut into builtin system
+- [x] Verify tests pass
 
 ## Phase 5: Core Builtins
 
