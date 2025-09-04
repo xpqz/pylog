@@ -14,6 +14,8 @@ class GoalType(IntEnum):
     DISJUNCTION = 3  # (A ; B)
     IF_THEN_ELSE = 4  # (A -> B ; C)
     CUT = 5  # !
+    POP_FRAME = 6  # Sentinel for frame cleanup
+    CONTROL = 7  # Internal control goals
 
 
 class ChoicepointKind(IntEnum):
@@ -29,11 +31,11 @@ class Goal:
     
     Attributes:
         type: Goal type for dispatch
-        term: The actual term (Struct for most goals)
+        term: The actual term (Struct for most goals), None for internal goals
         payload: Optional type-specific data
     """
     type: GoalType
-    term: Term
+    term: Optional[Term]
     payload: Any = None
     
     @classmethod
@@ -71,11 +73,15 @@ class Frame:
     One frame per predicate call, popped when goals exhausted.
     
     Attributes:
+        frame_id: Unique monotonic ID for this frame
         cut_barrier: CP stack height at call time (for cut scope)
+        goal_height: Goal stack height when frame was created
         pred: Predicate reference for debugging
         env: Local variable bindings if needed
     """
+    frame_id: int  # Unique monotonic ID
     cut_barrier: int
+    goal_height: int  # Goal stack height when frame was created
     pred: Optional[Any] = None  # Predicate reference
     env: Optional[Dict[int, Any]] = None  # Local environment if needed
     
@@ -206,6 +212,14 @@ class Trail:
         self.push(('domain', varid, old_domain))
         self._var_stamps[varid] = self._write_stamp
     
+    def push_rank(self, varid: int, old_rank: int, stamp: Optional[int] = None) -> None:
+        """Trail a rank change with stamp check."""
+        if varid in self._var_stamps and self._var_stamps[varid] >= self._write_stamp:
+            return
+        
+        self.push(('rank', varid, old_rank))
+        self._var_stamps[varid] = self._write_stamp
+    
     def position(self) -> int:
         """Current trail position."""
         return len(self._entries)
@@ -254,6 +268,10 @@ class Trail:
                 if not hasattr(store, 'domains'):
                     store.domains = {}
                 store.domains[varid] = old_domain
+            elif kind == 'rank':
+                # Rank changes for union-find optimization
+                _, varid, old_rank = entry
+                store.cells[varid].rank = old_rank
             else:
                 raise ValueError(f"Unknown trail entry kind: {kind}")
     
