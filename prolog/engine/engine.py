@@ -366,7 +366,7 @@ class Engine:
                 kind=ChoicepointKind.PREDICATE,
                 trail_top=self.trail.position(),
                 goal_stack_height=len(continuation),  # Height = number of continuation goals
-                frame_stack_height=0,  # Don't save parent frames - they're not our concern
+                frame_stack_height=len(self.frame_stack),  # Current frame height (before pushing callee frame)
                 payload={
                     "goal": goal,
                     "cursor": cursor,
@@ -473,14 +473,18 @@ class Engine:
             left, right = disj.args
             
             # Create choicepoint for right alternative
+            # Save continuation for re-execution after alternative
+            continuation = self.goal_stack.snapshot()
+            
             self.trail.next_stamp()
             cp = Choicepoint(
                 kind=ChoicepointKind.DISJUNCTION,
                 trail_top=self.trail.position(),
-                goal_stack_height=self.goal_stack.height(),  # Height before pushing left branch
+                goal_stack_height=len(continuation),  # Height = continuation length
                 frame_stack_height=len(self.frame_stack),
                 payload={
-                    "alternative": Goal.from_term(right)
+                    "alternative": Goal.from_term(right),
+                    "continuation": continuation  # Save continuation for backtrack
                 }
             )
             self.cp_stack.append(cp)
@@ -609,11 +613,12 @@ class Engine:
             self.trail.unwind_to(cp.trail_top, self.store)
             
             # Restore goal stack to checkpoint height
-            # For PREDICATE CPs with continuation, we handle restoration specially
-            if cp.kind == ChoicepointKind.PREDICATE and "continuation" in cp.payload:
-                # We'll handle goal stack restoration in the PREDICATE handler below
+            # For CPs with continuation, we handle restoration specially in their handlers
+            if (cp.kind in [ChoicepointKind.PREDICATE, ChoicepointKind.DISJUNCTION] and 
+                "continuation" in cp.payload):
+                # We'll handle goal stack restoration in the CP-specific handler below
                 if self.trace:
-                    self._trace_log.append(f"Deferring goal stack restoration for PREDICATE CP")
+                    self._trace_log.append(f"Deferring goal stack restoration for {cp.kind} CP")
             else:
                 # Standard restoration for other CP kinds
                 if self.trace:
@@ -625,16 +630,14 @@ class Engine:
                 assert self.goal_stack.height() == cp.goal_stack_height, \
                     f"Goal stack height mismatch after restore: {self.goal_stack.height()} != {cp.goal_stack_height}"
             
-            # Pop frames above checkpoint
-            # Special case: PREDICATE choicepoints don't manage frames
-            if cp.kind != ChoicepointKind.PREDICATE:
-                while len(self.frame_stack) > cp.frame_stack_height:
-                    self.frame_stack.pop()
-                    self._debug_frame_pops += 1
-                
-                # Debug assertion: verify frame restoration
-                assert len(self.frame_stack) == cp.frame_stack_height, \
-                    f"Frame stack height mismatch: {len(self.frame_stack)} != {cp.frame_stack_height}"
+            # Pop frames above checkpoint (for ALL CP kinds)
+            while len(self.frame_stack) > cp.frame_stack_height:
+                self.frame_stack.pop()
+                self._debug_frame_pops += 1
+            
+            # Debug assertion: verify frame restoration
+            assert len(self.frame_stack) == cp.frame_stack_height, \
+                f"Frame stack height mismatch: {len(self.frame_stack)} != {cp.frame_stack_height}"
             
             # Resume based on choicepoint kind
             if cp.kind == ChoicepointKind.PREDICATE:
@@ -687,7 +690,7 @@ class Engine:
                             kind=ChoicepointKind.PREDICATE,
                             trail_top=self.trail.position(),
                             goal_stack_height=len(continuation),  # Same as original
-                            frame_stack_height=0,  # Don't save parent frames
+                            frame_stack_height=len(self.frame_stack),  # Current frame height (before pushing new callee frame)
                             payload={
                                 "goal": goal,
                                 "cursor": cursor,
@@ -735,6 +738,19 @@ class Engine:
                         continue
                         
             elif cp.kind == ChoicepointKind.DISJUNCTION:
+                # Restore continuation if present
+                if "continuation" in cp.payload:
+                    continuation = cp.payload["continuation"]
+                    target_height = cp.goal_stack_height
+                    current_height = self.goal_stack.height()
+                    
+                    # Restore goal stack to have continuation
+                    if current_height > target_height:
+                        self.goal_stack.shrink_to(target_height)
+                    elif current_height < target_height:
+                        for g in continuation[current_height:target_height]:
+                            self.goal_stack.push(g)
+                
                 # Try alternative branch
                 alternative = cp.payload["alternative"]
                 self.goal_stack.push(alternative)
