@@ -347,11 +347,13 @@ class Engine:
         clause_idx = cursor.take()
         clause = self.program.clauses[clause_idx]
         
+        # Capture cut barrier BEFORE creating the alternatives choicepoint
+        # This ensures cut will prune alternative clauses (ISO semantics)
+        cut_barrier = len(self.cp_stack)
+        
         # If there are more clauses, create a choicepoint
         if cursor.has_more():
-            # Save cut barrier before creating the choicepoint for alternative clauses
-            # This will be used when backtracking to this choicepoint
-            saved_cut_barrier = len(self.cp_stack)
+            self.trail.next_stamp()
             cp = Choicepoint(
                 kind=ChoicepointKind.PREDICATE,
                 trail_top=self.trail.position(),
@@ -360,16 +362,11 @@ class Engine:
                 payload={
                     "goal": goal,
                     "cursor": cursor,
-                    "pred_ref": f"{functor}/{arity}",
-                    "cut_barrier": saved_cut_barrier,  # Save for use when backtracking
-                    "saved_goals": list(self.goal_stack._stack)  # Save current goals
+                    "pred_ref": f"{functor}/{arity}"
+                    # No need to save cut_barrier or goals
                 }
             )
             self.cp_stack.append(cp)
-        
-        # Set cut barrier AFTER creating choicepoint for alternative clauses
-        # This ensures cut in the body doesn't remove the alternative clause choicepoint
-        cut_barrier = len(self.cp_stack)
         
         # Rename clause with fresh variables
         renamed_clause = self._renamer.rename_clause(clause)
@@ -475,8 +472,7 @@ class Engine:
                 goal_stack_height=self.goal_stack.height(),  # Height before pushing left branch
                 frame_stack_height=len(self.frame_stack),
                 payload={
-                    "alternative": Goal.from_term(right),
-                    "saved_goals": list(self.goal_stack._stack)  # Save current goals
+                    "alternative": Goal.from_term(right)
                 }
             )
             self.cp_stack.append(cp)
@@ -604,15 +600,8 @@ class Engine:
             # This order is safer if future features attach watchers to frames
             self.trail.unwind_to(cp.trail_top, self.store)
             
-            # Restore goal stack
-            # Special handling for CPs with saved goals
-            if "saved_goals" in cp.payload:
-                # Restore the exact saved goals
-                self.goal_stack._stack = list(cp.payload["saved_goals"])
-                # Debug: verify restoration
-            else:
-                # For other CPs, use shrink_to as before
-                self.goal_stack.shrink_to(cp.goal_stack_height)
+            # Restore goal stack to checkpoint height
+            self.goal_stack.shrink_to(cp.goal_stack_height)
             
             # Pop frames above checkpoint
             # Special case: PREDICATE choicepoints don't manage frames
@@ -641,6 +630,10 @@ class Engine:
                     # This ensures proper trailing for the new clause attempt
                     self.trail.next_stamp()
                     
+                    # Compute cut barrier BEFORE pushing next alternatives CP
+                    # This ensures cut will prune remaining alternatives (ISO semantics)
+                    cut_barrier = len(self.cp_stack)
+                    
                     # If still more clauses after this one, re-push choicepoint
                     if cursor.has_more():
                         new_cp = Choicepoint(
@@ -651,9 +644,7 @@ class Engine:
                             payload={
                                 "goal": goal,
                                 "cursor": cursor,
-                                "pred_ref": cp.payload["pred_ref"],
-                                "cut_barrier": cp.payload.get("cut_barrier", 0),  # Preserve cut barrier
-                                "saved_goals": list(self.goal_stack._stack)  # Save current goals
+                                "pred_ref": cp.payload["pred_ref"]
                             }
                         )
                         self.cp_stack.append(new_cp)
@@ -666,8 +657,7 @@ class Engine:
                     if unify(renamed_clause.head, goal.term, self.store, trail_adapter, 
                             occurs_check=self.occurs_check):
                         # Unification succeeded - create frame for body execution
-                        # Use the cut_barrier saved in the choicepoint
-                        cut_barrier = cp.payload.get("cut_barrier", len(self.cp_stack))
+                        # cut_barrier was already computed above before pushing CP
                         frame_id = self._next_frame_id
                         self._next_frame_id += 1
                         frame = Frame(
