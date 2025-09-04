@@ -354,16 +354,24 @@ class Engine:
         # If there are more clauses, create a choicepoint
         if cursor.has_more():
             self.trail.next_stamp()
+            
+            # Save the continuation (goals below the call) as an immutable snapshot
+            continuation = self.goal_stack.snapshot()
+            
+            # Debug: log what we're saving
+            if self.trace:
+                self._trace_log.append(f"Creating PREDICATE CP for {functor}/{arity}, saving {len(continuation)} continuation goals")
+            
             cp = Choicepoint(
                 kind=ChoicepointKind.PREDICATE,
                 trail_top=self.trail.position(),
-                goal_stack_height=self.goal_stack.height(),  # Save current height for restoration
+                goal_stack_height=len(continuation),  # Height = number of continuation goals
                 frame_stack_height=0,  # Don't save parent frames - they're not our concern
                 payload={
                     "goal": goal,
                     "cursor": cursor,
-                    "pred_ref": f"{functor}/{arity}"
-                    # No need to save cut_barrier or goals
+                    "pred_ref": f"{functor}/{arity}",
+                    "continuation": continuation  # Frozen snapshot of continuation goals
                 }
             )
             self.cp_stack.append(cp)
@@ -601,7 +609,21 @@ class Engine:
             self.trail.unwind_to(cp.trail_top, self.store)
             
             # Restore goal stack to checkpoint height
-            self.goal_stack.shrink_to(cp.goal_stack_height)
+            # For PREDICATE CPs with continuation, we handle restoration specially
+            if cp.kind == ChoicepointKind.PREDICATE and "continuation" in cp.payload:
+                # We'll handle goal stack restoration in the PREDICATE handler below
+                if self.trace:
+                    self._trace_log.append(f"Deferring goal stack restoration for PREDICATE CP")
+            else:
+                # Standard restoration for other CP kinds
+                if self.trace:
+                    self._trace_log.append(f"Restoring goal stack from {self.goal_stack.height()} to {cp.goal_stack_height}")
+                
+                self.goal_stack.shrink_to(cp.goal_stack_height)
+                
+                # Assert invariant: goal stack restored correctly
+                assert self.goal_stack.height() == cp.goal_stack_height, \
+                    f"Goal stack height mismatch after restore: {self.goal_stack.height()} != {cp.goal_stack_height}"
             
             # Pop frames above checkpoint
             # Special case: PREDICATE choicepoints don't manage frames
@@ -610,17 +632,39 @@ class Engine:
                     self.frame_stack.pop()
                     self._debug_frame_pops += 1
                 
-                # Debug assertion: verify restoration
+                # Debug assertion: verify frame restoration
                 assert len(self.frame_stack) == cp.frame_stack_height, \
                     f"Frame stack height mismatch: {len(self.frame_stack)} != {cp.frame_stack_height}"
-                assert self.goal_stack.height() == cp.goal_stack_height, \
-                    f"Goal stack height mismatch: {self.goal_stack.height()} != {cp.goal_stack_height}"
             
             # Resume based on choicepoint kind
             if cp.kind == ChoicepointKind.PREDICATE:
                 # Try next clause
                 goal = cp.payload["goal"]
                 cursor = cp.payload["cursor"]
+                
+                # Restore goal stack for PREDICATE CPs
+                if "continuation" in cp.payload:
+                    continuation = cp.payload["continuation"]
+                    target_height = cp.goal_stack_height
+                    current_height = self.goal_stack.height()
+                    
+                    if self.trace:
+                        self._trace_log.append(f"PREDICATE CP: current_height={current_height}, target_height={target_height}")
+                    
+                    # Shrink if needed
+                    if current_height > target_height:
+                        self.goal_stack.shrink_to(target_height)
+                    # Re-push missing goals if needed
+                    elif current_height < target_height:
+                        for g in continuation[current_height:target_height]:
+                            self.goal_stack.push(g)
+                        
+                        if self.trace:
+                            self._trace_log.append(f"Re-pushed {target_height - current_height} continuation goals")
+                    
+                    # Assert we restored correctly
+                    assert self.goal_stack.height() == target_height, \
+                        f"Failed to restore continuation: height={self.goal_stack.height()}, expected={target_height}"
                 
                 if cursor.has_more():
                     clause_idx = cursor.take()
@@ -636,15 +680,19 @@ class Engine:
                     
                     # If still more clauses after this one, re-push choicepoint
                     if cursor.has_more():
+                        # Preserve the continuation from the original CP
+                        continuation = cp.payload.get("continuation", ())
+                        
                         new_cp = Choicepoint(
                             kind=ChoicepointKind.PREDICATE,
                             trail_top=self.trail.position(),
-                            goal_stack_height=self.goal_stack.height(),
+                            goal_stack_height=len(continuation),  # Same as original
                             frame_stack_height=0,  # Don't save parent frames
                             payload={
                                 "goal": goal,
                                 "cursor": cursor,
-                                "pred_ref": cp.payload["pred_ref"]
+                                "pred_ref": cp.payload["pred_ref"],
+                                "continuation": continuation  # Preserve original continuation
                             }
                         )
                         self.cp_stack.append(new_cp)

@@ -147,10 +147,15 @@ class GoalStack:
         """Current stack height."""
         return len(self._stack)
     
+    def snapshot(self) -> tuple[Goal, ...]:
+        """Create an immutable snapshot of current stack state."""
+        return tuple(self._stack)
+    
     def shrink_to(self, height: int) -> None:
         """Shrink stack to given height (for backtracking)."""
-        if height < len(self._stack):
-            self._stack = self._stack[:height]
+        assert height >= 0, f"shrink_to({height}) - height must be non-negative"
+        while len(self._stack) > height:
+            self._stack.pop()
     
     def __len__(self) -> int:
         return len(self._stack)
