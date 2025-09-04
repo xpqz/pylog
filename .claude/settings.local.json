@@ -23,7 +23,9 @@
       "Bash(timeout 10 python:*)",
       "Bash(gh repo create:*)",
       "Bash(git remote add:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(timeout 30 python -m pytest:*)",
+      "Bash(timeout:*)"
     ],
     "deny": [],
     "ask": []

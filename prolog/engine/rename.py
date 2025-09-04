@@ -9,22 +9,19 @@ from prolog.unify.store import Store
 class VarRenamer:
     """Renames variables in terms to fresh variables from a Store.
     
-    Each VarRenamer instance maintains a mapping for consistent renaming
-    within a single clause, but each new renamer gets fresh variables.
-    This ensures proper variable isolation between clause uses.
+    Each rename_clause call gets a fresh mapping to ensure proper 
+    variable isolation between clause instances.
     """
     
-    def __init__(self, store: Store, mapping: Optional[Dict[int, int]] = None):
+    def __init__(self, store: Store):
         """Initialize with a Store for allocating fresh variables.
         
         Args:
             store: The Store to allocate fresh variables from.
-            mapping: Optional existing mapping to reuse (for stable identity).
         """
         self._store = store
-        self._mapping = mapping if mapping is not None else {}  # Original var ID -> fresh var ID
     
-    def rename_term(self, term: Term) -> Term:
+    def rename_term(self, term: Term, mapping: Dict[int, int]) -> Term:
         """Rename all variables in a term to fresh variables (iterative).
         
         Variables with the same ID in the input will map to the same
@@ -32,6 +29,7 @@ class VarRenamer:
         
         Args:
             term: The term to rename.
+            mapping: Variable mapping for this renaming operation.
             
         Returns:
             A new term with all variables renamed.
@@ -66,13 +64,13 @@ class VarRenamer:
         for current in reversed(all_terms):
             if isinstance(current, Var):
                 # Check if we've seen this variable before
-                if current.id not in self._mapping:
+                if current.id not in mapping:
                     # Allocate a fresh variable
                     fresh_id = self._store.new_var(hint=current.hint)
-                    self._mapping[current.id] = fresh_id
+                    mapping[current.id] = fresh_id
                 
                 # Create renamed variable
-                renamed[id(current)] = Var(self._mapping[current.id], current.hint)
+                renamed[id(current)] = Var(mapping[current.id], current.hint)
                 
             elif isinstance(current, (Atom, Int)):
                 # Atoms and integers are unchanged
@@ -97,7 +95,8 @@ class VarRenamer:
         """Rename all variables in a clause to fresh variables.
         
         All occurrences of the same variable in the clause (head and body)
-        will be renamed to the same fresh variable.
+        will be renamed to the same fresh variable. Each call to this method
+        creates a fresh mapping to ensure isolation between clause instances.
         
         Args:
             clause: The clause to rename.
@@ -105,13 +104,52 @@ class VarRenamer:
         Returns:
             A new clause with all variables renamed.
         """
+        # Create a fresh mapping for this clause instance
+        mapping = {}  # Original var ID -> fresh var ID
+        
         # Rename head
-        renamed_head = self.rename_term(clause.head)
+        renamed_head = self.rename_term(clause.head, mapping)
         
         # Rename body goals iteratively to avoid recursion
         renamed_body = []
         for goal in clause.body:
-            renamed_goal = self.rename_term(goal)
+            renamed_goal = self.rename_term(goal, mapping)
             renamed_body.append(renamed_goal)
         
+        # Debug assertion: verify sharing is preserved
+        if __debug__:
+            # Check that repeated variables in head are properly shared
+            head_vars = self._collect_vars(clause.head)
+            renamed_head_vars = self._collect_vars(renamed_head)
+            for orig_id in head_vars:
+                occurrences = [v for v in head_vars[orig_id]]
+                if len(occurrences) > 1:
+                    # This variable appears multiple times
+                    renamed_ids = set()
+                    for orig_var in occurrences:
+                        # Find corresponding renamed var
+                        if orig_var.id in mapping:
+                            renamed_ids.add(mapping[orig_var.id])
+                    assert len(renamed_ids) == 1, \
+                        f"Variable sharing not preserved: {orig_id} mapped to {renamed_ids}"
+        
         return Clause(head=renamed_head, body=tuple(renamed_body))
+    
+    def _collect_vars(self, term: Term) -> Dict[int, list]:
+        """Collect all variables in a term, grouped by ID."""
+        vars_by_id = {}
+        stack = [term]
+        
+        while stack:
+            current = stack.pop()
+            if isinstance(current, Var):
+                if current.id not in vars_by_id:
+                    vars_by_id[current.id] = []
+                vars_by_id[current.id].append(current)
+            elif isinstance(current, Struct):
+                stack.extend(current.args)
+            elif isinstance(current, PrologList):
+                stack.extend(current.items)
+                stack.append(current.tail)
+        
+        return vars_by_id

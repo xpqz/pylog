@@ -307,6 +307,9 @@ class Engine:
         clause_idx = cursor.take()
         clause = self.program.clauses[clause_idx]
         
+        # Save cut barrier BEFORE creating choicepoint
+        cut_barrier = len(self.cp_stack)
+        
         # If there are more clauses, create a choicepoint
         if cursor.has_more():
             cp = Choicepoint(
@@ -332,8 +335,7 @@ class Engine:
         if unify(renamed_clause.head, goal.term, self.store, trail_adapter, 
                 occurs_check=self.occurs_check):
             # Unification succeeded - now push frame for body execution
-            # Cut barrier is set to current CP stack size (after any choicepoints for this predicate)
-            cut_barrier = len(self.cp_stack)
+            # Use the cut_barrier saved before creating choicepoint
             frame_id = self._next_frame_id
             self._next_frame_id += 1
             frame = Frame(
