@@ -163,7 +163,9 @@ class Engine:
         
         # Push initial goals (in reverse for left-to-right execution)
         for goal in reversed(renamed_goals):
-            g = Goal.from_term(goal)
+            # Convert lists to cons representation
+            canonical_goal = self._to_cons(goal)
+            g = Goal.from_term(canonical_goal)
             self.goal_stack.push(g)
         
         # Main single iterative loop
@@ -246,6 +248,31 @@ class Engine:
         self.cp_stack.clear()
         
         return self.solutions
+    
+    def _to_cons(self, t: Term) -> Term:
+        """Convert PrologList to nested '.'/2 cons structure.
+        
+        Args:
+            t: Term to convert
+            
+        Returns:
+            Converted term (or original if not a PrologList)
+        """
+        if isinstance(t, PrologList):
+            # Build proper list with [] tail
+            result = t.tail if t.tail else Atom("[]")
+            for item in reversed(t.items):
+                # Recursively convert items
+                converted_item = self._to_cons(item)
+                result = Struct(".", (converted_item, result))
+            return result
+        elif isinstance(t, Struct):
+            # Recursively convert args
+            converted_args = tuple(self._to_cons(arg) for arg in t.args)
+            return Struct(t.functor, converted_args)
+        else:
+            # Atoms, Ints, Vars pass through unchanged
+            return t
     
     def _allocate_query_vars(self, term: Term) -> Term:
         """Allocate fresh variables for query terms and track them.
@@ -404,9 +431,11 @@ class Engine:
         # Rename clause with fresh variables
         renamed_clause = self._renamer.rename_clause(clause)
         
-        # Try to unify with clause head
+        # Try to unify with clause head (canonicalize both sides)
+        canonical_head = self._to_cons(renamed_clause.head)
+        canonical_goal = self._to_cons(goal.term)
         trail_adapter = TrailAdapter(self.trail, engine=self, store=self.store)
-        if unify(renamed_clause.head, goal.term, self.store, trail_adapter, 
+        if unify(canonical_head, canonical_goal, self.store, trail_adapter, 
                 occurs_check=self.occurs_check):
             # Unification succeeded - now push frame for body execution
             # Use the cut_barrier saved before creating choicepoint
@@ -420,9 +449,7 @@ class Engine:
             )
             self.frame_stack.append(frame)
             
-            # Enter new choice region for body execution
-            # This ensures body modifications are properly trailed
-            self.trail.next_stamp()
+            # Don't call next_stamp() here - only when creating CPs
             
             # Push POP_FRAME sentinel first, then body goals
             self.goal_stack.push(Goal(
@@ -746,9 +773,11 @@ class Engine:
                     # Rename clause with fresh variables
                     renamed_clause = self._renamer.rename_clause(clause)
                     
-                    # Try to unify with clause head
+                    # Try to unify with clause head (canonicalize both sides)
+                    canonical_head = self._to_cons(renamed_clause.head)
+                    canonical_goal = self._to_cons(goal.term)
                     trail_adapter = TrailAdapter(self.trail, engine=self, store=self.store)
-                    if unify(renamed_clause.head, goal.term, self.store, trail_adapter, 
+                    if unify(canonical_head, canonical_goal, self.store, trail_adapter, 
                             occurs_check=self.occurs_check):
                         # Unification succeeded - create frame for body execution
                         # cut_barrier was already computed above before pushing CP
@@ -762,8 +791,7 @@ class Engine:
                         )
                         self.frame_stack.append(frame)
                         
-                        # Enter new choice region for body execution
-                        self.trail.next_stamp()
+                        # Don't call next_stamp() here - only when creating CPs
                         
                         # Push POP_FRAME sentinel and body goals
                         self.goal_stack.push(Goal(
@@ -1011,6 +1039,11 @@ class Engine:
         # Return the GoalStack itself for compatibility with tests
         # that might access ._stack directly
         return self.goal_stack
+    
+    @property
+    def choices(self):
+        """Get current choicepoint stack for test compatibility."""
+        return list(self.cp_stack)
     
     def _builtin_cut(self, args: tuple) -> bool:
         """! - cut builtin."""
