@@ -366,7 +366,7 @@ class Engine:
                 kind=ChoicepointKind.PREDICATE,
                 trail_top=self.trail.position(),
                 goal_stack_height=len(continuation),  # Height = number of continuation goals
-                frame_stack_height=len(self.frame_stack),  # Current frame height (before pushing callee frame)
+                frame_stack_height=0,  # PREDICATE CPs don't manage frames (frame lifecycle is independent)
                 payload={
                     "goal": goal,
                     "cursor": cursor,
@@ -630,14 +630,16 @@ class Engine:
                 assert self.goal_stack.height() == cp.goal_stack_height, \
                     f"Goal stack height mismatch after restore: {self.goal_stack.height()} != {cp.goal_stack_height}"
             
-            # Pop frames above checkpoint (for ALL CP kinds)
-            while len(self.frame_stack) > cp.frame_stack_height:
-                self.frame_stack.pop()
-                self._debug_frame_pops += 1
-            
-            # Debug assertion: verify frame restoration
-            assert len(self.frame_stack) == cp.frame_stack_height, \
-                f"Frame stack height mismatch: {len(self.frame_stack)} != {cp.frame_stack_height}"
+            # Pop frames above checkpoint
+            # PREDICATE CPs don't manage frames (they use frame_stack_height=0 as a sentinel)
+            if cp.kind != ChoicepointKind.PREDICATE:
+                while len(self.frame_stack) > cp.frame_stack_height:
+                    self.frame_stack.pop()
+                    self._debug_frame_pops += 1
+                
+                # Debug assertion: verify frame restoration
+                assert len(self.frame_stack) == cp.frame_stack_height, \
+                    f"Frame stack height mismatch: {len(self.frame_stack)} != {cp.frame_stack_height}"
             
             # Resume based on choicepoint kind
             if cp.kind == ChoicepointKind.PREDICATE:
@@ -690,7 +692,7 @@ class Engine:
                             kind=ChoicepointKind.PREDICATE,
                             trail_top=self.trail.position(),
                             goal_stack_height=len(continuation),  # Same as original
-                            frame_stack_height=len(self.frame_stack),  # Current frame height (before pushing new callee frame)
+                            frame_stack_height=0,  # PREDICATE CPs don't manage frames
                             payload={
                                 "goal": goal,
                                 "cursor": cursor,
