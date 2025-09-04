@@ -138,6 +138,10 @@ class Engine:
         # Set cutoff after allocating all query variables
         self._initial_var_cutoff = len(self.store.cells)
         
+        # Check if max_solutions is 0 - no point in running
+        if self.max_solutions == 0:
+            return self.solutions
+        
         # Push initial goals (in reverse for left-to-right execution)
         for goal in reversed(renamed_goals):
             g = Goal.from_term(goal)
