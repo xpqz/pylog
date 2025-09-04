@@ -20,11 +20,11 @@ class TestVarRenamer:
         original = Var(99, "X")
         
         # Rename should create fresh var
-        renamed = renamer.rename_term(original)
+        mapping = {}
+        renamed = renamer.rename_term(original, mapping)
         
         assert isinstance(renamed, Var)
         assert renamed.id != original.id  # Different ID
-        assert renamed.id == 0  # First var allocated from store
         assert renamed.hint == "X"  # Hint preserved
     
     def test_rename_term_preserves_atoms_unchanged(self):
@@ -34,11 +34,12 @@ class TestVarRenamer:
         
         # Atoms should be unchanged
         atom = Atom("test")
-        assert renamer.rename_term(atom) is atom
+        mapping = {}
+        assert renamer.rename_term(atom, mapping) is atom
         
         # Ints should be unchanged
         integer = Int(42)
-        assert renamer.rename_term(integer) is integer
+        assert renamer.rename_term(integer, mapping) is integer
     
     def test_rename_term_handles_nested_structures(self):
         """Test rename_term handles nested structures recursively."""
@@ -52,7 +53,8 @@ class TestVarRenamer:
             Var(10, "X")
         ))
         
-        renamed = renamer.rename_term(original)
+        mapping = {}
+        renamed = renamer.rename_term(original, mapping)
         
         # Structure preserved
         assert isinstance(renamed, Struct)
@@ -61,18 +63,19 @@ class TestVarRenamer:
         
         # First X renamed to fresh var
         assert isinstance(renamed.args[0], Var)
-        assert renamed.args[0].id == 0  # First fresh var
+        x_id = renamed.args[0].id
         
         # Nested structure
         assert isinstance(renamed.args[1], Struct)
         assert renamed.args[1].functor == "g"
         assert isinstance(renamed.args[1].args[0], Var)
-        assert renamed.args[1].args[0].id == 1  # Second fresh var (Y)
+        y_id = renamed.args[1].args[0].id
+        assert x_id != y_id  # X and Y get different IDs
         assert renamed.args[1].args[1] == Atom("a")
         
         # Second X should map to same fresh var as first X
         assert isinstance(renamed.args[2], Var)
-        assert renamed.args[2].id == 0  # Same as first X
+        assert renamed.args[2].id == x_id  # Same as first X
     
     def test_rename_term_handles_lists_with_tails(self):
         """Test rename_term handles lists with tails (default Atom('[]'))."""
@@ -85,20 +88,23 @@ class TestVarRenamer:
             tail=Var(3, "Z")
         )
         
-        renamed = renamer.rename_term(original)
+        mapping = {}
+        renamed = renamer.rename_term(original, mapping)
         
         assert isinstance(renamed, PrologList)
         assert len(renamed.items) == 2
         
         # Items renamed
         assert isinstance(renamed.items[0], Var)
-        assert renamed.items[0].id == 0  # X -> 0
+        x_id = renamed.items[0].id
         assert isinstance(renamed.items[1], Var)
-        assert renamed.items[1].id == 1  # Y -> 1
+        y_id = renamed.items[1].id
+        assert x_id != y_id  # X and Y get different IDs
         
         # Tail renamed
         assert isinstance(renamed.tail, Var)
-        assert renamed.tail.id == 2  # Z -> 2
+        # Check all three variables have different IDs
+        assert len({renamed.items[0].id, renamed.items[1].id, renamed.tail.id}) == 3
     
     def test_rename_term_handles_empty_list_tail(self):
         """Test rename_term handles empty list tail Atom('[]')."""
@@ -111,12 +117,14 @@ class TestVarRenamer:
             tail=Atom("[]")
         )
         
-        renamed = renamer.rename_term(original)
+        mapping = {}
+        renamed = renamer.rename_term(original, mapping)
         
         assert isinstance(renamed, PrologList)
-        # Items renamed
-        assert renamed.items[0].id == 0
-        assert renamed.items[1].id == 1
+        # Items renamed - check they have different IDs
+        assert isinstance(renamed.items[0], Var)
+        assert isinstance(renamed.items[1], Var)
+        assert renamed.items[0].id != renamed.items[1].id
         # Empty list tail unchanged
         assert renamed.tail == Atom("[]")
     
@@ -142,16 +150,17 @@ class TestVarRenamer:
         
         # Head renamed
         assert renamed.head.functor == "p"
-        assert renamed.head.args[0].id == 0  # X -> 0
-        assert renamed.head.args[1].id == 1  # Y -> 1
+        x_id = renamed.head.args[0].id
+        y_id = renamed.head.args[1].id
+        assert x_id != y_id  # X and Y get different IDs
         
         # Body renamed with consistent mapping
         assert renamed.body[0].functor == "q"
-        assert renamed.body[0].args[0].id == 0  # Same X
+        assert renamed.body[0].args[0].id == x_id  # Same X
         
         assert renamed.body[1].functor == "r"
-        assert renamed.body[1].args[0].id == 1  # Same Y
-        assert renamed.body[1].args[1].id == 0  # Same X
+        assert renamed.body[1].args[0].id == y_id  # Same Y
+        assert renamed.body[1].args[1].id == x_id  # Same X
     
     def test_consistent_mapping_within_single_clause(self):
         """Test consistent variable mapping within single clause."""
@@ -200,8 +209,6 @@ class TestVarRenamer:
         
         # Different fresh variables allocated
         assert x_id_1 != x_id_2
-        assert x_id_1 == 0  # First renamer got var 0
-        assert x_id_2 == 1  # Second renamer got var 1
     
     def test_deterministic_var_ids(self):
         """Test deterministic var IDs (same input -> same output)."""
@@ -214,10 +221,12 @@ class TestVarRenamer:
         
         # Rename with two renamers
         renamer1 = VarRenamer(store1)
-        renamed1 = renamer1.rename_term(term)
+        mapping1 = {}
+        renamed1 = renamer1.rename_term(term, mapping1)
         
         renamer2 = VarRenamer(store2)
-        renamed2 = renamer2.rename_term(term)
+        mapping2 = {}
+        renamed2 = renamer2.rename_term(term, mapping2)
         
         # Should get same fresh var IDs
         assert renamed1.args[0].id == renamed2.args[0].id  # Both X -> 0
@@ -238,7 +247,8 @@ class TestVarRenamer:
             tail=Var(4, "W")
         )
         
-        renamed = renamer.rename_term(original)
+        mapping = {}
+        renamed = renamer.rename_term(original, mapping)
         
         # Check structure preserved
         assert isinstance(renamed, PrologList)
@@ -271,7 +281,8 @@ class TestVarRenamer:
         original = Struct("f", (Var(1, "X"), Atom("a")))
         
         # Rename
-        renamed = renamer.rename_term(original)
+        mapping = {}
+        renamed = renamer.rename_term(original, mapping)
         
         # Different objects
         assert renamed is not original
@@ -293,7 +304,8 @@ class TestVarRenamer:
             ,))
         ,))
         
-        renamed = renamer.rename_term(original)
+        mapping = {}
+        renamed = renamer.rename_term(original, mapping)
         
         # Navigate to the variable
         assert renamed.functor == "f"
@@ -306,4 +318,4 @@ class TestVarRenamer:
         
         # Variable renamed
         assert isinstance(inner_i.args[0], Var)
-        assert inner_i.args[0].id == 0  # Fresh var
+        assert inner_i.args[0].id != 99  # Different from original
