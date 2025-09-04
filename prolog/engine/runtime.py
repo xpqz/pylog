@@ -31,11 +31,11 @@ class Goal:
     
     Attributes:
         type: Goal type for dispatch
-        term: The actual term (Struct for most goals)
+        term: The actual term (Struct for most goals), None for internal goals
         payload: Optional type-specific data
     """
     type: GoalType
-    term: Term
+    term: Optional[Term]
     payload: Any = None
     
     @classmethod

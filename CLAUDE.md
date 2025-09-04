@@ -175,6 +175,7 @@ The project follows a staged development plan where each stage builds on stable 
 - Trail segmentation per choicepoint for fast undo
 
 ### Process
+- Don't back files up by copying! We use git for versioning.
 - For each new development stage, create a new git branch first.
 - We practice TDD: 
     - write tests first that demonstrate the desired behaviour

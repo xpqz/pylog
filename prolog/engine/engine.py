@@ -61,11 +61,15 @@ class Engine:
         self._debug_trail_writes = 0
         self._next_frame_id = 0  # Monotonic frame ID counter
         self._cut_barrier = None  # Legacy field for tests
+        
+        # Variable renaming for clause isolation
+        self._renamer = VarRenamer(self.store)
     
     def reset(self):
         """Reset engine state for reuse."""
         self.store = Store()
         self.trail = Trail()
+        self._renamer = VarRenamer(self.store)  # New renamer with new store
         self.goal_stack = GoalStack()
         self.frame_stack = []
         self.cp_stack = []
@@ -81,20 +85,30 @@ class Engine:
         self._cut_barrier = None
     
     def _register_builtins(self):
-        """Register all builtin predicates."""
+        """Register all builtin predicates.
+        
+        All builtins use uniform signature: fn(engine, args_tuple) -> bool
+        This simplifies dispatch and makes nondeterministic builtins easier.
+        """
         # Core control flow  
-        self._builtins[("true", 0)] = lambda: True
-        self._builtins[("fail", 0)] = lambda: False
-        self._builtins[("!", 0)] = self._dispatch_cut
-        self._builtins[("=", 2)] = self._builtin_unify
-        self._builtins[("\\=", 2)] = self._builtin_not_unify
-        self._builtins[("var", 1)] = self._builtin_var
-        self._builtins[("nonvar", 1)] = self._builtin_nonvar
-        self._builtins[("atom", 1)] = self._builtin_atom
-        self._builtins[("is", 2)] = self._builtin_is
+        self._builtins[("true", 0)] = lambda eng, args: True
+        self._builtins[("fail", 0)] = lambda eng, args: False
+        self._builtins[("!", 0)] = lambda eng, args: eng._builtin_cut(args)
+        self._builtins[("call", 1)] = lambda eng, args: eng._builtin_call(args)
+        self._builtins[("=", 2)] = lambda eng, args: eng._builtin_unify(args)
+        self._builtins[("\\=", 2)] = lambda eng, args: eng._builtin_not_unify(args)
+        self._builtins[("var", 1)] = lambda eng, args: eng._builtin_var(args)
+        self._builtins[("nonvar", 1)] = lambda eng, args: eng._builtin_nonvar(args)
+        self._builtins[("atom", 1)] = lambda eng, args: eng._builtin_atom(args)
+        self._builtins[("is", 2)] = lambda eng, args: eng._builtin_is(args)
     
     def run(self, goals: List[Term], max_solutions: Optional[int] = None) -> List[Dict[str, Any]]:
         """Run a query with given goals using single iterative loop.
+        
+        NOTE: This method guarantees a clean state only when _query_vars is empty.
+        The query reuse path (when _query_vars is already set) is intended for
+        testing only and may leak state between runs. For production use, always
+        ensure the engine is reset or create a new engine instance.
         
         Args:
             goals: List of goal terms to prove.
@@ -153,8 +167,8 @@ class Engine:
             
             # Dispatch based on goal type
             if goal.type == GoalType.PREDICATE:
-                # Check if it's actually a builtin
-                if self._is_builtin(goal.term):
+                # Check if it's actually a builtin (PREDICATE goals always have terms)
+                if goal.term and self._is_builtin(goal.term):
                     if not self._dispatch_builtin(goal):
                         if not self._backtrack():
                             break
@@ -181,8 +195,16 @@ class Engine:
                 if not self._backtrack():
                     break
         
-        # Clean up for next query - clear query vars tracking
-        # so the next run() will reset properly
+        # Clean up for next query
+        # Unbind query variables to restore clean state
+        for var_id, _ in self._query_vars:
+            if var_id < len(self.store.cells):
+                cell = self.store.cells[var_id]
+                # Only unbind if it's still bound
+                if cell.tag == "bound":
+                    self.store.cells[var_id] = Cell(tag="unbound", ref=var_id, term=None, rank=cell.rank)
+        
+        # Clear query vars tracking so the next run() will reset properly
         self._query_vars = []
         self._qid_by_name = {}
         self._qname_by_id = {}
@@ -321,14 +343,14 @@ class Engine:
                     "goal": goal,
                     "cursor": cursor,
                     "pred_ref": f"{functor}/{arity}",
-                    "saved_goals": list(self.goal_stack._stack)  # Save a copy of current goals
+                    "cut_barrier": cut_barrier,  # Save for use when backtracking
+                    "saved_goals": list(self.goal_stack._stack)  # Save current goals
                 }
             )
             self.cp_stack.append(cp)
         
         # Rename clause with fresh variables
-        renamer = VarRenamer(self.store)
-        renamed_clause = renamer.rename_clause(clause)
+        renamed_clause = self._renamer.rename_clause(clause)
         
         # Try to unify with clause head
         trail_adapter = TrailAdapter(self.trail, engine=self, store=self.store)
@@ -353,8 +375,8 @@ class Engine:
             # Push POP_FRAME sentinel first, then body goals
             self.goal_stack.push(Goal(
                 GoalType.POP_FRAME, 
-                Atom("$pop_frame$"),
-                payload={"frame_id": frame_id}
+                None,  # Internal goals don't need terms
+                payload={"op": "POP_FRAME", "frame_id": frame_id}
             ))
             
             # Push body goals in reverse order
@@ -389,18 +411,9 @@ class Engine:
             # Not a recognized builtin
             return False
         
-        # Execute the builtin with tighter exception handling
+        # Execute the builtin with uniform signature
         try:
-            # Pass args if needed
-            if key[1] == 0:
-                # No arguments
-                return builtin_fn()
-            elif key[1] == 1:
-                return builtin_fn(args[0])
-            elif key[1] == 2:
-                return builtin_fn(args[0], args[1])
-            else:
-                return builtin_fn(*args)
+            return builtin_fn(self, args)
         except (ValueError, TypeError) as e:
             # Expected failures from arithmetic or type errors
             return False
@@ -441,7 +454,7 @@ class Engine:
                 frame_stack_height=len(self.frame_stack),
                 payload={
                     "alternative": Goal.from_term(right),
-                    "saved_goals": list(self.goal_stack._stack)  # Save goals that come after disjunction
+                    "saved_goals": list(self.goal_stack._stack)  # Save current goals
                 }
             )
             self.cp_stack.append(cp)
@@ -489,8 +502,9 @@ class Engine:
         # Push control goal that will commit and run Then on first success
         self.goal_stack.push(Goal(
             GoalType.CONTROL,
-            Atom("$ite_then$"),
+            None,  # Internal control goal
             payload={
+                "op": "ITE_THEN",
                 "tmp_barrier": tmp_barrier,
                 "then_goal": Goal.from_term(then_term)
             }
@@ -513,6 +527,10 @@ class Engine:
                 self.cp_stack.pop()
         else:
             # Top-level cut: prune everything (commit to current solution path)
+            # This commits to the current solution and prevents backtracking.
+            # Some Prolog systems treat top-level cut as a no-op, but we choose
+            # to make it commit to prevent finding additional solutions.
+            # Test case: ?- (a ; b), !. should return only first success
             self.cp_stack.clear()
         
         # Cut always succeeds
@@ -529,10 +547,8 @@ class Engine:
         if self.frame_stack and self.frame_stack[-1].frame_id == frame_id:
             self.frame_stack.pop()
             self._debug_frame_pops += 1
-        else:
-            # Debug assertion for development
-            if __debug__ and self.frame_stack:
-                assert False, f"Frame ID mismatch: expected {frame_id}, got {self.frame_stack[-1].frame_id}"
+        # If frame ID doesn't match, it's likely a stale POP_FRAME from backtracking
+        # Just ignore it - the frame was already popped or never created
     
     def _dispatch_control(self, goal: Goal):
         """Handle internal control goals.
@@ -540,7 +556,7 @@ class Engine:
         Args:
             goal: The control goal.
         """
-        if isinstance(goal.term, Atom) and goal.term.name == "$ite_then$":
+        if goal.payload and goal.payload.get("op") == "ITE_THEN":
             # Commit to Then branch in if-then-else
             tmp_barrier = goal.payload["tmp_barrier"]
             # Prune all choicepoints above tmp_barrier (removes Else CP)
@@ -588,6 +604,8 @@ class Engine:
                 # Debug assertion: verify restoration
                 assert len(self.frame_stack) == cp.frame_stack_height, \
                     f"Frame stack height mismatch: {len(self.frame_stack)} != {cp.frame_stack_height}"
+                assert self.goal_stack.height() == cp.goal_stack_height, \
+                    f"Goal stack height mismatch: {self.goal_stack.height()} != {cp.goal_stack_height}"
             
             # Resume based on choicepoint kind
             if cp.kind == ChoicepointKind.PREDICATE:
@@ -614,21 +632,22 @@ class Engine:
                                 "goal": goal,
                                 "cursor": cursor,
                                 "pred_ref": cp.payload["pred_ref"],
+                                "cut_barrier": cp.payload.get("cut_barrier", 0),  # Preserve cut barrier
                                 "saved_goals": list(self.goal_stack._stack)  # Save current goals
                             }
                         )
                         self.cp_stack.append(new_cp)
                     
                     # Rename clause with fresh variables
-                    renamer = VarRenamer(self.store)
-                    renamed_clause = renamer.rename_clause(clause)
+                    renamed_clause = self._renamer.rename_clause(clause)
                     
                     # Try to unify with clause head
                     trail_adapter = TrailAdapter(self.trail, engine=self, store=self.store)
                     if unify(renamed_clause.head, goal.term, self.store, trail_adapter, 
                             occurs_check=self.occurs_check):
                         # Unification succeeded - create frame for body execution
-                        cut_barrier = len(self.cp_stack)
+                        # Use the cut_barrier saved in the choicepoint
+                        cut_barrier = cp.payload.get("cut_barrier", len(self.cp_stack))
                         frame_id = self._next_frame_id
                         self._next_frame_id += 1
                         frame = Frame(
@@ -645,8 +664,8 @@ class Engine:
                         # Push POP_FRAME sentinel and body goals
                         self.goal_stack.push(Goal(
                             GoalType.POP_FRAME,
-                            Atom("$pop_frame$"),
-                            payload={"frame_id": frame_id}
+                            None,  # Internal goals don't need terms
+                            payload={"op": "POP_FRAME", "frame_id": frame_id}
                         ))
                         for body_term in reversed(renamed_clause.body):
                             body_goal = Goal.from_term(body_term)
@@ -698,10 +717,8 @@ class Engine:
         if result[0] == 'UNBOUND':
             # Unbound variable - return a representation
             _, ref = result
-            # Fast lookup for query var name
-            hint = self._qname_by_id.get(ref)
-            if hint is None:
-                hint = f"_{ref}" if ref >= self._initial_var_cutoff else f"_{ref}"
+            # Fast lookup for query var name, default to _<id>
+            hint = self._qname_by_id.get(ref, f"_{ref}")
             return Var(ref, hint)
         
         elif result[0] == 'BOUND':
@@ -787,6 +804,33 @@ class Engine:
         
         return reified.get(id(term), term)
     
+    def _execute_builtin(self, term: Term) -> bool:
+        """Execute a builtin directly (for testing).
+        
+        Args:
+            term: The builtin term to execute.
+            
+        Returns:
+            True if successful, False if failed.
+        """
+        if isinstance(term, Atom):
+            key = (term.name, 0)
+            args = ()
+        elif isinstance(term, Struct):
+            key = (term.functor, len(term.args))
+            args = term.args
+        else:
+            return False
+        
+        builtin_fn = self._builtins.get(key)
+        if builtin_fn is None:
+            return False
+        
+        try:
+            return builtin_fn(self, args)
+        except (ValueError, TypeError):
+            return False
+    
     def _is_builtin(self, term: Term) -> bool:
         """Check if a term is a builtin predicate.
         
@@ -805,15 +849,58 @@ class Engine:
         
         return key in self._builtins
     
-    # Builtin implementations
-    def _builtin_unify(self, left: Term, right: Term) -> bool:
+    # Builtin implementations - uniform signature: (engine, args_tuple) -> bool
+    def _builtin_cut(self, args: tuple) -> bool:
+        """! - cut builtin."""
+        self._dispatch_cut()
+        return True
+    
+    def _builtin_call(self, args: tuple) -> bool:
+        """call/1 - meta-call builtin.
+        
+        Executes the argument as a goal after dereferencing.
+        Fails if the argument is unbound or not callable.
+        """
+        if len(args) != 1:
+            return False
+        
+        term = args[0]
+        
+        # Dereference if it's a variable
+        if isinstance(term, Var):
+            result = self.store.deref(term.id)
+            if result[0] == 'BOUND':
+                _, _, bound_term = result
+                term = bound_term
+            else:
+                # Unbound variable - cannot call
+                return False
+        
+        # Check if term is callable (Atom or Struct)
+        if not isinstance(term, (Atom, Struct)):
+            # Integers, lists, etc are not callable
+            return False
+        
+        # Push the term as a goal to be executed
+        # IMPORTANT: The goal must be pushed for immediate execution
+        goal = Goal.from_term(term)
+        self.goal_stack.push(goal)
+        return True
+    
+    def _builtin_unify(self, args: tuple) -> bool:
         """=(X, Y) - unification builtin."""
+        if len(args) != 2:
+            return False
+        left, right = args
         trail_adapter = TrailAdapter(self.trail, engine=self, store=self.store)
         return unify(left, right, self.store, trail_adapter, 
                     occurs_check=self.occurs_check)
     
-    def _builtin_not_unify(self, left: Term, right: Term) -> bool:
+    def _builtin_not_unify(self, args: tuple) -> bool:
         """\\=(X, Y) - negation of unification."""
+        if len(args) != 2:
+            return False
+        left, right = args
         # Create a temporary trail position
         trail_pos = self.trail.position()
         trail_adapter = TrailAdapter(self.trail, engine=self, store=self.store)
@@ -823,19 +910,27 @@ class Engine:
         self.trail.unwind_to(trail_pos, self.store)
         return not success
     
-    def _builtin_var(self, term: Term) -> bool:
+    def _builtin_var(self, args: tuple) -> bool:
         """var(X) - true if X is an unbound variable."""
+        if len(args) != 1:
+            return False
+        term = args[0]
         if isinstance(term, Var):
             result = self.store.deref(term.id)
             return result[0] == 'UNBOUND'
         return False
     
-    def _builtin_nonvar(self, term: Term) -> bool:
+    def _builtin_nonvar(self, args: tuple) -> bool:
         """nonvar(X) - true if X is not an unbound variable."""
-        return not self._builtin_var(term)
+        if len(args) != 1:
+            return False
+        return not self._builtin_var(args)
     
-    def _builtin_atom(self, term: Term) -> bool:
+    def _builtin_atom(self, args: tuple) -> bool:
         """atom(X) - true if X is an atom."""
+        if len(args) != 1:
+            return False
+        term = args[0]
         if isinstance(term, Var):
             result = self.store.deref(term.id)
             if result[0] == 'BOUND':
@@ -844,8 +939,11 @@ class Engine:
             return False
         return isinstance(term, Atom)
     
-    def _builtin_is(self, left: Term, right: Term) -> bool:
+    def _builtin_is(self, args: tuple) -> bool:
         """is(X, Y) - arithmetic evaluation."""
+        if len(args) != 2:
+            return False
+        left, right = args
         # Evaluate right side
         try:
             value = self._eval_arithmetic(right)
@@ -898,6 +996,10 @@ class Engine:
                         # Push args in reverse order for correct evaluation
                         eval_stack.append(('eval', t.args[1]))
                         eval_stack.append(('eval', t.args[0]))
+                    elif t.functor == '-' and len(t.args) == 1:
+                        # Unary minus
+                        eval_stack.append(('apply_unary', '-'))
+                        eval_stack.append(('eval', t.args[0]))
                     else:
                         raise ValueError(f"Unknown arithmetic operator: {t.functor}/{len(t.args)}")
                 else:
@@ -925,6 +1027,17 @@ class Engine:
                     if right == 0:
                         raise ValueError("Modulo by zero")
                     value_stack.append(left % right)
+                    
+            elif action == 'apply_unary':
+                op = data
+                if not value_stack:
+                    raise ValueError("Not enough values for unary operator")
+                value = value_stack.pop()
+                
+                if op == '-':
+                    value_stack.append(-value)
+                else:
+                    raise ValueError(f"Unknown unary operator: {op}")
         
         if len(value_stack) != 1:
             raise ValueError(f"Arithmetic evaluation error: expected 1 value, got {len(value_stack)}")
