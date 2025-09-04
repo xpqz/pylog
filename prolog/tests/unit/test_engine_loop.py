@@ -481,21 +481,52 @@ class TestControlConstructs:
         assert solutions[0]["X"] == Int(1)
     
     def test_cut_does_not_escape_callee(self):
-        """Test that cut doesn't prune caller's choicepoints."""
+        """Test that cut doesn't prune caller's choicepoints.
+        
+        q :- (p ; r), s.
+        p :- !, fail.
+        r.
+        s.
+        
+        Query: q.
+        Should succeed via r - cut in p doesn't escape to prune q's disjunction.
+        """
         prog = program(
-            mk_fact("a", Var(0, "_")),
-            mk_rule("c", (), Struct("!", ()), Atom("fail")),
-            mk_fact("c"),
-            mk_rule("q", (),
-                    Struct("a", (Var(0, "_"),)),
-                    Atom("c"))
+            # q :- (p ; r), s.
+            mk_rule("q", (), 
+                    Struct(";", (Atom("p"), Atom("r"))),
+                    Atom("s")),
+            # p :- !, fail.
+            mk_rule("p", (), Struct("!", ()), Atom("fail")),
+            # r.
+            mk_fact("r"),
+            # s.
+            mk_fact("s")
         )
         engine = Engine(prog)
         
         # Query: q.
-        # Cut in c/0 can't prune caller's CPs
+        # Cut in p/0 doesn't prune the disjunction CP in q
         solutions = engine.run([Struct("q", ())])
-        assert len(solutions) == 1  # Should succeed
+        assert len(solutions) == 1  # Should succeed via r
+    
+    def test_cut_commits_to_current_clause(self):
+        """Test that cut commits to the current clause (ISO semantics).
+        
+        c :- !, fail.
+        c.
+        
+        Query: c.
+        Should fail because cut commits to first clause.
+        """
+        prog = program(
+            mk_rule("c", (), Struct("!", ()), Atom("fail")),  # c :- !, fail.
+            mk_fact("c")  # c.
+        )
+        engine = Engine(prog)
+        
+        solutions = engine.run([Struct("c", ())])
+        assert len(solutions) == 0  # Should fail due to cut+fail
     
     def test_cut_with_disjunction(self):
         """Test cut interaction with disjunction."""
