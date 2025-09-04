@@ -82,20 +82,22 @@ class TestFrame:
     
     def test_frame_creation(self):
         """Test basic frame creation."""
-        frame = Frame(cut_barrier=5, pred="test/1")
+        frame = Frame(frame_id=1, cut_barrier=5, goal_height=10, pred="test/1")
+        assert frame.frame_id == 1
         assert frame.cut_barrier == 5
+        assert frame.goal_height == 10
         assert frame.pred == "test/1"
         assert frame.env is None
     
     def test_frame_with_env(self):
         """Test frame with environment."""
         env = {0: Atom("a"), 1: Atom("b")}
-        frame = Frame(cut_barrier=3, pred="foo/2", env=env)
+        frame = Frame(frame_id=2, cut_barrier=3, goal_height=8, pred="foo/2", env=env)
         assert frame.env == env
     
     def test_frame_repr(self):
         """Test frame string representation."""
-        frame = Frame(cut_barrier=2, pred="test/0")
+        frame = Frame(frame_id=3, cut_barrier=2, goal_height=5, pred="test/0")
         assert "test/0" in repr(frame)
         assert "cut=2" in repr(frame)
 
