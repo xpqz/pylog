@@ -81,7 +81,8 @@ class Engine:
         if not self._query_vars:
             # Reset state for new query
             self.reset()
-            self.max_solutions = max_solutions
+            if max_solutions is not None:
+                self.max_solutions = max_solutions
             
             # Allocate variables for query goals and track them
             renamed_goals = []
@@ -103,8 +104,7 @@ class Engine:
         
         # Main execution loop
         while self._step():
-            if self.max_solutions and len(self.solutions) >= self.max_solutions:
-                break
+            pass  # The _step method handles max_solutions check
         
         # Clean up query variables - restore them to unbound state
         if self._query_vars:
@@ -130,32 +130,67 @@ class Engine:
         Returns:
             Term with variables replaced by fresh allocated vars.
         """
-        if isinstance(term, Var):
-            # Check if we've seen this variable name
-            var_name = term.hint or f"_{term.id}"
-            # Look for existing allocation
-            for varid, name in self._query_vars:
-                if name == var_name:
-                    return Var(varid, var_name)
-            # Allocate new variable
-            varid = self.store.new_var(hint=var_name)
-            self._query_vars.append((varid, var_name))
-            return Var(varid, var_name)
+        # Iterative implementation to handle deep structures without stack overflow
+        # We'll process the term tree with explicit stack
+        stack = [term]
+        processed = {}  # Maps id(original_term) -> new_term
         
-        elif isinstance(term, (Atom, Int)):
-            return term
+        # First pass: identify all terms in depth-first order
+        all_terms = []
+        visited = set()
+        temp_stack = [term]
         
-        elif isinstance(term, Struct):
-            new_args = tuple(self._allocate_query_vars(arg) for arg in term.args)
-            return Struct(term.functor, new_args)
+        while temp_stack:
+            current = temp_stack.pop()
+            if id(current) in visited:
+                continue
+            visited.add(id(current))
+            all_terms.append(current)
+            
+            if isinstance(current, Struct):
+                # Add args in reverse order for depth-first
+                for arg in reversed(current.args):
+                    temp_stack.append(arg)
+            elif isinstance(current, PrologList):
+                temp_stack.append(current.tail)
+                for item in reversed(current.items):
+                    temp_stack.append(item)
         
-        elif isinstance(term, PrologList):
-            new_items = tuple(self._allocate_query_vars(item) for item in term.items)
-            new_tail = self._allocate_query_vars(term.tail)
-            return PrologList(new_items, tail=new_tail)
+        # Second pass: process terms bottom-up
+        for current in reversed(all_terms):
+            if isinstance(current, Var):
+                # Check if we've seen this variable name
+                var_name = current.hint or f"_{current.id}"
+                # Look for existing allocation
+                result = None
+                for varid, name in self._query_vars:
+                    if name == var_name:
+                        result = Var(varid, var_name)
+                        break
+                if result is None:
+                    # Allocate new variable
+                    varid = self.store.new_var(hint=var_name)
+                    self._query_vars.append((varid, var_name))
+                    result = Var(varid, var_name)
+                processed[id(current)] = result
+                
+            elif isinstance(current, (Atom, Int)):
+                processed[id(current)] = current
+                
+            elif isinstance(current, Struct):
+                # All args should be processed already
+                new_args = tuple(processed[id(arg)] for arg in current.args)
+                processed[id(current)] = Struct(current.functor, new_args)
+                
+            elif isinstance(current, PrologList):
+                # All items and tail should be processed already
+                new_items = tuple(processed[id(item)] for item in current.items)
+                new_tail = processed[id(current.tail)]
+                processed[id(current)] = PrologList(new_items, tail=new_tail)
+            else:
+                raise TypeError(f"Unknown term type: {type(current)}")
         
-        else:
-            raise TypeError(f"Unknown term type: {type(term)}")
+        return processed[id(term)]
     
     def _step(self) -> bool:
         """Execute one step of the inference engine.
@@ -169,6 +204,9 @@ class Engine:
         if goal is None:
             # No more goals - found a solution
             self._record_solution()
+            # Check if we've found enough solutions
+            if self.max_solutions and len(self.solutions) >= self.max_solutions:
+                return False  # Stop searching
             # Backtrack to find more solutions
             return self._backtrack()
         
@@ -385,7 +423,7 @@ class Engine:
             return Var(ref, hint or f"_{ref}")
         
         elif result[0] == 'BOUND':
-            # Bound to a term - reify recursively
+            # Bound to a term - reify iteratively
             _, ref, term = result
             return self._reify_term(term)
         
@@ -393,7 +431,7 @@ class Engine:
             raise ValueError(f"Unknown cell tag: {result[0]}")
     
     def _reify_term(self, term: Term) -> Any:
-        """Reify a term, following variable bindings.
+        """Reify a term, following variable bindings (iterative).
         
         Args:
             term: The term to reify.
@@ -401,23 +439,73 @@ class Engine:
         Returns:
             The ground term with variables reified.
         """
-        if isinstance(term, Var):
-            return self._reify_var(term.id)
+        # Use iterative approach to avoid stack overflow
+        stack = [term]
+        visited = set()
+        all_terms = []
         
-        elif isinstance(term, (Atom, Int)):
-            return term
+        # First pass: collect all terms in dependency order
+        while stack:
+            current = stack.pop()
+            term_id = id(current)
+            
+            if term_id in visited:
+                continue
+            visited.add(term_id)
+            all_terms.append(current)
+            
+            if isinstance(current, Var):
+                # Will need to check binding
+                result = self.store.deref(current.id)
+                if result[0] == 'BOUND':
+                    _, _, bound_term = result
+                    stack.append(bound_term)
+            elif isinstance(current, Struct):
+                for arg in reversed(current.args):
+                    stack.append(arg)
+            elif isinstance(current, PrologList):
+                stack.append(current.tail)
+                for item in reversed(current.items):
+                    stack.append(item)
         
-        elif isinstance(term, Struct):
-            reified_args = tuple(self._reify_term(arg) for arg in term.args)
-            return Struct(term.functor, reified_args)
+        # Second pass: reify bottom-up
+        reified = {}
+        for current in reversed(all_terms):
+            term_id = id(current)
+            
+            if isinstance(current, Var):
+                result = self.store.deref(current.id)
+                if result[0] == 'UNBOUND':
+                    # Unbound variable - return a representation
+                    _, ref = result
+                    hint = f"_{ref}" if ref >= self._initial_var_cutoff else None
+                    for vid, name in self._query_vars:
+                        if vid == ref:
+                            hint = name
+                            break
+                    reified[term_id] = Var(ref, hint or f"_{ref}")
+                elif result[0] == 'BOUND':
+                    # Use reified version of bound term
+                    _, _, bound_term = result
+                    reified[term_id] = reified.get(id(bound_term), bound_term)
+                else:
+                    raise ValueError(f"Unknown cell tag: {result[0]}")
+                    
+            elif isinstance(current, (Atom, Int)):
+                reified[term_id] = current
+                
+            elif isinstance(current, Struct):
+                reified_args = tuple(reified.get(id(arg), arg) for arg in current.args)
+                reified[term_id] = Struct(current.functor, reified_args)
+                
+            elif isinstance(current, PrologList):
+                reified_items = tuple(reified.get(id(item), item) for item in current.items)
+                reified_tail = reified.get(id(current.tail), current.tail)
+                reified[term_id] = PrologList(reified_items, tail=reified_tail)
+            else:
+                raise TypeError(f"Unknown term type: {type(current)}")
         
-        elif isinstance(term, PrologList):
-            reified_items = tuple(self._reify_term(item) for item in term.items)
-            reified_tail = self._reify_term(term.tail)
-            return PrologList(reified_items, tail=reified_tail)
-        
-        else:
-            raise TypeError(f"Unknown term type: {type(term)}")
+        return reified.get(id(term), term)
     
     def _is_builtin(self, term: Term) -> bool:
         """Check if a term is a builtin predicate.

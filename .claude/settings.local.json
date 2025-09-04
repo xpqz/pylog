@@ -19,7 +19,11 @@
       "Bash(python -m pytest prolog/tests/unit/test_rename.py -xvs)",
       "Bash(python -m pytest prolog/tests/unit/test_engine.py::TestEngineInitialization -xvs)",
       "Bash(python -m pytest prolog/tests/unit/test_engine.py::TestSolutionRecording -xvs)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(timeout 10 python:*)",
+      "Bash(gh repo create:*)",
+      "Bash(git remote add:*)",
+      "Bash(git push:*)"
     ],
     "deny": [],
     "ask": []

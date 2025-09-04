@@ -14,17 +14,18 @@ class VarRenamer:
     This ensures proper variable isolation between clause uses.
     """
     
-    def __init__(self, store: Store):
+    def __init__(self, store: Store, mapping: Optional[Dict[int, int]] = None):
         """Initialize with a Store for allocating fresh variables.
         
         Args:
             store: The Store to allocate fresh variables from.
+            mapping: Optional existing mapping to reuse (for stable identity).
         """
         self._store = store
-        self._mapping: Dict[int, int] = {}  # Original var ID -> fresh var ID
+        self._mapping = mapping if mapping is not None else {}  # Original var ID -> fresh var ID
     
     def rename_term(self, term: Term) -> Term:
-        """Rename all variables in a term to fresh variables.
+        """Rename all variables in a term to fresh variables (iterative).
         
         Variables with the same ID in the input will map to the same
         fresh variable in the output (consistency within a clause).
@@ -35,33 +36,62 @@ class VarRenamer:
         Returns:
             A new term with all variables renamed.
         """
-        if isinstance(term, Var):
-            # Check if we've seen this variable before
-            if term.id not in self._mapping:
-                # Allocate a fresh variable
-                fresh_id = self._store.new_var(hint=term.hint)
-                self._mapping[term.id] = fresh_id
+        # Use iterative approach to avoid stack overflow on deep structures
+        # We'll do a two-pass approach: first collect all terms, then build bottom-up
+        
+        # First pass: collect all terms in depth-first order
+        all_terms = []
+        visited = set()
+        stack = [term]
+        
+        while stack:
+            current = stack.pop()
+            if id(current) in visited:
+                continue
+            visited.add(id(current))
+            all_terms.append(current)
             
-            # Return the mapped variable (preserving hint)
-            return Var(self._mapping[term.id], term.hint)
+            if isinstance(current, Struct):
+                # Add args in reverse for depth-first order
+                for arg in reversed(current.args):
+                    stack.append(arg)
+            elif isinstance(current, PrologList):
+                stack.append(current.tail)
+                for item in reversed(current.items):
+                    stack.append(item)
         
-        elif isinstance(term, (Atom, Int)):
-            # Atoms and integers are unchanged
-            return term
+        # Second pass: rename bottom-up
+        renamed = {}  # id(original) -> renamed term
         
-        elif isinstance(term, Struct):
-            # Recursively rename arguments
-            renamed_args = tuple(self.rename_term(arg) for arg in term.args)
-            return Struct(term.functor, renamed_args)
+        for current in reversed(all_terms):
+            if isinstance(current, Var):
+                # Check if we've seen this variable before
+                if current.id not in self._mapping:
+                    # Allocate a fresh variable
+                    fresh_id = self._store.new_var(hint=current.hint)
+                    self._mapping[current.id] = fresh_id
+                
+                # Create renamed variable
+                renamed[id(current)] = Var(self._mapping[current.id], current.hint)
+                
+            elif isinstance(current, (Atom, Int)):
+                # Atoms and integers are unchanged
+                renamed[id(current)] = current
+                
+            elif isinstance(current, Struct):
+                # All args should already be renamed
+                renamed_args = tuple(renamed[id(arg)] for arg in current.args)
+                renamed[id(current)] = Struct(current.functor, renamed_args)
+                
+            elif isinstance(current, PrologList):
+                # All items and tail should already be renamed
+                renamed_items = tuple(renamed[id(item)] for item in current.items)
+                renamed_tail = renamed[id(current.tail)]
+                renamed[id(current)] = PrologList(renamed_items, tail=renamed_tail)
+            else:
+                raise TypeError(f"Unknown term type: {type(current)}")
         
-        elif isinstance(term, PrologList):
-            # Rename items and tail
-            renamed_items = tuple(self.rename_term(item) for item in term.items)
-            renamed_tail = self.rename_term(term.tail)
-            return PrologList(renamed_items, tail=renamed_tail)
-        
-        else:
-            raise TypeError(f"Unknown term type: {type(term)}")
+        return renamed[id(term)]
     
     def rename_clause(self, clause: Clause) -> Clause:
         """Rename all variables in a clause to fresh variables.
@@ -78,7 +108,10 @@ class VarRenamer:
         # Rename head
         renamed_head = self.rename_term(clause.head)
         
-        # Rename body goals (if any)
-        renamed_body = tuple(self.rename_term(goal) for goal in clause.body)
+        # Rename body goals iteratively to avoid recursion
+        renamed_body = []
+        for goal in clause.body:
+            renamed_goal = self.rename_term(goal)
+            renamed_body.append(renamed_goal)
         
-        return Clause(head=renamed_head, body=renamed_body)
+        return Clause(head=renamed_head, body=tuple(renamed_body))
