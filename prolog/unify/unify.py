@@ -116,10 +116,17 @@ def _unify_nonvars(t1: Any, t2: Any, stack: List[Tuple[Any, Any]]) -> bool:
             return False
         if len(t1.args) != len(t2.args):
             return False
-        # Push argument pairs onto stack
-        for a1, a2 in zip(t1.args, t2.args):
+        # Push argument pairs onto stack in reverse order
+        # so they're processed left-to-right
+        for a1, a2 in reversed(list(zip(t1.args, t2.args))):
             stack.append((a1, a2))
         return True
+    
+    # Atom with zero-arity Struct (equivalent in Prolog)
+    if isinstance(t1, Atom) and isinstance(t2, Struct) and len(t2.args) == 0:
+        return t1.name == t2.functor
+    if isinstance(t2, Atom) and isinstance(t1, Struct) and len(t1.args) == 0:
+        return t2.name == t1.functor
     
     # Lists
     if isinstance(t1, PrologList) and isinstance(t2, PrologList):

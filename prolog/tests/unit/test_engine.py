@@ -28,8 +28,8 @@ class TestEngineInitialization:
         
         assert engine.program is prog
         assert isinstance(engine.store, Store)
-        assert isinstance(engine.trail, list)
-        assert engine.trail == []
+        assert hasattr(engine.trail, 'position')  # Trail object
+        assert engine.trail.position() == 0  # Empty trail
         assert engine.solutions == []
         assert engine.max_solutions is None
         assert engine.trace is False
@@ -87,7 +87,7 @@ class TestEngineInitialization:
         
         # Simulate some execution
         engine.store.new_var("X")
-        engine.trail.append(("test", 0, None))
+        engine.trail.push(("test", 0, None))
         engine.solutions.append({"X": Atom("a")})
         engine._initial_var_cutoff = 1
         engine._cut_barrier = 5
@@ -186,6 +186,7 @@ class TestSolutionRecording:
         # Unbound query variable
         x_id = engine.store.new_var("X")
         engine._query_vars = [(x_id, "X")]
+        engine._qname_by_id[x_id] = "X"  # Map variable ID to name
         engine._initial_var_cutoff = len(engine.store.cells)
         
         engine._record_solution()
