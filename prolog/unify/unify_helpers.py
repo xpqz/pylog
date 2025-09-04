@@ -59,17 +59,29 @@ def union_vars(v1: int, v2: int, trail: List, store: Store) -> bool:
     
     if rank1 < rank2:
         # root1 joins root2
-        trail.append(("parent", root1, store.cells[root1].ref))
+        if hasattr(trail, 'push'):
+            trail.push(("parent", root1, store.cells[root1].ref))
+        else:
+            trail.append(("parent", root1, store.cells[root1].ref))
         store.cells[root1].ref = root2
     elif rank2 < rank1:
         # root2 joins root1
-        trail.append(("parent", root2, store.cells[root2].ref))
+        if hasattr(trail, 'push'):
+            trail.push(("parent", root2, store.cells[root2].ref))
+        else:
+            trail.append(("parent", root2, store.cells[root2].ref))
         store.cells[root2].ref = root1
     else:
         # Equal ranks: root1 joins root2, increment root2's rank
-        trail.append(("parent", root1, store.cells[root1].ref))
+        if hasattr(trail, 'push'):
+            trail.push(("parent", root1, store.cells[root1].ref))
+        else:
+            trail.append(("parent", root1, store.cells[root1].ref))
         store.cells[root1].ref = root2
-        trail.append(("rank", root2, store.cells[root2].rank))
+        if hasattr(trail, 'push'):
+            trail.push(("rank", root2, store.cells[root2].rank))
+        else:
+            trail.append(("rank", root2, store.cells[root2].rank))
         store.cells[root2].rank += 1
     
     return True
@@ -104,8 +116,11 @@ def bind_root_to_term(vid: int, term: Any, trail: List, store: Store) -> None:
     # Create a snapshot of the old cell for the trail
     old_cell = Cell(tag=cell.tag, ref=cell.ref, term=cell.term, rank=cell.rank)
     
-    # Trail the old cell
-    trail.append(("bind", vid, old_cell))
+    # Trail the old cell (support both list and Trail object)
+    if hasattr(trail, 'push'):
+        trail.push(("bind", vid, old_cell))
+    else:
+        trail.append(("bind", vid, old_cell))
     
     # Bind the variable
     store.cells[vid] = Cell(tag="bound", ref=vid, term=term, rank=cell.rank)
