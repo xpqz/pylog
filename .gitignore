@@ -54,3 +54,6 @@ htmlcov/
 *.pdf
 debug_output/
 traces/
+
+# Local Claude settings
+.claude/settings.local.json
