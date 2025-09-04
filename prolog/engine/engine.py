@@ -347,11 +347,11 @@ class Engine:
         clause_idx = cursor.take()
         clause = self.program.clauses[clause_idx]
         
-        # Save cut barrier BEFORE creating choicepoint
-        cut_barrier = len(self.cp_stack)
-        
         # If there are more clauses, create a choicepoint
         if cursor.has_more():
+            # Save cut barrier before creating the choicepoint for alternative clauses
+            # This will be used when backtracking to this choicepoint
+            saved_cut_barrier = len(self.cp_stack)
             cp = Choicepoint(
                 kind=ChoicepointKind.PREDICATE,
                 trail_top=self.trail.position(),
@@ -361,11 +361,15 @@ class Engine:
                     "goal": goal,
                     "cursor": cursor,
                     "pred_ref": f"{functor}/{arity}",
-                    "cut_barrier": cut_barrier,  # Save for use when backtracking
+                    "cut_barrier": saved_cut_barrier,  # Save for use when backtracking
                     "saved_goals": list(self.goal_stack._stack)  # Save current goals
                 }
             )
             self.cp_stack.append(cp)
+        
+        # Set cut barrier AFTER creating choicepoint for alternative clauses
+        # This ensures cut in the body doesn't remove the alternative clause choicepoint
+        cut_barrier = len(self.cp_stack)
         
         # Rename clause with fresh variables
         renamed_clause = self._renamer.rename_clause(clause)
@@ -606,8 +610,6 @@ class Engine:
                 # Restore the exact saved goals
                 self.goal_stack._stack = list(cp.payload["saved_goals"])
                 # Debug: verify restoration
-                if self.trace:
-                    print(f"[DEBUG] Restored {len(self.goal_stack._stack)} saved goals")
             else:
                 # For other CPs, use shrink_to as before
                 self.goal_stack.shrink_to(cp.goal_stack_height)
