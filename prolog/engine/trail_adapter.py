@@ -17,10 +17,8 @@ class TrailAdapter:
         
     def append(self, entry: Tuple[str, ...]) -> None:
         """Append an entry to the trail (list-like interface)."""
-        # Increment trail write counter on first new write
-        if self.engine and self.trail.position() > self._start_pos:
-            if len(self._temp_entries) == 0:  # First write in this adapter
-                self.engine._debug_trail_writes += 1
+        # Track position before push to check if write actually happened
+        pos_before = self.trail.position()
         
         if entry[0] == 'bind':
             _, varid, old_cell = entry
@@ -34,6 +32,11 @@ class TrailAdapter:
         else:
             # Generic push for other entry types
             self.trail.push(entry)
+        
+        # Increment counter if a write actually happened
+        # (push_bind/push_parent might skip if already trailed)
+        if self.engine and self.trail.position() > pos_before:
+            self.engine._debug_trail_writes += 1
         
         # Track for len() support
         self._temp_entries.append(entry)

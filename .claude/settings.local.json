@@ -26,7 +26,8 @@
       "Bash(git push:*)",
       "Bash(timeout 30 python -m pytest:*)",
       "Bash(timeout:*)",
-      "Bash(git stash:*)"
+      "Bash(git stash:*)",
+      "Bash(git fetch:*)"
     ],
     "deny": [],
     "ask": []

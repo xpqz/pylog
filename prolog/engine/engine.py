@@ -66,6 +66,9 @@ class Engine:
         self._next_frame_id = 0  # Monotonic frame ID counter
         self._cut_barrier = None  # Legacy field for tests
         
+        # Debug ports for tracing
+        self._ports: List[str] = []
+        
         # Variable renaming for clause isolation
         self._renamer = VarRenamer(self.store)
     
@@ -88,6 +91,7 @@ class Engine:
         self._steps_taken = 0
         self._next_frame_id = 0
         self._cut_barrier = None
+        # Don't reset ports - they accumulate across runs
     
     def _register_builtins(self):
         """Register all builtin predicates.
@@ -106,6 +110,8 @@ class Engine:
         self._builtins[("nonvar", 1)] = lambda eng, args: eng._builtin_nonvar(args)
         self._builtins[("atom", 1)] = lambda eng, args: eng._builtin_atom(args)
         self._builtins[("is", 2)] = lambda eng, args: eng._builtin_is(args)
+        self._builtins[(">", 2)] = lambda eng, args: eng._builtin_gt(args)
+        self._builtins[("=:=", 2)] = lambda eng, args: eng._builtin_num_eq(args)
     
     def run(self, goals: List[Term], max_solutions: Optional[int] = None) -> List[Dict[str, Any]]:
         """Run a query with given goals using single iterative loop.
@@ -145,6 +151,11 @@ class Engine:
         
         # Check if max_solutions is 0 - no point in running
         if self.max_solutions == 0:
+            # Clean up state before returning
+            self.trail.unwind_to(0, self.store)
+            self.goal_stack.shrink_to(0)
+            self.frame_stack.clear()
+            self.cp_stack.clear()
             return self.solutions
         
         # Reset step counter for new query
@@ -227,6 +238,12 @@ class Engine:
         self._qid_by_name = {}
         self._qname_by_id = {}
         self._initial_var_cutoff = 0
+        
+        # Clean up all state before returning
+        self.trail.unwind_to(0, self.store)
+        self.goal_stack.shrink_to(0)
+        self.frame_stack.clear()
+        self.cp_stack.clear()
         
         return self.solutions
     
@@ -335,12 +352,16 @@ class Engine:
             # Can't match a variable or other term
             return False
         
+        # Emit CALL port before processing
+        self._port("CALL", f"{functor}/{arity}")
+        
         # Get matching clauses
         matches = self.program.clauses_for(functor, arity)
         cursor = ClauseCursor(matches=matches, functor=functor, arity=arity)
         
         if not cursor.has_more():
-            # No matching clauses
+            # No matching clauses - emit FAIL port
+            self._port("FAIL", f"{functor}/{arity}")
             return False
         
         # Take first clause
@@ -575,8 +596,10 @@ class Engine:
         frame_id = goal.payload.get("frame_id")
         # Sanity check: should be popping the frame with matching ID
         if self.frame_stack and self.frame_stack[-1].frame_id == frame_id:
-            self.frame_stack.pop()
+            frame = self.frame_stack.pop()
             self._debug_frame_pops += 1
+            # Emit EXIT port when frame is popped
+            self._port("EXIT", frame.pred)
         # If frame ID doesn't match, it's likely a stale POP_FRAME from backtracking
         # Just ignore it - the frame was already popped or never created
     
@@ -643,6 +666,9 @@ class Engine:
             
             # Resume based on choicepoint kind
             if cp.kind == ChoicepointKind.PREDICATE:
+                # Emit REDO port before resuming
+                self._port("REDO", cp.payload["pred_ref"])
+                
                 # Try next clause
                 goal = cp.payload["goal"]
                 cursor = cp.payload["cursor"]
@@ -738,6 +764,10 @@ class Engine:
                         # Unification failed, continue backtracking
                         # No frame was created
                         continue
+                else:
+                    # No more clauses to try - emit FAIL port
+                    self._port("FAIL", cp.payload["pred_ref"])
+                    continue
                         
             elif cp.kind == ChoicepointKind.DISJUNCTION:
                 # Restore continuation if present
@@ -926,6 +956,40 @@ class Engine:
         return key in self._builtins
     
     # Builtin implementations - uniform signature: (engine, args_tuple) -> bool
+    def _port(self, kind: str, pred: str) -> None:
+        """Record a debug port.
+        
+        Args:
+            kind: The port type (CALL, EXIT, REDO, FAIL).
+            pred: The predicate reference.
+        """
+        self._ports.append(kind)  # Can also append f"{kind} {pred}" if needed
+    
+    @property
+    def debug_ports(self) -> List[str]:
+        """Get the list of recorded debug ports."""
+        return list(self._ports)
+    
+    @property
+    def debug_trail_depth(self) -> int:
+        """Get current trail depth."""
+        return self.trail.position()
+    
+    @property
+    def debug_cp_stack_size(self) -> int:
+        """Get current choicepoint stack size."""
+        return len(self.cp_stack)
+    
+    @property
+    def debug_goal_stack_size(self) -> int:
+        """Get current goal stack size."""
+        return self.goal_stack.height()
+    
+    @property
+    def debug_frame_stack_size(self) -> int:
+        """Get current frame stack size."""
+        return len(self.frame_stack)
+    
     def _builtin_cut(self, args: tuple) -> bool:
         """! - cut builtin."""
         self._dispatch_cut()
@@ -1014,6 +1078,45 @@ class Engine:
                 return isinstance(bound_term, Atom)
             return False
         return isinstance(term, Atom)
+    
+    def _eval_int(self, t: Term) -> int:
+        """Evaluate a term as an integer.
+        
+        Args:
+            t: The term to evaluate.
+            
+        Returns:
+            The integer value.
+            
+        Raises:
+            ValueError: If the term is not an integer.
+        """
+        if isinstance(t, Int):
+            return t.value
+        if isinstance(t, Var):
+            r = self.store.deref(t.id)
+            if r[0] == 'BOUND':
+                _, _, b = r
+                return self._eval_int(b)
+        raise ValueError("non-integer")
+    
+    def _builtin_gt(self, args: tuple) -> bool:
+        """>(X, Y) - arithmetic greater-than comparison."""
+        if len(args) != 2:
+            return False
+        try:
+            return self._eval_int(args[0]) > self._eval_int(args[1])
+        except ValueError:
+            return False  # ISO: type/instantiation errors
+    
+    def _builtin_num_eq(self, args: tuple) -> bool:
+        """=:=(X, Y) - arithmetic equality comparison."""
+        if len(args) != 2:
+            return False
+        try:
+            return self._eval_int(args[0]) == self._eval_int(args[1])
+        except ValueError:
+            return False  # ISO: type/instantiation errors
     
     def _builtin_is(self, args: tuple) -> bool:
         """is(X, Y) - arithmetic evaluation."""
@@ -1122,8 +1225,8 @@ class Engine:
     
     # Debug methods
     def get_trace(self) -> List[str]:
-        """Get the trace log for debugging."""
-        return self._trace_log
+        """Get the debug ports for debugging."""
+        return self._ports
     
     @property
     def debug_cp_stack_size(self) -> int:
