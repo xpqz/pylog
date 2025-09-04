@@ -230,28 +230,25 @@ class TestDeepGoalStacks:
             assert len(solutions) == 4
             engine.reset()  # Reset between runs
     
-    @pytest.mark.xfail(reason="Infinite loop - placeholder for future depth limit")
-    @pytest.mark.timeout(2)
     def test_infinite_recursion_handling(self):
-        """Test that infinite recursion doesn't cause Python stack overflow.
+        """Test that infinite recursion is caught by step budget.
         
-        This test is expected to fail (timeout) as the engine will loop forever.
-        It verifies that the loop uses explicit stacks, not Python recursion.
-        Future work: Add depth limits to prevent infinite loops.
+        The engine uses explicit stacks (not Python recursion) and 
+        can be limited with max_steps to prevent infinite loops.
         """
         prog = program(
             # Infinite recursion: loop :- loop.
             mk_rule("loop", (), Struct("loop", ()))
         )
         
-        engine = Engine(prog, max_solutions=1)
+        # Use step budget to prevent infinite loop
+        engine = Engine(prog, max_solutions=1, max_steps=1000)
         
-        # This will loop forever but shouldn't cause Python stack overflow
-        # The timeout decorator will kill it after 2 seconds
+        # This will hit the step limit and return no solutions
         solutions = engine.run([Struct("loop", ())])
         
-        # We never reach here due to infinite loop
-        assert False, "Should have timed out"
+        # Should return empty (no solutions found within step budget)
+        assert len(solutions) == 0
     
     @pytest.mark.timeout(10)
     def test_complex_stress_scenario(self):

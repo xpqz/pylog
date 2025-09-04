@@ -19,7 +19,8 @@ class Engine:
     """Prolog inference engine with explicit stacks (no Python recursion)."""
     
     def __init__(self, program: Program, occurs_check: bool = False, 
-                 max_solutions: Optional[int] = None, trace: bool = False):
+                 max_solutions: Optional[int] = None, trace: bool = False,
+                 max_steps: Optional[int] = None):
         """Initialize engine with a program.
         
         Args:
@@ -27,6 +28,7 @@ class Engine:
             occurs_check: Whether to use occurs check in unification.
             max_solutions: Maximum number of solutions to find.
             trace: Whether to enable tracing.
+            max_steps: Maximum number of steps to execute (for debugging infinite loops).
         """
         self.program = program
         self.occurs_check = occurs_check
@@ -51,6 +53,8 @@ class Engine:
         # Configuration
         self.trace = trace
         self._trace_log: List[str] = []  # For debugging
+        self.max_steps = max_steps  # Step budget for infinite loop detection
+        self._steps_taken = 0  # Counter for steps executed
         
         # Builtin registry: maps (name, arity) -> callable
         self._builtins = {}
@@ -81,6 +85,7 @@ class Engine:
         self._trace_log = []
         self._debug_frame_pops = 0
         self._debug_trail_writes = 0
+        self._steps_taken = 0
         self._next_frame_id = 0
         self._cut_barrier = None
     
@@ -142,6 +147,9 @@ class Engine:
         if self.max_solutions == 0:
             return self.solutions
         
+        # Reset step counter for new query
+        self._steps_taken = 0
+        
         # Push initial goals (in reverse for left-to-right execution)
         for goal in reversed(renamed_goals):
             g = Goal.from_term(goal)
@@ -149,6 +157,12 @@ class Engine:
         
         # Main single iterative loop
         while True:
+            # Check step budget
+            if self.max_steps is not None:
+                self._steps_taken += 1
+                if self._steps_taken > self.max_steps:
+                    # Step budget exceeded - stop execution
+                    break
             # Pop next goal
             goal = self.goal_stack.pop()
             
