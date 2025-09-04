@@ -37,6 +37,28 @@ class Store:
         self.cells.append(Cell(tag="unbound", ref=vid, term=None, rank=0))
         return vid
     
+    def size(self) -> int:
+        """Get current store size (number of cells).
+        
+        Returns:
+            The number of cells in the store.
+        """
+        return len(self.cells)
+    
+    def shrink_to(self, n: int) -> None:
+        """Shrink the store to the given size.
+        
+        Only shrinks pure allocations (not bindings).
+        Used for backtracking past allocation points.
+        
+        Args:
+            n: Target size to shrink to.
+        """
+        if n < 0 or n > len(self.cells):
+            return
+        # Pop cells back to size n
+        self.cells = self.cells[:n]
+    
     def deref(self, varid: int, compress: bool = False, trail: Optional[List] = None) -> Tuple:
         """Follow union-find chains to find the root.
         

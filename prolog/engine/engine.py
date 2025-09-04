@@ -379,6 +379,9 @@ class Engine:
             # Save the continuation (goals below the call) as an immutable snapshot
             continuation = self.goal_stack.snapshot()
             
+            # Save store size for allocation cleanup
+            store_top = self.store.size()
+            
             # Debug: log what we're saving
             if self.trace:
                 self._trace_log.append(f"Creating PREDICATE CP for {functor}/{arity}, saving {len(continuation)} continuation goals")
@@ -392,7 +395,8 @@ class Engine:
                     "goal": goal,
                     "cursor": cursor,
                     "pred_ref": f"{functor}/{arity}",
-                    "continuation": continuation  # Frozen snapshot of continuation goals
+                    "continuation": continuation,  # Frozen snapshot of continuation goals
+                    "store_top": store_top  # Store size for allocation cleanup
                 }
             )
             self.cp_stack.append(cp)
@@ -609,7 +613,14 @@ class Engine:
         Args:
             goal: The control goal.
         """
-        if goal.payload and goal.payload.get("op") == "ITE_THEN":
+        op = goal.payload.get("op") if goal.payload else None
+        
+        if op == "CALL_META":
+            # Push the inner goal transparently for meta-call
+            inner_goal = goal.payload["goal"]
+            self.goal_stack.push(inner_goal)
+            return
+        elif op == "ITE_THEN":
             # Commit to Then branch in if-then-else
             tmp_barrier = goal.payload["tmp_barrier"]
             # Prune all choicepoints above tmp_barrier (removes Else CP)
@@ -700,6 +711,10 @@ class Engine:
                 if cursor.has_more():
                     clause_idx = cursor.take()
                     clause = self.program.clauses[clause_idx]
+                    
+                    # Shrink store to checkpoint size for allocation cleanup
+                    if "store_top" in cp.payload:
+                        self.store.shrink_to(cp.payload["store_top"])
                     
                     # Enter new choice region when resuming
                     # This ensures proper trailing for the new clause attempt
@@ -990,6 +1005,13 @@ class Engine:
         """Get current frame stack size."""
         return len(self.frame_stack)
     
+    @property
+    def goals(self):
+        """Get current goal stack for test compatibility."""
+        # Return the GoalStack itself for compatibility with tests
+        # that might access ._stack directly
+        return self.goal_stack
+    
     def _builtin_cut(self, args: tuple) -> bool:
         """! - cut builtin."""
         self._dispatch_cut()
@@ -1006,25 +1028,25 @@ class Engine:
         
         term = args[0]
         
-        # Dereference if it's a variable
-        if isinstance(term, Var):
+        # Full iterative dereference
+        while isinstance(term, Var):
             result = self.store.deref(term.id)
-            if result[0] == 'BOUND':
-                _, _, bound_term = result
-                term = bound_term
-            else:
+            if result[0] == 'UNBOUND':
                 # Unbound variable - cannot call
                 return False
+            _, _, term = result
         
         # Check if term is callable (Atom or Struct)
         if not isinstance(term, (Atom, Struct)):
             # Integers, lists, etc are not callable
             return False
         
-        # Push the term as a goal to be executed
-        # IMPORTANT: The goal must be pushed for immediate execution
-        goal = Goal.from_term(term)
-        self.goal_stack.push(goal)
+        # Schedule internal CONTROL op that pushes the goal, keeping call/1 transparent
+        self.goal_stack.push(Goal(
+            GoalType.CONTROL,
+            None,
+            payload={"op": "CALL_META", "goal": Goal.from_term(term)}
+        ))
         return True
     
     def _builtin_unify(self, args: tuple) -> bool:
