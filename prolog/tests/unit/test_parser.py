@@ -3,8 +3,11 @@
 The parser module converts text to AST using the Lark grammar.
 It provides functions for parsing terms, clauses, queries, and programs.
 
-Note: Stage 1 is operator-free, so -5 is a signed integer literal, not -(5).
-Programs accept only clauses (facts/rules), not queries or directives.
+Stage 1 Policy Notes:
+- Operator-free syntax only (-5 is a signed integer literal, not -(5))
+- Programs accept only clauses (facts/rules), not queries or directives
+- Quoted atoms can be functors (ISO-compliant)
+- Escape sequences supported: \', \\, \n, \t
 """
 
 import pytest
@@ -82,6 +85,11 @@ class TestParseTerm:
         result = parse_term("_foo")
         assert isinstance(result, Var)
         assert result.hint == "_foo"
+        
+        # Variable with digits
+        result = parse_term("X1")
+        assert isinstance(result, Var)
+        assert result.hint == "X1"
         
     def test_parse_anonymous_variable(self):
         """Parse anonymous variable _."""
@@ -207,19 +215,47 @@ class TestParseTerm:
         assert len(lst.items) == 2
         assert lst.items[0] == Int(1)
         assert lst.items[1] == Int(2)
+    
+    def test_quoted_atom_as_functor(self):
+        """Test quoted atoms can be functors (ISO-compliant)."""
+        result = parse_term("'foo bar'(X)")
+        assert isinstance(result, Struct)
+        assert result.functor == "foo bar"
+        assert len(result.args) == 1
+        assert isinstance(result.args[0], Var)
+    
+    def test_structure_whitespace_handling(self):
+        """Test structure parsing with various whitespace."""
+        result = parse_term("foo( 1 , X , bar )")
+        assert isinstance(result, Struct)
+        assert result.functor == "foo"
+        assert len(result.args) == 3
+        assert result.args[0] == Int(1)
+        assert isinstance(result.args[1], Var)
+        assert result.args[2] == Atom("bar")
+    
+    def test_structure_trailing_comma_rejected(self):
+        """Trailing comma in structure is invalid."""
+        with pytest.raises(ParseError):
+            parse_term("foo(1,)")
         
     def test_parse_term_with_comments(self):
-        """Parse term ignoring comments.
-        
-        Note: Assumes parser strips comments before parsing single term.
-        """
+        """Parse term ignoring comments."""
         # Line comment after term
-        result = parse_term("foo")  # Simple case without comment for now
+        result = parse_term("foo % trailing comment\n")
         assert result == Atom("foo")
         
-        # Comment on previous line should be ignored
-        result = parse_term("bar")
+        # Line comment before term
+        result = parse_term("% comment\nbar")
         assert result == Atom("bar")
+        
+        # Block comment (if supported)
+        result = parse_term("/*block*/baz")
+        assert result == Atom("baz")
+        
+        # Block comment with term
+        result = parse_term("qux /*inline comment*/ ")
+        assert result == Atom("qux")
         
     def test_parse_term_with_whitespace(self):
         """Parse term with various whitespace."""
@@ -255,7 +291,7 @@ class TestParseTerm:
     def test_list_bar_edge_cases(self):
         """Test edge cases for list bar notation."""
         # Invalid bar syntax
-        invalid_lists = ["[|T]", "[H|]", "[H||T]", "[H,|T]"]
+        invalid_lists = ["[|T]", "[H|]", "[H||T]", "[H,|T]", "[H | | T]", "[1,2| |T]"]
         for invalid in invalid_lists:
             with pytest.raises(ParseError):
                 parse_term(invalid)
@@ -339,6 +375,20 @@ class TestParseClause:
         assert result.head.args[0] == Atom("tom")
         assert result.head.args[1] == Atom("bob")
         assert result.body == []
+    
+    def test_parse_fact_quoted_atom_head(self):
+        """Test quoted atoms as clause heads (ISO-compliant)."""
+        # Quoted atom as fact
+        result = parse_clause("'spaced atom'.")
+        assert isinstance(result, Clause)
+        assert result.head == Atom("spaced atom")
+        assert result.body == []
+        
+        # Quoted atom as functor in fact
+        result = parse_clause("'foo bar'(x).")
+        assert isinstance(result, Clause)
+        assert isinstance(result.head, Struct)
+        assert result.head.functor == "foo bar"
         
     def test_parse_rule_simple(self):
         """Parse simple rule."""
