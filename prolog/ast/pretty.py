@@ -2,66 +2,83 @@
 
 Provides functions to convert AST nodes back to readable Prolog syntax.
 Supports round-trip property: parse(pretty(term)) == term.
+
+Quoting rules:
+- Atoms starting with lowercase letter followed by alphanumeric/underscore: unquoted
+- Reserved tokens ([], :-, ,, |, etc.): quoted
+- Everything else (spaces, punctuation, uppercase start, numeric): quoted
 """
 
 from typing import Dict, Optional, List, Tuple, Union
-import re
 from prolog.ast.terms import Term, Atom, Int, Var, Struct, List as PrologList
 from prolog.ast.clauses import Clause
 
+# Reserved tokens that always need quotes (except special cases)
+_RESERVED = {'[]', ':-', ',', '|', ';', '{}'}  # '!' is special - doesn't need quotes as cut
 
-def _needs_quotes(atom_name: str) -> bool:
-    """Check if an atom needs quotes.
+
+def _needs_quotes(s: str) -> bool:
+    """Check if an atom/functor name needs quotes.
     
     Args:
-        atom_name: The atom name to check
+        s: The atom/functor name to check
         
     Returns:
-        True if the atom needs quotes, False otherwise
+        True if quotes are needed, False otherwise
     """
     # Empty string needs quotes
-    if not atom_name:
+    if not s:
         return True
     
-    # Special atoms that need quotes
-    if atom_name in ['[]', '!', ':-', ',', ';', '|', '{}']:
-        # ! doesn't need quotes as cut
-        if atom_name == '!':
-            return False
-        # All others need quotes (including '[]')
+    # Special case: ! (cut) doesn't need quotes
+    if s == '!':
+        return False
+    
+    # Reserved tokens need quotes
+    if s in _RESERVED:
         return True
     
-    # Check if it's a valid unquoted atom
-    # Must start with lowercase letter
-    if not atom_name[0].islower():
-        return True
+    # Check if it's a valid unquoted atom:
+    # - Must start with lowercase letter
+    # - Rest must be alphanumeric or underscore
+    if s[0].islower() and all(c.isalnum() or c == '_' for c in s):
+        return False
     
-    # Rest must be alphanumeric or underscore
-    for char in atom_name[1:]:
-        if not (char.isalnum() or char == '_'):
-            return True
-    
-    return False
+    return True
 
 
-def _escape_atom(atom_name: str) -> str:
+def _escape_atom(s: str) -> str:
     """Escape special characters in an atom for quoted output.
     
+    Escapes in order: backslash, single quote, newline, tab.
+    This ensures idempotent escaping.
+    
     Args:
-        atom_name: The atom name to escape
+        s: The string to escape
         
     Returns:
-        The escaped atom name
+        The escaped string
     """
-    # Escape backslashes first
-    result = atom_name.replace('\\', '\\\\')
-    # Escape single quotes
-    result = result.replace("'", "\\'")
-    # Escape newlines
-    result = result.replace('\n', '\\n')
-    # Escape tabs
-    result = result.replace('\t', '\\t')
-    return result
+    # Order matters: backslash must be first to avoid double-escaping
+    s = s.replace('\\', '\\\\')
+    s = s.replace("'", "\\'")
+    s = s.replace('\n', '\\n')
+    s = s.replace('\t', '\\t')
+    return s
+
+
+def pretty_atom(name: str) -> str:
+    """Format an atom name with quotes if needed.
+    
+    Args:
+        name: The atom name
+        
+    Returns:
+        The formatted atom (quoted and escaped if necessary)
+    """
+    if _needs_quotes(name):
+        return f"'{_escape_atom(name)}'"
+    return name
 
 
 def pretty(term: Term, var_names: Optional[Dict[int, str]] = None) -> str:
@@ -78,9 +95,7 @@ def pretty(term: Term, var_names: Optional[Dict[int, str]] = None) -> str:
         var_names = {}
         
     if isinstance(term, Atom):
-        if _needs_quotes(term.name):
-            return f"'{_escape_atom(term.name)}'"
-        return term.name
+        return pretty_atom(term.name)
         
     elif isinstance(term, Int):
         return str(term.value)
@@ -89,25 +104,26 @@ def pretty(term: Term, var_names: Optional[Dict[int, str]] = None) -> str:
         if term.id in var_names:
             return var_names[term.id]
         else:
-            # Generate a name for this variable
-            if term.hint:
+            # Generate a stable name for this variable
+            if term.hint == "_":
+                # Anonymous variables always print as _
+                # Don't store in var_names to keep them distinct
+                return "_"
+            elif term.hint:
                 name = term.hint
             else:
+                # Generate a stable name within this pretty call
                 name = f"_G{term.id}"
             var_names[term.id] = name
             return name
             
     elif isinstance(term, Struct):
         if len(term.args) == 0:
-            # Zero-arity structure is just the functor
-            if _needs_quotes(term.functor):
-                return f"'{_escape_atom(term.functor)}'"
-            return term.functor
+            # Zero-arity structure prints as atom (no parentheses)
+            return pretty_atom(term.functor)
         else:
             # Format with arguments
-            functor_str = term.functor
-            if _needs_quotes(term.functor):
-                functor_str = f"'{_escape_atom(term.functor)}'"
+            functor_str = pretty_atom(term.functor)
             args_str = ", ".join(pretty(arg, var_names) for arg in term.args)
             return f"{functor_str}({args_str})"
             

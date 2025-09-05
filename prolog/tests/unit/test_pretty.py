@@ -36,6 +36,7 @@ class TestPrettyBasicTerms:
         assert pretty(Atom("123")) == "'123'"  # Numeric string needs quotes
         assert pretty(Atom("[]")) == "'[]'"  # Reserved syntax needs quotes
         assert pretty(Atom("Uppercase")) == "'Uppercase'"  # Starts with uppercase
+        assert pretty(Atom("_")) == "'_'"  # Underscore atom needs quotes
     
     def test_pretty_atom_with_escapes(self):
         """Pretty print atoms with characters that need escaping."""
@@ -121,6 +122,12 @@ class TestPrettyLists:
         lst = List((Atom("a"),), Atom("foo"))
         assert pretty(lst) == "[a|foo]"
     
+    def test_pretty_list_with_quoted_tail(self):
+        """Pretty print list with tail that needs quotes."""
+        # [a|'foo bar'] - tail needs quotes
+        lst = List((Atom("a"),), Atom("foo bar"))
+        assert pretty(lst) == "[a|'foo bar']"
+    
     def test_pretty_nested_list(self):
         """Pretty print nested lists."""
         # [[1, 2], [3]]
@@ -146,6 +153,16 @@ class TestPrettyLists:
 
 class TestPrettyStructures:
     """Test pretty printing of structures."""
+    
+    def test_pretty_structure_zero_arity(self):
+        """Pretty print zero-arity structures as atoms."""
+        # Zero-arity structure prints as atom (no parentheses)
+        s = Struct("foo", ())
+        assert pretty(s) == "foo"
+        
+        # Even with quoted functor
+        s = Struct("foo bar", ())
+        assert pretty(s) == "'foo bar'"
     
     def test_pretty_structure_simple(self):
         """Pretty print simple structures."""
