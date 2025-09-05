@@ -1,12 +1,15 @@
 """Tests for =../2 (univ) builtin.
 
 Tests structure ↔ list conversion for Stage 1.
+
+Error policy: dev-mode. Ill-typed/insufficiently instantiated calls to =../2 
+fail (return None) rather than throwing ISO errors. ISO errors may be introduced 
+in a later stage.
 """
 
-import pytest
 from prolog.ast.terms import Atom, Var, Struct, Int, List
 from prolog.engine.engine import Engine
-from prolog.tests.helpers import mk_fact, mk_rule, program
+from prolog.tests.helpers import mk_fact, program
 
 
 class TestUnivDecomposition:
@@ -36,8 +39,8 @@ class TestUnivDecomposition:
         assert lst.items[3] == Atom("c")
         assert lst.tail == Atom("[]")
     
-    def test_decompose_zero_arity_structure(self):
-        """Test foo =.. [foo] (0-arity atom)."""
+    def test_decompose_atom(self):
+        """Test foo =.. [foo] (atom)."""
         engine = Engine(program())
         
         # Query: foo =.. L
@@ -91,7 +94,7 @@ class TestUnivDecomposition:
         assert lst.tail == Atom("[]")
     
     def test_decompose_list_structure(self):
-        """Test [a,b] =.. ['.',a,[b]] (list as . structure)."""
+        """Test [a,b] =.. ['.', a, [b]] (list as . structure)."""
         engine = Engine(program())
         
         # Query: [a,b] =.. L
@@ -240,8 +243,8 @@ class TestUnivConstruction:
         # Should fail
         assert result is None
     
-    def test_construct_fails_with_non_atom_functor(self):
-        """Test X =.. [42, a] fails (functor must be atom for arity > 0)."""
+    def test_construct_fails_atomic_with_args(self):
+        """Test X =.. [42, a] fails (atomic terms cannot have arguments)."""
         engine = Engine(program())
         
         # Query: X =.. [42, a]
@@ -250,34 +253,33 @@ class TestUnivConstruction:
             Struct("=..", (Var(0, "X"), lst))
         ])
         
-        # Should fail (42 cannot be a functor with arguments)
+        # Should fail (atomic terms cannot have arguments)
         assert result is None
 
 
 class TestUnivBidirectional:
     """Test bidirectional unification in =../2."""
     
-    def test_bidirectional_unification(self):
-        """Test foo(X) =.. [foo, Y] unifies X and Y."""
+    def test_bidirectional_unification_observable(self):
+        """Test foo(X) =.. [foo, Y], Y = a unifies X with a."""
         engine = Engine(program())
         
-        # Query: foo(X) =.. [foo, Y]
-        lst = List((Atom("foo"), Var(1, "Y")), Atom("[]"))
+        # Query: foo(X) =.. [foo, Y], Y = a
         result = engine.run([
-            Struct("=..", (
-                Struct("foo", (Var(0, "X"),)),
-                lst
+            Struct(",", (
+                Struct("=..", (
+                    Struct("foo", (Var(0, "X"),)),
+                    List((Atom("foo"), Var(1, "Y")), Atom("[]"))
+                )),
+                Struct("=", (Var(1, "Y"), Atom("a")))
             ))
         ])
         
         assert result is not None
-        assert "X" in result
-        assert "Y" in result
-        # X and Y should be unified (same variable)
-        # In the store, they should point to the same cell
-        # For testing purposes, we can't directly check store internals,
-        # but we can verify they got bound to each other
-        # Since both are unbound, they remain as variables
+        assert result["Y"] == Atom("a")
+        # X should also be a since unified with Y
+        x = result["X"]
+        assert x == Atom("a")
     
     def test_check_mode(self):
         """Test foo(a,b) =.. [foo,a,b] succeeds (checking mode)."""
@@ -331,6 +333,7 @@ class TestUnivBidirectional:
         assert len(args.items) == 2
         assert args.items[0] == Atom("a")
         assert args.items[1] == Atom("b")
+        assert args.tail == Atom("[]")
 
 
 class TestUnivDeterminism:
@@ -357,10 +360,8 @@ class TestUnivDeterminism:
     
     def test_deterministic_construction(self):
         """Test construction mode is deterministic."""
-        engine = Engine(program())
-        
-        # Add a fact to count solutions
-        engine.consult(mk_fact(Atom("counter")))
+        prog = program(mk_fact("counter"))
+        engine = Engine(prog)
         
         # Query: (X =.. [foo, a] ; true), counter
         # This should give exactly one solution if =../2 is deterministic
@@ -393,11 +394,11 @@ class TestUnivTrailing:
     
     def test_trailing_on_backtrack(self):
         """Test bindings are properly undone on backtrack."""
-        engine = Engine(program())
-        
-        # Add facts for testing
-        engine.consult(mk_fact(Struct("p", (Atom("a"),))))
-        engine.consult(mk_fact(Struct("p", (Atom("b"),))))
+        prog = program(
+            mk_fact("p", Atom("a")),
+            mk_fact("p", Atom("b"))
+        )
+        engine = Engine(prog)
         
         # Query: p(Y), X =.. [foo, Y]
         # This should bind X to foo(a), then backtrack and bind to foo(b)
@@ -425,6 +426,31 @@ class TestUnivTrailing:
         # No more solutions
         result3 = engine.run()
         assert result3 is None
+    
+    def test_trailing_undo_on_fail_then_redo(self):
+        """Test bindings are undone when =.. succeeds but later goal fails."""
+        prog = program(
+            mk_fact("q", Atom("a")),
+            mk_fact("q", Atom("b"))
+        )
+        engine = Engine(prog)
+        
+        # Query: (q(Y), X =.. [foo, Y], fail) ; true
+        # This should undo all bindings and reach true branch
+        result = engine.run([
+            Struct(";", (
+                Struct(",", (
+                    Struct(",", (
+                        Struct("q", (Var(1, "Y"),)),
+                        Struct("=..", (Var(0, "X"), List((Atom("foo"), Var(1, "Y")), Atom("[]")))),
+                    )),
+                    Atom("fail")
+                )),
+                Atom("true")
+            ))
+        ])
+        
+        assert result is not None  # Should succeed via true branch
 
 
 class TestUnivEdgeCases:
@@ -465,3 +491,76 @@ class TestUnivEdgeCases:
         assert isinstance(lst.items[1], Struct)
         assert lst.items[1].functor == "bar"
         assert lst.items[2] == Atom("b")
+        assert lst.tail == Atom("[]")
+    
+    def test_decompose_list_nested_dot_shape(self):
+        """Test [a,b] decomposes to ['.', a, [b]] with proper nested structure."""
+        engine = Engine(program())
+        
+        # Create [a, b]
+        lst = List((Atom("a"), Atom("b")), Atom("[]"))
+        
+        # Query: [a,b] =.. L
+        result = engine.run([
+            Struct("=..", (lst, Var(0, "L")))
+        ])
+        
+        assert result is not None
+        L = result["L"]
+        assert isinstance(L, List)
+        assert len(L.items) == 3
+        assert L.items[0] == Atom(".")
+        assert L.items[1] == Atom("a")
+        
+        # Third item should be [b] which is itself a list structure
+        tail_list = L.items[2]
+        assert isinstance(tail_list, List)
+        assert len(tail_list.items) == 1
+        assert tail_list.items[0] == Atom("b")
+        assert tail_list.tail == Atom("[]")
+    
+    def test_construct_empty_list_via_quoted_atom(self):
+        """Test X =.. ['[]'] binds X to []."""
+        engine = Engine(program())
+        
+        # Query: X =.. [[]]
+        lst = List((Atom("[]"),), Atom("[]"))
+        result = engine.run([
+            Struct("=..", (Var(0, "X"), lst))
+        ])
+        
+        assert result is not None
+        assert result["X"] == Atom("[]")
+    
+    def test_decompose_empty_list_equals_quoted_atom(self):
+        """Test [] =.. L gives L = ['[]']."""
+        engine = Engine(program())
+        
+        # Query: [] =.. L
+        result = engine.run([
+            Struct("=..", (Atom("[]"), Var(0, "L")))
+        ])
+        
+        assert result is not None
+        L = result["L"]
+        assert isinstance(L, List)
+        assert len(L.items) == 1
+        assert L.items[0] == Atom("[]")
+        assert L.tail == Atom("[]")
+    
+    def test_construct_quoted_functor(self):
+        """Test X =.. ['foo bar', x] binds X to 'foo bar'(x)."""
+        engine = Engine(program())
+        
+        # Query: X =.. ['foo bar', x]
+        lst = List((Atom("foo bar"), Atom("x")), Atom("[]"))
+        result = engine.run([
+            Struct("=..", (Var(0, "X"), lst))
+        ])
+        
+        assert result is not None
+        X = result["X"]
+        assert isinstance(X, Struct)
+        assert X.functor == "foo bar"
+        assert len(X.args) == 1
+        assert X.args[0] == Atom("x")
