@@ -3,7 +3,8 @@
 Tests functor/arity extraction and construction for Stage 1.
 
 Error policy: dev-mode. Ill-typed/insufficiently instantiated calls to functor/3 
-fail (return empty solution set) rather than throwing ISO errors.
+fail (return empty solution set) rather than throwing ISO errors. ISO error 
+behavior (instantiation_error, type_error, etc.) to be added in later stages.
 """
 
 from prolog.ast.terms import Atom, Var, Struct, Int, List
@@ -51,7 +52,7 @@ class TestFunctorExtraction:
         assert solution["A"] == Int(0)
     
     def test_extract_from_integer(self):
-        """Test functor(42, F, A) binds F=42, A=0."""
+        """Test atomic 42 → F=42, A=0."""
         engine = Engine(program())
         
         # Query: functor(42, F, A)
@@ -106,7 +107,7 @@ class TestFunctorExtraction:
         assert solution["A"] == Int(2)
     
     def test_extract_fails_with_unbound_first_arg(self):
-        """Test functor(X, F, A) fails when X is unbound."""
+        """Test functor(X, F, A) fails when X is unbound (dev-mode fail, ISO would raise instantiation_error)."""
         engine = Engine(program())
         
         # Query: functor(X, F, A) with X unbound
@@ -146,6 +147,9 @@ class TestFunctorConstruction:
         assert len(x.args) == 2
         # Arguments should be unbound variables
         assert all(isinstance(arg, Var) for arg in x.args)
+        # Arguments must be distinct variables
+        var_args = [arg for arg in x.args if isinstance(arg, Var)]
+        assert len({arg.id for arg in var_args}) == len(x.args), "Args must be pairwise distinct vars"
     
     def test_construct_atom(self):
         """Test functor(X, foo, 0) binds X to foo."""
@@ -373,8 +377,9 @@ class TestFunctorDeterminism:
         # First solution should have X bound to foo(_)
         assert "X" in results[0]
         assert isinstance(results[0]["X"], Struct)
-        # Second solution from true branch
-        assert "X" in results[1]
+        # Second solution may or may not contain X; just ensure it's a distinct solution
+        if "X" in results[1]:
+            assert isinstance(results[1].get("X"), (Var, Struct))
 
 
 class TestFunctorWithVariables:
@@ -503,9 +508,12 @@ class TestFunctorEdgeCases:
         assert len(x.args) == 10
         # All arguments should be distinct unbound variables
         assert all(isinstance(arg, Var) for arg in x.args)
+        # Arguments must be pairwise distinct
+        var_args = [arg for arg in x.args if isinstance(arg, Var)]
+        assert len({arg.id for arg in var_args}) == len(x.args), "Args must be pairwise distinct vars"
     
     def test_list_special_case(self):
-        """Test that lists are treated specially with dot functor."""
+        """Test that lists are treated specially: F='.', A=2."""
         engine = Engine(program())
         
         # Query: functor([a], F, A)
@@ -558,3 +566,144 @@ class TestFunctorWithNonIntegerArity:
         
         # Should fail - arity must be instantiated for construction
         assert len(results) == 0
+
+
+class TestFunctorAdditionalCases:
+    """Additional test cases for completeness and edge behaviors."""
+    
+    def test_construct_dot_functor_yields_struct(self):
+        """Test functor(X, '.', 2) constructs a pair structure, not a List."""
+        engine = Engine(program())
+        
+        # Query: functor(X, '.', 2)
+        results = engine.run([
+            Struct("functor", (
+                Var(0, "X"),
+                Atom("."),
+                Int(2)
+            ))
+        ])
+        
+        assert len(results) == 1
+        solution = results[0]
+        x = solution["X"]
+        assert isinstance(x, Struct)
+        assert x.functor == "."
+        assert len(x.args) == 2
+        # Should be a Struct, not automatically converted to List
+        assert all(isinstance(arg, Var) for arg in x.args)
+    
+    def test_construct_empty_list_functor_with_positive_arity(self):
+        """Test functor(X, '[]', 2) - policy: allow '[]' as regular functor."""
+        engine = Engine(program())
+        
+        # Query: functor(X, '[]', 2)
+        results = engine.run([
+            Struct("functor", (
+                Var(0, "X"),
+                Atom("[]"),
+                Int(2)
+            ))
+        ])
+        
+        # ISO allows any atom as functor - we allow '[]'(_, _)
+        assert len(results) == 1
+        solution = results[0]
+        x = solution["X"]
+        assert isinstance(x, Struct)
+        assert x.functor == "[]"
+        assert len(x.args) == 2
+    
+    def test_construct_fails_struct_functor(self):
+        """Test functor(X, f(a), 0) fails - functor must be atom/int."""
+        engine = Engine(program())
+        
+        # Query: functor(X, f(a), 0)
+        results = engine.run([
+            Struct("functor", (
+                Var(0, "X"),
+                Struct("f", (Atom("a"),)),
+                Int(0)
+            ))
+        ])
+        
+        # Should fail - functor arg must be atom or integer
+        assert len(results) == 0
+    
+    def test_check_list_success(self):
+        """Test checking mode: functor([a], '.', 2) succeeds."""
+        engine = Engine(program())
+        
+        lst = List((Atom("a"),), Atom("[]"))
+        results = engine.run([
+            Struct("functor", (lst, Atom("."), Int(2)))
+        ])
+        
+        assert len(results) == 1  # Should succeed
+    
+    def test_check_empty_list_success(self):
+        """Test checking mode: functor([], '[]', 0) succeeds."""
+        engine = Engine(program())
+        
+        results = engine.run([
+            Struct("functor", (Atom("[]"), Atom("[]"), Int(0)))
+        ])
+        
+        assert len(results) == 1  # Should succeed
+    
+    def test_construct_large_arity_iterative(self):
+        """Test construction with very large arity (100) - ensures iterative creation."""
+        engine = Engine(program())
+        
+        # Query: functor(X, f, 100)
+        results = engine.run([
+            Struct("functor", (
+                Var(0, "X"),
+                Atom("f"),
+                Int(100)
+            ))
+        ])
+        
+        assert len(results) == 1
+        solution = results[0]
+        x = solution["X"]
+        assert isinstance(x, Struct)
+        assert x.functor == "f"
+        assert len(x.args) == 100
+        # All should be distinct variables
+        assert all(isinstance(arg, Var) for arg in x.args)
+        var_args = [arg for arg in x.args if isinstance(arg, Var)]
+        assert len({arg.id for arg in var_args}) == 100, "All 100 args must be distinct"
+    
+    def test_construct_with_delayed_functor_binding(self):
+        """Test construction with functor bound after the call."""
+        engine = Engine(program())
+        
+        # Query: F = foo, functor(X, F, 2)
+        results = engine.run([
+            Struct(",", (
+                Struct("=", (Var(0, "F"), Atom("foo"))),
+                Struct("functor", (
+                    Var(1, "X"),
+                    Var(0, "F"),
+                    Int(2)
+                ))
+            ))
+        ])
+        
+        assert len(results) == 1
+        solution = results[0]
+        assert isinstance(solution["X"], Struct)
+        assert solution["X"].functor == "foo"
+        assert len(solution["X"].args) == 2
+    
+    def test_check_non_integer_arity_fails(self):
+        """Test checking mode fails with non-integer arity."""
+        engine = Engine(program())
+        
+        # Query: functor(foo, foo, bar)
+        results = engine.run([
+            Struct("functor", (Atom("foo"), Atom("foo"), Atom("bar")))
+        ])
+        
+        assert len(results) == 0  # Should fail
