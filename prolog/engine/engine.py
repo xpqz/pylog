@@ -163,9 +163,7 @@ class Engine:
         
         # Push initial goals (in reverse for left-to-right execution)
         for goal in reversed(renamed_goals):
-            # Convert lists to cons representation
-            canonical_goal = self._to_cons(goal)
-            g = Goal.from_term(canonical_goal)
+            g = Goal.from_term(goal)
             self.goal_stack.push(g)
         
         # Main single iterative loop
@@ -248,73 +246,6 @@ class Engine:
         self.cp_stack.clear()
         
         return self.solutions
-    
-    def _to_cons(self, t: Term) -> Term:
-        """Convert PrologList to nested '.'/2 cons structure iteratively.
-        
-        Args:
-            t: Term to convert
-            
-        Returns:
-            Converted term (or original if not a PrologList)
-        """
-        # Handle non-compound terms
-        if not isinstance(t, (PrologList, Struct)):
-            return t
-        
-        # Build work stack for iterative processing
-        # Stack items: (term, is_processed)
-        stack = [(t, False)]
-        result_cache = {}
-        
-        while stack:
-            term, is_processed = stack.pop()
-            
-            if is_processed:
-                # Second visit - construct result from cached children
-                if isinstance(term, PrologList):
-                    # Build cons list from cached items
-                    result = term.tail if term.tail else Atom("[]")
-                    # Also convert the tail if needed
-                    if result in result_cache:
-                        result = result_cache[result]
-                    
-                    for item in reversed(term.items):
-                        item_result = result_cache.get(item, item)
-                        result = Struct(".", (item_result, result))
-                    result_cache[term] = result
-                    
-                elif isinstance(term, Struct):
-                    # Build struct with converted args
-                    new_args = []
-                    for arg in term.args:
-                        new_args.append(result_cache.get(arg, arg))
-                    result_cache[term] = Struct(term.functor, tuple(new_args))
-            else:
-                # First visit - schedule processing
-                if isinstance(term, (PrologList, Struct)):
-                    # Re-add for processing after children
-                    stack.append((term, True))
-                    
-                    # Add children for processing
-                    if isinstance(term, PrologList):
-                        # Process tail if it's compound
-                        if term.tail and isinstance(term.tail, (PrologList, Struct)):
-                            stack.append((term.tail, False))
-                        # Process items
-                        for item in term.items:
-                            if isinstance(item, (PrologList, Struct)):
-                                stack.append((item, False))
-                    elif isinstance(term, Struct):
-                        # Process args
-                        for arg in term.args:
-                            if isinstance(arg, (PrologList, Struct)):
-                                stack.append((arg, False))
-                else:
-                    # Simple term - cache as-is
-                    result_cache[term] = term
-        
-        return result_cache.get(t, t)
     
     def _allocate_query_vars(self, term: Term) -> Term:
         """Allocate fresh variables for query terms and track them.
@@ -473,11 +404,9 @@ class Engine:
         # Rename clause with fresh variables
         renamed_clause = self._renamer.rename_clause(clause)
         
-        # Try to unify with clause head (canonicalize both sides)
-        canonical_head = self._to_cons(renamed_clause.head)
-        canonical_goal = self._to_cons(goal.term)
+        # Try to unify with clause head
         trail_adapter = TrailAdapter(self.trail, engine=self, store=self.store)
-        if unify(canonical_head, canonical_goal, self.store, trail_adapter, 
+        if unify(renamed_clause.head, goal.term, self.store, trail_adapter, 
                 occurs_check=self.occurs_check):
             # Unification succeeded - now push frame for body execution
             # Use the cut_barrier saved before creating choicepoint
@@ -746,7 +675,13 @@ class Engine:
             
             # Resume based on choicepoint kind
             if cp.kind == ChoicepointKind.PREDICATE:
-                # Emit REDO port before resuming
+                # Check if this is a terminal CP (just emits FAIL)
+                if cp.payload.get("terminal", False):
+                    # Terminal CP - just emit FAIL and continue backtracking
+                    self._port("FAIL", cp.payload["pred_ref"])
+                    continue
+                
+                # Emit REDO port before resuming normal predicate
                 self._port("REDO", cp.payload["pred_ref"])
                 
                 # Try next clause
@@ -811,15 +746,30 @@ class Engine:
                             }
                         )
                         self.cp_stack.append(new_cp)
+                    else:
+                        # No more clauses - push a terminal CP that will emit FAIL
+                        continuation = cp.payload.get("continuation", ())
+                        terminal_cp = Choicepoint(
+                            kind=ChoicepointKind.PREDICATE,
+                            trail_top=self.trail.position(),
+                            goal_stack_height=len(continuation),
+                            frame_stack_height=0,
+                            payload={
+                                "goal": goal,
+                                "cursor": cursor,  # cursor with no more clauses
+                                "pred_ref": cp.payload["pred_ref"],
+                                "continuation": continuation,
+                                "terminal": True  # Mark as terminal
+                            }
+                        )
+                        self.cp_stack.append(terminal_cp)
                     
                     # Rename clause with fresh variables
                     renamed_clause = self._renamer.rename_clause(clause)
                     
-                    # Try to unify with clause head (canonicalize both sides)
-                    canonical_head = self._to_cons(renamed_clause.head)
-                    canonical_goal = self._to_cons(goal.term)
+                    # Try to unify with clause head
                     trail_adapter = TrailAdapter(self.trail, engine=self, store=self.store)
-                    if unify(canonical_head, canonical_goal, self.store, trail_adapter, 
+                    if unify(renamed_clause.head, goal.term, self.store, trail_adapter, 
                             occurs_check=self.occurs_check):
                         # Unification succeeded - create frame for body execution
                         # cut_barrier was already computed above before pushing CP
@@ -852,6 +802,7 @@ class Engine:
                 else:
                     # No more clauses to try - emit FAIL port
                     self._port("FAIL", cp.payload["pred_ref"])
+                    # Continue backtracking to find earlier choicepoints
                     continue
                         
             elif cp.kind == ChoicepointKind.DISJUNCTION:

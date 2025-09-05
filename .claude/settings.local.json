@@ -27,7 +27,8 @@
       "Bash(timeout 30 python -m pytest:*)",
       "Bash(timeout:*)",
       "Bash(git stash:*)",
-      "Bash(git fetch:*)"
+      "Bash(git fetch:*)",
+      "Bash(swipl:*)"
     ],
     "deny": [],
     "ask": []

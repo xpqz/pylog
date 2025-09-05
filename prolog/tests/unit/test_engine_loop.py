@@ -199,15 +199,15 @@ class TestEngineInvariants:
         engine = Engine(prog)
         
         # Query: p(X).
-        # Expected trace: CALL p/1, CALL clause1, EXIT p/1, 
-        #                 REDO p/1, CALL clause2, EXIT p/1, FAIL p/1
+        # Standard 4-port model: CALL p/1, EXIT p/1, REDO p/1, EXIT p/1, FAIL p/1
         solutions = engine.run([Struct("p", (Var(0, "X"),))])
         assert len(solutions) == 2
         
         # If tracer available, assert exact port sequence
         if hasattr(engine, 'get_trace'):
             trace = engine.get_trace()
-            expected = ["CALL", "CALL", "EXIT", "REDO", "CALL", "EXIT", "FAIL"]
+            # Standard 4-port model at predicate level
+            expected = ["CALL", "EXIT", "REDO", "EXIT", "FAIL"]
             assert trace == expected
     
     def test_pop_frame_executes_once(self):

@@ -174,7 +174,7 @@ class Trail:
     def __init__(self):
         self._entries: List[Tuple[str, ...]] = []
         self._write_stamp: int = 0
-        self._var_stamps: Dict[int, int] = {}  # varid -> last trail stamp
+        self._var_stamps: Dict[Tuple[str, int], int] = {}  # (kind, varid) -> last trail stamp
     
     def push(self, entry: Tuple[str, ...]) -> None:
         """Record a state change."""
@@ -186,23 +186,25 @@ class Trail:
         Only trails if this variable hasn't been trailed in current choice region.
         """
         # Check if already trailed in this choice region
-        if varid in self._var_stamps and self._var_stamps[varid] >= self._write_stamp:
+        key = ('bind', varid)
+        if key in self._var_stamps and self._var_stamps[key] >= self._write_stamp:
             return  # Already trailed in this region
         
         self.push(('bind', varid, old_cell))
-        self._var_stamps[varid] = self._write_stamp
+        self._var_stamps[key] = self._write_stamp
     
     def push_parent(self, varid: int, old_parent: int, stamp: Optional[int] = None) -> None:
         """Trail a union-find parent change with stamp check."""
-        if varid in self._var_stamps and self._var_stamps[varid] >= self._write_stamp:
+        key = ('parent', varid)
+        if key in self._var_stamps and self._var_stamps[key] >= self._write_stamp:
             return
         
         self.push(('parent', varid, old_parent))
-        self._var_stamps[varid] = self._write_stamp
+        self._var_stamps[key] = self._write_stamp
     
     def push_attr(self, varid: int, module: str, old_value: Any, stamp: Optional[int] = None) -> None:
         """Trail an attribute change with stamp check."""
-        key = (varid, module)  # Track per variable and module
+        key = ('attr', varid, module)  # Track per variable and module
         if key in self._var_stamps and self._var_stamps[key] >= self._write_stamp:
             return
         
@@ -211,19 +213,21 @@ class Trail:
     
     def push_domain(self, varid: int, old_domain: Any, stamp: Optional[int] = None) -> None:
         """Trail a domain change with stamp check."""
-        if varid in self._var_stamps and self._var_stamps[varid] >= self._write_stamp:
+        key = ('domain', varid)
+        if key in self._var_stamps and self._var_stamps[key] >= self._write_stamp:
             return
         
         self.push(('domain', varid, old_domain))
-        self._var_stamps[varid] = self._write_stamp
+        self._var_stamps[key] = self._write_stamp
     
     def push_rank(self, varid: int, old_rank: int, stamp: Optional[int] = None) -> None:
         """Trail a rank change with stamp check."""
-        if varid in self._var_stamps and self._var_stamps[varid] >= self._write_stamp:
+        key = ('rank', varid)
+        if key in self._var_stamps and self._var_stamps[key] >= self._write_stamp:
             return
         
         self.push(('rank', varid, old_rank))
-        self._var_stamps[varid] = self._write_stamp
+        self._var_stamps[key] = self._write_stamp
     
     def position(self) -> int:
         """Current trail position."""

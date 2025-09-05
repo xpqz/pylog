@@ -128,7 +128,13 @@ def _unify_nonvars(t1: Any, t2: Any, stack: List[Tuple[Any, Any]]) -> bool:
     if isinstance(t2, Atom) and isinstance(t1, Struct) and len(t1.args) == 0:
         return t2.name == t1.functor
     
-    # Lists
+    # Lists - handle both PrologList and '.'/2 cons representation
+    # Try list interop first
+    list_result = _try_unify_list_interop(t1, t2, stack)
+    if list_result is not None:
+        return list_result
+    
+    # Standard PrologList unification
     if isinstance(t1, PrologList) and isinstance(t2, PrologList):
         return _unify_lists(t1, t2, stack)
     
@@ -174,6 +180,81 @@ def _unify_lists(l1: PrologList, l2: PrologList, stack: List[Tuple[Any, Any]]) -
     else:
         # Both exhausted, unify tails
         stack.append((tail1, tail2))
+    
+    return True
+
+
+def _try_unify_list_interop(t1: Any, t2: Any, stack: List[Tuple[Any, Any]]) -> Any:
+    """Try to unify terms that might involve list representations.
+    
+    Handles unification between PrologList and '.'/2 cons representations
+    without building intermediate structures.
+    
+    Args:
+        t1: First term
+        t2: Second term  
+        stack: Stack to push pairs onto
+        
+    Returns:
+        True if can unify, False if incompatible, None if not list-related
+    """
+    def step(term):
+        """Return ('nil'), ('cons', head, tail), or ('other', term)."""
+        if isinstance(term, PrologList):
+            if not term.items and term.tail == Atom('[]'):
+                return ('nil',)
+            elif term.items:
+                head = term.items[0]
+                if len(term.items) == 1:
+                    tail = term.tail
+                else:
+                    tail = PrologList(term.items[1:], tail=term.tail)
+                return ('cons', head, tail)
+            else:
+                # Empty items but non-[] tail
+                return ('other', term.tail)
+        elif isinstance(term, Atom) and term.name == '[]':
+            return ('nil',)
+        elif isinstance(term, Struct) and term.functor == '.' and len(term.args) == 2:
+            return ('cons', term.args[0], term.args[1])
+        else:
+            return ('other', term)
+    
+    # Get the first step for both terms
+    s1 = step(t1)
+    s2 = step(t2)
+    
+    # If neither is list-related, return None
+    if s1[0] == 'other' and s2[0] == 'other':
+        return None
+    
+    # Build pairs to unify iteratively
+    pairs = [(t1, t2)]
+    while pairs:
+        term1, term2 = pairs.pop()
+        
+        s1 = step(term1)
+        s2 = step(term2)
+        
+        if s1[0] == 'nil' and s2[0] == 'nil':
+            # Both nil - continue
+            continue
+        elif s1[0] == 'cons' and s2[0] == 'cons':
+            # Both cons - unify heads and continue with tails
+            stack.append((s1[1], s2[1]))  # heads
+            pairs.append((s1[2], s2[2]))  # tails
+        elif s1[0] == 'other' and s2[0] == 'other':
+            # Both non-list - regular unification
+            stack.append((s1[1], s2[1]))
+        elif s1[0] == 'other':
+            # t1 is non-list, t2 is list
+            stack.append((s1[1], term2))
+        elif s2[0] == 'other':
+            # t2 is non-list, t1 is list
+            stack.append((term1, s2[1]))
+        else:
+            # Mismatch (nil vs cons)
+            return False
     
     return True
 

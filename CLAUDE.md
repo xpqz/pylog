@@ -156,6 +156,23 @@ The project follows a staged development plan where each stage builds on stable 
 3. Always include unit tests alongside code changes
 4. Use tracer/snapshots for debugging
 
+### Debugging with SWI-Prolog Ground Truth
+When debugging execution traces, you can use `trace_dump.pl` to compare PyLog's behavior with SWI-Prolog:
+
+1. Load the trace module and your test program:
+```prolog
+?- consult(trace_dump), consult(your_test).
+```
+
+2. Run a query with JSON trace output:
+```prolog
+?- with_trace_json((your_goal, fail ; true), 'trace.jsonl').
+```
+
+3. The output file contains one JSON object per trace event with ports (call/exit/redo/fail), goals, and timing.
+
+This is useful for verifying that PyLog's backtracking and unification behavior matches standard Prolog semantics.
+
 ### Unification and Binding
 - Use `deref()` for iterative union-find walks
 - Only `bind()` should mutate the store
