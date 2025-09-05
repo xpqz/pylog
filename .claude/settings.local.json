@@ -28,7 +28,8 @@
       "Bash(timeout:*)",
       "Bash(git stash:*)",
       "Bash(git fetch:*)",
-      "Bash(swipl:*)"
+      "Bash(swipl:*)",
+      "Bash(git rm:*)"
     ],
     "deny": [],
     "ask": []

@@ -406,9 +406,9 @@ class TestResourceManagement:
         assert len(solutions) == 0
         
         # All state should be cleaned up
-        assert len(engine.trail) == 0
-        assert len(engine.goals._stack) == 0
-        assert len(engine.choices._stack) == 0
+        assert engine.trail.position() == 0
+        assert engine.goal_stack.height() == 0
+        assert len(engine.cp_stack) == 0
     
     def test_call_backtracking_purity(self):
         """Test call/1 doesn't leak state during backtracking."""
@@ -628,10 +628,10 @@ class TestBuiltinInteraction:
         prog = program(
             # X = Y, Y = Z, Z = p(result)
             mk_rule("test", (Var(0, "Result"),),
-                    Struct("=", (Var(0, "X"), Var(1, "Y"))),
-                    Struct("=", (Var(1, "Y"), Var(2, "Z"))),
-                    Struct("=", (Var(2, "Z"), Struct("p", (Var(0, "Result"),)))),
-                    Struct("call", (Var(0, "X"),))),
+                    Struct("=", (Var(1, "X"), Var(2, "Y"))),
+                    Struct("=", (Var(2, "Y"), Var(3, "Z"))),
+                    Struct("=", (Var(3, "Z"), Struct("p", (Var(0, "Result"),)))),
+                    Struct("call", (Var(1, "X"),))),
             
             # Simple unification
             mk_fact("=", Var(0, "A"), Var(0, "A")),

@@ -937,9 +937,17 @@ class Engine:
                 reified[term_id] = Struct(current.functor, reified_args)
                 
             elif isinstance(current, PrologList):
-                reified_items = tuple(reified.get(id(item), item) for item in current.items)
+                reified_items = list(reified.get(id(item), item) for item in current.items)
                 reified_tail = reified.get(id(current.tail), current.tail)
-                reified[term_id] = PrologList(reified_items, tail=reified_tail)
+                
+                # Flatten if tail is also a PrologList
+                if isinstance(reified_tail, PrologList):
+                    # Combine items from current list with items from tail list
+                    all_items = reified_items + list(reified_tail.items)
+                    final_tail = reified_tail.tail
+                    reified[term_id] = PrologList(tuple(all_items), tail=final_tail)
+                else:
+                    reified[term_id] = PrologList(tuple(reified_items), tail=reified_tail)
             else:
                 # Unknown term type
                 reified[term_id] = current
