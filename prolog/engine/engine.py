@@ -123,6 +123,7 @@ class Engine:
         self._builtins[(">", 2)] = lambda eng, args: eng._builtin_gt(args)
         self._builtins[("=:=", 2)] = lambda eng, args: eng._builtin_num_eq(args)
         self._builtins[("=..", 2)] = lambda eng, args: eng._builtin_univ(args)
+        self._builtins[("functor", 3)] = lambda eng, args: eng._builtin_functor(args)
 
     def run(
         self, goals: List[Term], max_solutions: Optional[int] = None
@@ -1413,6 +1414,224 @@ class Engine:
             else:
                 # Non-[] tail - improper list
                 return None
+
+    def _builtin_functor(self, args: tuple) -> bool:
+        """functor(Term, Functor, Arity) - functor/arity manipulation.
+        
+        Three modes:
+        1. Extraction: functor(foo(a,b), F, A) binds F=foo, A=2
+        2. Construction: functor(X, foo, 2) binds X=foo(_,_) with fresh variables
+        3. Checking: functor(foo(a,b), foo, 2) succeeds
+        
+        Special cases:
+        - Atoms have arity 0: functor(foo, foo, 0)
+        - Integers have arity 0: functor(42, 42, 0) 
+        - Lists are '.'/2: functor([a], '.', 2)
+        - Empty list is '[]/0: functor([], '[]', 0)
+        """
+        if len(args) != 3:
+            return False
+            
+        term_arg, functor_arg, arity_arg = args
+        trail_adapter = TrailAdapter(self.trail, engine=self, store=self.store)
+        
+        # Dereference all arguments
+        if isinstance(term_arg, Var):
+            term_result = self.store.deref(term_arg.id)
+            if term_result[0] == "BOUND":
+                term = term_result[2]
+                term_unbound = False
+            else:
+                term_unbound = True
+                term = term_arg
+        else:
+            term = term_arg
+            term_unbound = False
+            
+        if isinstance(functor_arg, Var):
+            functor_result = self.store.deref(functor_arg.id)
+            if functor_result[0] == "BOUND":
+                functor = functor_result[2]
+                functor_unbound = False
+            else:
+                functor_unbound = True
+                functor = functor_arg
+        else:
+            functor = functor_arg
+            functor_unbound = False
+            
+        if isinstance(arity_arg, Var):
+            arity_result = self.store.deref(arity_arg.id)
+            if arity_result[0] == "BOUND":
+                arity = arity_result[2]
+                arity_unbound = False
+            else:
+                arity_unbound = True
+                arity = arity_arg
+        else:
+            arity = arity_arg
+            arity_unbound = False
+        
+        # Mode 1: Extraction (Term is bound, extract Functor and/or Arity)
+        if not term_unbound:
+            if isinstance(term, Struct):
+                # Structure: extract functor and arity
+                extracted_functor = Atom(term.functor)
+                extracted_arity = Int(len(term.args))
+                
+                # Unify functor if needed
+                if functor_unbound:
+                    if not unify(functor, extracted_functor, self.store, trail_adapter, True):
+                        return False
+                else:
+                    # Check functor matches
+                    if not unify(functor, extracted_functor, self.store, trail_adapter, True):
+                        return False
+                        
+                # Unify arity if needed
+                if arity_unbound:
+                    if not unify(arity, extracted_arity, self.store, trail_adapter, True):
+                        return False
+                else:
+                    # Check arity matches
+                    if not unify(arity, extracted_arity, self.store, trail_adapter, True):
+                        return False
+                        
+                return True
+                
+            elif isinstance(term, PrologList):
+                # List: special case - functor is '.', arity is 2
+                if not term.items and isinstance(term.tail, Atom) and term.tail.name == "[]":
+                    # Empty list: [] has functor '[]' and arity 0
+                    extracted_functor = Atom("[]")
+                    extracted_arity = Int(0)
+                else:
+                    # Non-empty list: has functor '.' and arity 2
+                    extracted_functor = Atom(".")
+                    extracted_arity = Int(2)
+                    
+                # Unify functor
+                if functor_unbound:
+                    if not unify(functor, extracted_functor, self.store, trail_adapter, True):
+                        return False
+                else:
+                    if not unify(functor, extracted_functor, self.store, trail_adapter, True):
+                        return False
+                        
+                # Unify arity
+                if arity_unbound:
+                    if not unify(arity, extracted_arity, self.store, trail_adapter, True):
+                        return False
+                else:
+                    if not unify(arity, extracted_arity, self.store, trail_adapter, True):
+                        return False
+                        
+                return True
+                
+            elif isinstance(term, Atom):
+                # Atom: functor is itself, arity is 0
+                extracted_functor = term
+                extracted_arity = Int(0)
+                
+                # Unify functor
+                if functor_unbound:
+                    if not unify(functor, extracted_functor, self.store, trail_adapter, True):
+                        return False
+                else:
+                    if not unify(functor, extracted_functor, self.store, trail_adapter, True):
+                        return False
+                        
+                # Unify arity
+                if arity_unbound:
+                    if not unify(arity, extracted_arity, self.store, trail_adapter, True):
+                        return False
+                else:
+                    if not unify(arity, extracted_arity, self.store, trail_adapter, True):
+                        return False
+                        
+                return True
+                
+            elif isinstance(term, Int):
+                # Integer: functor is itself, arity is 0
+                extracted_functor = term
+                extracted_arity = Int(0)
+                
+                # Unify functor
+                if functor_unbound:
+                    if not unify(functor, extracted_functor, self.store, trail_adapter, True):
+                        return False
+                else:
+                    if not unify(functor, extracted_functor, self.store, trail_adapter, True):
+                        return False
+                        
+                # Unify arity
+                if arity_unbound:
+                    if not unify(arity, extracted_arity, self.store, trail_adapter, True):
+                        return False
+                else:
+                    if not unify(arity, extracted_arity, self.store, trail_adapter, True):
+                        return False
+                        
+                return True
+                
+            else:
+                # Unknown term type
+                return False
+                
+        # Mode 2: Construction (Term is unbound, construct from Functor and Arity)
+        elif term_unbound and not functor_unbound and not arity_unbound:
+            # Validate arity is an integer >= 0
+            if not isinstance(arity, Int):
+                return False  # Dev-mode: fail instead of type error
+            if arity.value < 0:
+                return False  # Dev-mode: fail instead of domain error
+                
+            # Construct based on functor type
+            if isinstance(functor, Atom):
+                functor_name = functor.name
+                
+                if arity.value == 0:
+                    # Zero arity: result is the atom itself
+                    constructed = functor
+                elif functor_name == "." and arity.value == 2:
+                    # Special case: '.'/2 constructs a pair structure, not List
+                    # Create two fresh variables
+                    head_id = self.store.new_var("_")
+                    tail_id = self.store.new_var("_")
+                    head_var = Var(head_id, f"_G{head_id}")
+                    tail_var = Var(tail_id, f"_G{tail_id}")
+                    # Construct as Struct, not List
+                    constructed = Struct(".", (head_var, tail_var))
+                else:
+                    # General case: construct structure with fresh variables
+                    fresh_vars = []
+                    for i in range(arity.value):
+                        var_id = self.store.new_var("_")
+                        var = Var(var_id, f"_G{var_id}")
+                        fresh_vars.append(var)
+                    constructed = Struct(functor_name, tuple(fresh_vars))
+                    
+            elif isinstance(functor, Int):
+                # Integer functor
+                if arity.value == 0:
+                    # Zero arity: result is the integer itself
+                    constructed = functor
+                else:
+                    # Can't create structure with integer functor and non-zero arity
+                    return False  # Dev-mode: fail instead of type error
+            else:
+                # Functor must be atom or integer
+                return False  # Dev-mode: fail instead of type error
+                
+            # Unify the constructed term with the term variable
+            return unify(term, constructed, self.store, trail_adapter, True)
+            
+        # Mode 3: Insufficient instantiation or over-instantiation
+        else:
+            # Either:
+            # - Term is unbound but functor or arity (or both) are also unbound
+            # - All three are bound (handled by extraction mode above)
+            return False  # Dev-mode: fail instead of instantiation error
 
     def _builtin_is(self, args: tuple) -> bool:
         """is(X, Y) - arithmetic evaluation."""
