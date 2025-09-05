@@ -336,7 +336,6 @@ class TestWhitespaceAndComments:
         """Whitespace should be properly ignored."""
         assert grammar_term.parse(whitespace_term)
         
-    @pytest.mark.xfail(reason="Line comments may not be implemented yet")
     def test_line_comments(self, grammar_term):
         """Line comments starting with %."""
         assert grammar_term.parse("foo % comment")
@@ -353,7 +352,6 @@ class TestWhitespaceAndComments:
 class TestMultiClausePrograms:
     """Test parsing multiple clauses (program-level)."""
     
-    @pytest.mark.xfail(reason="'program' start rule may not exist yet")
     def test_parse_program(self):
         """Parse a complete program with multiple clauses."""
         grammar = Lark(GRAMMAR_PATH.read_text(), start="program", parser="lalr")

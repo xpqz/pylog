@@ -1,0 +1,90 @@
+// Prolog grammar for Stage 1 (operator-free syntax)
+// Issue #9 - Parser Grammar and Basic Terms
+
+// ====================
+// Start rules - different entry points for parsing
+// ====================
+
+?start: term
+
+term: atom
+    | integer
+    | variable
+    | list
+    | structure
+
+atom_only: atom  // For testing atoms specifically
+
+clause: fact | rule
+
+fact: term "."
+
+rule: term ":-" goal_list "."
+
+goal_list: term ("," term)*
+
+query: "?-" goal_list "."
+
+directive: ":-" goal_list "."
+
+// Program is multiple clauses (future use)
+program: (clause | query | directive)+
+
+// ====================
+// Terms
+// ====================
+
+// Atoms - lowercase start or quoted
+atom: ATOM | QUOTED_ATOM
+
+// Integers - including negative (signed literals in Stage 1)
+integer: SIGNED_INT
+
+// Variables - uppercase or underscore start
+variable: VARIABLE
+
+// Lists
+list: "[" "]"                           -> empty_list
+    | "[" term_list "]"                 -> proper_list
+    | "[" term_list "|" term "]"        -> list_with_tail
+
+term_list: term ("," term)*
+
+// Structures (compound terms)
+structure: atom "(" term_list ")"
+         | atom "/" integer  // Special case for arity notation like foo/2
+
+// ====================
+// Lexer rules (terminals)
+// ====================
+
+// Atoms
+ATOM: /[a-z][a-zA-Z0-9_]*/
+
+// Quoted atoms with escape sequences
+QUOTED_ATOM: "'" QUOTED_CHAR* "'"
+QUOTED_CHAR: /[^'\\]/
+           | "\\" /[\\nt']/    // Escapes: \\, \n, \t, \'
+           | "''"               // Doubled quote (future)
+
+// Integers (signed literals for Stage 1)
+SIGNED_INT: /-?\d+/
+
+// Variables (including anonymous _)
+VARIABLE: /[A-Z_][a-zA-Z0-9_]*/
+
+// Comments (optional - for future)
+COMMENT: /%.*/
+BLOCK_COMMENT: /\/\*(.|\n)*?\*\//
+
+// Whitespace - ignored
+%ignore /\s+/
+%ignore COMMENT
+%ignore BLOCK_COMMENT
+
+// ====================
+// Operator precedence (none in Stage 1)
+// ====================
+// All operators are written as functors in Stage 1
+// e.g., +(1,2) instead of 1+2
+// Stage 1.5 will add operator support via reader
