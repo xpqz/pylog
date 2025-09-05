@@ -74,11 +74,12 @@ jobs:
             .coverage
           if-no-files-found: ignore
 
-      - name: Upload coverage to Codecov
-        if: matrix.python-version == '3.11'
-        uses: codecov/codecov-action@v4
-        with:
-          file: ./coverage.xml
-          fail_ci_if_error: false
-          verbose: true
-          token: ${{ secrets.CODECOV_TOKEN }}
+      # Uncomment when Codecov is configured
+      # - name: Upload coverage to Codecov
+      #   if: matrix.python-version == '3.11'
+      #   uses: codecov/codecov-action@v4
+      #   with:
+      #     file: ./coverage.xml
+      #     fail_ci_if_error: false
+      #     verbose: true
+      #     token: ${{ secrets.CODECOV_TOKEN }}
