@@ -53,10 +53,11 @@ class TestBasicTerms:
     """Test parsing of atoms, integers, and variables."""
     
     @pytest.mark.parametrize("atom", [
-        "foo", "bar", "x", "atom123", "with_underscore"
+        "foo", "bar", "x", "atom123", "with_underscore",
+        "!",  # Cut is a valid atom in Stage 1
     ])
     def test_parse_simple_atom(self, grammar_term, atom):
-        """Parse simple lowercase atoms."""
+        """Parse simple lowercase atoms and cut."""
         assert grammar_term.parse(atom)
         
     @pytest.mark.parametrize("quoted", [
@@ -261,6 +262,11 @@ class TestStructureSyntax:
         """Zero-arity structure with parentheses is invalid."""
         with pytest.raises((UnexpectedCharacters, UnexpectedToken)):
             grammar_term.parse("foo()")
+    
+    def test_predicate_indicator_not_general_term(self, grammar_term):
+        """foo/2 notation is not a general term (removed from Stage 1)."""
+        with pytest.raises((UnexpectedCharacters, UnexpectedToken)):
+            grammar_term.parse("foo/2")
             
     @pytest.mark.parametrize("invalid", [
         "foo(",  # Unclosed
@@ -286,15 +292,31 @@ class TestClauseSyntax:
     def test_parse_fact(self, grammar_clause, fact):
         """Parse fact ending with period."""
         assert grammar_clause.parse(fact)
+    
+    @pytest.mark.parametrize("invalid_head", [
+        "42.",  # Integer cannot be a clause head
+        "[1,2].",  # List cannot be a clause head
+        "\"string\".",  # String cannot be a clause head (if we had strings)
+    ])
+    def test_invalid_clause_heads(self, grammar_clause, invalid_head):
+        """Non-callable terms cannot be clause heads."""
+        with pytest.raises((UnexpectedCharacters, UnexpectedToken)):
+            grammar_clause.parse(invalid_head)
         
     @pytest.mark.parametrize("rule", [
         "foo :- bar.",
         "parent(X,Y) :- father(X,Y).",
         "sibling(X,Y) :- parent(P,X), parent(P,Y).",
+        "p(X) :- q(X), !, r(X).",  # Cut in goal list
     ])
     def test_parse_rule(self, grammar_clause, rule):
         """Parse rule with body head :- body."""
         assert grammar_clause.parse(rule)
+    
+    def test_invalid_rule_head_variable(self, grammar_clause):
+        """Variable cannot be a rule head."""
+        with pytest.raises((UnexpectedCharacters, UnexpectedToken)):
+            grammar_clause.parse("X :- true.")
         
     @pytest.mark.parametrize("multi_goal", [
         "foo :- a, b, c.",
@@ -309,6 +331,7 @@ class TestClauseSyntax:
         "?- foo.",
         "?- member(X,[1,2,3]).",
         "?- p(X), q(X).",
+        "?- a, !, b.",  # Cut in query
     ])
     def test_parse_query(self, grammar_query, query):
         """Parse query ?- goal."""
@@ -316,7 +339,8 @@ class TestClauseSyntax:
         
     @pytest.mark.parametrize("directive", [
         ":- foo.",
-        ":- dynamic(foo/2).",
+        ":- a, !, b.",  # Cut in directive
+        # Note: foo/2 is not a general term anymore, would need special handling
     ])
     def test_parse_directive(self, grammar_directive, directive):
         """Parse directive :- goal."""
