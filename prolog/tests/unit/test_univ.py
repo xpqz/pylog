@@ -465,6 +465,26 @@ class TestUnivTrailing:
 class TestUnivEdgeCases:
     """Test edge cases and error conditions."""
     
+    def test_improper_list_construction_via_dot(self):
+        """Test X =.. ['.', a, 2] constructs improper list [a|2]."""
+        engine = Engine(program())
+        
+        # Query: X =.. ['.', a, 2]
+        lst = List((Atom("."), Atom("a"), Int(2)), Atom("[]"))
+        result = engine.run([
+            Struct("=..", (Var(0, "X"), lst))
+        ])
+        
+        assert len(result) > 0
+        solution = result[0]
+        assert "X" in solution
+        # X should be [a|2] (improper list)
+        x = solution["X"]
+        assert isinstance(x, List)
+        assert len(x.items) == 1
+        assert x.items[0] == Atom("a")
+        assert x.tail == Int(2)  # Non-list tail makes it improper
+    
     def test_improper_list_on_right(self):
         """Test X =.. [foo|bar] fails (improper list)."""
         engine = Engine(program())
@@ -557,6 +577,26 @@ class TestUnivEdgeCases:
         assert len(L.items) == 1
         assert L.items[0] == Atom("[]")
         assert L.tail == Atom("[]")
+    
+    def test_construct_quoted_functor_multiple_args(self):
+        """Test X =.. ['foo bar', a, b] binds X to 'foo bar'(a, b)."""
+        engine = Engine(program())
+        
+        # Query: X =.. ['foo bar', a, b]
+        lst = List((Atom("foo bar"), Atom("a"), Atom("b")), Atom("[]"))
+        result = engine.run([
+            Struct("=..", (Var(0, "X"), lst))
+        ])
+        
+        assert len(result) > 0
+        solution = result[0]
+        assert "X" in solution
+        X = solution["X"]
+        assert isinstance(X, Struct)
+        assert X.functor == "foo bar"
+        assert len(X.args) == 2
+        assert X.args[0] == Atom("a")
+        assert X.args[1] == Atom("b")
     
     def test_construct_quoted_functor(self):
         """Test X =.. ['foo bar', x] binds X to 'foo bar'(x)."""

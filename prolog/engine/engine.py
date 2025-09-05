@@ -1260,6 +1260,8 @@ class Engine:
         1. Decomposition: foo(a,b) =.. L binds L to [foo,a,b]
         2. Construction: X =.. [foo,a,b] binds X to foo(a,b)
         3. Checking: foo(a,b) =.. [foo,a,b] succeeds
+        
+        Note: List in AST is aliased as PrologList here for clarity.
         """
         if len(args) != 2:
             return False
@@ -1292,34 +1294,9 @@ class Engine:
         
         # Case 1: Decomposition mode (Term =.. X where X unbound)
         if not left_unbound and right_unbound:
-            # Decompose left side into a list
-            if isinstance(left, Struct):
-                # Structure: foo(a,b) -> [foo, a, b]
-                items = [Atom(left.functor)] + list(left.args)
-                decomposed = self._make_prolog_list(items)
-            elif isinstance(left, PrologList):
-                # List: [a,b] -> ['.', a, [b]]
-                if not left.items and isinstance(left.tail, Atom) and left.tail.name == "[]":
-                    # Empty list [] -> [[]]
-                    decomposed = self._make_prolog_list([Atom("[]")])                    
-                else:
-                    # Non-empty list becomes dot structure
-                    if left.items:
-                        tail = PrologList(left.items[1:], left.tail) if len(left.items) > 1 else left.tail
-                        decomposed = self._make_prolog_list([Atom("."), left.items[0], tail])
-                    else:
-                        # Shouldn't happen but handle gracefully
-                        return False
-            elif isinstance(left, Atom):
-                # Atom: foo -> [foo]
-                decomposed = self._make_prolog_list([left])
-            elif isinstance(left, Int):
-                # Integer: 42 -> [42]
-                decomposed = self._make_prolog_list([left])
-            else:
+            decomposed = self._decompose_to_list(left)
+            if decomposed is None:
                 return False
-            
-            # Unify the decomposed list with the right side
             return unify(right, decomposed, self.store, trail_adapter, occurs_check=self.occurs_check)
         
         # Case 2: Construction mode (X =.. [foo,a,b] where X unbound)
@@ -1334,7 +1311,7 @@ class Engine:
                 return False
             
             if len(list_items) == 0:
-                # Empty list not allowed
+                # Empty RHS list is invalid in construction mode
                 return False
             
             # Single element list - becomes atomic
@@ -1349,12 +1326,8 @@ class Engine:
                     if len(list_items) != 3:
                         return False  # Dot must have exactly 2 args
                     # Construct list [a|tail]
-                    if isinstance(list_items[2], PrologList):
-                        # Proper handling of list construction
-                        constructed = PrologList((list_items[1],), list_items[2])
-                    else:
-                        # Tail is not a list - make improper list
-                        constructed = PrologList((list_items[1],), list_items[2])
+                    # Note: ['.', A, Tail] may construct an improper list if Tail is not a list
+                    constructed = PrologList((list_items[1],), list_items[2])
                 # Regular structure
                 elif isinstance(functor_term, Atom):
                     constructed = Struct(functor_term.name, tuple(list_items[1:]))
@@ -1368,29 +1341,48 @@ class Engine:
         # Case 3: Checking mode (both sides bound) or both unbound (fail)
         elif not left_unbound and not right_unbound:
             # Both bound - decompose left and check equality with right
-            if isinstance(left, Struct):
-                items = [Atom(left.functor)] + list(left.args)
-                decomposed = self._make_prolog_list(items)
-            elif isinstance(left, PrologList):
-                if not left.items and isinstance(left.tail, Atom) and left.tail.name == "[]":
-                    decomposed = self._make_prolog_list([Atom("[]")])                    
-                else:
-                    if left.items:
-                        tail = PrologList(left.items[1:], left.tail) if len(left.items) > 1 else left.tail
-                        decomposed = self._make_prolog_list([Atom("."), left.items[0], tail])
-                    else:
-                        return False
-            elif isinstance(left, Atom):
-                decomposed = self._make_prolog_list([left])
-            elif isinstance(left, Int):
-                decomposed = self._make_prolog_list([left])
-            else:
+            decomposed = self._decompose_to_list(left)
+            if decomposed is None:
                 return False
-            
             return unify(decomposed, right, self.store, trail_adapter, occurs_check=self.occurs_check)
         else:
             # Both unbound - can't decompose or construct
             return False
+    
+    def _decompose_to_list(self, term: Term) -> Optional[PrologList]:
+        """Decompose a term into list form for =../2.
+        
+        Args:
+            term: The term to decompose
+            
+        Returns:
+            PrologList representation or None if term cannot be decomposed
+        """
+        if isinstance(term, Struct):
+            # Structure: foo(a,b) -> [foo, a, b]
+            items = [Atom(term.functor)] + list(term.args)
+            return self._make_prolog_list(items)
+        elif isinstance(term, PrologList):
+            # List: [a,b] -> ['.', a, [b]]
+            if not term.items and isinstance(term.tail, Atom) and term.tail.name == "[]":
+                # Empty list [] -> [[]]
+                return self._make_prolog_list([Atom("[]")])                    
+            else:
+                # Non-empty list becomes dot structure
+                if term.items:
+                    tail = PrologList(term.items[1:], term.tail) if len(term.items) > 1 else term.tail
+                    return self._make_prolog_list([Atom("."), term.items[0], tail])
+                else:
+                    # Shouldn't happen but handle gracefully
+                    return None
+        elif isinstance(term, Atom):
+            # Atom: foo -> [foo]
+            return self._make_prolog_list([term])
+        elif isinstance(term, Int):
+            # Integer: 42 -> [42]
+            return self._make_prolog_list([term])
+        else:
+            return None
     
     def _make_prolog_list(self, items: list) -> PrologList:
         """Create a proper Prolog list from Python list."""
