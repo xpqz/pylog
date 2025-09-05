@@ -615,6 +615,8 @@ class Engine:
         
         if op == "CALL_META":
             # Push the inner goal transparently for meta-call
+            # Note: meta ports only; no frame or choicepoint created here
+            # to maintain call/1 transparency
             inner_goal = goal.payload["goal"]
             self.goal_stack.push(inner_goal)
             return
@@ -873,6 +875,10 @@ class Engine:
     
     def _reify_term(self, term: Term) -> Any:
         """Reify a term, following variable bindings (iterative).
+        
+        Reified lists are always flattened: nested PrologList structures 
+        where the tail is also a PrologList will be combined into a single
+        PrologList. Improper lists (with non-list tails) retain their tail.
         
         Args:
             term: The term to reify.

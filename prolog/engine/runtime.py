@@ -169,6 +169,17 @@ class Trail:
     
     Records all mutations for backtracking.
     Uses write stamps to prevent redundant trailing.
+    
+    Trail Stamps Contract:
+    - We track one write per (kind, varid, stamp) triple where kind is the
+      type of change ('bind', 'parent', 'rank', 'attr', 'domain')
+    - Each kind of change for a variable is tracked independently, allowing
+      a variable to have both structural changes (parent/rank) and value 
+      changes (bind) trailed in the same choice region
+    - next_stamp() must only be called when creating a real choicepoint
+      (predicate, disjunction, if-then-else, nondet builtin), not for
+      deterministic operations
+    - This ensures proper backtracking of all changes when unwinding
     """
     
     def __init__(self):
