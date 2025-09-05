@@ -201,3 +201,4 @@ This is useful for verifying that PyLog's backtracking and unification behavior 
     - NEVER tweak a test to "fit" the behaviour, unless the test is demonstrably broken.
 - Maintain progress in docs/TODO.md
 - NEVER EVER CHANGE THE DEFAULT BRANCH ON GIT OR GITHUB!
+- When creating PRs or commits, DO NOT mention Claude, Anthropic, or AI assistance in the message
