@@ -34,4 +34,7 @@ addopts = "-v"
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "stress: marks tests as stress tests (deselect with '-m \"not stress\"')",
+    "dev_mode: marks tests that should run in development mode",
+    "iso_mode: marks tests that should run in ISO Prolog mode",
+    "timeout: marks tests with a timeout limit",
 ]
