@@ -31,8 +31,9 @@ query: "?-" goal_list "."
 
 directive: ":-" goal_list "."
 
-// Program is multiple clauses (future use)
-program: (clause | query | directive)+
+// Program is multiple clauses only (Stage 1)
+// Queries and directives are parsed separately, not in programs
+program: clause+
 
 // ====================
 // Terms

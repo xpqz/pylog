@@ -202,3 +202,18 @@ This is useful for verifying that PyLog's backtracking and unification behavior 
 - Maintain progress in docs/TODO.md
 - NEVER EVER CHANGE THE DEFAULT BRANCH ON GIT OR GITHUB!
 - When creating PRs or commits, DO NOT mention Claude, Anthropic, or AI assistance in the message
+
+### GitHub Issue Workflow
+Follow this process for each GitHub issue:
+
+1. **Pick an issue** - Note its ID number
+2. **Create branch** - Name format: `{ID}-{slug-derived-from-issue-title}`
+   - Example: `9-parser-grammar-basic-terms`
+3. **Write tests FIRST** - STOP after writing tests for human review
+4. **Commit approved tests** - Only after review approval
+5. **Implement until tests pass** - Make the tests green
+6. **Run complete test suite** - No regressions tolerated!
+7. **Create PR** - Make an orderly PR, squashing commits if necessary
+8. **Verify CI** - Ensure all CI tests pass fully
+9. **Await PR review** - Wait for human review
+10. **Merge and update** - After approval, merge PR and update the epic
