@@ -122,6 +122,7 @@ class Engine:
         self._builtins[("is", 2)] = lambda eng, args: eng._builtin_is(args)
         self._builtins[(">", 2)] = lambda eng, args: eng._builtin_gt(args)
         self._builtins[("=:=", 2)] = lambda eng, args: eng._builtin_num_eq(args)
+        self._builtins[("=..", 2)] = lambda eng, args: eng._builtin_univ(args)
 
     def run(
         self, goals: List[Term], max_solutions: Optional[int] = None
@@ -1251,6 +1252,175 @@ class Engine:
             return self._eval_int(args[0]) == self._eval_int(args[1])
         except ValueError:
             return False  # ISO: type/instantiation errors
+    
+    def _builtin_univ(self, args: tuple) -> bool:
+        """=..(Term, List) - structure ↔ list conversion (univ).
+        
+        Three modes:
+        1. Decomposition: foo(a,b) =.. L binds L to [foo,a,b]
+        2. Construction: X =.. [foo,a,b] binds X to foo(a,b)
+        3. Checking: foo(a,b) =.. [foo,a,b] succeeds
+        """
+        if len(args) != 2:
+            return False
+        
+        left, right = args
+        trail_adapter = TrailAdapter(self.trail, engine=self, store=self.store)
+        
+        # Dereference both sides
+        if isinstance(left, Var):
+            left_result = self.store.deref(left.id)
+            if left_result[0] == "BOUND":
+                left = left_result[2]
+                left_unbound = False
+            else:
+                # Left is unbound - must be construction mode
+                left_unbound = True
+        else:
+            left_unbound = False
+            
+        if isinstance(right, Var):
+            right_result = self.store.deref(right.id)
+            if right_result[0] == "BOUND":
+                right = right_result[2]
+                right_unbound = False
+            else:
+                # Right is unbound - must be decomposition mode
+                right_unbound = True
+        else:
+            right_unbound = False
+        
+        # Case 1: Decomposition mode (Term =.. X where X unbound)
+        if not left_unbound and right_unbound:
+            # Decompose left side into a list
+            if isinstance(left, Struct):
+                # Structure: foo(a,b) -> [foo, a, b]
+                items = [Atom(left.functor)] + list(left.args)
+                decomposed = self._make_prolog_list(items)
+            elif isinstance(left, PrologList):
+                # List: [a,b] -> ['.', a, [b]]
+                if not left.items and isinstance(left.tail, Atom) and left.tail.name == "[]":
+                    # Empty list [] -> [[]]
+                    decomposed = self._make_prolog_list([Atom("[]")])                    
+                else:
+                    # Non-empty list becomes dot structure
+                    if left.items:
+                        tail = PrologList(left.items[1:], left.tail) if len(left.items) > 1 else left.tail
+                        decomposed = self._make_prolog_list([Atom("."), left.items[0], tail])
+                    else:
+                        # Shouldn't happen but handle gracefully
+                        return False
+            elif isinstance(left, Atom):
+                # Atom: foo -> [foo]
+                decomposed = self._make_prolog_list([left])
+            elif isinstance(left, Int):
+                # Integer: 42 -> [42]
+                decomposed = self._make_prolog_list([left])
+            else:
+                return False
+            
+            # Unify the decomposed list with the right side
+            return unify(right, decomposed, self.store, trail_adapter, occurs_check=self.occurs_check)
+        
+        # Case 2: Construction mode (X =.. [foo,a,b] where X unbound)
+        elif left_unbound and not right_unbound:
+            # Right side must be a proper list
+            if not isinstance(right, PrologList):
+                return False
+            
+            # Convert to Python list
+            list_items = self._prolog_list_to_python_list(right)
+            if list_items is None:  # Not a proper list
+                return False
+            
+            if len(list_items) == 0:
+                # Empty list not allowed
+                return False
+            
+            # Single element list - becomes atomic
+            if len(list_items) == 1:
+                constructed = list_items[0]
+            else:
+                # Multi-element list - first is functor, rest are args
+                functor_term = list_items[0]
+                
+                # Special case: ['.', a, tail] constructs a list
+                if isinstance(functor_term, Atom) and functor_term.name == ".":
+                    if len(list_items) != 3:
+                        return False  # Dot must have exactly 2 args
+                    # Construct list [a|tail]
+                    if isinstance(list_items[2], PrologList):
+                        # Proper handling of list construction
+                        constructed = PrologList((list_items[1],), list_items[2])
+                    else:
+                        # Tail is not a list - make improper list
+                        constructed = PrologList((list_items[1],), list_items[2])
+                # Regular structure
+                elif isinstance(functor_term, Atom):
+                    constructed = Struct(functor_term.name, tuple(list_items[1:]))
+                else:
+                    # Non-atom functor with args is invalid
+                    return False
+            
+            # Unify the constructed term with the left side  
+            return unify(left, constructed, self.store, trail_adapter, occurs_check=self.occurs_check)
+        
+        # Case 3: Checking mode (both sides bound) or both unbound (fail)
+        elif not left_unbound and not right_unbound:
+            # Both bound - decompose left and check equality with right
+            if isinstance(left, Struct):
+                items = [Atom(left.functor)] + list(left.args)
+                decomposed = self._make_prolog_list(items)
+            elif isinstance(left, PrologList):
+                if not left.items and isinstance(left.tail, Atom) and left.tail.name == "[]":
+                    decomposed = self._make_prolog_list([Atom("[]")])                    
+                else:
+                    if left.items:
+                        tail = PrologList(left.items[1:], left.tail) if len(left.items) > 1 else left.tail
+                        decomposed = self._make_prolog_list([Atom("."), left.items[0], tail])
+                    else:
+                        return False
+            elif isinstance(left, Atom):
+                decomposed = self._make_prolog_list([left])
+            elif isinstance(left, Int):
+                decomposed = self._make_prolog_list([left])
+            else:
+                return False
+            
+            return unify(decomposed, right, self.store, trail_adapter, occurs_check=self.occurs_check)
+        else:
+            # Both unbound - can't decompose or construct
+            return False
+    
+    def _make_prolog_list(self, items: list) -> PrologList:
+        """Create a proper Prolog list from Python list."""
+        if not items:
+            return PrologList((), Atom("[]"))
+        return PrologList(tuple(items), Atom("[]"))
+    
+    def _prolog_list_to_python_list(self, lst: PrologList) -> Optional[list]:
+        """Convert Prolog list to Python list, or None if improper."""
+        result = []
+        current = lst
+        
+        while True:
+            if isinstance(current, PrologList):
+                result.extend(current.items)
+                current = current.tail
+            elif isinstance(current, Atom) and current.name == "[]":
+                # Proper list terminator
+                return result
+            elif isinstance(current, Var):
+                # Check if bound
+                var_result = self.store.deref(current.id)
+                if var_result[0] == "BOUND":
+                    current = var_result[2]
+                else:
+                    # Unbound tail - improper list
+                    return None
+            else:
+                # Non-[] tail - improper list
+                return None
 
     def _builtin_is(self, args: tuple) -> bool:
         """is(X, Y) - arithmetic evaluation."""

@@ -27,10 +27,11 @@ class TestUnivDecomposition:
             ))
         ])
         
-        assert result is not None
-        assert "L" in result
+        assert len(result) > 0
+        solution = result[0]
+        assert "L" in solution
         # L should be [foo, a, b, c]
-        lst = result["L"]
+        lst = solution["L"]
         assert isinstance(lst, List)
         assert len(lst.items) == 4
         assert lst.items[0] == Atom("foo")
@@ -48,10 +49,11 @@ class TestUnivDecomposition:
             Struct("=..", (Atom("foo"), Var(0, "L")))
         ])
         
-        assert result is not None
-        assert "L" in result
+        assert len(result) > 0
+        solution = result[0]
+        assert "L" in solution
         # L should be [foo]
-        lst = result["L"]
+        lst = solution["L"]
         assert isinstance(lst, List)
         assert len(lst.items) == 1
         assert lst.items[0] == Atom("foo")
@@ -66,10 +68,11 @@ class TestUnivDecomposition:
             Struct("=..", (Int(42), Var(0, "L")))
         ])
         
-        assert result is not None
-        assert "L" in result
+        assert len(result) > 0
+        solution = result[0]
+        assert "L" in solution
         # L should be [42]
-        lst = result["L"]
+        lst = solution["L"]
         assert isinstance(lst, List)
         assert len(lst.items) == 1
         assert lst.items[0] == Int(42)
@@ -84,10 +87,11 @@ class TestUnivDecomposition:
             Struct("=..", (Atom("[]"), Var(0, "L")))
         ])
         
-        assert result is not None
-        assert "L" in result
+        assert len(result) > 0
+        solution = result[0]
+        assert "L" in solution
         # L should be [[]]
-        lst = result["L"]
+        lst = solution["L"]
         assert isinstance(lst, List)
         assert len(lst.items) == 1
         assert lst.items[0] == Atom("[]")
@@ -103,10 +107,11 @@ class TestUnivDecomposition:
             Struct("=..", (lst_ab, Var(0, "L")))
         ])
         
-        assert result is not None
-        assert "L" in result
+        assert len(result) > 0
+        solution = result[0]
+        assert "L" in solution
         # L should be ['.', a, [b]]
-        lst = result["L"]
+        lst = solution["L"]
         assert isinstance(lst, List)
         assert len(lst.items) == 3
         assert lst.items[0] == Atom(".")
@@ -126,7 +131,7 @@ class TestUnivDecomposition:
         ])
         
         # Should fail
-        assert result is None
+        assert len(result) == 0
 
 
 class TestUnivConstruction:
@@ -142,10 +147,11 @@ class TestUnivConstruction:
             Struct("=..", (Var(0, "X"), lst))
         ])
         
-        assert result is not None
-        assert "X" in result
+        assert len(result) > 0
+        solution = result[0]
+        assert "X" in solution
         # X should be foo(a, b)
-        x = result["X"]
+        x = result[0]["X"]
         assert isinstance(x, Struct)
         assert x.functor == "foo"
         assert len(x.args) == 2
@@ -162,10 +168,11 @@ class TestUnivConstruction:
             Struct("=..", (Var(0, "X"), lst))
         ])
         
-        assert result is not None
-        assert "X" in result
+        assert len(result) > 0
+        solution = result[0]
+        assert "X" in solution
         # X should be foo (atom)
-        assert result["X"] == Atom("foo")
+        assert result[0]["X"] == Atom("foo")
     
     def test_construct_integer(self):
         """Test X =.. [42] binds X to 42."""
@@ -177,10 +184,11 @@ class TestUnivConstruction:
             Struct("=..", (Var(0, "X"), lst))
         ])
         
-        assert result is not None
-        assert "X" in result
+        assert len(result) > 0
+        solution = result[0]
+        assert "X" in solution
         # X should be 42
-        assert result["X"] == Int(42)
+        assert result[0]["X"] == Int(42)
     
     def test_construct_empty_list(self):
         """Test X =.. [[]] binds X to []."""
@@ -192,10 +200,11 @@ class TestUnivConstruction:
             Struct("=..", (Var(0, "X"), lst))
         ])
         
-        assert result is not None
-        assert "X" in result
+        assert len(result) > 0
+        solution = result[0]
+        assert "X" in solution
         # X should be []
-        assert result["X"] == Atom("[]")
+        assert result[0]["X"] == Atom("[]")
     
     def test_construct_list_from_dot(self):
         """Test X =.. ['.', a, [b]] binds X to [a,b]."""
@@ -208,10 +217,11 @@ class TestUnivConstruction:
             Struct("=..", (Var(0, "X"), lst))
         ])
         
-        assert result is not None
-        assert "X" in result
+        assert len(result) > 0
+        solution = result[0]
+        assert "X" in solution
         # X should be [a, b]
-        x = result["X"]
+        x = result[0]["X"]
         assert isinstance(x, List)
         assert len(x.items) == 2
         assert x.items[0] == Atom("a")
@@ -228,7 +238,7 @@ class TestUnivConstruction:
         ])
         
         # Should fail
-        assert result is None
+        assert len(result) == 0
     
     def test_construct_fails_with_empty_list(self):
         """Test X =.. [] fails (empty list on right)."""
@@ -241,7 +251,7 @@ class TestUnivConstruction:
         ])
         
         # Should fail
-        assert result is None
+        assert len(result) == 0
     
     def test_construct_fails_atomic_with_args(self):
         """Test X =.. [42, a] fails (atomic terms cannot have arguments)."""
@@ -254,7 +264,7 @@ class TestUnivConstruction:
         ])
         
         # Should fail (atomic terms cannot have arguments)
-        assert result is None
+        assert len(result) == 0
 
 
 class TestUnivBidirectional:
@@ -275,10 +285,10 @@ class TestUnivBidirectional:
             ))
         ])
         
-        assert result is not None
-        assert result["Y"] == Atom("a")
+        assert len(result) > 0
+        assert result[0]["Y"] == Atom("a")
         # X should also be a since unified with Y
-        x = result["X"]
+        x = result[0]["X"]
         assert x == Atom("a")
     
     def test_check_mode(self):
@@ -294,7 +304,7 @@ class TestUnivBidirectional:
             ))
         ])
         
-        assert result is not None  # Should succeed
+        assert len(result) > 0  # Should succeed
     
     def test_check_mode_fails(self):
         """Test foo(a,b) =.. [bar,a,b] fails."""
@@ -309,7 +319,7 @@ class TestUnivBidirectional:
             ))
         ])
         
-        assert result is None  # Should fail
+        assert len(result) == 0  # Should fail
     
     def test_partial_structure_with_unbound_functor(self):
         """Test Struct =.. [F|Args] with unbound F."""
@@ -323,12 +333,13 @@ class TestUnivBidirectional:
             ))
         ])
         
-        assert result is not None
-        assert "F" in result
-        assert "Args" in result
-        assert result["F"] == Atom("foo")
+        assert len(result) > 0
+        solution = result[0]
+        assert "F" in solution
+        assert "Args" in solution
+        assert solution["F"] == Atom("foo")
         # Args should be [a, b]
-        args = result["Args"]
+        args = solution["Args"]
         assert isinstance(args, List)
         assert len(args.items) == 2
         assert args.items[0] == Atom("a")
@@ -355,8 +366,8 @@ class TestUnivDeterminism:
             ))
         ])
         
-        # Should fail (due to fail/0) without errors
-        assert result is None
+        # Should fail (due to fail/0) without errors  
+        assert len(result) == 0
     
     def test_deterministic_construction(self):
         """Test construction mode is deterministic."""
@@ -364,8 +375,10 @@ class TestUnivDeterminism:
         engine = Engine(prog)
         
         # Query: (X =.. [foo, a] ; true), counter
-        # This should give exactly one solution if =../2 is deterministic
-        result = engine.run([
+        # This should give exactly two solutions if =../2 is deterministic:
+        # 1. X = foo(a) with counter
+        # 2. true with counter (from ; branch)
+        results = engine.run([
             Struct(",", (
                 Struct(";", (
                     Struct("=..", (Var(0, "X"), List((Atom("foo"), Atom("a")), Atom("[]")))),
@@ -375,18 +388,17 @@ class TestUnivDeterminism:
             ))
         ])
         
-        assert result is not None
-        # Should get first solution from =../2
-        assert "X" in result
-        assert isinstance(result["X"], Struct)
+        # Should get exactly two solutions
+        assert len(results) == 2
         
-        # Try to get another solution
-        result2 = engine.run()
-        assert result2 is not None  # Should get solution from true branch
+        # First solution from =../2
+        assert "X" in results[0]
+        assert isinstance(results[0]["X"], Struct)
+        assert results[0]["X"].functor == "foo"
         
-        # No more solutions
-        result3 = engine.run()
-        assert result3 is None
+        # Second solution from true branch (X remains a variable)
+        # The true branch doesn't bind X, so it stays as a variable
+        assert "X" in results[1]
 
 
 class TestUnivTrailing:
@@ -402,30 +414,27 @@ class TestUnivTrailing:
         
         # Query: p(Y), X =.. [foo, Y]
         # This should bind X to foo(a), then backtrack and bind to foo(b)
-        result = engine.run([
+        results = engine.run([
             Struct(",", (
                 Struct("p", (Var(1, "Y"),)),
                 Struct("=..", (Var(0, "X"), List((Atom("foo"), Var(1, "Y")), Atom("[]")))) 
             ))
         ])
         
-        assert result is not None
-        assert result["Y"] == Atom("a")
-        assert isinstance(result["X"], Struct)
-        assert result["X"].functor == "foo"
-        assert result["X"].args[0] == Atom("a")
+        # Should get two solutions via backtracking
+        assert len(results) == 2
         
-        # Get next solution
-        result2 = engine.run()
-        assert result2 is not None
-        assert result2["Y"] == Atom("b")
-        assert isinstance(result2["X"], Struct)
-        assert result2["X"].functor == "foo"
-        assert result2["X"].args[0] == Atom("b")
+        # First solution
+        assert results[0]["Y"] == Atom("a")
+        assert isinstance(results[0]["X"], Struct)
+        assert results[0]["X"].functor == "foo"
+        assert results[0]["X"].args[0] == Atom("a")
         
-        # No more solutions
-        result3 = engine.run()
-        assert result3 is None
+        # Second solution (after backtracking)
+        assert results[1]["Y"] == Atom("b")
+        assert isinstance(results[1]["X"], Struct)
+        assert results[1]["X"].functor == "foo"
+        assert results[1]["X"].args[0] == Atom("b")
     
     def test_trailing_undo_on_fail_then_redo(self):
         """Test bindings are undone when =.. succeeds but later goal fails."""
@@ -450,7 +459,7 @@ class TestUnivTrailing:
             ))
         ])
         
-        assert result is not None  # Should succeed via true branch
+        assert len(result) > 0  # Should succeed via true branch
 
 
 class TestUnivEdgeCases:
@@ -467,7 +476,7 @@ class TestUnivEdgeCases:
         ])
         
         # Should fail (right side must be proper list)
-        assert result is None
+        assert len(result) == 0
     
     def test_nested_structures(self):
         """Test decomposing nested structures."""
@@ -481,9 +490,10 @@ class TestUnivEdgeCases:
             ))
         ])
         
-        assert result is not None
-        assert "L" in result
-        lst = result["L"]
+        assert len(result) > 0
+        solution = result[0]
+        assert "L" in solution
+        lst = solution["L"]
         assert isinstance(lst, List)
         assert len(lst.items) == 3
         assert lst.items[0] == Atom("foo")
@@ -505,8 +515,8 @@ class TestUnivEdgeCases:
             Struct("=..", (lst, Var(0, "L")))
         ])
         
-        assert result is not None
-        L = result["L"]
+        assert len(result) > 0
+        L = result[0]["L"]
         assert isinstance(L, List)
         assert len(L.items) == 3
         assert L.items[0] == Atom(".")
@@ -529,8 +539,8 @@ class TestUnivEdgeCases:
             Struct("=..", (Var(0, "X"), lst))
         ])
         
-        assert result is not None
-        assert result["X"] == Atom("[]")
+        assert len(result) > 0
+        assert result[0]["X"] == Atom("[]")
     
     def test_decompose_empty_list_equals_quoted_atom(self):
         """Test [] =.. L gives L = ['[]']."""
@@ -541,8 +551,8 @@ class TestUnivEdgeCases:
             Struct("=..", (Atom("[]"), Var(0, "L")))
         ])
         
-        assert result is not None
-        L = result["L"]
+        assert len(result) > 0
+        L = result[0]["L"]
         assert isinstance(L, List)
         assert len(L.items) == 1
         assert L.items[0] == Atom("[]")
@@ -558,8 +568,8 @@ class TestUnivEdgeCases:
             Struct("=..", (Var(0, "X"), lst))
         ])
         
-        assert result is not None
-        X = result["X"]
+        assert len(result) > 0
+        X = result[0]["X"]
         assert isinstance(X, Struct)
         assert X.functor == "foo bar"
         assert len(X.args) == 1
