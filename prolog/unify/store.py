@@ -11,40 +11,65 @@ COMPRESS_MIN_PATH = 4
 @dataclass
 class Cell:
     """A cell in the store representing a variable's state."""
+
     tag: Literal["unbound", "bound"]
-    ref: int                    # parent varid for unbound (union-find); self if root
+    ref: int  # parent varid for unbound (union-find); self if root
     term: Optional[Any] = None  # bound Term when tag="bound"
-    rank: int = 0               # union-by-rank optimization (only meaningful for unbound roots)
+    rank: int = 0  # union-by-rank optimization (only meaningful for unbound roots)
 
 
 class Store:
     """Variable store with union-find structure."""
-    
+
     def __init__(self):
         """Initialize an empty store."""
         self.cells: List[Cell] = []
-    
+
     def new_var(self, hint: Optional[str] = None) -> int:
         """Create a new unbound variable and return its ID.
-        
+
         Args:
             hint: Optional hint for debugging (not stored in cell)
-            
+
         Returns:
             The variable ID (index in cells list)
         """
         vid = len(self.cells)
         self.cells.append(Cell(tag="unbound", ref=vid, term=None, rank=0))
         return vid
-    
-    def deref(self, varid: int, compress: bool = False, trail: Optional[List] = None) -> Tuple:
+
+    def size(self) -> int:
+        """Get current store size (number of cells).
+
+        Returns:
+            The number of cells in the store.
+        """
+        return len(self.cells)
+
+    def shrink_to(self, n: int) -> None:
+        """Shrink the store to the given size.
+
+        Only shrinks pure allocations (not bindings).
+        Used for backtracking past allocation points.
+
+        Args:
+            n: Target size to shrink to.
+        """
+        if n < 0 or n > len(self.cells):
+            return
+        # Pop cells back to size n
+        self.cells = self.cells[:n]
+
+    def deref(
+        self, varid: int, compress: bool = False, trail: Optional[List] = None
+    ) -> Tuple:
         """Follow union-find chains to find the root.
-        
+
         Args:
             varid: Variable ID to dereference
             compress: Whether to perform path compression
             trail: Trail to record compressions (required if compress=True)
-            
+
         Returns:
             One of:
             - ("BOUND", root_vid, bound_term) for bound variables
@@ -52,7 +77,7 @@ class Store:
         """
         path = []
         v = varid
-        
+
         # Follow parent links to find root
         while True:
             c = self.cells[v]
@@ -67,7 +92,7 @@ class Store:
                 break
             path.append(v)
             v = parent
-        
+
         # Path compression if requested
         # Path length check: we have len(path) nodes that need compression
         # For a chain v0->v1->v2->v3->v4, path = [v0, v1, v2, v3]
@@ -80,5 +105,5 @@ class Store:
                 trail.append(("parent", p, old_ref))
                 # Update parent
                 self.cells[p].ref = root_vid
-        
+
         return root

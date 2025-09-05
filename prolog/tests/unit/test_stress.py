@@ -30,257 +30,256 @@ def time_limit(seconds):
 @pytest.mark.stress
 class TestLargeClauseDatabases:
     """Test with large numbers of clauses."""
-    
+
     def test_1000_clauses_single_predicate(self):
         """Test with 1000 clauses for a single predicate."""
         num_clauses = int(1000 * STRESS_SCALE)
-        
+
         # Generate clauses
         clauses = []
         for i in range(num_clauses):
             clauses.append(mk_fact("test", Atom(f"val_{i}")))
-        
+
         prog = program(*clauses)
         engine = Engine(prog)
-        
+
         # Query all solutions
         with time_limit(5.0):
             solutions = engine.run([Struct("test", (Var(0, "X"),))])
-        
+
         assert len(solutions) == num_clauses
-    
+
     def test_10000_total_clauses(self):
         """Test with 10000 total clauses across multiple predicates."""
         num_predicates = int(100 * STRESS_SCALE)
         clauses_per_pred = 100
-        
+
         clauses = []
         for p in range(num_predicates):
             for c in range(clauses_per_pred):
                 clauses.append(mk_fact(f"pred_{p}", Atom(f"val_{c}")))
-        
+
         prog = program(*clauses)
         engine = Engine(prog)
-        
+
         # Query one predicate
         with time_limit(2.0):
             solutions = engine.run([Struct("pred_0", (Var(0, "X"),))])
-        
+
         assert len(solutions) == clauses_per_pred
-    
+
     def test_deep_clause_hierarchies(self):
         """Test with deep hierarchical clause structures."""
         depth = int(100 * STRESS_SCALE)
-        
+
         clauses = []
         # Create chain: p0 calls p1, p1 calls p2, etc.
         for i in range(depth - 1):
             clauses.append(
-                mk_rule(f"p{i}", (Var(0, "X"),),
-                        Struct(f"p{i+1}", (Var(0, "X"),)))
+                mk_rule(f"p{i}", (Var(0, "X"),), Struct(f"p{i+1}", (Var(0, "X"),)))
             )
         # Base case
         clauses.append(mk_fact(f"p{depth-1}", Atom("base")))
-        
+
         prog = program(*clauses)
         engine = Engine(prog)
-        
+
         with time_limit(5.0):
             solutions = engine.run([Struct("p0", (Var(0, "X"),))])
-        
+
         assert len(solutions) == 1
         assert solutions[0]["X"] == Atom("base")
-    
+
     def test_wide_clause_database(self):
         """Test with many predicates each having few clauses."""
         num_predicates = int(1000 * STRESS_SCALE)
-        
+
         clauses = []
         for i in range(num_predicates):
             # Each predicate has just 2 clauses
             clauses.append(mk_fact(f"p{i}", Atom("a")))
             clauses.append(mk_fact(f"p{i}", Atom("b")))
-        
+
         prog = program(*clauses)
         engine = Engine(prog)
-        
+
         # Query several predicates
         for i in range(min(10, num_predicates)):
             solutions = engine.run([Struct(f"p{i}", (Var(0, "X"),))])
             assert len(solutions) == 2
-    
+
     def test_clause_indexing_performance(self):
         """Test that clause indexing provides good performance."""
         num_clauses = int(1000 * STRESS_SCALE)
-        
+
         clauses = []
         # Create many clauses with different first arguments
         for i in range(num_clauses):
             clauses.append(mk_fact("indexed", Atom(f"key_{i}"), Atom(f"val_{i}")))
-        
+
         prog = program(*clauses)
         engine = Engine(prog)
-        
+
         # Query with specific first argument (should be fast with indexing)
+        # Use a key that exists even at minimum scale
+        query_key = min(50, num_clauses - 1)  # Make sure key exists
         with time_limit(0.1):  # Should be very fast
-            solutions = engine.run([
-                Struct("indexed", (Atom("key_500"), Var(0, "Y")))
-            ])
-        
+            solutions = engine.run([Struct("indexed", (Atom(f"key_{query_key}"), Var(0, "Y")))])
+
         assert len(solutions) == 1
-        assert solutions[0]["Y"] == Atom("val_500")
+        assert solutions[0]["Y"] == Atom(f"val_{query_key}")
 
 
 @pytest.mark.stress
 @pytest.mark.slow
 class TestDeepGoalStacks:
     """Test with deep goal stacks and many pending goals."""
-    
+
     def test_1000_pending_goals(self):
         """Test with 1000+ pending goals on the stack."""
         num_goals = int(1000 * STRESS_SCALE)
-        
+
         # Create a rule that generates many goals
         body_goals = []
         for i in range(num_goals):
             body_goals.append(Struct(f"goal_{i}", ()))
-        
-        clauses = [
-            mk_rule("test", (), *body_goals)
-        ]
-        
+
+        clauses = [mk_rule("test", (), *body_goals)]
+
         # Add facts for each goal
         for i in range(num_goals):
             clauses.append(mk_fact(f"goal_{i}"))
-        
+
         prog = program(*clauses)
         engine = Engine(prog)
-        
+
         with time_limit(10.0):
             solutions = engine.run([Struct("test", ())])
-        
+
         assert len(solutions) == 1
-    
+
     def test_deeply_nested_conjunctions(self):
         """Test with deeply nested conjunction structures."""
         depth = int(500 * STRESS_SCALE)
-        
+
         clauses = []
         # Create nested structure: p0 :- p1, true. p1 :- p2, true. etc.
         for i in range(depth - 1):
-            clauses.append(
-                mk_rule(f"p{i}", (),
-                        Struct(f"p{i+1}", ()),
-                        Atom("true"))
-            )
+            clauses.append(mk_rule(f"p{i}", (), Struct(f"p{i+1}", ()), Atom("true")))
         clauses.append(mk_fact(f"p{depth-1}"))
-        
+
         prog = program(*clauses)
         engine = Engine(prog)
-        
+
         with time_limit(5.0):
             solutions = engine.run([Struct("p0", ())])
-        
+
         assert len(solutions) == 1
-    
+
     def test_many_choicepoints(self):
         """Test with many simultaneous choicepoints."""
         num_choices = int(100 * STRESS_SCALE)
-        
+
         clauses = []
         # Each predicate has 2 choices, creating exponential possibilities
         for i in range(num_choices):
             clauses.append(mk_fact(f"choice{i}", Atom("a")))
             clauses.append(mk_fact(f"choice{i}", Atom("b")))
-        
+
         # Query that creates many choicepoints but limits solutions
         body = []
         for i in range(min(10, num_choices)):  # Limit to prevent explosion
             body.append(Struct(f"choice{i}", (Var(i, f"X{i}"),)))
-        
-        clauses.append(mk_rule("test", tuple(Var(i, f"X{i}") for i in range(len(body))), *body))
-        
+
+        clauses.append(
+            mk_rule("test", tuple(Var(i, f"X{i}") for i in range(len(body))), *body)
+        )
+
         prog = program(*clauses)
         engine = Engine(prog, max_solutions=100)  # Limit solutions
-        
+
         with time_limit(5.0):
-            solutions = engine.run([
-                Struct("test", tuple(Var(i, f"X{i}") for i in range(len(body))))
-            ])
-        
+            solutions = engine.run(
+                [Struct("test", tuple(Var(i, f"X{i}") for i in range(len(body))))]
+            )
+
         # Should get limited number of solutions
         assert len(solutions) <= 100
-    
+
     def test_memory_stability_under_stress(self):
         """Test that memory usage remains stable under stress."""
         # Run multiple queries to check for memory leaks
         prog = program(
             mk_fact("p", Atom("1")),
             mk_fact("p", Atom("2")),
-            mk_rule("test", (Var(0, "X"), Var(1, "Y")),
-                    Struct("p", (Var(0, "X"),)),
-                    Struct("p", (Var(1, "Y"),)))
+            mk_rule(
+                "test",
+                (Var(0, "X"), Var(1, "Y")),
+                Struct("p", (Var(0, "X"),)),
+                Struct("p", (Var(1, "Y"),)),
+            ),
         )
-        
+
         engine = Engine(prog)
-        
+
         # Run same query multiple times
         for _ in range(100):
             solutions = engine.run([Struct("test", (Var(0, "X"), Var(1, "Y")))])
             assert len(solutions) == 4
             engine.reset()  # Reset between runs
-    
+
     def test_infinite_recursion_handling(self):
         """Test that infinite recursion is caught by step budget.
-        
-        The engine uses explicit stacks (not Python recursion) and 
+
+        The engine uses explicit stacks (not Python recursion) and
         can be limited with max_steps to prevent infinite loops.
         """
         prog = program(
             # Infinite recursion: loop :- loop.
             mk_rule("loop", (), Struct("loop", ()))
         )
-        
+
         # Use step budget to prevent infinite loop
         engine = Engine(prog, max_solutions=1, max_steps=1000)
-        
+
         # This will hit the step limit and return no solutions
         solutions = engine.run([Struct("loop", ())])
-        
+
         # Should return empty (no solutions found within step budget)
         assert len(solutions) == 0
-    
+
     @pytest.mark.timeout(10)
     def test_complex_stress_scenario(self):
         """Test complex scenario combining multiple stress factors."""
         scale = STRESS_SCALE
-        
+
         clauses = []
-        
+
         # Add many facts
         for i in range(int(100 * scale)):
             clauses.append(mk_fact("fact", Atom(f"f_{i}")))
-        
+
         # Add recursive rules
+        clauses.append(mk_rule("recursive", (Atom("zero"),)))
         clauses.append(
-            mk_rule("recursive", (Atom("zero"),))
+            mk_rule(
+                "recursive",
+                (Struct("s", (Var(0, "N"),)),),
+                Struct("recursive", (Var(0, "N"),)),
+            )
         )
-        clauses.append(
-            mk_rule("recursive", (Struct("s", (Var(0, "N"),)),),
-                    Struct("recursive", (Var(0, "N"),)))
-        )
-        
+
         prog = program(*clauses)
         engine = Engine(prog, max_solutions=10)
-        
+
         # Run recursive query
         term = Atom("zero")
         for _ in range(5):
             term = Struct("s", (term,))
-        
+
         solutions = engine.run([Struct("recursive", (term,))])
         assert len(solutions) == 1
-        
+
         # Also test with many facts (to exercise the clause database)
         solutions = engine.run([Struct("fact", (Var(0, "X"),))], max_solutions=10)
         assert len(solutions) == min(10, int(100 * scale))
