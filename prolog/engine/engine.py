@@ -366,6 +366,8 @@ class Engine:
         
         # Take first clause
         clause_idx = cursor.take()
+        if clause_idx is None:
+            return False
         clause = self.program.clauses[clause_idx]
         
         # Capture cut barrier BEFORE creating the alternatives choicepoint
@@ -406,7 +408,7 @@ class Engine:
         
         # Try to unify with clause head
         trail_adapter = TrailAdapter(self.trail, engine=self, store=self.store)
-        if unify(renamed_clause.head, goal.term, self.store, trail_adapter, 
+        if unify(renamed_clause.head, goal.term, self.store, trail_adapter,  # type: ignore 
                 occurs_check=self.occurs_check):
             # Unification succeeded - now push frame for body execution
             # Use the cut_barrier saved before creating choicepoint
@@ -601,7 +603,7 @@ class Engine:
             frame = self.frame_stack.pop()
             self._debug_frame_pops += 1
             # Emit EXIT port when frame is popped
-            self._port("EXIT", frame.pred)
+            self._port("EXIT", frame.pred or "unknown")
         # If frame ID doesn't match, it's likely a stale POP_FRAME from backtracking
         # Just ignore it - the frame was already popped or never created
     
@@ -771,7 +773,7 @@ class Engine:
                     
                     # Try to unify with clause head
                     trail_adapter = TrailAdapter(self.trail, engine=self, store=self.store)
-                    if unify(renamed_clause.head, goal.term, self.store, trail_adapter, 
+                    if unify(renamed_clause.head, goal.term, self.store, trail_adapter,  # type: ignore 
                             occurs_check=self.occurs_check):
                         # Unification succeeded - create frame for body execution
                         # cut_barrier was already computed above before pushing CP
@@ -1095,7 +1097,7 @@ class Engine:
             return False
         left, right = args
         trail_adapter = TrailAdapter(self.trail, engine=self, store=self.store)
-        return unify(left, right, self.store, trail_adapter, 
+        return unify(left, right, self.store, trail_adapter,  # type: ignore 
                     occurs_check=self.occurs_check)
     
     def _builtin_not_unify(self, args: tuple) -> bool:
@@ -1106,7 +1108,7 @@ class Engine:
         # Create a temporary trail position
         trail_pos = self.trail.position()
         trail_adapter = TrailAdapter(self.trail, engine=self, store=self.store)
-        success = unify(left, right, self.store, trail_adapter, 
+        success = unify(left, right, self.store, trail_adapter,  # type: ignore 
                        occurs_check=self.occurs_check)
         # Undo any bindings
         self.trail.unwind_to(trail_pos, self.store)
@@ -1191,7 +1193,7 @@ class Engine:
             # Unify with left side
             result_term = Int(value)
             trail_adapter = TrailAdapter(self.trail, engine=self, store=self.store)
-            return unify(left, result_term, self.store, trail_adapter, 
+            return unify(left, result_term, self.store, trail_adapter,  # type: ignore 
                         occurs_check=self.occurs_check)
         except (ValueError, TypeError):
             return False
@@ -1233,13 +1235,13 @@ class Engine:
                 elif isinstance(t, Struct):
                     if t.functor in ['+', '-', '*', '//', 'mod'] and len(t.args) == 2:
                         # Binary operator: evaluate args then apply
-                        eval_stack.append(('apply', t.functor))
+                        eval_stack.append(('apply', Atom(t.functor)))
                         # Push args in reverse order for correct evaluation
                         eval_stack.append(('eval', t.args[1]))
                         eval_stack.append(('eval', t.args[0]))
                     elif t.functor == '-' and len(t.args) == 1:
                         # Unary minus
-                        eval_stack.append(('apply_unary', '-'))
+                        eval_stack.append(('apply_unary', Atom('-')))
                         eval_stack.append(('eval', t.args[0]))
                     else:
                         raise ValueError(f"Unknown arithmetic operator: {t.functor}/{len(t.args)}")
@@ -1290,20 +1292,6 @@ class Engine:
         """Get the debug ports for debugging."""
         return self._ports
     
-    @property
-    def debug_cp_stack_size(self) -> int:
-        """Get current choicepoint stack size for debugging."""
-        return len(self.cp_stack)
-    
-    @property
-    def debug_frame_stack_size(self) -> int:
-        """Get current frame stack size for debugging."""
-        return len(self.frame_stack)
-    
-    @property
-    def debug_goal_stack_size(self) -> int:
-        """Get current goal stack size for debugging."""
-        return self.goal_stack.height()
     
     @property
     def debug_frame_pops(self) -> int:

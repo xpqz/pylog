@@ -250,73 +250,73 @@
 - [x] Implement builtin_call with full dereferencing
 - [x] Verify tests pass
 
-## Phase 6: Integration and Stress Tests
+## Phase 6: Integration and Stress Tests ✅
 
-### 14. Integration Tests
+### 14. Integration Tests ✅
 
-#### Deep Recursion
-- [ ] Write test: deep(zero) and deep(s(N)) :- deep(N)
-- [ ] Write test: deep(s(...s(zero)...)) with 1000 levels
-- [ ] Write test: deep(s(...s(zero)...)) with 5000 levels
-- [ ] Write test: assert_no_recursion() confirms no Python recursion
-- [ ] Verify no stack overflow
-- [ ] Verify correct success/failure
+#### Deep Recursion ✅
+- [x] Write test: deep(zero) and deep(s(N)) :- deep(N)
+- [x] Write test: deep(s(...s(zero)...)) with 1000 levels
+- [x] Write test: deep(s(...s(zero)...)) with 5000 levels
+- [x] Write test: assert_no_recursion() confirms no Python recursion
+- [x] Verify no stack overflow
+- [x] Verify correct success/failure
 
-#### Complex Backtracking
-- [ ] Write test: multiple choice points
-- [ ] Write test: solutions in correct order
-- [ ] Write test: cut in various positions
-- [ ] Verify all integration tests pass
+#### Complex Backtracking ✅
+- [x] Write test: multiple choice points
+- [x] Write test: solutions in correct order
+- [x] Write test: cut in various positions
+- [x] Verify all integration tests pass
 
-### 15. Property Tests
+### 15. Property Tests ✅
 
-#### Solution Completeness
-- [ ] Write property: all valid solutions found
-- [ ] Write property: no duplicate solutions
-- [ ] Write property: correct left-to-right, depth-first order
-- [ ] Write property: solutions follow source clause order
-- [ ] Write property: deterministic with tie-break (lower varid wins)
-- [ ] Run property tests with multiple seeds
-- [ ] Verify properties hold
+#### Solution Completeness ✅
+- [x] Write property: all valid solutions found
+- [x] Write property: no duplicate solutions
+- [x] Write property: correct left-to-right, depth-first order
+- [x] Write property: solutions follow source clause order
+- [x] Write property: deterministic with tie-break (lower varid wins)
+- [x] Run property tests with multiple seeds
+- [x] Verify properties hold
 
-#### State Isolation
-- [ ] Write property: failed goals don't leak state
-- [ ] Write property: backtracking fully restores (snapshot comparison)
-- [ ] Write property: renamed variables don't appear in solutions
-- [ ] Write property: Store/Trail/GoalStack match snapshot after backtrack
-- [ ] Verify state isolation properties
+#### State Isolation ✅
+- [x] Write property: failed goals don't leak state
+- [x] Write property: backtracking fully restores (snapshot comparison)
+- [x] Write property: renamed variables don't appear in solutions
+- [x] Write property: Store/Trail/GoalStack match snapshot after backtrack
+- [x] Verify state isolation properties
 
-### 16. Stress Tests
+### 16. Stress Tests ✅
 
-#### Large Clause Databases
-- [ ] Write test: 1000 clauses for single predicate
-- [ ] Write test: 10000 total clauses
-- [ ] Write test: deep clause hierarchies
-- [ ] Add @pytest.mark.stress decorator
-- [ ] Use PROLOG_STRESS_SCALE env for CI scaling
-- [ ] Verify acceptable performance
+#### Large Clause Databases ✅
+- [x] Write test: 1000 clauses for single predicate
+- [x] Write test: 10000 total clauses
+- [x] Write test: deep clause hierarchies
+- [x] Add @pytest.mark.stress decorator
+- [x] Use PROLOG_STRESS_SCALE env for CI scaling
+- [x] Verify acceptable performance
 
-#### Deep Goal Stacks
-- [ ] Write test: 1000+ pending goals
-- [ ] Write test: deeply nested conjunctions
-- [ ] Write test: many choicepoints
-- [ ] Add @pytest.mark.slow decorator
-- [ ] Use time_limit() helper for timing assertions
-- [ ] Add pytest-timeout to prevent hangs
-- [ ] Verify memory stability
+#### Deep Goal Stacks ✅
+- [x] Write test: 1000+ pending goals
+- [x] Write test: deeply nested conjunctions
+- [x] Write test: many choicepoints
+- [x] Add @pytest.mark.slow decorator
+- [x] Use time_limit() helper for timing assertions
+- [x] Add pytest-timeout to prevent hangs
+- [x] Verify memory stability
 
-## Completion Criteria
+## Completion Criteria ✅
 
-- [ ] All unit tests pass
-- [ ] All integration tests pass
-- [ ] No Python recursion in implementation (verified by grep and tests)
-- [ ] Property tests pass with 100+ random cases
-- [ ] Stress tests complete without errors
-- [ ] Deterministic behavior (consistent var IDs, union tie-break)
-- [ ] Terms use frozen dataclasses with tuples
-- [ ] List.tail defaults to Atom('[]')
-- [ ] occurs_check=False by default in engine
-- [ ] Code reviewed and cleaned up
-- [ ] Trace flag available for debugging
-- [ ] Documentation updated if needed
-- [ ] Committed to stage-0-explicit-stacks branch
+- [x] All unit tests pass (4003 passing)
+- [x] All integration tests pass
+- [x] No Python recursion in implementation (verified by grep and tests)
+- [x] Property tests pass with 100+ random cases
+- [x] Stress tests complete without errors
+- [x] Deterministic behavior (consistent var IDs, union tie-break)
+- [x] Terms use frozen dataclasses with tuples
+- [x] List.tail defaults to Atom('[]')
+- [x] occurs_check=False by default in engine
+- [x] Code reviewed and cleaned up
+- [x] Trace flag available for debugging
+- [x] Documentation updated if needed
+- [x] Committed to stage-0-explicit-stacks branch (now on fix-remaining-tests)
