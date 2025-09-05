@@ -247,10 +247,24 @@ def _try_unify_list_interop(t1: Any, t2: Any, stack: List[Tuple[Any, Any]]) -> A
             # Both non-list - regular unification
             stack.append((s1[1], s2[1]))
         elif s1[0] == 'other':
-            # t1 is non-list, t2 is list
+            # t1 is non-list, t2 is list-like
+            # If step extracted the same term AND it's not a Var, we have incompatible types
+            # Variables can unify with anything, including lists
+            from prolog.ast.terms import Var
+            if s1[1] is term1 and not isinstance(term1, Var):
+                # term1 is definitely not list-like and not a var - incompatible with list
+                return False
+            # Otherwise unify the extracted term with the list term
             stack.append((s1[1], term2))
         elif s2[0] == 'other':
-            # t2 is non-list, t1 is list
+            # t2 is non-list, t1 is list-like
+            # If step extracted the same term AND it's not a Var, we have incompatible types
+            # Variables can unify with anything, including lists
+            from prolog.ast.terms import Var
+            if s2[1] is term2 and not isinstance(term2, Var):
+                # term2 is definitely not list-like and not a var - incompatible with list
+                return False
+            # Otherwise unify the list term with the extracted term
             stack.append((term1, s2[1]))
         else:
             # Mismatch (nil vs cons)
