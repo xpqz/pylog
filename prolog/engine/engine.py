@@ -1249,7 +1249,9 @@ class Engine:
                     raise ValueError(f"Cannot evaluate arithmetic: {t}")
                     
             elif action == 'apply':
-                op = data
+                op_atom = data
+                # Extract operator name from Atom
+                op = op_atom.name if isinstance(op_atom, Atom) else str(op_atom)
                 if len(value_stack) < 2:
                     raise ValueError(f"Not enough values for operator {op}")
                     
@@ -1272,7 +1274,9 @@ class Engine:
                     value_stack.append(left % right)
                     
             elif action == 'apply_unary':
-                op = data
+                op_atom = data
+                # Extract operator name from Atom
+                op = op_atom.name if isinstance(op_atom, Atom) else str(op_atom)
                 if not value_stack:
                     raise ValueError("Not enough values for unary operator")
                 value = value_stack.pop()
