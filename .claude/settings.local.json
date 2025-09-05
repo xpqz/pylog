@@ -40,7 +40,13 @@
       "Bash(uv pip:*)",
       "Bash(uv run pip:*)",
       "Bash(PYTHONHASHSEED=0 PROLOG_STRESS_SCALE=0.1 uv run pytest prolog/tests/unit/test_stress.py::TestLargeClauseDatabases::test_clause_indexing_performance -xvs)",
-      "Bash(PYTHONHASHSEED=0 PROLOG_STRESS_SCALE=0.1 uv run pytest -q --maxfail=5 --disable-warnings)"
+      "Bash(PYTHONHASHSEED=0 PROLOG_STRESS_SCALE=0.1 uv run pytest -q --maxfail=5 --disable-warnings)",
+      "Bash(gh label create:*)",
+      "Bash(gh issue create:*)",
+      "Bash(git pull:*)",
+      "Bash(git reset:*)",
+      "Bash(git remote:*)",
+      "Bash(gh issue list:*)"
     ],
     "deny": [],
     "ask": []
