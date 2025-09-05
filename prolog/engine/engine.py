@@ -250,7 +250,7 @@ class Engine:
         return self.solutions
     
     def _to_cons(self, t: Term) -> Term:
-        """Convert PrologList to nested '.'/2 cons structure.
+        """Convert PrologList to nested '.'/2 cons structure iteratively.
         
         Args:
             t: Term to convert
@@ -258,21 +258,63 @@ class Engine:
         Returns:
             Converted term (or original if not a PrologList)
         """
-        if isinstance(t, PrologList):
-            # Build proper list with [] tail
-            result = t.tail if t.tail else Atom("[]")
-            for item in reversed(t.items):
-                # Recursively convert items
-                converted_item = self._to_cons(item)
-                result = Struct(".", (converted_item, result))
-            return result
-        elif isinstance(t, Struct):
-            # Recursively convert args
-            converted_args = tuple(self._to_cons(arg) for arg in t.args)
-            return Struct(t.functor, converted_args)
-        else:
-            # Atoms, Ints, Vars pass through unchanged
+        # Handle non-compound terms
+        if not isinstance(t, (PrologList, Struct)):
             return t
+        
+        # Build work stack for iterative processing
+        # Stack items: (term, is_processed)
+        stack = [(t, False)]
+        result_cache = {}
+        
+        while stack:
+            term, is_processed = stack.pop()
+            
+            if is_processed:
+                # Second visit - construct result from cached children
+                if isinstance(term, PrologList):
+                    # Build cons list from cached items
+                    result = term.tail if term.tail else Atom("[]")
+                    # Also convert the tail if needed
+                    if result in result_cache:
+                        result = result_cache[result]
+                    
+                    for item in reversed(term.items):
+                        item_result = result_cache.get(item, item)
+                        result = Struct(".", (item_result, result))
+                    result_cache[term] = result
+                    
+                elif isinstance(term, Struct):
+                    # Build struct with converted args
+                    new_args = []
+                    for arg in term.args:
+                        new_args.append(result_cache.get(arg, arg))
+                    result_cache[term] = Struct(term.functor, tuple(new_args))
+            else:
+                # First visit - schedule processing
+                if isinstance(term, (PrologList, Struct)):
+                    # Re-add for processing after children
+                    stack.append((term, True))
+                    
+                    # Add children for processing
+                    if isinstance(term, PrologList):
+                        # Process tail if it's compound
+                        if term.tail and isinstance(term.tail, (PrologList, Struct)):
+                            stack.append((term.tail, False))
+                        # Process items
+                        for item in term.items:
+                            if isinstance(item, (PrologList, Struct)):
+                                stack.append((item, False))
+                    elif isinstance(term, Struct):
+                        # Process args
+                        for arg in term.args:
+                            if isinstance(arg, (PrologList, Struct)):
+                                stack.append((arg, False))
+                else:
+                    # Simple term - cache as-is
+                    result_cache[term] = term
+        
+        return result_cache.get(t, t)
     
     def _allocate_query_vars(self, term: Term) -> Term:
         """Allocate fresh variables for query terms and track them.
