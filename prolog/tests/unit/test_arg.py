@@ -117,7 +117,92 @@ class TestArgExtraction:
         x = results[0]["X"]
         y = results[0]["Y"]
         assert isinstance(x, Var) and isinstance(y, Var)
-        assert x.id == y.id  # Should be the same variable
+        assert x.id == y.id
+
+
+class TestArgAdditionalCases:
+    """Additional test cases for comprehensive coverage."""
+    
+    def test_bound_index_succeeds_after_eq(self):
+        """Test binding N before calling arg(N, ...) succeeds."""
+        engine = Engine(program())
+        
+        # Query: N=1, then arg(N, f(a), X) → succeeds, X=a
+        results = engine.run([
+            Struct(",", (
+                Struct("=", (Var(0, "N"), Int(1))),
+                Struct("arg", (Var(0, "N"), Struct("f", (Atom("a"),)), Var(1, "X")))
+            ))
+        ])
+        
+        assert len(results) == 1
+        assert results[0]["X"] == Atom("a")
+    
+    def test_arg_on_dot_struct_succeeds(self):
+        """Test arg/3 on explicit '.'/2 structure succeeds.
+        
+        Even though List objects are rejected, explicit dot structures work.
+        This keeps semantics consistent.
+        """
+        engine = Engine(program())
+        
+        # Create explicit dot pair structure
+        pair = Struct(".", (Atom("a"), Atom("[]")))
+        
+        # Query: arg(1, .(a,[]), X)
+        results = engine.run([
+            Struct("arg", (Int(1), pair, Var(0, "X")))
+        ])
+        
+        assert len(results) == 1
+        assert results[0]["X"] == Atom("a")
+    
+    def test_arg_then_other_goal_preserves_continuation(self):
+        """Test arg/3 followed by another goal preserves continuation."""
+        from prolog.tests.helpers import mk_fact
+        
+        engine = Engine(program(
+            mk_fact("q")
+        ))
+        
+        # Query: arg(1, f(a), X), q
+        results = engine.run([
+            Struct(",", (
+                Struct("arg", (
+                    Int(1),
+                    Struct("f", (Atom("a"),)),
+                    Var(0, "X")
+                )),
+                Atom("q")
+            ))
+        ])
+        
+        assert len(results) == 1
+        assert results[0]["X"] == Atom("a")
+    
+    def test_arg_determinism_with_disjunction(self):
+        """Test arg/3 is deterministic using disjunction."""
+        engine = Engine(program())
+        
+        # Query: (arg(1, foo(a,b), X) ; true)
+        # If arg/3 is deterministic, we get exactly 2 solutions (one from each branch)
+        results = engine.run([
+            Struct(";", (
+                Struct("arg", (
+                    Int(1),
+                    Struct("foo", (Atom("a"), Atom("b"))),
+                    Var(0, "X")
+                )),
+                Atom("true")
+            ))
+        ])
+        
+        # Should get 2 solutions: one from arg/3, one from true
+        assert len(results) == 2
+        # First solution has X bound to 'a'
+        assert results[0]["X"] == Atom("a")
+        # Second solution has X unbound (from true branch)
+        assert isinstance(results[1].get("X", Var(0, "X")), Var)  # Should be the same variable
 
 
 class TestArgChecking:
@@ -249,7 +334,11 @@ class TestArgBoundaryConditions:
         assert len(results) == 0
     
     def test_arg_on_list_fails(self):
-        """Test arg(1, [a,b], X) fails (lists aren't structures for arg/3)."""
+        """Test arg(1, [a,b], X) fails (lists aren't structures for arg/3).
+        
+        Stage-1 simplification: we do NOT treat lists as structures for arg/3.
+        ISO-compatible behavior (arg(1,[a,b],X) -> X=a) will be enabled later.
+        """
         engine = Engine(program())
         
         # Query: arg(1, [a,b], X)
@@ -359,7 +448,7 @@ class TestArgEdgeCases:
         for i in range(10):
             deep = Struct(f"s{i}", (deep,))
         
-        # Query: arg(1, outermost, X) where outermost contains deep nesting
+        # Query: arg(1, s9(...), X) where s9 contains s8 contains ... s0 contains d
         results = engine.run([
             Struct("arg", (
                 Int(1),
@@ -369,7 +458,10 @@ class TestArgEdgeCases:
         ])
         
         assert len(results) == 1
-        # Should extract the immediate argument without recursion issues
+        # Should extract the immediate argument (s8)
+        x = results[0]["X"]
+        assert isinstance(x, Struct)
+        assert x.functor == "s8" and len(x.args) == 1
     
     def test_arg_with_large_arity(self):
         """Test arg/3 with structures having many arguments."""
@@ -418,3 +510,5 @@ class TestArgEdgeCases:
         y = results[0]["Y"]
         assert isinstance(x, Var) and isinstance(y, Var)
         assert x.id == y.id
+
+
