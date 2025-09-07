@@ -10,7 +10,6 @@ ISO errors. ISO error behavior to be added in later stages.
 """
 
 from prolog.ast.terms import Atom, Var, Struct, Int
-from prolog.ast.clauses import Clause
 from prolog.engine.engine import Engine
 from prolog.tests.helpers import mk_fact, mk_rule, program
 
@@ -90,7 +89,11 @@ class TestOnceWithConjunction:
     """Test once/1 with conjunctive goals."""
     
     def test_once_conjunction_first_solution(self):
-        """Test once((p(X), q(X))) commits to first combined solution."""
+        """Test once((p(X), q(X))) commits to first combined solution.
+        
+        Note: Assumes clause order p(a), p(b), q(a), q(b) so first
+        combined solution is X=a. Future indexing may change this.
+        """
         p = program(
             mk_fact("p", Atom("a")),
             mk_fact("p", Atom("b")),
@@ -360,6 +363,8 @@ class TestOnceErrorCases:
         engine = Engine(program())
         
         # Query: once(p(X), Y)
+        # Note: This relies on dev-mode undefined predicate policy (fail)
+        # ISO mode would throw existence_error
         results = engine.run([
             Struct("once", (
                 Struct("p", (Var(0, "X"),)),
@@ -401,17 +406,17 @@ class TestOnceSemantics:
     def test_once_removes_choicepoints(self):
         """Test that once/1 removes choicepoints from its goal."""
         p = program(
-            mk_rule("test", (Var(0, "X"),), [
+            mk_rule("test", (Var(0, "X"),),
                 Struct("once", (Struct("member", (
                     Var(0, "X"),
                     Struct(".", (Atom("a"), Struct(".", (Atom("b"), Atom("[]")))))
                 )),))
-            ]),
+            ),
             # Simple member/2 that would normally be nondeterministic
             mk_fact("member", Var(0, "X"), Struct(".", (Var(0, "X"), Var(1, "_")))),
-            mk_rule("member", (Var(0, "X"), Struct(".", (Var(1, "_"), Var(2, "T")))), [
+            mk_rule("member", (Var(0, "X"), Struct(".", (Var(1, "_"), Var(2, "T")))),
                 Struct("member", (Var(0, "X"), Var(2, "T")))
-            ])
+            )
         )
         engine = Engine(p)
         
@@ -423,3 +428,162 @@ class TestOnceSemantics:
         # Should only get one solution due to once/1
         assert len(results) == 1
         assert results[0]["X"] == Atom("a")
+
+
+class TestOnceAdvancedSemantics:
+    """Test advanced semantic properties of once/1."""
+    
+    def test_once_equivalent_to_call_then_cut(self):
+        """Test once(G) has same semantics as (call(G), !)."""
+        p = program(
+            mk_fact("p", Atom("a")),
+            mk_fact("p", Atom("b")),
+        )
+        
+        # Test once(p(X))
+        e1 = Engine(p)
+        r1 = e1.run([Struct("once", (Struct("p", (Var(0, "X"),)),))])
+        
+        # Test (call(p(X)), !)
+        e2 = Engine(p)
+        r2 = e2.run([
+            Struct(",", (
+                Struct("call", (Struct("p", (Var(0, "X"),)),)),
+                Struct("!", ())
+            ))
+        ])
+        
+        assert len(r1) == 1
+        assert len(r2) == 1
+        assert r1[0]["X"] == r2[0]["X"] == Atom("a")
+    
+    def test_once_does_not_prune_surrounding_choicepoints(self):
+        """Test once/1 only prunes choicepoints created by its goal."""
+        p = program(
+            mk_fact("left"),
+            mk_fact("right")
+        )
+        
+        # Query: (left ; right), once(true)
+        # Should get two solutions: one for left, one for right
+        results = Engine(p).run([
+            Struct(",", (
+                Struct(";", (Atom("left"), Atom("right"))),
+                Struct("once", (Atom("true"),))
+            ))
+        ])
+        
+        assert len(results) == 2
+    
+    def test_once_prunes_inner_not_outer(self):
+        """Test once/1 prunes inner choicepoints but preserves outer ones."""
+        p = program(
+            mk_fact("p", Atom("a")),
+            mk_fact("p", Atom("b")),
+            mk_fact("q")
+        )
+        
+        # Query: (p(X), once(q) ; p(Y), q)
+        # Left branch: p has 2 solutions, once(q) succeeds once => 2 solutions
+        # Right branch: p has 2 solutions, q succeeds => 2 solutions
+        # But we need distinct variables
+        results = Engine(p).run([
+            Struct(";", (
+                Struct(",", (
+                    Struct("p", (Var(0, "X"),)),
+                    Struct("once", (Atom("q"),))
+                )),
+                Struct(",", (
+                    Struct("p", (Var(1, "Y"),)),
+                    Atom("q")
+                ))
+            ))
+        ])
+        
+        # Should get 4 solutions total
+        assert len(results) == 4
+    
+    def test_once_on_disjunction_with_fail(self):
+        """Test once((fail ; q)) succeeds once via second branch."""
+        p = program(mk_fact("q"))
+        
+        # Query: once((fail ; q))
+        results = Engine(p).run([
+            Struct("once", (
+                Struct(";", (Atom("fail"), Atom("q"))),
+            ))
+        ])
+        
+        assert len(results) == 1
+    
+    def test_once_call_uninstantiated_goal_fails_dev_mode(self):
+        """Test once(call(G)) with unbound G fails in dev-mode."""
+        results = Engine(program()).run([
+            Struct("once", (
+                Struct("call", (Var(0, "G"),)),
+            ))
+        ])
+        
+        assert len(results) == 0  # Dev-mode: fail on uncallable
+    
+    def test_once_of_cut_succeeds_once(self):
+        """Test once(!) succeeds exactly once."""
+        results = Engine(program()).run([
+            Struct("once", (Struct("!", ()),))
+        ])
+        
+        assert len(results) == 1
+    
+    def test_once_leaves_no_choicepoints_after_success(self):
+        """Test once/1 cleans up all its internal choicepoints.
+        
+        Note: This test is aspirational - it will work when engine
+        exposes choicepoint stack size for debugging.
+        """
+        e = Engine(program(mk_fact("p"), mk_fact("p")))  # nondet inside once
+        results = e.run([Struct("once", (Atom("p"),))])
+        
+        assert len(results) == 1
+        # When available, assert no residual choicepoints:
+        # if hasattr(e, "choices"):
+        #     assert len(e.choices) == 0
+    
+    def test_once_with_infinite_choices(self):
+        """Test once/1 with potentially infinite solutions."""
+        p = program(
+            # repeat/0 - infinite choicepoint generator
+            mk_fact("repeat"),
+            mk_rule("repeat", (), Atom("repeat"))
+        )
+        
+        # Query: once((repeat, true))
+        # Should succeed exactly once despite repeat being infinite
+        results = Engine(p).run([
+            Struct("once", (
+                Struct(",", (
+                    Atom("repeat"),
+                    Atom("true")
+                )),
+            ))
+        ])
+        
+        assert len(results) == 1
+    
+    def test_once_bindings_persist(self):
+        """Test that bindings made inside once/1 persist."""
+        p = program(
+            mk_fact("bind", Atom("a"), Atom("bound"))
+        )
+        
+        # Query: once(bind(a, Y)), Y = bound
+        results = Engine(p).run([
+            Struct(",", (
+                Struct("once", (
+                    Struct("bind", (Atom("a"), Var(0, "Y"))),
+                )),
+                Struct("=", (Var(0, "Y"), Atom("bound")))
+            ))
+        ])
+        
+        assert len(results) == 1
+        assert results[0]["Y"] == Atom("bound")

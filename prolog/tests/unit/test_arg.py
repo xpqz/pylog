@@ -9,7 +9,7 @@ behavior (instantiation_error, type_error, domain_error) to be added in later st
 
 from prolog.ast.terms import Atom, Var, Struct, Int, List
 from prolog.engine.engine import Engine
-from prolog.tests.helpers import mk_fact, program
+from prolog.tests.helpers import program
 
 
 class TestArgExtraction:
