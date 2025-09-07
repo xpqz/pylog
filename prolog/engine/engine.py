@@ -124,6 +124,8 @@ class Engine:
         self._builtins[("=:=", 2)] = lambda eng, args: eng._builtin_num_eq(args)
         self._builtins[("=..", 2)] = lambda eng, args: eng._builtin_univ(args)
         self._builtins[("functor", 3)] = lambda eng, args: eng._builtin_functor(args)
+        self._builtins[("arg", 3)] = lambda eng, args: eng._builtin_arg(args)
+        self._builtins[("once", 1)] = lambda eng, args: eng._builtin_once(args)
 
     def run(
         self, goals: List[Term], max_solutions: Optional[int] = None
@@ -1572,6 +1574,106 @@ class Engine:
             # - Term is unbound but functor or arity (or both) are also unbound
             # - All three are bound (handled by extraction mode above)
             return False  # Dev-mode: fail instead of instantiation error
+
+    def _builtin_arg(self, args: tuple) -> bool:
+        """arg(N, Term, Arg) - extract or check argument at position N.
+        
+        Modes:
+        1. Extraction: arg(1, foo(a,b), X) binds X=a
+        2. Checking: arg(1, foo(a,b), a) succeeds
+        
+        Arguments are 1-indexed. Fails for:
+        - N <= 0 or N > arity
+        - Non-integer N
+        - Non-structure Term (atoms, integers, lists)
+        - Unbound N or Term (insufficient instantiation)
+        """
+        if len(args) != 3:
+            return False
+            
+        n_arg, term_arg, arg_arg = args
+        trail_adapter = TrailAdapter(self.trail, engine=self, store=self.store)
+        
+        # Dereference N
+        if isinstance(n_arg, Var):
+            n_result = self.store.deref(n_arg.id)
+            if n_result[0] == "BOUND":
+                n = n_result[2]
+            else:
+                # N is unbound - insufficient instantiation
+                return False  # Dev-mode: fail instead of instantiation_error
+        else:
+            n = n_arg
+            
+        # Check N is an integer
+        if not isinstance(n, Int):
+            return False  # Dev-mode: fail instead of type_error
+            
+        # Check N is positive (1-indexed)
+        if n.value <= 0:
+            return False  # Dev-mode: fail instead of domain_error
+            
+        # Dereference Term
+        if isinstance(term_arg, Var):
+            term_result = self.store.deref(term_arg.id)
+            if term_result[0] == "BOUND":
+                term = term_result[2]
+            else:
+                # Term is unbound - insufficient instantiation
+                return False  # Dev-mode: fail instead of instantiation_error
+        else:
+            term = term_arg
+            
+        # Term must be a structure
+        if not isinstance(term, Struct):
+            return False  # Lists, atoms, integers have no extractable args
+            
+        # Check bounds
+        if n.value > len(term.args):
+            return False  # Out of bounds
+            
+        # Get the argument (1-indexed)
+        extracted_arg = term.args[n.value - 1]
+        
+        # Unify with the third argument
+        return unify(arg_arg, extracted_arg, self.store, trail_adapter, self.occurs_check)
+
+    def _builtin_once(self, args: tuple) -> bool:
+        """once(Goal) - succeed at most once.
+        
+        Semantically equivalent to (call(Goal), !) - executes Goal
+        and commits to first solution by cutting away remaining choicepoints.
+        
+        Fails if Goal fails. Succeeds exactly once if Goal succeeds.
+        """
+        if len(args) != 1:
+            return False
+            
+        goal_arg = args[0]
+        
+        # Dereference the goal
+        if isinstance(goal_arg, Var):
+            goal_result = self.store.deref(goal_arg.id)
+            if goal_result[0] == "BOUND":
+                goal = goal_result[2]
+            else:
+                # Unbound goal - insufficient instantiation
+                return False  # Dev-mode: fail instead of instantiation_error
+        else:
+            goal = goal_arg
+            
+        # Goal must be callable (Atom or Struct)
+        if not isinstance(goal, (Atom, Struct)):
+            return False  # Dev-mode: fail instead of type_error
+            
+        # Implement as conjunction: (Goal, !)
+        # This achieves once/1 semantics: Goal succeeds at most once
+        conjunction = Struct(",", (goal, Atom("!")))
+        
+        # Push the conjunction as a Goal with proper type
+        self.goal_stack.push(Goal.from_term(conjunction))
+        
+        return True
 
     def _builtin_is(self, args: tuple) -> bool:
         """is(X, Y) - arithmetic evaluation."""
