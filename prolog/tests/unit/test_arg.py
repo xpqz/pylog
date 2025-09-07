@@ -157,6 +157,43 @@ class TestArgAdditionalCases:
         assert len(results) == 1
         assert results[0]["X"] == Atom("a")
     
+    def test_arg_on_dot_struct_second_arg(self):
+        """Test extracting second argument of '.'/2 structure."""
+        engine = Engine(program())
+        
+        # Create explicit dot pair structure
+        pair = Struct(".", (Atom("a"), Atom("[]")))
+        
+        # Query: arg(2, .(a,[]), X)
+        results = engine.run([
+            Struct("arg", (Int(2), pair, Var(0, "X")))
+        ])
+        
+        assert len(results) == 1
+        assert results[0]["X"] == Atom("[]")
+    
+    def test_arg_on_improper_dot_struct(self):
+        """Test arg/3 on improper dot-pair (non-list tail) works."""
+        engine = Engine(program())
+        
+        # Create improper dot pair: .(a, 2) instead of .(a, [])
+        improper = Struct(".", (Atom("a"), Int(2)))
+        
+        # Query: arg(1, .(a,2), X)
+        results1 = engine.run([
+            Struct("arg", (Int(1), improper, Var(0, "X")))
+        ])
+        
+        # Query: arg(2, .(a,2), Y)
+        results2 = engine.run([
+            Struct("arg", (Int(2), improper, Var(0, "Y")))
+        ])
+        
+        assert len(results1) == 1
+        assert results1[0]["X"] == Atom("a")
+        assert len(results2) == 1
+        assert results2[0]["Y"] == Int(2)
+    
     def test_arg_then_other_goal_preserves_continuation(self):
         """Test arg/3 followed by another goal preserves continuation."""
         from prolog.tests.helpers import mk_fact
@@ -202,7 +239,8 @@ class TestArgAdditionalCases:
         # First solution has X bound to 'a'
         assert results[0]["X"] == Atom("a")
         # Second solution has X unbound (from true branch)
-        assert isinstance(results[1].get("X", Var(0, "X")), Var)  # Should be the same variable
+        x_in_second = results[1].get("X")
+        assert isinstance(x_in_second, Var)  # X remains unbound in true branch
 
 
 class TestArgChecking:
