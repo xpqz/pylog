@@ -331,6 +331,12 @@ class Engine:
                 continue
             
             # --- We have a matching catcher: restore to catch baselines ---
+            # IMPORTANT: Save the continuation BEFORE restoration
+            # The continuation represents goals that were after the catch
+            continuation = []
+            for i in range(cp.goal_stack_height, self.goal_stack.height()):
+                continuation.append(self.goal_stack._stack[i])
+            
             self.trail.unwind_to(cp.trail_top, self.store)
             self.goal_stack.shrink_to(cp.goal_stack_height)
             while len(self.frame_stack) > cp.frame_stack_height:
@@ -350,9 +356,11 @@ class Engine:
             assert len(self.cp_stack) == cp_height
             assert len(self.frame_stack) >= cp.frame_stack_height
             
-            # Phase switch and push Recovery
-            cp.payload["phase"] = "RECOVERY"
-            self.cp_stack.append(cp)  # Re-install cp as the redo anchor
+            # Push continuation first (in reverse order so it executes after recovery)
+            for g in reversed(continuation):
+                self.goal_stack.push(g)
+            
+            # Push recovery goal on top - it will execute first
             self.goal_stack.push(Goal.from_term(cp.payload.get("recovery")))
             return True
         
@@ -1014,6 +1022,11 @@ class Engine:
                 alternative = cp.payload["alternative"]
                 self.goal_stack.push(alternative)
                 return True
+
+            elif cp.kind == ChoicepointKind.CATCH:
+                # CATCH choicepoints are never resumed
+                # They're only used for finding matching catchers
+                continue
 
             elif cp.kind == ChoicepointKind.IF_THEN_ELSE:
                 # Try else branch (only reached if condition failed exhaustively)
@@ -1887,8 +1900,12 @@ class Engine:
                 # ISO would allow throwing unbound variables
                 return False  # Dev-mode: fail on unbound
         
+        # Reify the ball to capture current bindings
+        # This ensures that variable bindings are preserved in the thrown term
+        reified_ball = self._reify_term(ball)
+        
         # Raise PrologThrow directly  
-        raise PrologThrow(ball)
+        raise PrologThrow(reified_ball)
     
     def _builtin_catch(self, args: tuple) -> bool:
         """catch(Goal, Catcher, Recovery) - catch exceptions.

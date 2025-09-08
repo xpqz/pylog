@@ -69,8 +69,8 @@ class TestThrowCatch:
         results = list(engine.query("catch(true, _, fail)"))
         assert len(results) == 1
         
-        # catch(X=1, _, fail) should bind X=1
-        results = list(engine.query("catch(X=1, _, fail)"))
+        # catch('='(X,1), _, fail) should bind X=1
+        results = list(engine.query("catch('='(X,1), _, fail)"))
         assert len(results) == 1
         assert results[0]["X"] == Int(1)
     
@@ -82,8 +82,8 @@ class TestThrowCatch:
         results = list(engine.query("catch(throw(ball), ball, true)"))
         assert len(results) == 1
         
-        # catch(throw(ball), ball, X=caught) should bind X=caught
-        results = list(engine.query("catch(throw(ball), ball, X=caught)"))
+        # catch(throw(ball), ball, '='(X,caught)) should bind X=caught
+        results = list(engine.query("catch(throw(ball), ball, '='(X,caught))"))
         assert len(results) == 1
         assert results[0]["X"] == Atom("caught")
     
@@ -91,14 +91,14 @@ class TestThrowCatch:
         """Test that catch unifies the thrown ball with the catcher."""
         engine = Engine(Program(()))
         
-        # catch(throw(foo(1)), foo(X), Y=X) should bind X=1, Y=1
-        results = list(engine.query("catch(throw(foo(1)), foo(X), Y=X)"))
+        # catch(throw(foo(1)), foo(X), '='(Y,X)) should bind X=1, Y=1
+        results = list(engine.query("catch(throw(foo(1)), foo(X), '='(Y,X))"))
         assert len(results) == 1
         assert results[0]["X"] == Int(1)
         assert results[0]["Y"] == Int(1)
         
-        # catch(throw(bar), X, Y=X) should bind X=bar, Y=bar
-        results = list(engine.query("catch(throw(bar), X, Y=X)"))
+        # catch(throw(bar), X, '='(Y,X)) should bind X=bar, Y=bar
+        results = list(engine.query("catch(throw(bar), X, '='(Y,X))"))
         assert len(results) == 1
         assert results[0]["X"] == Atom("bar")
         assert results[0]["Y"] == Atom("bar")
@@ -129,11 +129,11 @@ class TestThrowCatch:
         assert results == []
     
     def test_catch_with_choicepoints_in_goal(self):
-        """Test catch with choicepoints: catch((X=1 ; (X=2, throw(t)) ; X=3), t, X=caught)."""
+        """Test catch with choicepoints: catch(';'(';'('='(X,1), ','('='(X,2), throw(t))), '='(X,3)), t, '='(X,caught))."""
         engine = Engine(Program(()))
         
         # Should get X=1 (before throw) and X=caught (from recovery)
-        results = list(engine.query("catch((X=1 ; (X=2, throw(t)) ; X=3), t, X=caught)"))
+        results = list(engine.query("catch(';'(';'('='(X,1), ','('='(X,2), throw(t))), '='(X,3)), t, '='(X,caught))"))
         assert len(results) == 2
         assert results[0]["X"] == Int(1)
         assert results[1]["X"] == Atom("caught")
@@ -184,18 +184,18 @@ class TestThrowCatch:
         engine = Engine(Program(()))
         
         # Inner catch handles the exception
-        results = list(engine.query("catch(catch(throw(inner), inner, X=1), outer, X=2)"))
+        results = list(engine.query("catch(catch(throw(inner), inner, '='(X,1)), outer, '='(X,2))"))
         assert len(results) == 1
         assert results[0]["X"] == Int(1)
         
         # Outer catch handles the exception (inner doesn't match)
-        results = list(engine.query("catch(catch(throw(outer), inner, X=1), outer, X=2)"))
+        results = list(engine.query("catch(catch(throw(outer), inner, '='(X,1)), outer, '='(X,2))"))
         assert len(results) == 1
         assert results[0]["X"] == Int(2)
         
         # Exception propagates through both
         with pytest.raises(PrologThrow) as exc_info:
-            list(engine.query("catch(catch(throw(other), inner, X=1), outer, X=2)"))
+            list(engine.query("catch(catch(throw(other), inner, '='(X,1)), outer, '='(X,2))"))
         assert exc_info.value.ball == Atom("other")
     
     def test_cut_in_recovery(self):
@@ -205,14 +205,14 @@ class TestThrowCatch:
         # Load r(10). r(20).
         engine.consult_string("r(10). r(20).")
         
-        # catch(throw(t), t, (r(Y), !)) should give only 1 solution
-        results = list(engine.query("catch(throw(t), t, (r(Y), !))"))
+        # catch(throw(t), t, ','(r(Y), !)) should give only 1 solution
+        results = list(engine.query("catch(throw(t), t, ','(r(Y), !))"))
         assert len(results) == 1
         assert results[0]["Y"] == Int(10)
         
-        # p(1). p(2). catch(throw(t), t, (r(Y), !)), p(X) should give 2 solutions (cut doesn't affect p)
+        # p(1). p(2). catch(throw(t), t, ','(r(Y), !)), p(X) should give 2 solutions (cut doesn't affect p)
         engine.consult_string("p(1). p(2).")
-        results = list(engine.query("catch(throw(t), t, (r(Y), !)), p(X)"))
+        results = list(engine.query("catch(throw(t), t, ','(r(Y), !)), p(X)"))
         assert len(results) == 2  # Y=10, X=1 and Y=10, X=2
     
     def test_cut_in_recovery_commits_in_caller_scope(self):
@@ -222,9 +222,9 @@ class TestThrowCatch:
         # Load p(a). p(b). r(x). r(y).
         engine.consult_string("p(a). p(b). r(x). r(y).")
         
-        # p(X), catch(throw(t), t, (r(Y), !))
+        # p(X), catch(throw(t), t, ','(r(Y), !))
         # ISO: cut inside Recovery commits within the caller scope => only first p × first r
-        results = list(engine.query("p(X), catch(throw(t), t, (r(Y), !))"))
+        results = list(engine.query("p(X), catch(throw(t), t, ','(r(Y), !))"))
         assert len(results) == 1
         assert results[0]["X"] == Atom("a")
         assert results[0]["Y"] == Atom("x")
@@ -235,7 +235,7 @@ class TestThrowCatch:
         
         # Y is bound before constructing the ball; ball should carry 'v'
         with pytest.raises(PrologThrow) as exc_info:
-            list(engine.query("Y=v, throw(err(Y))"))
+            list(engine.query("'='(Y,v), throw(err(Y))"))
         
         ball = exc_info.value.ball
         assert isinstance(ball, Struct)
@@ -247,7 +247,7 @@ class TestThrowCatch:
         engine = Engine(Program(()))
         
         with pytest.raises(PrologThrow) as exc_info:
-            list(engine.query("(throw(left) ; throw(right))"))
+            list(engine.query("';'(throw(left), throw(right))"))
         assert exc_info.value.ball == Atom("left")
     
     def test_engine_reusable_after_throw(self):
@@ -294,18 +294,18 @@ class TestThrowCatch:
         """Test throw in left branch of disjunction."""
         engine = Engine(Program(()))
         
-        # (throw(t) ; X=1) should throw t
+        # ';'(throw(t), '='(X,1)) should throw t
         with pytest.raises(PrologThrow) as exc_info:
-            list(engine.query("(throw(t) ; X=1)"))
+            list(engine.query("';'(throw(t), '='(X,1))"))
         assert exc_info.value.ball == Atom("t")
     
     def test_throw_in_disjunction_right_branch(self):
         """Test throw in right branch of disjunction after left fails."""
         engine = Engine(Program(()))
         
-        # (fail ; throw(t)) should throw t
+        # ';'(fail, throw(t)) should throw t
         with pytest.raises(PrologThrow) as exc_info:
-            list(engine.query("(fail ; throw(t))"))
+            list(engine.query("';'(fail, throw(t))"))
         assert exc_info.value.ball == Atom("t")
         # Check clean unwinding
         assert_engine_clean(engine)
