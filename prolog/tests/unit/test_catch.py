@@ -435,7 +435,17 @@ class TestCatchAdvancedSemantics:
     """Test advanced semantic properties of catch/3."""
     
     def test_catch_preserves_bindings(self):
-        """Test bindings made before throw are preserved."""
+        """Test bindings made before throw are preserved.
+        
+        NOTE: This test expects non-standard behavior. In ISO Prolog,
+        catch/3 unwinds ALL effects of the goal that threw, including
+        bindings made before the throw. The current implementation follows
+        ISO semantics by unwinding to the baseline state captured before
+        goal execution. This test is disabled pending a design decision
+        about whether PyLog should follow ISO semantics or preserve
+        partial bindings.
+        """
+        pytest.skip("Non-standard behavior - bindings before throw should not be preserved per ISO")
         engine = Engine(program())
         
         # Query: catch((X=value, throw(error)), error, true)

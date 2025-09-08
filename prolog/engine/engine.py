@@ -222,9 +222,23 @@ class Engine:
                     
                     if unify(self._exception, catch_frame["catcher"], self.store, trail_adapter, self.occurs_check):
                         # Exception caught!
+                        
+                        # Save the exception for re-unification
+                        caught_exception = self._exception
                         self._exception = None
                         
-                        # Restore to baseline state and push recovery
+                        # Important: We want to preserve the unification between the exception
+                        # and the catcher, so we should NOT unwind past it. However, we do need
+                        # to unwind any bindings made by the goal that threw the exception.
+                        # The solution is to unwind to the baseline, then re-do the unification.
+                        
+                        # First, unwind to baseline to undo all goal effects
+                        self.trail.unwind_to(catch_frame["trail_top"], self.store)
+                        
+                        # Re-unify the catcher with the exception to preserve bindings
+                        # This is needed when the catcher is a variable that should be bound
+                        trail_adapter2 = TrailAdapter(self.trail, engine=self, store=self.store)
+                        unify(caught_exception, catch_frame["catcher"], self.store, trail_adapter2, self.occurs_check)
                         self.goal_stack.shrink_to(catch_frame["goal_height"])
                         
                         # When catching an exception, we're replacing the entire catch call
@@ -715,6 +729,9 @@ class Engine:
 
     def _dispatch_pop_frame(self, goal: Goal):
         """Pop frame sentinel - executed when predicate completes.
+        
+        Only pops the frame if no choicepoints still reference it.
+        This ensures frames stay alive for backtracking.
 
         Args:
             goal: The POP_FRAME goal with frame_id payload.
@@ -722,10 +739,24 @@ class Engine:
         frame_id = goal.payload.get("frame_id")
         # Sanity check: should be popping the frame with matching ID
         if self.frame_stack and self.frame_stack[-1].frame_id == frame_id:
-            frame = self.frame_stack.pop()
-            self._debug_frame_pops += 1
-            # Emit EXIT port when frame is popped
-            self._port("EXIT", frame.pred or "unknown")
+            # Check if any choicepoint still needs this frame
+            # A CP needs this frame if its frame_stack_height is >= our current frame height
+            current_frame_height = len(self.frame_stack)
+            frame_still_needed = False
+            
+            for cp in self.cp_stack:
+                # Skip PREDICATE CPs as they use frame_stack_height=0 as sentinel
+                if cp.kind != ChoicepointKind.PREDICATE and cp.frame_stack_height >= current_frame_height:
+                    frame_still_needed = True
+                    break
+            
+            if not frame_still_needed:
+                # Safe to pop the frame - no CPs reference it
+                frame = self.frame_stack.pop()
+                self._debug_frame_pops += 1
+                # Emit EXIT port when frame is popped
+                self._port("EXIT", frame.pred or "unknown")
+            # else: Leave frame in place for backtracking
         # If frame ID doesn't match, it's likely a stale POP_FRAME from backtracking
         # Just ignore it - the frame was already popped or never created
 
@@ -816,8 +847,9 @@ class Engine:
                 
             # Remove catch frames that are now out of scope
             # When we backtrack past a catch's window, remove its frame
+            # A catch frame is out of scope if we've backtracked BELOW its goal height
             new_goal_height = self.goal_stack.height()
-            while self._catch_frames and self._catch_frames[-1]["goal_height"] >= new_goal_height:
+            while self._catch_frames and self._catch_frames[-1]["goal_height"] > new_goal_height:
                 self._catch_frames.pop()
 
             # Pop frames above checkpoint
@@ -878,7 +910,7 @@ class Engine:
                     
                     # Remove catch frames that are now out of scope
                     new_goal_height = self.goal_stack.height()
-                    while self._catch_frames and self._catch_frames[-1]["goal_height"] >= new_goal_height:
+                    while self._catch_frames and self._catch_frames[-1]["goal_height"] > new_goal_height:
                         self._catch_frames.pop()
 
                 if cursor.has_more():
@@ -999,8 +1031,12 @@ class Engine:
 
                 # Remove catch frames that are now out of scope
                 new_goal_height = self.goal_stack.height()
-                while self._catch_frames and self._catch_frames[-1]["goal_height"] >= new_goal_height:
+                while self._catch_frames and self._catch_frames[-1]["goal_height"] > new_goal_height:
                     self._catch_frames.pop()
+                
+                # Increment stamp before trying alternative branch
+                # This ensures changes in the alternative are properly trailed
+                self.trail.next_stamp()
                 
                 # Try alternative branch
                 alternative = cp.payload["alternative"]
@@ -1282,13 +1318,14 @@ class Engine:
             return False
         left, right = args
         trail_adapter = TrailAdapter(self.trail, engine=self, store=self.store)
-        return unify(
+        result = unify(
             left,
             right,
             self.store,
             trail_adapter,  # type: ignore
             occurs_check=self.occurs_check,
         )
+        return result
 
     def _builtin_not_unify(self, args: tuple) -> bool:
         """\\=(X, Y) - negation of unification."""
@@ -1918,6 +1955,7 @@ class Engine:
         base_goal_height = self.goal_stack.height()
         base_frame_height = len(self.frame_stack)
         base_cp_height = len(self.cp_stack)
+        
         
         # Push goals in the right order:
         # 1. First push a CATCH_END marker that will clean up if goal succeeds
