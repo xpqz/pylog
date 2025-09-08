@@ -1255,23 +1255,23 @@ class Engine:
             return self._eval_int(args[0]) == self._eval_int(args[1])
         except ValueError:
             return False  # ISO: type/instantiation errors
-    
+
     def _builtin_univ(self, args: tuple) -> bool:
         """=..(Term, List) - structure ↔ list conversion (univ).
-        
+
         Three modes:
         1. Decomposition: foo(a,b) =.. L binds L to [foo,a,b]
         2. Construction: X =.. [foo,a,b] binds X to foo(a,b)
         3. Checking: foo(a,b) =.. [foo,a,b] succeeds
-        
+
         Note: List in AST is aliased as PrologList here for clarity.
         """
         if len(args) != 2:
             return False
-        
+
         left, right = args
         trail_adapter = TrailAdapter(self.trail, engine=self, store=self.store)
-        
+
         # Dereference both sides
         if isinstance(left, Var):
             left_result = self.store.deref(left.id)
@@ -1283,7 +1283,7 @@ class Engine:
                 left_unbound = True
         else:
             left_unbound = False
-            
+
         if isinstance(right, Var):
             right_result = self.store.deref(right.id)
             if right_result[0] == "BOUND":
@@ -1294,36 +1294,42 @@ class Engine:
                 right_unbound = True
         else:
             right_unbound = False
-        
+
         # Case 1: Decomposition mode (Term =.. X where X unbound)
         if not left_unbound and right_unbound:
             decomposed = self._decompose_to_list(left)
             if decomposed is None:
                 return False
-            return unify(right, decomposed, self.store, trail_adapter, occurs_check=self.occurs_check)
-        
+            return unify(
+                right,
+                decomposed,
+                self.store,
+                trail_adapter,
+                occurs_check=self.occurs_check,
+            )
+
         # Case 2: Construction mode (X =.. [foo,a,b] where X unbound)
         elif left_unbound and not right_unbound:
             # Right side must be a proper list
             if not isinstance(right, PrologList):
                 return False
-            
+
             # Convert to Python list
             list_items = self._prolog_list_to_python_list(right)
             if list_items is None:  # Not a proper list
                 return False
-            
+
             if len(list_items) == 0:
                 # Empty RHS list is invalid in construction mode
                 return False
-            
+
             # Single element list - becomes atomic
             if len(list_items) == 1:
                 constructed = list_items[0]
             else:
                 # Multi-element list - first is functor, rest are args
                 functor_term = list_items[0]
-                
+
                 # Special case: ['.', a, tail] constructs a list
                 if isinstance(functor_term, Atom) and functor_term.name == ".":
                     if len(list_items) != 3:
@@ -1337,27 +1343,39 @@ class Engine:
                 else:
                     # Non-atom functor with args is invalid
                     return False
-            
-            # Unify the constructed term with the left side  
-            return unify(left, constructed, self.store, trail_adapter, occurs_check=self.occurs_check)
-        
+
+            # Unify the constructed term with the left side
+            return unify(
+                left,
+                constructed,
+                self.store,
+                trail_adapter,
+                occurs_check=self.occurs_check,
+            )
+
         # Case 3: Checking mode (both sides bound) or both unbound (fail)
         elif not left_unbound and not right_unbound:
             # Both bound - decompose left and check equality with right
             decomposed = self._decompose_to_list(left)
             if decomposed is None:
                 return False
-            return unify(decomposed, right, self.store, trail_adapter, occurs_check=self.occurs_check)
+            return unify(
+                decomposed,
+                right,
+                self.store,
+                trail_adapter,
+                occurs_check=self.occurs_check,
+            )
         else:
             # Both unbound - can't decompose or construct
             return False
-    
+
     def _decompose_to_list(self, term: Term) -> Optional[PrologList]:
         """Decompose a term into list form for =../2.
-        
+
         Args:
             term: The term to decompose
-            
+
         Returns:
             PrologList representation or None if term cannot be decomposed
         """
@@ -1367,13 +1385,21 @@ class Engine:
             return self._make_prolog_list(items)
         elif isinstance(term, PrologList):
             # List: [a,b] -> ['.', a, [b]]
-            if not term.items and isinstance(term.tail, Atom) and term.tail.name == "[]":
+            if (
+                not term.items
+                and isinstance(term.tail, Atom)
+                and term.tail.name == "[]"
+            ):
                 # Empty list [] -> [[]]
-                return self._make_prolog_list([Atom("[]")])                    
+                return self._make_prolog_list([Atom("[]")])
             else:
                 # Non-empty list becomes dot structure
                 if term.items:
-                    tail = PrologList(term.items[1:], term.tail) if len(term.items) > 1 else term.tail
+                    tail = (
+                        PrologList(term.items[1:], term.tail)
+                        if len(term.items) > 1
+                        else term.tail
+                    )
                     return self._make_prolog_list([Atom("."), term.items[0], tail])
                 else:
                     # Shouldn't happen but handle gracefully
@@ -1386,18 +1412,18 @@ class Engine:
             return self._make_prolog_list([term])
         else:
             return None
-    
+
     def _make_prolog_list(self, items: list) -> PrologList:
         """Create a proper Prolog list from Python list."""
         if not items:
             return PrologList((), Atom("[]"))
         return PrologList(tuple(items), Atom("[]"))
-    
+
     def _prolog_list_to_python_list(self, lst: PrologList) -> Optional[list]:
         """Convert Prolog list to Python list, or None if improper."""
         result = []
         current = lst
-        
+
         while True:
             if isinstance(current, PrologList):
                 result.extend(current.items)
@@ -1419,7 +1445,7 @@ class Engine:
 
     def _extract_functor_arity(self, term: Term) -> Optional[Tuple[Term, Term]]:
         """Extract functor and arity from a term.
-        
+
         Returns:
             Tuple of (functor_term, arity_term) or None if term type unknown
         """
@@ -1428,7 +1454,11 @@ class Engine:
             return (Atom(term.functor), Int(len(term.args)))
         elif isinstance(term, PrologList):
             # List: special case
-            if not term.items and isinstance(term.tail, Atom) and term.tail.name == "[]":
+            if (
+                not term.items
+                and isinstance(term.tail, Atom)
+                and term.tail.name == "[]"
+            ):
                 # Empty list: [] has functor '[]' and arity 0
                 return (Atom("[]"), Int(0))
             else:
@@ -1446,24 +1476,24 @@ class Engine:
 
     def _builtin_functor(self, args: tuple) -> bool:
         """functor(Term, Functor, Arity) - functor/arity manipulation.
-        
+
         Three modes:
         1. Extraction: functor(foo(a,b), F, A) binds F=foo, A=2
         2. Construction: functor(X, foo, 2) binds X=foo(_,_) with fresh variables
         3. Checking: functor(foo(a,b), foo, 2) succeeds
-        
+
         Special cases:
         - Atoms have arity 0: functor(foo, foo, 0)
-        - Integers have arity 0: functor(42, 42, 0) 
+        - Integers have arity 0: functor(42, 42, 0)
         - Lists are '.'/2: functor([a], '.', 2)
         - Empty list is '[]'/0: functor([], '[]', 0)
         """
         if len(args) != 3:
             return False
-            
+
         term_arg, functor_arg, arity_arg = args
         trail_adapter = TrailAdapter(self.trail, engine=self, store=self.store)
-        
+
         # Dereference all arguments
         if isinstance(term_arg, Var):
             term_result = self.store.deref(term_arg.id)
@@ -1476,7 +1506,7 @@ class Engine:
         else:
             term = term_arg
             term_unbound = False
-            
+
         if isinstance(functor_arg, Var):
             functor_result = self.store.deref(functor_arg.id)
             if functor_result[0] == "BOUND":
@@ -1488,7 +1518,7 @@ class Engine:
         else:
             functor = functor_arg
             functor_unbound = False
-            
+
         if isinstance(arity_arg, Var):
             arity_result = self.store.deref(arity_arg.id)
             if arity_result[0] == "BOUND":
@@ -1500,26 +1530,30 @@ class Engine:
         else:
             arity = arity_arg
             arity_unbound = False
-        
+
         # Mode 1: Extraction (Term is bound, extract Functor and/or Arity)
         if not term_unbound:
             extraction = self._extract_functor_arity(term)
             if extraction is None:
                 # Unknown term type
                 return False
-                
+
             extracted_functor, extracted_arity = extraction
-            
+
             # Unify functor
-            if not unify(functor, extracted_functor, self.store, trail_adapter, self.occurs_check):
+            if not unify(
+                functor, extracted_functor, self.store, trail_adapter, self.occurs_check
+            ):
                 return False
-                
+
             # Unify arity
-            if not unify(arity, extracted_arity, self.store, trail_adapter, self.occurs_check):
+            if not unify(
+                arity, extracted_arity, self.store, trail_adapter, self.occurs_check
+            ):
                 return False
-                
+
             return True
-                
+
         # Mode 2: Construction (Term is unbound, construct from Functor and Arity)
         elif term_unbound and not functor_unbound and not arity_unbound:
             # Validate arity is an integer >= 0
@@ -1527,11 +1561,11 @@ class Engine:
                 return False  # Dev-mode: fail instead of type error
             if arity.value < 0:
                 return False  # Dev-mode: fail instead of domain error
-                
+
             # Construct based on functor type
             if isinstance(functor, Atom):
                 functor_name = functor.name
-                
+
                 if arity.value == 0:
                     # Zero arity: result is the atom itself
                     constructed = functor
@@ -1552,7 +1586,7 @@ class Engine:
                         for _ in range(arity.value)
                     )
                     constructed = Struct(functor_name, fresh_vars)
-                    
+
             elif isinstance(functor, Int):
                 # Integer functor
                 if arity.value == 0:
@@ -1564,10 +1598,12 @@ class Engine:
             else:
                 # Functor must be atom or integer
                 return False  # Dev-mode: fail instead of type error
-                
+
             # Unify the constructed term with the term variable
-            return unify(term, constructed, self.store, trail_adapter, self.occurs_check)
-            
+            return unify(
+                term, constructed, self.store, trail_adapter, self.occurs_check
+            )
+
         # Mode 3: Insufficient instantiation or over-instantiation
         else:
             # Either:
@@ -1577,11 +1613,11 @@ class Engine:
 
     def _builtin_arg(self, args: tuple) -> bool:
         """arg(N, Term, Arg) - extract or check argument at position N.
-        
+
         Modes:
         1. Extraction: arg(1, foo(a,b), X) binds X=a
         2. Checking: arg(1, foo(a,b), a) succeeds
-        
+
         Arguments are 1-indexed. Fails for:
         - N <= 0 or N > arity
         - Non-integer N
@@ -1590,10 +1626,10 @@ class Engine:
         """
         if len(args) != 3:
             return False
-            
+
         n_arg, term_arg, arg_arg = args
         trail_adapter = TrailAdapter(self.trail, engine=self, store=self.store)
-        
+
         # Dereference N
         if isinstance(n_arg, Var):
             n_result = self.store.deref(n_arg.id)
@@ -1604,15 +1640,15 @@ class Engine:
                 return False  # Dev-mode: fail instead of instantiation_error
         else:
             n = n_arg
-            
+
         # Check N is an integer
         if not isinstance(n, Int):
             return False  # Dev-mode: fail instead of type_error
-            
+
         # Check N is positive (1-indexed)
         if n.value <= 0:
             return False  # Dev-mode: fail instead of domain_error
-            
+
         # Dereference Term
         if isinstance(term_arg, Var):
             term_result = self.store.deref(term_arg.id)
@@ -1623,34 +1659,36 @@ class Engine:
                 return False  # Dev-mode: fail instead of instantiation_error
         else:
             term = term_arg
-            
+
         # Term must be a structure
         if not isinstance(term, Struct):
             return False  # Lists, atoms, integers have no extractable args
-            
+
         # Check bounds
         if n.value > len(term.args):
             return False  # Out of bounds
-            
+
         # Get the argument (1-indexed)
         extracted_arg = term.args[n.value - 1]
-        
+
         # Unify with the third argument
-        return unify(arg_arg, extracted_arg, self.store, trail_adapter, self.occurs_check)
+        return unify(
+            arg_arg, extracted_arg, self.store, trail_adapter, self.occurs_check
+        )
 
     def _builtin_once(self, args: tuple) -> bool:
         """once(Goal) - succeed at most once.
-        
+
         Semantically equivalent to (call(Goal), !) - executes Goal
         and commits to first solution by cutting away remaining choicepoints.
-        
+
         Fails if Goal fails. Succeeds exactly once if Goal succeeds.
         """
         if len(args) != 1:
             return False
-            
+
         goal_arg = args[0]
-        
+
         # Dereference the goal
         if isinstance(goal_arg, Var):
             goal_result = self.store.deref(goal_arg.id)
@@ -1661,18 +1699,41 @@ class Engine:
                 return False  # Dev-mode: fail instead of instantiation_error
         else:
             goal = goal_arg
-            
+
         # Goal must be callable (Atom or Struct)
         if not isinstance(goal, (Atom, Struct)):
             return False  # Dev-mode: fail instead of type_error
-            
-        # Implement as conjunction: (Goal, !)
-        # This achieves once/1 semantics: Goal succeeds at most once
-        conjunction = Struct(",", (goal, Atom("!")))
-        
-        # Push the conjunction as a Goal with proper type
-        self.goal_stack.push(Goal.from_term(conjunction))
-        
+
+        # Create a frame to isolate the cut
+        # This ensures the cut only affects choicepoints created by Goal
+        frame_id = self._next_frame_id
+        self._next_frame_id += 1
+
+        # Capture current choicepoint stack height as cut barrier
+        cut_barrier = len(self.cp_stack)
+
+        # Create frame to isolate the cut
+        frame = Frame(
+            frame_id=frame_id,
+            cut_barrier=cut_barrier,
+            goal_height=self.goal_stack.height(),
+            pred=None,  # No predicate reference for once/1
+        )
+        self.frame_stack.append(frame)
+
+        # Push frame cleanup, cut, and goal
+        # The sequence is: POP_FRAME, !, Goal
+        # This ensures cut happens after goal succeeds, using our frame's barrier
+        self.goal_stack.push(
+            Goal(
+                GoalType.POP_FRAME,
+                None,
+                payload={"op": "POP_FRAME", "frame_id": frame_id},
+            )
+        )
+        self.goal_stack.push(Goal.from_term(Atom("!")))
+        self.goal_stack.push(Goal.from_term(goal))
+
         return True
 
     def _builtin_is(self, args: tuple) -> bool:
