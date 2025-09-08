@@ -167,17 +167,21 @@ class TestThrowCatch:
         assert sorted(actual) == sorted(expected)
     
     def test_catch_recovery_fails_transparent(self):
-        """Test transparent backtracking when recovery fails."""
+        """Test transparent backtracking when recovery fails.
+        
+        When catch's recovery fails, the catch/3 call fails. Since it's the second
+        goal in a conjunction, the entire conjunction fails for each p/1 alternative.
+        This gives 0 solutions total, matching ISO/SWI semantics.
+        """
         engine = Engine(Program(()))
         
         # Load p(1). p(2).
         engine.consult_string("p(1). p(2).")
         
-        # p(X), catch(throw(t), t, fail) should give X=1 and X=2
+        # p(X), catch(throw(t), t, fail) should give 0 solutions
+        # (catch fails for each p/1 alternative)
         results = list(engine.query("p(X), catch(throw(t), t, fail)"))
-        assert len(results) == 2
-        assert results[0]["X"] == Int(1)
-        assert results[1]["X"] == Int(2)
+        assert len(results) == 0
     
     def test_nested_catch(self):
         """Test nested catch/3 calls."""
@@ -281,14 +285,17 @@ class TestThrowCatch:
         assert len(results) == 1
     
     def test_recovery_failure_transparent_to_outer_choicepoints(self):
-        """Test that recovery failure is transparent to outer choicepoints."""
+        """Test that recovery failure is transparent to outer choicepoints.
+        
+        Transparency means outer choicepoints are still explored (p/1 alternatives 
+        are tried), but since catch fails for each, the conjunction produces 0 solutions.
+        """
         engine = Engine(Program(()))
         engine.consult_string("p(1). p(2).")
         
+        # Each p/1 alternative is tried, but catch fails for each
         results = list(engine.query("p(X), catch(throw(t), t, fail)"))
-        assert len(results) == 2
-        assert results[0]["X"] == Int(1)
-        assert results[1]["X"] == Int(2)
+        assert len(results) == 0
     
     def test_throw_in_disjunction_left_branch(self):
         """Test throw in left branch of disjunction."""
@@ -319,6 +326,24 @@ class TestThrowCatch:
         with pytest.raises(PrologThrow) as exc_info:
             list(engine.query("p(X), throw(t), p(Y)"))
         assert exc_info.value.ball == Atom("t")
+    
+    def test_transparent_backtracking_observable_via_disjunction(self):
+        """Test that outer CPs remain and are explored even when catch fails.
+        
+        This test proves transparency by wrapping the failing catch in a disjunction
+        that can succeed, allowing us to observe that p/1 alternatives are still 
+        being explored without asserting non-ISO success for the plain conjunction.
+        """
+        engine = Engine(Program(()))
+        engine.consult_string("p(1). p(2).")
+        
+        # p(X), (catch(throw(t), t, fail) ; true)
+        # The catch fails but the disjunction succeeds via 'true'
+        # This lets us observe that both p/1 alternatives are tried
+        results = list(engine.query("p(X), ';'(catch(throw(t), t, fail), true)"))
+        assert len(results) == 2
+        assert results[0]["X"] == Int(1)
+        assert results[1]["X"] == Int(2)
     
     def test_throw_cleans_unwinding(self):
         """Test that throw properly unwinds stacks."""
