@@ -331,18 +331,17 @@ class Engine:
                 continue
             
             # --- We have a matching catcher: restore to catch baselines ---
-            # IMPORTANT: Save the continuation BEFORE restoration
-            # The continuation represents goals that were after the catch
-            continuation = []
-            for i in range(cp.goal_stack_height, self.goal_stack.height()):
-                continuation.append(self.goal_stack._stack[i])
+            if self.trace:
+                self._trace_log.append(f"[CATCH] Restoring: cp_height={cp_height}, current cp_stack len={len(self.cp_stack)}")
             
             self.trail.unwind_to(cp.trail_top, self.store)
             self.goal_stack.shrink_to(cp.goal_stack_height)
             while len(self.frame_stack) > cp.frame_stack_height:
                 self.frame_stack.pop()
             while len(self.cp_stack) > cp_height:
-                self.cp_stack.pop()
+                removed = self.cp_stack.pop()
+                if self.trace:
+                    self._trace_log.append(f"[CATCH] Removing CP: {removed.kind.name}")
             
             # Switch to the catch window stamp
             self.trail.set_current_stamp(cp.stamp)
@@ -356,11 +355,8 @@ class Engine:
             assert len(self.cp_stack) == cp_height
             assert len(self.frame_stack) >= cp.frame_stack_height
             
-            # Push continuation first (in reverse order so it executes after recovery)
-            for g in reversed(continuation):
-                self.goal_stack.push(g)
-            
-            # Push recovery goal on top - it will execute first
+            # Push only the recovery goal - DO NOT re-install the CATCH choicepoint
+            # If recovery fails, we backtrack transparently to outer choicepoints
             self.goal_stack.push(Goal.from_term(cp.payload.get("recovery")))
             return True
         
@@ -508,6 +504,8 @@ class Engine:
                 self._trace_log.append(
                     f"Creating PREDICATE CP for {functor}/{arity}, saving {len(continuation)} continuation goals"
                 )
+                for i, g in enumerate(continuation):
+                    self._trace_log.append(f"  Continuation[{i}]: {g}")
 
             cp = Choicepoint(
                 kind=ChoicepointKind.PREDICATE,
@@ -798,6 +796,9 @@ class Engine:
         """
         while self.cp_stack:
             cp = self.cp_stack.pop()
+            
+            if self.trace:
+                self._trace_log.append(f"[BACKTRACK] Popped CP: {cp.kind.name}, phase={cp.payload.get('phase', 'N/A')}")
 
             # Restore state - unwind first, then restore heights
             # This order is safer if future features attach watchers to frames
@@ -861,42 +862,32 @@ class Engine:
                 goal = cp.payload["goal"]
                 cursor = cp.payload["cursor"]
 
-                # Restore goal stack for PREDICATE CPs
+                # Restore goal stack to the continuation
+                # The continuation is the snapshot of goals that should run after the predicate
+                # Clear the goal stack and restore the continuation
+                self.goal_stack.shrink_to(0)
+                
                 if "continuation" in cp.payload:
                     continuation = cp.payload["continuation"]
-                    target_height = cp.goal_stack_height
-                    current_height = self.goal_stack.height()
-
+                    # Restore the continuation - these are the goals after the predicate
+                    for g in continuation:
+                        self.goal_stack.push(g)
+                    
                     if self.trace:
                         self._trace_log.append(
-                            f"PREDICATE CP: current_height={current_height}, target_height={target_height}"
+                            f"PREDICATE CP: restored {len(continuation)} continuation goals"
                         )
 
-                    # Shrink if needed
-                    if current_height > target_height:
-                        self.goal_stack.shrink_to(target_height)
-                    # Re-push missing goals if needed
-                    elif current_height < target_height:
-                        for g in continuation[current_height:target_height]:
-                            self.goal_stack.push(g)
-
-                        if self.trace:
-                            self._trace_log.append(
-                                f"Re-pushed {target_height - current_height} continuation goals"
-                            )
-
-                    # Assert we restored correctly
-                    assert (
-                        self.goal_stack.height() == target_height
-                    ), f"Failed to restore continuation: height={self.goal_stack.height()}, expected={target_height}"
-                    
-                    # Remove catch frames that are now out of scope
-                    new_goal_height = self.goal_stack.height()
-                    # Catch frames are now managed via CATCH choicepoints
-
-                if cursor.has_more():
+                has_more = cursor.has_more()
+                if self.trace:
+                    self._trace_log.append(f"PREDICATE CP: cursor.has_more()={has_more}")
+                
+                if has_more:
                     clause_idx = cursor.take()
                     clause = self.program.clauses[clause_idx]
+                    
+                    if self.trace:
+                        self._trace_log.append(f"PREDICATE CP: Trying next clause #{clause_idx}")
 
                     # Shrink store to checkpoint size for allocation cleanup
                     if "store_top" in cp.payload:
@@ -953,13 +944,18 @@ class Engine:
                     trail_adapter = TrailAdapter(
                         self.trail, engine=self, store=self.store
                     )
-                    if unify(
+                    unify_result = unify(
                         renamed_clause.head,
                         goal.term,
                         self.store,
                         trail_adapter,  # type: ignore
                         occurs_check=self.occurs_check,
-                    ):
+                    )
+                    
+                    if self.trace:
+                        self._trace_log.append(f"PREDICATE CP: Unify result = {unify_result}")
+                    
+                    if unify_result:
                         # Unification succeeded - create frame for body execution
                         # cut_barrier was already computed above before pushing CP
                         frame_id = self._next_frame_id
@@ -985,6 +981,10 @@ class Engine:
                         for body_term in reversed(renamed_clause.body):
                             body_goal = Goal.from_term(body_term)
                             self.goal_stack.push(body_goal)
+                        
+                        if self.trace:
+                            self._trace_log.append(f"PREDICATE CP: Resuming with {self.goal_stack.height()} goals on stack")
+                        
                         return True
                     else:
                         # Unification failed, continue backtracking
@@ -1024,9 +1024,18 @@ class Engine:
                 return True
 
             elif cp.kind == ChoicepointKind.CATCH:
-                # CATCH choicepoints are never resumed
-                # They're only used for finding matching catchers
-                continue
+                # Check if this is a RECOVERY phase CATCH
+                if cp.payload.get("phase") == "RECOVERY":
+                    # Recovery failed - just continue backtracking
+                    # The continuation was already on the goal stack
+                    if self.trace:
+                        self._trace_log.append(f"CATCH CP (RECOVERY) - continuing backtrack")
+                    continue
+                else:
+                    # GOAL phase CATCH choicepoints are never resumed
+                    if self.trace:
+                        self._trace_log.append(f"CATCH CP (GOAL) - continuing backtrack")
+                    continue
 
             elif cp.kind == ChoicepointKind.IF_THEN_ELSE:
                 # Try else branch (only reached if condition failed exhaustively)
