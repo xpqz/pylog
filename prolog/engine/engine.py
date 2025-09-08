@@ -77,9 +77,7 @@ class Engine:
         self._next_frame_id = 0  # Monotonic frame ID counter
         self._cut_barrier = None  # Legacy field for tests
         
-        # Exception handling
-        self._exception = None  # Current uncaught exception
-        self._catch_frames = []  # Stack of active catch frames
+        # Exception handling is done via try/except PrologThrow
 
         # Debug ports for tracing
         self._ports: List[str] = []
@@ -106,8 +104,7 @@ class Engine:
         self._steps_taken = 0
         self._next_frame_id = 0
         self._cut_barrier = None
-        self._exception = None  # Clear any exception
-        self._catch_frames = []  # Clear catch frames
+        # Exception handling is done via try/except PrologThrow
         # Don't reset ports - they accumulate across runs
 
     def _register_builtins(self):
@@ -200,147 +197,69 @@ class Engine:
                     # Step budget exceeded - stop execution
                     break
             
-            # Check for exception during goal execution
-            if self._exception is not None:
-                # Exception is propagating - check for catch frames
-                catch_found = False
-                frames_to_check = []
-                
-                # Copy catch frames to check (don't remove them yet)
-                frames_to_check = list(reversed(self._catch_frames))
-                
-                # Try each catch frame from innermost to outermost
-                for catch_frame in frames_to_check:
-                    # Scope guard: only consider frames within current CP window
-                    # This avoids catching throws from outside the goal's scope
-                    if catch_frame["cp_height"] > len(self.cp_stack):
-                        continue  # Skip stray frames from outside current scope
-                    
-                    # Try to unify the exception with the catcher
-                    trail_adapter = TrailAdapter(self.trail, engine=self, store=self.store)
-                    saved_trail = self.trail.position()
-                    
-                    if unify(self._exception, catch_frame["catcher"], self.store, trail_adapter, self.occurs_check):
-                        # Exception caught!
-                        
-                        # Save the exception for re-unification
-                        caught_exception = self._exception
-                        self._exception = None
-                        
-                        # Important: We want to preserve the unification between the exception
-                        # and the catcher, so we should NOT unwind past it. However, we do need
-                        # to unwind any bindings made by the goal that threw the exception.
-                        # The solution is to unwind to the baseline, then re-do the unification.
-                        
-                        # First, unwind to baseline to undo all goal effects
-                        self.trail.unwind_to(catch_frame["trail_top"], self.store)
-                        
-                        # Re-unify the catcher with the exception to preserve bindings
-                        # This is needed when the catcher is a variable that should be bound
-                        trail_adapter2 = TrailAdapter(self.trail, engine=self, store=self.store)
-                        unify(caught_exception, catch_frame["catcher"], self.store, trail_adapter2, self.occurs_check)
-                        self.goal_stack.shrink_to(catch_frame["goal_height"])
-                        
-                        # When catching an exception, we're replacing the entire catch call
-                        # with the recovery goal, so we need to clear ALL choicepoints
-                        # created by the goal (even if they were created before the throw)
-                        while len(self.cp_stack) > catch_frame["cp_height"]:
-                            self.cp_stack.pop()
-                        
-                        # Similarly, restore frames to the baseline
-                        while len(self.frame_stack) > catch_frame["frame_height"]:
-                            self.frame_stack.pop()
-                        
-                        # Push recovery goal
-                        self.goal_stack.push(Goal.from_term(catch_frame["recovery"]))
-                        
-                        # Remove this catch frame and any inner ones
-                        # Keep outer catch frames for nested catching
-                        new_frames = []
-                        for f in self._catch_frames:
-                            if f["catch_id"] != catch_frame["catch_id"]:
-                                new_frames.append(f)
-                        self._catch_frames = new_frames
-                        
-                        catch_found = True
+            try:
+                # Pop next goal
+                goal = self.goal_stack.pop()
+
+                if goal is None:
+                    # No more goals - found a solution
+                    self._record_solution()
+
+                    # Check if we've found enough solutions
+                    if self.max_solutions and len(self.solutions) >= self.max_solutions:
                         break
-                    else:
-                        # Doesn't match this catcher - restore and try next
-                        self.trail.unwind_to(saved_trail, self.store)
-                
-                # If no catch found, frames remain for potential outer catch
-                
-                if catch_found:
-                    # Exception was caught, continue execution
-                    continue
-                else:
-                    # Exception not caught - it will propagate out
-                    # Clear all execution state
-                    self.cp_stack.clear()
-                    self.goal_stack.shrink_to(0)
-                    break  # Exit main loop with exception
-            
-            # Pop next goal
-            goal = self.goal_stack.pop()
 
-            if goal is None:
-                # No more goals - found a solution
-                self._record_solution()
-
-                # Check if we've found enough solutions
-                if self.max_solutions and len(self.solutions) >= self.max_solutions:
-                    break
-
-                # Backtrack to find more solutions
-                if not self._backtrack():
-                    break
-                continue
-
-            # Trace if enabled
-            if self.trace:
-                self._trace_log.append(f"Goal: {goal.term}")
-
-            # Dispatch based on goal type
-            if goal.type == GoalType.PREDICATE:
-                # Check if it's actually a builtin (PREDICATE goals always have terms)
-                if goal.term and self._is_builtin(goal.term):
-                    if not self._dispatch_builtin(goal):
-                        if not self._backtrack():
-                            break
-                else:
-                    if not self._dispatch_predicate(goal):
-                        if not self._backtrack():
-                            break
-            elif goal.type == GoalType.CONJUNCTION:
-                self._dispatch_conjunction(goal)
-            elif goal.type == GoalType.DISJUNCTION:
-                self._dispatch_disjunction(goal)
-            elif goal.type == GoalType.IF_THEN_ELSE:
-                if not self._dispatch_if_then_else(goal):
+                    # Backtrack to find more solutions
                     if not self._backtrack():
                         break
-            elif goal.type == GoalType.CUT:
-                self._dispatch_cut()
-            elif goal.type == GoalType.POP_FRAME:
-                self._dispatch_pop_frame(goal)
-            elif goal.type == GoalType.CONTROL:
-                self._dispatch_control(goal)
-            else:
-                # Unknown goal type - should not happen
-                if not self._backtrack():
-                    break
+                    continue
 
-        # Check for uncaught exception before cleanup
-        if self._exception is not None:
-            exc = self._exception
-            self._exception = None
-            # Clean up state before raising
-            self.trail.unwind_to(0, self.store)
-            self.goal_stack.shrink_to(0)
-            self.frame_stack.clear()
-            self.cp_stack.clear()
-            raise PrologThrow(exc)
-        
+                # Trace if enabled
+                if self.trace:
+                    self._trace_log.append(f"Goal: {goal.term}")
+
+                # Dispatch based on goal type
+                if goal.type == GoalType.PREDICATE:
+                    # Check if it's actually a builtin (PREDICATE goals always have terms)
+                    if goal.term and self._is_builtin(goal.term):
+                        if not self._dispatch_builtin(goal):
+                            if not self._backtrack():
+                                break
+                    else:
+                        if not self._dispatch_predicate(goal):
+                            if not self._backtrack():
+                                break
+                elif goal.type == GoalType.CONJUNCTION:
+                    self._dispatch_conjunction(goal)
+                elif goal.type == GoalType.DISJUNCTION:
+                    self._dispatch_disjunction(goal)
+                elif goal.type == GoalType.IF_THEN_ELSE:
+                    if not self._dispatch_if_then_else(goal):
+                        if not self._backtrack():
+                            break
+                elif goal.type == GoalType.CUT:
+                    self._dispatch_cut()
+                elif goal.type == GoalType.POP_FRAME:
+                    self._dispatch_pop_frame(goal)
+                elif goal.type == GoalType.CONTROL:
+                    self._dispatch_control(goal)
+                else:
+                    # Unknown goal type - should not happen
+                    if not self._backtrack():
+                        break
+            
+            except PrologThrow as exc:
+                # Handle thrown exception
+                handled = self._handle_throw(exc.ball)
+                if handled:
+                    continue
+                # No handler found - clean up and re-raise
+                self.trail.unwind_to(0, self.store)
+                self.goal_stack.shrink_to(0)
+                self.frame_stack.clear()
+                self.cp_stack.clear()
+                raise
+
         # Clean up for next query
         # Unbind query variables to restore clean state
         for var_id, _ in self._query_vars:
@@ -366,6 +285,79 @@ class Engine:
 
         return self.solutions
 
+    def _unify(self, a: Term, b: Term) -> bool:
+        """Helper for unification with current engine settings.
+        
+        Args:
+            a: First term to unify
+            b: Second term to unify
+            
+        Returns:
+            True if unification succeeds, False otherwise
+        """
+        trail_adapter = TrailAdapter(self.trail, engine=self, store=self.store)
+        return unify(a, b, self.store, trail_adapter, occurs_check=self.occurs_check)
+    
+    def _handle_throw(self, ball: Term) -> bool:
+        """Handle a thrown exception by searching for a matching catch.
+        
+        Args:
+            ball: The thrown exception term
+            
+        Returns:
+            True if exception was caught and handled, False otherwise
+        """
+        # Search from inner to outer
+        i = len(self.cp_stack) - 1
+        while i >= 0:
+            cp = self.cp_stack[i]
+            i -= 1
+            
+            if cp.kind != ChoicepointKind.CATCH:
+                continue
+            if cp.payload.get("phase") != "GOAL":
+                continue
+            # Scope guard: only catch if cp window encloses current point
+            cp_height = cp.payload.get("cp_height", 0)
+            if cp_height > len(self.cp_stack) - 1:
+                continue
+            
+            # --- Trial unification WITHOUT committing state ---
+            trial_top = self.trail.position()
+            # No need to change stamp for trial
+            ok = self._unify(ball, cp.payload.get("catcher"))
+            self.trail.unwind_to(trial_top, self.store)  # Restore to pre-trial state
+            if not ok:
+                continue
+            
+            # --- We have a matching catcher: restore to catch baselines ---
+            self.trail.unwind_to(cp.trail_top, self.store)
+            self.goal_stack.shrink_to(cp.goal_stack_height)
+            while len(self.frame_stack) > cp.frame_stack_height:
+                self.frame_stack.pop()
+            while len(self.cp_stack) > cp_height:
+                self.cp_stack.pop()
+            
+            # Switch to the catch window stamp
+            self.trail.set_current_stamp(cp.stamp)
+            
+            # Re-unify to make catcher bindings visible to Recovery
+            ok2 = self._unify(ball, cp.payload.get("catcher"))
+            assert ok2, "ball unified in trial but failed after restore (bug)"
+            
+            # Debug assertions
+            assert self.goal_stack.height() == cp.goal_stack_height
+            assert len(self.cp_stack) == cp_height
+            assert len(self.frame_stack) >= cp.frame_stack_height
+            
+            # Phase switch and push Recovery
+            cp.payload["phase"] = "RECOVERY"
+            self.cp_stack.append(cp)  # Re-install cp as the redo anchor
+            self.goal_stack.push(Goal.from_term(cp.payload.get("recovery")))
+            return True
+        
+        return False  # No catcher matched
+    
     def _allocate_query_vars(self, term: Term) -> Term:
         """Allocate fresh variables for query terms and track them.
 

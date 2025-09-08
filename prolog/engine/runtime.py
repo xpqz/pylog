@@ -272,6 +272,18 @@ class Trail:
         stamp = self._write_stamp
         self._write_stamp += 1
         return stamp
+    
+    def set_current_stamp(self, stamp: int) -> None:
+        """Set the current write stamp.
+        
+        Called when entering/redoing a choicepoint to restore its stamp window.
+        """
+        self._write_stamp = stamp
+    
+    @property
+    def current_stamp(self) -> int:
+        """Get the current write stamp."""
+        return self._write_stamp
 
     def unwind_to(self, position: int, store: Any) -> None:
         """Restore state by unwinding trail to given position.
