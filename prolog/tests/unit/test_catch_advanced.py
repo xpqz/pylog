@@ -548,6 +548,10 @@ class TestComplexNestedCatch:
         # Original exception should propagate
         assert exc.value.ball == Atom("original")
 
+    @pytest.mark.xfail(
+        reason="Non-ISO: expects backtracking into caught goal after recovery, but ISO removes those CPs",
+        strict=True
+    )
     def test_multiple_catch_frames_different_catchers(self):
         """Test multiple catch frames with different catchers."""
         p = program(

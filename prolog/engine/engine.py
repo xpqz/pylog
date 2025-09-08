@@ -842,10 +842,11 @@ class Engine:
             self.trail.unwind_to(cp.trail_top, self.store)
 
             # Restore goal stack to checkpoint height
-            # For CPs with continuation, we handle restoration specially in their handlers
+            # For CPs with continuation or special handling, we defer restoration
             if (
-                cp.kind in [ChoicepointKind.PREDICATE, ChoicepointKind.DISJUNCTION]
-                and "continuation" in cp.payload
+                (cp.kind in [ChoicepointKind.PREDICATE, ChoicepointKind.DISJUNCTION]
+                 and "continuation" in cp.payload)
+                or cp.kind == ChoicepointKind.CATCH  # CATCH handles its own restoration
             ):
                 # We'll handle goal stack restoration in the CP-specific handler below
                 if self.trace:
@@ -1083,6 +1084,9 @@ class Engine:
 
             elif cp.kind == ChoicepointKind.CATCH:
                 # CATCH choicepoint - two-phase redo anchor
+                # First restore goal stack since we handle our own restoration
+                self.goal_stack.shrink_to(cp.goal_stack_height)
+                
                 phase = cp.payload.get("phase")
                 if phase == "GOAL":
                     # Normal success through catch - restore pre-catch state and backtrack transparently
