@@ -25,6 +25,7 @@ class ChoicepointKind(IntEnum):
     PREDICATE = 0  # Try next clause
     DISJUNCTION = 1  # Try alternative branch
     IF_THEN_ELSE = 2  # Try else branch
+    CATCH = 3  # Catch frame for exception handling
 
 
 @dataclass(frozen=True)
@@ -112,6 +113,7 @@ class Choicepoint:
         frame_stack_height: Frame stack height to restore to
         payload: Type-specific resume data
         cut_parent: Previous choicepoint before cut barrier (for cut)
+        stamp: Trail write stamp for this choicepoint's window
     """
 
     kind: ChoicepointKind
@@ -120,6 +122,7 @@ class Choicepoint:
     frame_stack_height: int
     payload: Dict[str, Any]
     cut_parent: Optional[int] = None  # Index of parent CP for cut
+    stamp: int = 0  # Trail write stamp for this CP's window
 
     def __repr__(self) -> str:
         return f"CP({self.kind.name}, trail={self.trail_top})"
@@ -269,6 +272,18 @@ class Trail:
         stamp = self._write_stamp
         self._write_stamp += 1
         return stamp
+    
+    def set_current_stamp(self, stamp: int) -> None:
+        """Set the current write stamp.
+        
+        Called when entering/redoing a choicepoint to restore its stamp window.
+        """
+        self._write_stamp = stamp
+    
+    @property
+    def current_stamp(self) -> int:
+        """Get the current write stamp."""
+        return self._write_stamp
 
     def unwind_to(self, position: int, store: Any) -> None:
         """Restore state by unwinding trail to given position.

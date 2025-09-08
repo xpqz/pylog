@@ -77,9 +77,7 @@ class Engine:
         self._next_frame_id = 0  # Monotonic frame ID counter
         self._cut_barrier = None  # Legacy field for tests
         
-        # Exception handling
-        self._exception = None  # Current uncaught exception
-        self._catch_frames = []  # Stack of active catch frames
+        # Exception handling is done via try/except PrologThrow
 
         # Debug ports for tracing
         self._ports: List[str] = []
@@ -106,8 +104,7 @@ class Engine:
         self._steps_taken = 0
         self._next_frame_id = 0
         self._cut_barrier = None
-        self._exception = None  # Clear any exception
-        self._catch_frames = []  # Clear catch frames
+        # Exception handling is done via try/except PrologThrow
         # Don't reset ports - they accumulate across runs
 
     def _register_builtins(self):
@@ -200,147 +197,69 @@ class Engine:
                     # Step budget exceeded - stop execution
                     break
             
-            # Check for exception during goal execution
-            if self._exception is not None:
-                # Exception is propagating - check for catch frames
-                catch_found = False
-                frames_to_check = []
-                
-                # Copy catch frames to check (don't remove them yet)
-                frames_to_check = list(reversed(self._catch_frames))
-                
-                # Try each catch frame from innermost to outermost
-                for catch_frame in frames_to_check:
-                    # Scope guard: only consider frames within current CP window
-                    # This avoids catching throws from outside the goal's scope
-                    if catch_frame["cp_height"] > len(self.cp_stack):
-                        continue  # Skip stray frames from outside current scope
-                    
-                    # Try to unify the exception with the catcher
-                    trail_adapter = TrailAdapter(self.trail, engine=self, store=self.store)
-                    saved_trail = self.trail.position()
-                    
-                    if unify(self._exception, catch_frame["catcher"], self.store, trail_adapter, self.occurs_check):
-                        # Exception caught!
-                        
-                        # Save the exception for re-unification
-                        caught_exception = self._exception
-                        self._exception = None
-                        
-                        # Important: We want to preserve the unification between the exception
-                        # and the catcher, so we should NOT unwind past it. However, we do need
-                        # to unwind any bindings made by the goal that threw the exception.
-                        # The solution is to unwind to the baseline, then re-do the unification.
-                        
-                        # First, unwind to baseline to undo all goal effects
-                        self.trail.unwind_to(catch_frame["trail_top"], self.store)
-                        
-                        # Re-unify the catcher with the exception to preserve bindings
-                        # This is needed when the catcher is a variable that should be bound
-                        trail_adapter2 = TrailAdapter(self.trail, engine=self, store=self.store)
-                        unify(caught_exception, catch_frame["catcher"], self.store, trail_adapter2, self.occurs_check)
-                        self.goal_stack.shrink_to(catch_frame["goal_height"])
-                        
-                        # When catching an exception, we're replacing the entire catch call
-                        # with the recovery goal, so we need to clear ALL choicepoints
-                        # created by the goal (even if they were created before the throw)
-                        while len(self.cp_stack) > catch_frame["cp_height"]:
-                            self.cp_stack.pop()
-                        
-                        # Similarly, restore frames to the baseline
-                        while len(self.frame_stack) > catch_frame["frame_height"]:
-                            self.frame_stack.pop()
-                        
-                        # Push recovery goal
-                        self.goal_stack.push(Goal.from_term(catch_frame["recovery"]))
-                        
-                        # Remove this catch frame and any inner ones
-                        # Keep outer catch frames for nested catching
-                        new_frames = []
-                        for f in self._catch_frames:
-                            if f["catch_id"] != catch_frame["catch_id"]:
-                                new_frames.append(f)
-                        self._catch_frames = new_frames
-                        
-                        catch_found = True
+            try:
+                # Pop next goal
+                goal = self.goal_stack.pop()
+
+                if goal is None:
+                    # No more goals - found a solution
+                    self._record_solution()
+
+                    # Check if we've found enough solutions
+                    if self.max_solutions and len(self.solutions) >= self.max_solutions:
                         break
-                    else:
-                        # Doesn't match this catcher - restore and try next
-                        self.trail.unwind_to(saved_trail, self.store)
-                
-                # If no catch found, frames remain for potential outer catch
-                
-                if catch_found:
-                    # Exception was caught, continue execution
-                    continue
-                else:
-                    # Exception not caught - it will propagate out
-                    # Clear all execution state
-                    self.cp_stack.clear()
-                    self.goal_stack.shrink_to(0)
-                    break  # Exit main loop with exception
-            
-            # Pop next goal
-            goal = self.goal_stack.pop()
 
-            if goal is None:
-                # No more goals - found a solution
-                self._record_solution()
-
-                # Check if we've found enough solutions
-                if self.max_solutions and len(self.solutions) >= self.max_solutions:
-                    break
-
-                # Backtrack to find more solutions
-                if not self._backtrack():
-                    break
-                continue
-
-            # Trace if enabled
-            if self.trace:
-                self._trace_log.append(f"Goal: {goal.term}")
-
-            # Dispatch based on goal type
-            if goal.type == GoalType.PREDICATE:
-                # Check if it's actually a builtin (PREDICATE goals always have terms)
-                if goal.term and self._is_builtin(goal.term):
-                    if not self._dispatch_builtin(goal):
-                        if not self._backtrack():
-                            break
-                else:
-                    if not self._dispatch_predicate(goal):
-                        if not self._backtrack():
-                            break
-            elif goal.type == GoalType.CONJUNCTION:
-                self._dispatch_conjunction(goal)
-            elif goal.type == GoalType.DISJUNCTION:
-                self._dispatch_disjunction(goal)
-            elif goal.type == GoalType.IF_THEN_ELSE:
-                if not self._dispatch_if_then_else(goal):
+                    # Backtrack to find more solutions
                     if not self._backtrack():
                         break
-            elif goal.type == GoalType.CUT:
-                self._dispatch_cut()
-            elif goal.type == GoalType.POP_FRAME:
-                self._dispatch_pop_frame(goal)
-            elif goal.type == GoalType.CONTROL:
-                self._dispatch_control(goal)
-            else:
-                # Unknown goal type - should not happen
-                if not self._backtrack():
-                    break
+                    continue
 
-        # Check for uncaught exception before cleanup
-        if self._exception is not None:
-            exc = self._exception
-            self._exception = None
-            # Clean up state before raising
-            self.trail.unwind_to(0, self.store)
-            self.goal_stack.shrink_to(0)
-            self.frame_stack.clear()
-            self.cp_stack.clear()
-            raise PrologThrow(exc)
-        
+                # Trace if enabled
+                if self.trace:
+                    self._trace_log.append(f"Goal: {goal.term}")
+
+                # Dispatch based on goal type
+                if goal.type == GoalType.PREDICATE:
+                    # Check if it's actually a builtin (PREDICATE goals always have terms)
+                    if goal.term and self._is_builtin(goal.term):
+                        if not self._dispatch_builtin(goal):
+                            if not self._backtrack():
+                                break
+                    else:
+                        if not self._dispatch_predicate(goal):
+                            if not self._backtrack():
+                                break
+                elif goal.type == GoalType.CONJUNCTION:
+                    self._dispatch_conjunction(goal)
+                elif goal.type == GoalType.DISJUNCTION:
+                    self._dispatch_disjunction(goal)
+                elif goal.type == GoalType.IF_THEN_ELSE:
+                    if not self._dispatch_if_then_else(goal):
+                        if not self._backtrack():
+                            break
+                elif goal.type == GoalType.CUT:
+                    self._dispatch_cut()
+                elif goal.type == GoalType.POP_FRAME:
+                    self._dispatch_pop_frame(goal)
+                elif goal.type == GoalType.CONTROL:
+                    self._dispatch_control(goal)
+                else:
+                    # Unknown goal type - should not happen
+                    if not self._backtrack():
+                        break
+            
+            except PrologThrow as exc:
+                # Handle thrown exception
+                handled = self._handle_throw(exc.ball)
+                if handled:
+                    continue
+                # No handler found - clean up and re-raise
+                self.trail.unwind_to(0, self.store)
+                self.goal_stack.shrink_to(0)
+                self.frame_stack.clear()
+                self.cp_stack.clear()
+                raise
+
         # Clean up for next query
         # Unbind query variables to restore clean state
         for var_id, _ in self._query_vars:
@@ -366,6 +285,83 @@ class Engine:
 
         return self.solutions
 
+    def _unify(self, a: Term, b: Term) -> bool:
+        """Helper for unification with current engine settings.
+        
+        Args:
+            a: First term to unify
+            b: Second term to unify
+            
+        Returns:
+            True if unification succeeds, False otherwise
+        """
+        trail_adapter = TrailAdapter(self.trail, engine=self, store=self.store)
+        return unify(a, b, self.store, trail_adapter, occurs_check=self.occurs_check)
+    
+    def _handle_throw(self, ball: Term) -> bool:
+        """Handle a thrown exception by searching for a matching catch.
+        
+        Args:
+            ball: The thrown exception term
+            
+        Returns:
+            True if exception was caught and handled, False otherwise
+        """
+        # Search from inner to outer
+        i = len(self.cp_stack) - 1
+        while i >= 0:
+            cp = self.cp_stack[i]
+            i -= 1
+            
+            if cp.kind != ChoicepointKind.CATCH:
+                continue
+            if cp.payload.get("phase") != "GOAL":
+                continue
+            # Scope guard: only catch if cp window encloses current point
+            cp_height = cp.payload.get("cp_height", 0)
+            if cp_height > len(self.cp_stack) - 1:
+                continue
+            
+            # --- Trial unification WITHOUT committing state ---
+            trial_top = self.trail.position()
+            # No need to change stamp for trial
+            ok = self._unify(ball, cp.payload.get("catcher"))
+            self.trail.unwind_to(trial_top, self.store)  # Restore to pre-trial state
+            if not ok:
+                continue
+            
+            # --- We have a matching catcher: restore to catch baselines ---
+            if self.trace:
+                self._trace_log.append(f"[CATCH] Restoring: cp_height={cp_height}, current cp_stack len={len(self.cp_stack)}")
+            
+            self.trail.unwind_to(cp.trail_top, self.store)
+            self.goal_stack.shrink_to(cp.goal_stack_height)
+            while len(self.frame_stack) > cp.frame_stack_height:
+                self.frame_stack.pop()
+            while len(self.cp_stack) > cp_height:
+                removed = self.cp_stack.pop()
+                if self.trace:
+                    self._trace_log.append(f"[CATCH] Removing CP: {removed.kind.name}")
+            
+            # Switch to the catch window stamp
+            self.trail.set_current_stamp(cp.stamp)
+            
+            # Re-unify to make catcher bindings visible to Recovery
+            ok2 = self._unify(ball, cp.payload.get("catcher"))
+            assert ok2, "ball unified in trial but failed after restore (bug)"
+            
+            # Debug assertions
+            assert self.goal_stack.height() == cp.goal_stack_height
+            assert len(self.cp_stack) == cp_height
+            assert len(self.frame_stack) >= cp.frame_stack_height
+            
+            # Push only the recovery goal - DO NOT re-install the CATCH choicepoint
+            # If recovery fails, we backtrack transparently to outer choicepoints
+            self.goal_stack.push(Goal.from_term(cp.payload.get("recovery")))
+            return True
+        
+        return False  # No catcher matched
+    
     def _allocate_query_vars(self, term: Term) -> Term:
         """Allocate fresh variables for query terms and track them.
 
@@ -508,6 +504,8 @@ class Engine:
                 self._trace_log.append(
                     f"Creating PREDICATE CP for {functor}/{arity}, saving {len(continuation)} continuation goals"
                 )
+                for i, g in enumerate(continuation):
+                    self._trace_log.append(f"  Continuation[{i}]: {g}")
 
             cp = Choicepoint(
                 kind=ChoicepointKind.PREDICATE,
@@ -788,24 +786,7 @@ class Engine:
                 ), f"ITE commit failed: {len(self.cp_stack)} != {tmp_barrier}"
             # Schedule Then goal
             self.goal_stack.push(goal.payload["then_goal"])
-        elif op == "CATCH_BEGIN":
-            # Set up a catch frame
-            catch_frame = {
-                "catch_id": goal.payload["catch_id"],
-                "catcher": goal.payload["catcher"],
-                "recovery": goal.payload["recovery"],
-                "trail_top": goal.payload["trail_top"],
-                "goal_height": goal.payload["goal_height"],
-                "frame_height": goal.payload["frame_height"],
-                "cp_height": goal.payload["cp_height"],
-            }
-            self._catch_frames.append(catch_frame)
-        elif op == "CATCH_END":
-            # Goal succeeded normally - catch frame stays active for backtracking
-            # We don't remove the catch frame here because if we backtrack
-            # into the goal and it throws, we still need to catch it
-            # The frame will be removed when we backtrack past the catch's window
-            pass
+        # CATCH_BEGIN and CATCH_END are no longer used - catch/3 uses CATCH choicepoints
 
     def _backtrack(self) -> bool:
         """Backtrack to the most recent choicepoint.
@@ -815,6 +796,9 @@ class Engine:
         """
         while self.cp_stack:
             cp = self.cp_stack.pop()
+            
+            if self.trace:
+                self._trace_log.append(f"[BACKTRACK] Popped CP: {cp.kind.name}, phase={cp.payload.get('phase', 'N/A')}")
 
             # Restore state - unwind first, then restore heights
             # This order is safer if future features attach watchers to frames
@@ -849,8 +833,7 @@ class Engine:
             # When we backtrack past a catch's window, remove its frame
             # A catch frame is out of scope if we've backtracked BELOW its goal height
             new_goal_height = self.goal_stack.height()
-            while self._catch_frames and self._catch_frames[-1]["goal_height"] > new_goal_height:
-                self._catch_frames.pop()
+            # Catch frames are now managed via CATCH choicepoints
 
             # Pop frames above checkpoint
             # PREDICATE CPs don't manage frames (they use frame_stack_height=0 as a sentinel)
@@ -879,43 +862,32 @@ class Engine:
                 goal = cp.payload["goal"]
                 cursor = cp.payload["cursor"]
 
-                # Restore goal stack for PREDICATE CPs
+                # Restore goal stack to the continuation
+                # The continuation is the snapshot of goals that should run after the predicate
+                # Clear the goal stack and restore the continuation
+                self.goal_stack.shrink_to(0)
+                
                 if "continuation" in cp.payload:
                     continuation = cp.payload["continuation"]
-                    target_height = cp.goal_stack_height
-                    current_height = self.goal_stack.height()
-
+                    # Restore the continuation - these are the goals after the predicate
+                    for g in continuation:
+                        self.goal_stack.push(g)
+                    
                     if self.trace:
                         self._trace_log.append(
-                            f"PREDICATE CP: current_height={current_height}, target_height={target_height}"
+                            f"PREDICATE CP: restored {len(continuation)} continuation goals"
                         )
 
-                    # Shrink if needed
-                    if current_height > target_height:
-                        self.goal_stack.shrink_to(target_height)
-                    # Re-push missing goals if needed
-                    elif current_height < target_height:
-                        for g in continuation[current_height:target_height]:
-                            self.goal_stack.push(g)
-
-                        if self.trace:
-                            self._trace_log.append(
-                                f"Re-pushed {target_height - current_height} continuation goals"
-                            )
-
-                    # Assert we restored correctly
-                    assert (
-                        self.goal_stack.height() == target_height
-                    ), f"Failed to restore continuation: height={self.goal_stack.height()}, expected={target_height}"
-                    
-                    # Remove catch frames that are now out of scope
-                    new_goal_height = self.goal_stack.height()
-                    while self._catch_frames and self._catch_frames[-1]["goal_height"] > new_goal_height:
-                        self._catch_frames.pop()
-
-                if cursor.has_more():
+                has_more = cursor.has_more()
+                if self.trace:
+                    self._trace_log.append(f"PREDICATE CP: cursor.has_more()={has_more}")
+                
+                if has_more:
                     clause_idx = cursor.take()
                     clause = self.program.clauses[clause_idx]
+                    
+                    if self.trace:
+                        self._trace_log.append(f"PREDICATE CP: Trying next clause #{clause_idx}")
 
                     # Shrink store to checkpoint size for allocation cleanup
                     if "store_top" in cp.payload:
@@ -972,13 +944,18 @@ class Engine:
                     trail_adapter = TrailAdapter(
                         self.trail, engine=self, store=self.store
                     )
-                    if unify(
+                    unify_result = unify(
                         renamed_clause.head,
                         goal.term,
                         self.store,
                         trail_adapter,  # type: ignore
                         occurs_check=self.occurs_check,
-                    ):
+                    )
+                    
+                    if self.trace:
+                        self._trace_log.append(f"PREDICATE CP: Unify result = {unify_result}")
+                    
+                    if unify_result:
                         # Unification succeeded - create frame for body execution
                         # cut_barrier was already computed above before pushing CP
                         frame_id = self._next_frame_id
@@ -1004,6 +981,10 @@ class Engine:
                         for body_term in reversed(renamed_clause.body):
                             body_goal = Goal.from_term(body_term)
                             self.goal_stack.push(body_goal)
+                        
+                        if self.trace:
+                            self._trace_log.append(f"PREDICATE CP: Resuming with {self.goal_stack.height()} goals on stack")
+                        
                         return True
                     else:
                         # Unification failed, continue backtracking
@@ -1031,8 +1012,7 @@ class Engine:
 
                 # Remove catch frames that are now out of scope
                 new_goal_height = self.goal_stack.height()
-                while self._catch_frames and self._catch_frames[-1]["goal_height"] > new_goal_height:
-                    self._catch_frames.pop()
+                # Catch frames are now managed via CATCH choicepoints
                 
                 # Increment stamp before trying alternative branch
                 # This ensures changes in the alternative are properly trailed
@@ -1042,6 +1022,20 @@ class Engine:
                 alternative = cp.payload["alternative"]
                 self.goal_stack.push(alternative)
                 return True
+
+            elif cp.kind == ChoicepointKind.CATCH:
+                # Check if this is a RECOVERY phase CATCH
+                if cp.payload.get("phase") == "RECOVERY":
+                    # Recovery failed - just continue backtracking
+                    # The continuation was already on the goal stack
+                    if self.trace:
+                        self._trace_log.append(f"CATCH CP (RECOVERY) - continuing backtrack")
+                    continue
+                else:
+                    # GOAL phase CATCH choicepoints are never resumed
+                    if self.trace:
+                        self._trace_log.append(f"CATCH CP (GOAL) - continuing backtrack")
+                    continue
 
             elif cp.kind == ChoicepointKind.IF_THEN_ELSE:
                 # Try else branch (only reached if condition failed exhaustively)
@@ -1915,11 +1909,12 @@ class Engine:
                 # ISO would allow throwing unbound variables
                 return False  # Dev-mode: fail on unbound
         
-        # Set the exception and trigger unwinding
-        self._exception = ball
-        # Don't clear goal stack here - let exception handler do it
-        # Return True to avoid triggering backtracking
-        return True
+        # Reify the ball to capture current bindings
+        # This ensures that variable bindings are preserved in the thrown term
+        reified_ball = self._reify_term(ball)
+        
+        # Raise PrologThrow directly  
+        raise PrologThrow(reified_ball)
     
     def _builtin_catch(self, args: tuple) -> bool:
         """catch(Goal, Catcher, Recovery) - catch exceptions.
@@ -1947,60 +1942,32 @@ class Engine:
         if not isinstance(goal, (Atom, Struct)):
             return False  # Dev-mode: fail on non-callable
         
-        catch_id = id(args)  # Unique identifier for this catch
-        
-        # Capture baseline heights BEFORE pushing any wrapper goals
+        # Capture baseline heights BEFORE pushing anything
         # These represent the state at the call site of catch/3
         base_trail_top = self.trail.position()
         base_goal_height = self.goal_stack.height()
         base_frame_height = len(self.frame_stack)
         base_cp_height = len(self.cp_stack)
         
-        
-        # Push goals in the right order:
-        # 1. First push a CATCH_END marker that will clean up if goal succeeds
-        # 2. Then push the goal
-        # 3. Then push a CATCH_BEGIN marker with the catch info
-        
-        # The stack will be: [CATCH_END, Goal, CATCH_BEGIN] (top to bottom)
-        # When we execute:
-        # - CATCH_BEGIN gets popped and sets up the catch
-        # - Goal executes (may throw)
-        # - CATCH_END gets popped and cleans up (only if no throw)
-        
-        # Push end marker (executed only if goal succeeds)
-        self.goal_stack.push(
-            Goal(
-                GoalType.CONTROL,
-                None,
-                payload={
-                    "op": "CATCH_END",
-                    "catch_id": catch_id,
-                }
-            )
+        # Create CATCH choicepoint (phase=GOAL)
+        stamp = self.trail.next_stamp()
+        catch_cp = Choicepoint(
+            kind=ChoicepointKind.CATCH,
+            trail_top=base_trail_top,
+            goal_stack_height=base_goal_height,
+            frame_stack_height=base_frame_height,
+            payload={
+                "phase": "GOAL",
+                "catcher": catcher_arg,
+                "recovery": recovery_arg,
+                "cp_height": base_cp_height,  # Store CP height for restoration
+            },
+            stamp=stamp,
         )
+        self.cp_stack.append(catch_cp)
         
-        # Push the goal to execute
+        # Push the user's Goal to execute
         self.goal_stack.push(Goal.from_term(goal))
-        
-        # Push begin marker (executed first, sets up catch)
-        self.goal_stack.push(
-            Goal(
-                GoalType.CONTROL,
-                None,
-                payload={
-                    "op": "CATCH_BEGIN",
-                    "catch_id": catch_id,
-                    "catcher": catcher_arg,
-                    "recovery": recovery_arg,
-                    # Store BASELINE heights captured before any wrappers
-                    "trail_top": base_trail_top,
-                    "goal_height": base_goal_height,
-                    "frame_height": base_frame_height,
-                    "cp_height": base_cp_height,
-                }
-            )
-        )
         
         return True
 
@@ -2136,3 +2103,35 @@ class Engine:
     def debug_trail_writes(self) -> int:
         """Get number of trail writes for debugging."""
         return self._debug_trail_writes
+    
+    def consult_string(self, text: str) -> None:
+        """Load clauses from a string into the program.
+        
+        Args:
+            text: Prolog program text to parse and load
+        """
+        from prolog.parser.parser import parse_program
+        from prolog.ast.clauses import Program as ProgramClass
+        
+        clauses = parse_program(text)
+        # Create new program with existing clauses plus new ones
+        all_clauses = list(self.program.clauses) + clauses
+        self.program = ProgramClass(tuple(all_clauses))
+    
+    def query(self, query_text: str) -> List[Dict[str, Any]]:
+        """Execute a query and return all solutions.
+        
+        Args:
+            query_text: Query string like "p(X), q(Y)" (without ?- and .)
+            
+        Returns:
+            List of solution dictionaries
+        """
+        from prolog.parser.parser import parse_query
+        # Add ?- and . if not present
+        if not query_text.strip().startswith("?-"):
+            query_text = "?- " + query_text
+        if not query_text.strip().endswith("."):
+            query_text = query_text + "."
+        goals = parse_query(query_text)
+        return self.run(goals)
