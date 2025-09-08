@@ -227,18 +227,13 @@ class Engine:
                         # Restore to baseline state and push recovery
                         self.goal_stack.shrink_to(catch_frame["goal_height"])
                         
-                        # Carefully handle frames and choicepoints
-                        # We need to remove CPs created by the throwing goal
-                        # but preserve any that existed before
-                        while len(self.cp_stack) > 0:
-                            cp = self.cp_stack[-1]
-                            # Remove CPs created after the catch
-                            if len(self.cp_stack) > catch_frame["cp_height"]:
-                                self.cp_stack.pop()
-                            else:
-                                break
+                        # When catching an exception, we're replacing the entire catch call
+                        # with the recovery goal, so we need to clear ALL choicepoints
+                        # created by the goal (even if they were created before the throw)
+                        while len(self.cp_stack) > catch_frame["cp_height"]:
+                            self.cp_stack.pop()
                         
-                        # For frames, only pop those created after catch
+                        # Similarly, restore frames to the baseline
                         while len(self.frame_stack) > catch_frame["frame_height"]:
                             self.frame_stack.pop()
                         
@@ -778,6 +773,7 @@ class Engine:
             # Goal succeeded normally - catch frame stays active for backtracking
             # We don't remove the catch frame here because if we backtrack
             # into the goal and it throws, we still need to catch it
+            # The frame will be removed when we backtrack past the catch's window
             pass
 
     def _backtrack(self) -> bool:
@@ -817,6 +813,12 @@ class Engine:
                 assert (
                     self.goal_stack.height() == cp.goal_stack_height
                 ), f"Goal stack height mismatch after restore: {self.goal_stack.height()} != {cp.goal_stack_height}"
+                
+            # Remove catch frames that are now out of scope
+            # When we backtrack past a catch's window, remove its frame
+            new_goal_height = self.goal_stack.height()
+            while self._catch_frames and self._catch_frames[-1]["goal_height"] >= new_goal_height:
+                self._catch_frames.pop()
 
             # Pop frames above checkpoint
             # PREDICATE CPs don't manage frames (they use frame_stack_height=0 as a sentinel)
@@ -873,6 +875,11 @@ class Engine:
                     assert (
                         self.goal_stack.height() == target_height
                     ), f"Failed to restore continuation: height={self.goal_stack.height()}, expected={target_height}"
+                    
+                    # Remove catch frames that are now out of scope
+                    new_goal_height = self.goal_stack.height()
+                    while self._catch_frames and self._catch_frames[-1]["goal_height"] >= new_goal_height:
+                        self._catch_frames.pop()
 
                 if cursor.has_more():
                     clause_idx = cursor.take()
@@ -990,6 +997,11 @@ class Engine:
                         for g in continuation[current_height:target_height]:
                             self.goal_stack.push(g)
 
+                # Remove catch frames that are now out of scope
+                new_goal_height = self.goal_stack.height()
+                while self._catch_frames and self._catch_frames[-1]["goal_height"] >= new_goal_height:
+                    self._catch_frames.pop()
+                
                 # Try alternative branch
                 alternative = cp.payload["alternative"]
                 self.goal_stack.push(alternative)
