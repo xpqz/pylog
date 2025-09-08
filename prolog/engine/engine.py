@@ -204,10 +204,17 @@ class Engine:
             if self._exception is not None:
                 # Exception is propagating - check for catch frames
                 catch_found = False
+                frames_to_check = []
+                
+                # Copy catch frames to check (don't remove them yet)
+                frames_to_check = list(reversed(self._catch_frames))
                 
                 # Try each catch frame from innermost to outermost
-                while self._catch_frames:
-                    catch_frame = self._catch_frames.pop()
+                for catch_frame in frames_to_check:
+                    # Scope guard: only consider frames within current CP window
+                    # This avoids catching throws from outside the goal's scope
+                    if catch_frame["cp_height"] > len(self.cp_stack):
+                        continue  # Skip stray frames from outside current scope
                     
                     # Try to unify the exception with the catcher
                     trail_adapter = TrailAdapter(self.trail, engine=self, store=self.store)
@@ -216,21 +223,43 @@ class Engine:
                     if unify(self._exception, catch_frame["catcher"], self.store, trail_adapter, self.occurs_check):
                         # Exception caught!
                         self._exception = None
-                        # Restore state to where catch was invoked
+                        
+                        # Restore to baseline state and push recovery
                         self.goal_stack.shrink_to(catch_frame["goal_height"])
-                        # Restore frame stack to catch point
+                        
+                        # Carefully handle frames and choicepoints
+                        # We need to remove CPs created by the throwing goal
+                        # but preserve any that existed before
+                        while len(self.cp_stack) > 0:
+                            cp = self.cp_stack[-1]
+                            # Remove CPs created after the catch
+                            if len(self.cp_stack) > catch_frame["cp_height"]:
+                                self.cp_stack.pop()
+                            else:
+                                break
+                        
+                        # For frames, only pop those created after catch
                         while len(self.frame_stack) > catch_frame["frame_height"]:
                             self.frame_stack.pop()
-                        # Remove choicepoints created by the throwing goal
-                        while len(self.cp_stack) > catch_frame["cp_height"]:
-                            self.cp_stack.pop()
+                        
                         # Push recovery goal
                         self.goal_stack.push(Goal.from_term(catch_frame["recovery"]))
+                        
+                        # Remove this catch frame and any inner ones
+                        # Keep outer catch frames for nested catching
+                        new_frames = []
+                        for f in self._catch_frames:
+                            if f["catch_id"] != catch_frame["catch_id"]:
+                                new_frames.append(f)
+                        self._catch_frames = new_frames
+                        
                         catch_found = True
                         break
                     else:
                         # Doesn't match this catcher - restore and try next
                         self.trail.unwind_to(saved_trail, self.store)
+                
+                # If no catch found, frames remain for potential outer catch
                 
                 if catch_found:
                     # Exception was caught, continue execution
@@ -1869,6 +1898,15 @@ class Engine:
         if not isinstance(goal, (Atom, Struct)):
             return False  # Dev-mode: fail on non-callable
         
+        catch_id = id(args)  # Unique identifier for this catch
+        
+        # Capture baseline heights BEFORE pushing any wrapper goals
+        # These represent the state at the call site of catch/3
+        base_trail_top = self.trail.position()
+        base_goal_height = self.goal_stack.height()
+        base_frame_height = len(self.frame_stack)
+        base_cp_height = len(self.cp_stack)
+        
         # Push goals in the right order:
         # 1. First push a CATCH_END marker that will clean up if goal succeeds
         # 2. Then push the goal
@@ -1879,8 +1917,6 @@ class Engine:
         # - CATCH_BEGIN gets popped and sets up the catch
         # - Goal executes (may throw)
         # - CATCH_END gets popped and cleans up (only if no throw)
-        
-        catch_id = id(args)  # Unique identifier for this catch
         
         # Push end marker (executed only if goal succeeds)
         self.goal_stack.push(
@@ -1907,10 +1943,11 @@ class Engine:
                     "catch_id": catch_id,
                     "catcher": catcher_arg,
                     "recovery": recovery_arg,
-                    "trail_top": self.trail.position(),
-                    "goal_height": self.goal_stack.height(),
-                    "frame_height": len(self.frame_stack),
-                    "cp_height": len(self.cp_stack),
+                    # Store BASELINE heights captured before any wrappers
+                    "trail_top": base_trail_top,
+                    "goal_height": base_goal_height,
+                    "frame_height": base_frame_height,
+                    "cp_height": base_cp_height,
                 }
             )
         )

@@ -55,7 +55,12 @@ class TestThrowBasicBehavior:
         assert exc.value.ball == Atom("error")
     
     def test_throw_unbound_variable_fails(self):
-        """Test throw(X) with unbound X fails in dev-mode."""
+        """Test throw(X) with unbound X fails in dev-mode.
+        
+        Note: This is Stage-1 dev-mode policy. In full ISO mode,
+        throw/1 would allow unbound variables. This behavior will
+        change when we implement ISO error handling in later stages.
+        """
         engine = Engine(program())
         
         # Query: throw(X) with unbound X
