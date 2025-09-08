@@ -69,11 +69,10 @@ class TestCatchChoicepointManagement:
             ))
         ])
         
-        # First solution X=1, then throw is caught
-        # But we can't backtrack into q after the catch
-        assert len(results) == 1
-        # X should be unbound in recovery since bindings are unwound
-        assert "X" not in results[0] or results[0]["X"] is None
+        # Should get 2 results: first X=1 succeeds, then X=2 throws and recovers  
+        assert len(results) == 2
+        assert results[0]["X"] == Int(1)
+        assert "X" not in results[1]  # X unbound in recovery after unwind
     
     def test_catch_removes_choicepoints_after_throw_point(self):
         """Test catch removes choicepoints created after the throw point."""
@@ -306,14 +305,14 @@ class TestCatchTrailManagement:
                         Struct("throw", (Atom("e"),))
                     )),
                     Atom("e"),
-                    Struct("=", (Var(2, "Z"), Atom("after"))
+                    Struct("=", (Var(2, "Z"), Atom("after")))
                 ))
             ))
         ])
         
         assert len(results) == 1
         assert results[0]["X"] == Atom("before")  # Before catch, preserved
-        assert "Y" not in results[0] or results[0]["Y"] is None  # During goal, unwound
+        assert "Y" not in results[0]  # During goal, unwound
         assert results[0]["Z"] == Atom("after")  # In recovery, bound
     
     def test_nested_catch_unwinds_to_correct_frame(self):
@@ -338,7 +337,7 @@ class TestCatchTrailManagement:
         
         assert len(results) == 1
         # X=1 happened in inner goal, should be unwound
-        assert "X" not in results[0] or results[0]["X"] is None
+        assert "X" not in results[0]
         # Y=2 happens in inner recovery
         assert results[0]["Y"] == Int(2)
         # Z would only be bound if outer catch triggered
@@ -370,7 +369,7 @@ class TestCatchTrailManagement:
         
         assert len(results) == 1
         assert results[0]["A"] == Int(1)  # Before inner catch
-        assert "B" not in results[0] or results[0]["B"] is None  # In thrown goal
+        assert "B" not in results[0]  # In thrown goal
         assert results[0]["C"] == Int(3)  # In inner recovery
         assert "D" not in results[0]  # Outer recovery not executed
 
@@ -494,3 +493,83 @@ class TestComplexNestedCatch:
         assert len(results) == 2
         assert results[0]["X"] == Int(1)
         assert results[1]["X"] == Int(2)
+    
+    def test_cut_in_recovery_commits_only_within_recovery(self):
+        """Test cut in recovery commits only within recovery goal."""
+        p = program(
+            mk_fact("r", Int(1)),
+            mk_fact("r", Int(2)),
+            mk_fact("p", Int(10)),
+            mk_fact("p", Int(20))
+        )
+        engine = Engine(p)
+        
+        # Query: p(P), catch(throw(t), t, (r(R), !))
+        # Cut in recovery should only affect r/1 choices, not p/1
+        results = engine.run([
+            Struct(",", (
+                Struct("p", (Var(0, "P"),)),
+                Struct("catch", (
+                    Struct("throw", (Atom("t"),)),
+                    Atom("t"),
+                    Struct(",", (
+                        Struct("r", (Var(1, "R"),)),
+                        Atom("!")
+                    ))
+                ))
+            ))
+        ])
+        
+        # Two P values × Recovery commits to first r/1 => 2 total
+        assert len(results) == 2
+        assert {res["P"] for res in results} == {Int(10), Int(20)}
+        assert all("R" in res and res["R"] == Int(1) for res in results)
+    
+    def test_variable_catcher_bindings_visible_in_recovery(self):
+        """Test variable catcher bindings are visible in recovery."""
+        engine = Engine(program())
+        
+        # Query: catch(throw(err(1, V)), err(A, V), (A=1, V=ok))
+        # A and V unified by catcher, then used in recovery
+        results = engine.run([
+            Struct("catch", (
+                Struct("throw", (
+                    Struct("err", (Int(1), Var(0, "V")))
+                ,)),
+                Struct("err", (Var(1, "A"), Var(0, "V"))),
+                Struct(",", (
+                    Struct("=", (Var(1, "A"), Int(1))),
+                    Struct("=", (Var(0, "V"), Atom("ok")))
+                ))
+            ))
+        ])
+        
+        assert len(results) == 1
+        # A and V were unified by the catcher, then (re)bound in Recovery
+        assert results[0]["A"] == Int(1)
+        assert results[0]["V"] == Atom("ok")
+    
+    def test_recovery_failure_backtracks_outside_catch(self):
+        """Test recovery failure allows backtracking outside catch."""
+        p = program(
+            mk_fact("p", Int(1)),
+            mk_fact("p", Int(2))
+        )
+        engine = Engine(p)
+        
+        # Query: p(X), catch(throw(t), t, fail)
+        # Recovery fails, but we can still backtrack in p(X)
+        results = engine.run([
+            Struct(",", (
+                Struct("p", (Var(0, "X"),)),
+                Struct("catch", (
+                    Struct("throw", (Atom("t"),)),
+                    Atom("t"),
+                    Atom("fail")
+                ))
+            ))
+        ])
+        
+        # Only the X from the outer p/1 enumerates; catch contributes no solutions
+        assert len(results) == 2
+        assert {res["X"] for res in results} == {Int(1), Int(2)}
