@@ -1915,11 +1915,8 @@ class Engine:
                 # ISO would allow throwing unbound variables
                 return False  # Dev-mode: fail on unbound
         
-        # Set the exception and trigger unwinding
-        self._exception = ball
-        # Don't clear goal stack here - let exception handler do it
-        # Return True to avoid triggering backtracking
-        return True
+        # Raise PrologThrow directly  
+        raise PrologThrow(ball)
     
     def _builtin_catch(self, args: tuple) -> bool:
         """catch(Goal, Catcher, Recovery) - catch exceptions.
@@ -2136,3 +2133,35 @@ class Engine:
     def debug_trail_writes(self) -> int:
         """Get number of trail writes for debugging."""
         return self._debug_trail_writes
+    
+    def consult_string(self, text: str) -> None:
+        """Load clauses from a string into the program.
+        
+        Args:
+            text: Prolog program text to parse and load
+        """
+        from prolog.parser.parser import parse_program
+        from prolog.ast.clauses import Program as ProgramClass
+        
+        clauses = parse_program(text)
+        # Create new program with existing clauses plus new ones
+        all_clauses = list(self.program.clauses) + clauses
+        self.program = ProgramClass(tuple(all_clauses))
+    
+    def query(self, query_text: str) -> List[Dict[str, Any]]:
+        """Execute a query and return all solutions.
+        
+        Args:
+            query_text: Query string like "p(X), q(Y)" (without ?- and .)
+            
+        Returns:
+            List of solution dictionaries
+        """
+        from prolog.parser.parser import parse_query
+        # Add ?- and . if not present
+        if not query_text.strip().startswith("?-"):
+            query_text = "?- " + query_text
+        if not query_text.strip().endswith("."):
+            query_text = query_text + "."
+        goals = parse_query(query_text)
+        return self.run(goals)

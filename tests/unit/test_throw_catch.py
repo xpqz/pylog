@@ -8,6 +8,7 @@ import pytest
 from prolog.engine.engine import Engine
 from prolog.engine.errors import PrologThrow
 from prolog.ast.terms import Atom, Int, Var, Struct
+from prolog.ast.clauses import Program
 
 
 def assert_engine_clean(engine):
@@ -27,7 +28,7 @@ class TestThrowCatch:
     
     def test_uncaught_throw(self):
         """Test that uncaught throw/1 raises PrologThrow."""
-        engine = Engine()
+        engine = Engine(Program(()))
         
         # throw(test_ball) should raise PrologThrow
         with pytest.raises(PrologThrow) as exc_info:
@@ -38,7 +39,7 @@ class TestThrowCatch:
     
     def test_uncaught_throw_with_structure(self):
         """Test that uncaught throw with compound term raises PrologThrow."""
-        engine = Engine()
+        engine = Engine(Program(()))
         
         # throw(error(type_error, context)) should raise PrologThrow
         with pytest.raises(PrologThrow) as exc_info:
@@ -54,7 +55,7 @@ class TestThrowCatch:
     
     def test_throw_unbound_variable_fails(self):
         """Test that throw with unbound variable fails in Stage-1."""
-        engine = Engine()
+        engine = Engine(Program(()))
         
         # throw(X) with unbound X should fail (Stage-1 policy)
         results = list(engine.query("throw(X)"))
@@ -62,7 +63,7 @@ class TestThrowCatch:
     
     def test_basic_catch_success(self):
         """Test that catch/3 with non-throwing goal succeeds normally."""
-        engine = Engine()
+        engine = Engine(Program(()))
         
         # catch(true, _, fail) should succeed with the goal's success
         results = list(engine.query("catch(true, _, fail)"))
@@ -75,7 +76,7 @@ class TestThrowCatch:
     
     def test_basic_catch_with_throw(self):
         """Test that catch/3 catches matching exception."""
-        engine = Engine()
+        engine = Engine(Program(()))
         
         # catch(throw(ball), ball, true) should succeed via recovery
         results = list(engine.query("catch(throw(ball), ball, true)"))
@@ -88,7 +89,7 @@ class TestThrowCatch:
     
     def test_catch_unifies_ball_with_catcher(self):
         """Test that catch unifies the thrown ball with the catcher."""
-        engine = Engine()
+        engine = Engine(Program(()))
         
         # catch(throw(foo(1)), foo(X), Y=X) should bind X=1, Y=1
         results = list(engine.query("catch(throw(foo(1)), foo(X), Y=X)"))
@@ -104,7 +105,7 @@ class TestThrowCatch:
     
     def test_catch_non_matching_propagates(self):
         """Test that non-matching exceptions propagate."""
-        engine = Engine()
+        engine = Engine(Program(()))
         
         # catch(throw(foo), bar, true) should propagate foo
         with pytest.raises(PrologThrow) as exc_info:
@@ -113,7 +114,7 @@ class TestThrowCatch:
     
     def test_catch_with_failing_goal(self):
         """Test that catch with failing goal fails normally."""
-        engine = Engine()
+        engine = Engine(Program(()))
         
         # catch(fail, _, true) should fail (goal fails, no throw)
         results = list(engine.query("catch(fail, _, true)"))
@@ -121,7 +122,7 @@ class TestThrowCatch:
     
     def test_catch_with_failing_recovery(self):
         """Test that catch with failing recovery fails."""
-        engine = Engine()
+        engine = Engine(Program(()))
         
         # catch(throw(ball), ball, fail) should fail (recovery fails)
         results = list(engine.query("catch(throw(ball), ball, fail)"))
@@ -129,7 +130,7 @@ class TestThrowCatch:
     
     def test_catch_with_choicepoints_in_goal(self):
         """Test catch with choicepoints: catch((X=1 ; (X=2, throw(t)) ; X=3), t, X=caught)."""
-        engine = Engine()
+        engine = Engine(Program(()))
         
         # Should get X=1 (before throw) and X=caught (from recovery)
         results = list(engine.query("catch((X=1 ; (X=2, throw(t)) ; X=3), t, X=caught)"))
@@ -139,7 +140,7 @@ class TestThrowCatch:
     
     def test_catch_transparent_backtracking_on_success(self):
         """Test transparent backtracking when goal succeeds."""
-        engine = Engine()
+        engine = Engine(Program(()))
         
         # Load p(1). p(2).
         engine.consult_string("p(1). p(2).")
@@ -152,7 +153,7 @@ class TestThrowCatch:
     
     def test_catch_transparent_backtracking_on_catch(self):
         """Test transparent backtracking after catch."""
-        engine = Engine()
+        engine = Engine(Program(()))
         
         # Load p(1). p(2). r(10). r(20).
         engine.consult_string("p(1). p(2). r(10). r(20).")
@@ -167,7 +168,7 @@ class TestThrowCatch:
     
     def test_catch_recovery_fails_transparent(self):
         """Test transparent backtracking when recovery fails."""
-        engine = Engine()
+        engine = Engine(Program(()))
         
         # Load p(1). p(2).
         engine.consult_string("p(1). p(2).")
@@ -180,7 +181,7 @@ class TestThrowCatch:
     
     def test_nested_catch(self):
         """Test nested catch/3 calls."""
-        engine = Engine()
+        engine = Engine(Program(()))
         
         # Inner catch handles the exception
         results = list(engine.query("catch(catch(throw(inner), inner, X=1), outer, X=2)"))
@@ -199,7 +200,7 @@ class TestThrowCatch:
     
     def test_cut_in_recovery(self):
         """Test that cut in recovery cuts in the surrounding scope (ISO)."""
-        engine = Engine()
+        engine = Engine(Program(()))
         
         # Load r(10). r(20).
         engine.consult_string("r(10). r(20).")
@@ -216,7 +217,7 @@ class TestThrowCatch:
     
     def test_cut_in_recovery_commits_in_caller_scope(self):
         """Test that cut in recovery prunes outer CPs (ISO behavior)."""
-        engine = Engine()
+        engine = Engine(Program(()))
         
         # Load p(a). p(b). r(x). r(y).
         engine.consult_string("p(a). p(b). r(x). r(y).")
@@ -230,7 +231,7 @@ class TestThrowCatch:
     
     def test_throw_preserves_bindings_inside_ball(self):
         """Test that bindings inside the ball are preserved."""
-        engine = Engine()
+        engine = Engine(Program(()))
         
         # Y is bound before constructing the ball; ball should carry 'v'
         with pytest.raises(PrologThrow) as exc_info:
@@ -243,7 +244,7 @@ class TestThrowCatch:
     
     def test_throw_leftmost_in_disjunction_of_throws(self):
         """Test leftmost selection in disjunction of throws."""
-        engine = Engine()
+        engine = Engine(Program(()))
         
         with pytest.raises(PrologThrow) as exc_info:
             list(engine.query("(throw(left) ; throw(right))"))
@@ -251,7 +252,7 @@ class TestThrowCatch:
     
     def test_engine_reusable_after_throw(self):
         """Test that engine is reusable after an uncaught throw."""
-        engine = Engine()
+        engine = Engine(Program(()))
         engine.consult_string("p(ok).")
         
         # First query throws
@@ -266,7 +267,7 @@ class TestThrowCatch:
     
     def test_throw_inside_nested_call_still_propagates(self):
         """Test throw inside nested meta-calls."""
-        engine = Engine()
+        engine = Engine(Program(()))
         
         with pytest.raises(PrologThrow) as exc_info:
             list(engine.query("call(call(throw(meta2)))"))
@@ -274,14 +275,14 @@ class TestThrowCatch:
     
     def test_throw_inside_nested_call_caught(self):
         """Test that throw inside nested call can be caught."""
-        engine = Engine()
+        engine = Engine(Program(()))
         
         results = list(engine.query("catch(call(call(throw(e))), e, true)"))
         assert len(results) == 1
     
     def test_recovery_failure_transparent_to_outer_choicepoints(self):
         """Test that recovery failure is transparent to outer choicepoints."""
-        engine = Engine()
+        engine = Engine(Program(()))
         engine.consult_string("p(1). p(2).")
         
         results = list(engine.query("p(X), catch(throw(t), t, fail)"))
@@ -291,7 +292,7 @@ class TestThrowCatch:
     
     def test_throw_in_disjunction_left_branch(self):
         """Test throw in left branch of disjunction."""
-        engine = Engine()
+        engine = Engine(Program(()))
         
         # (throw(t) ; X=1) should throw t
         with pytest.raises(PrologThrow) as exc_info:
@@ -300,7 +301,7 @@ class TestThrowCatch:
     
     def test_throw_in_disjunction_right_branch(self):
         """Test throw in right branch of disjunction after left fails."""
-        engine = Engine()
+        engine = Engine(Program(()))
         
         # (fail ; throw(t)) should throw t
         with pytest.raises(PrologThrow) as exc_info:
@@ -311,7 +312,7 @@ class TestThrowCatch:
     
     def test_throw_in_conjunction(self):
         """Test throw interrupts conjunction."""
-        engine = Engine()
+        engine = Engine(Program(()))
         engine.consult_string("p(1). p(2).")
         
         # p(X), throw(t), p(Y) should throw t with X bound
@@ -321,7 +322,7 @@ class TestThrowCatch:
     
     def test_throw_cleans_unwinding(self):
         """Test that throw properly unwinds stacks."""
-        engine = Engine()
+        engine = Engine(Program(()))
         engine.consult_string("p(1). p(2). q(a). q(b).")
         
         # Create choicepoints then throw
