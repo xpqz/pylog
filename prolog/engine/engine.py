@@ -277,6 +277,13 @@ class Engine:
                                     self.trail.set_current_stamp(cp.stamp)
                                 break
                         
+                        # Debug assertions to catch invariant violations
+                        if __debug__:
+                            assert len(self.cp_stack) == catch_frame["cp_height"], \
+                                f"CP stack height mismatch: {len(self.cp_stack)} != {catch_frame['cp_height']}"
+                            assert len(self.frame_stack) >= catch_frame["frame_height"], \
+                                f"Frame stack too small: {len(self.frame_stack)} < {catch_frame['frame_height']}"
+                        
                         # Push recovery goal
                         self.goal_stack.push(Goal.from_term(catch_frame["recovery"]))
                         
@@ -1103,13 +1110,20 @@ class Engine:
         return False
 
     def _record_solution(self):
-        """Record the current solution (bindings of query variables)."""
+        """Record the current solution (bindings of query variables).
+        
+        Uses bound-only projection: only includes variables that are
+        bound to non-variable terms. Unbound variables are omitted
+        from the solution dictionary for cleaner output.
+        """
         solution = {}
 
         for varid, var_name in self._query_vars:
             # Reify the variable to get its value
             value = self._reify_var(varid)
-            solution[var_name] = value
+            # Bound-only projection: only include if bound to non-Var
+            if not isinstance(value, Var):
+                solution[var_name] = value
 
         self.solutions.append(solution)
 

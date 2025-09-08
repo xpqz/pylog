@@ -1,4 +1,28 @@
-"""ISO-compliant catch/3 micro-tests to lock down correct behavior."""
+"""ISO-compliant catch/3 micro-tests to lock down correct behavior.
+
+ISO Prolog Semantics for catch/3:
+==================================
+
+1. **No new predicate scope**: catch/3 does not create a new predicate frame.
+   Recovery executes at the call site, not in an isolated scope.
+
+2. **Cut behavior**: A cut (!) inside Recovery commits within the surrounding 
+   scope. It can prune choicepoints that existed before the catch/3 call.
+   This is ISO behavior - Recovery runs "as if" typed at the catch call site.
+
+3. **Recovery failure**: If Recovery fails, the entire catch/3 call fails.
+   This causes normal backtracking to pre-catch choicepoints.
+
+4. **No resume after catch**: Once an exception is caught and Recovery begins,
+   the original Goal never resumes - even if Recovery succeeds.
+
+5. **Backtracking transparency**: After normal success (no throw) or after
+   successful Recovery, backtracking proceeds transparently through the
+   catch boundary to explore pre-catch alternatives.
+
+These tests validate our engine follows ISO Prolog semantics exactly.
+Tests expecting different behavior should be marked with @pytest.mark.xfail.
+"""
 
 from prolog.engine.engine import Engine
 from prolog.ast.terms import Atom, Int, Var, Struct
@@ -104,13 +128,9 @@ def test_no_resume_after_recovery():
     ])
     
     # Should get 1 solution from recovery
-    # X may be bound (from before throw) or unbound (if unwound)
-    # Y should definitely not be bound to an integer
+    # With bound-only projection, Y should not appear (unbound)
     assert len(results) == 1
-    # Note: projection policy determines if Y appears at all
-    if "Y" in results[0]:
-        # If Y appears, it should be unbound (Var), not Int
-        assert not isinstance(results[0]["Y"], Int)
+    assert "Y" not in results[0]  # Unbound variables omitted
 
 
 def test_backtrack_order_with_throw():
