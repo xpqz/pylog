@@ -25,6 +25,7 @@ class ChoicepointKind(IntEnum):
     PREDICATE = 0  # Try next clause
     DISJUNCTION = 1  # Try alternative branch
     IF_THEN_ELSE = 2  # Try else branch
+    CATCH = 3  # Catch/throw two-phase redo anchor
 
 
 @dataclass(frozen=True)

@@ -264,9 +264,18 @@ class Engine:
                         while len(self.frame_stack) > catch_frame["frame_height"]:
                             self.frame_stack.pop()
                         
-                        # Enter new choice region for recovery
-                        # This ensures recovery's bindings are properly trailed
-                        self.trail.next_stamp()
+                        # Find and update the CATCH choicepoint to phase="RECOVERY"
+                        # This allows proper redo handling after recovery completes
+                        catch_id = catch_frame["catch_id"]
+                        for cp in reversed(self.cp_stack):
+                            if (cp.kind == ChoicepointKind.CATCH and 
+                                cp.payload.get("catch_id") == catch_id):
+                                # Update phase to RECOVERY
+                                cp.payload["phase"] = "RECOVERY"
+                                # Restore the CP's stamp for recovery trailing
+                                if cp.stamp is not None:
+                                    self.trail.set_current_stamp(cp.stamp)
+                                break
                         
                         # Push recovery goal
                         self.goal_stack.push(Goal.from_term(catch_frame["recovery"]))
@@ -809,24 +818,8 @@ class Engine:
                 ), f"ITE commit failed: {len(self.cp_stack)} != {tmp_barrier}"
             # Schedule Then goal
             self.goal_stack.push(goal.payload["then_goal"])
-        elif op == "CATCH_BEGIN":
-            # Set up a catch frame
-            catch_frame = {
-                "catch_id": goal.payload["catch_id"],
-                "catcher": goal.payload["catcher"],
-                "recovery": goal.payload["recovery"],
-                "trail_top": goal.payload["trail_top"],
-                "goal_height": goal.payload["goal_height"],
-                "frame_height": goal.payload["frame_height"],
-                "cp_height": goal.payload["cp_height"],
-            }
-            self._catch_frames.append(catch_frame)
-        elif op == "CATCH_END":
-            # Goal succeeded normally - catch frame stays active for backtracking
-            # We don't remove the catch frame here because if we backtrack
-            # into the goal and it throws, we still need to catch it
-            # The frame will be removed when we backtrack past the catch's window
-            pass
+        # Note: CATCH_BEGIN and CATCH_END are no longer used
+        # catch/3 now uses CATCH choicepoints directly
 
     def _backtrack(self) -> bool:
         """Backtrack to the most recent choicepoint.
@@ -1079,6 +1072,21 @@ class Engine:
                 else_branch = cp.payload["else_goal"]
                 self.goal_stack.push(else_branch)
                 return True
+
+            elif cp.kind == ChoicepointKind.CATCH:
+                # CATCH choicepoint - two-phase redo anchor
+                phase = cp.payload.get("phase")
+                if phase == "GOAL":
+                    # Goal path is exhausted without throw -> fail this CP
+                    # This allows backtracking to continue to outer CPs
+                    continue  # Pop this CP and try next
+                elif phase == "RECOVERY":
+                    # Recovery is exhausted -> fail this CP  
+                    # This allows backtracking to continue to outer CPs
+                    continue  # Pop this CP and try next
+                else:
+                    # Invalid phase - should not happen
+                    continue  # Pop this CP and try next
 
         # No more choicepoints
         return False
@@ -1978,60 +1986,46 @@ class Engine:
         if not isinstance(goal, (Atom, Struct)):
             return False  # Dev-mode: fail on non-callable
         
-        catch_id = id(args)  # Unique identifier for this catch
-        
-        # Capture baseline heights BEFORE pushing any wrapper goals
+        # Capture baseline heights BEFORE pushing anything
         # These represent the state at the call site of catch/3
         base_trail_top = self.trail.position()
         base_goal_height = self.goal_stack.height()
         base_frame_height = len(self.frame_stack)
         base_cp_height = len(self.cp_stack)
         
-        
-        # Push goals in the right order:
-        # 1. First push a CATCH_END marker that will clean up if goal succeeds
-        # 2. Then push the goal
-        # 3. Then push a CATCH_BEGIN marker with the catch info
-        
-        # The stack will be: [CATCH_END, Goal, CATCH_BEGIN] (top to bottom)
-        # When we execute:
-        # - CATCH_BEGIN gets popped and sets up the catch
-        # - Goal executes (may throw)
-        # - CATCH_END gets popped and cleans up (only if no throw)
-        
-        # Push end marker (executed only if goal succeeds)
-        self.goal_stack.push(
-            Goal(
-                GoalType.CONTROL,
-                None,
-                payload={
-                    "op": "CATCH_END",
-                    "catch_id": catch_id,
-                }
-            )
+        # Create the CATCH choicepoint with phase="GOAL"
+        # This acts as the redo anchor for two-phase behavior
+        current_stamp = self.trail.next_stamp()
+        catch_cp = Choicepoint(
+            kind=ChoicepointKind.CATCH,
+            trail_top=base_trail_top,
+            goal_stack_height=base_goal_height,
+            frame_stack_height=base_frame_height,
+            payload={
+                "phase": "GOAL",
+                "catcher": catcher_arg,
+                "recovery": recovery_arg,
+                "cp_height": base_cp_height,
+                "catch_id": id(args),  # Unique identifier for this catch
+            },
+            stamp=current_stamp,
         )
+        self.cp_stack.append(catch_cp)
+        
+        # Add catch record for exception handling
+        catch_frame = {
+            "catcher": catcher_arg,
+            "recovery": recovery_arg,
+            "trail_top": base_trail_top,
+            "goal_height": base_goal_height,
+            "frame_height": base_frame_height,
+            "cp_height": base_cp_height,
+            "catch_id": id(args),
+        }
+        self._catch_frames.append(catch_frame)
         
         # Push the goal to execute
         self.goal_stack.push(Goal.from_term(goal))
-        
-        # Push begin marker (executed first, sets up catch)
-        self.goal_stack.push(
-            Goal(
-                GoalType.CONTROL,
-                None,
-                payload={
-                    "op": "CATCH_BEGIN",
-                    "catch_id": catch_id,
-                    "catcher": catcher_arg,
-                    "recovery": recovery_arg,
-                    # Store BASELINE heights captured before any wrappers
-                    "trail_top": base_trail_top,
-                    "goal_height": base_goal_height,
-                    "frame_height": base_frame_height,
-                    "cp_height": base_cp_height,
-                }
-            )
-        )
         
         return True
 
