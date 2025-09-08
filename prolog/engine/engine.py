@@ -927,8 +927,9 @@ class Engine:
                     while self._catch_frames and self._catch_frames[-1]["goal_height"] > new_goal_height:
                         self._catch_frames.pop()
 
-                if cursor.has_more():
-                    clause_idx = cursor.take()
+                # Take the next clause to try
+                clause_idx = cursor.take()
+                if clause_idx is not None:
                     clause = self.program.clauses[clause_idx]
 
                     # Shrink store to checkpoint size for allocation cleanup

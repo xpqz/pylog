@@ -215,7 +215,9 @@ class Trail:
         if key in self._var_stamps and self._var_stamps[key] >= self._write_stamp:
             return  # Already trailed in this region
 
-        self.push(("bind", varid, old_cell))
+        # Save both the old cell and the old write stamp
+        old_stamp = self._var_stamps.get(key, -1)
+        self.push(("bind", varid, old_cell, old_stamp))
         self._var_stamps[key] = self._write_stamp
 
     def push_parent(
@@ -292,8 +294,22 @@ class Trail:
             kind = entry[0]
 
             if kind == "bind":
-                _, varid, old_cell = entry
-                store.cells[varid] = old_cell
+                if len(entry) == 4:
+                    # New format: (kind, varid, old_cell, old_stamp)
+                    _, varid, old_cell, old_stamp = entry
+                    store.cells[varid] = old_cell
+                    # Restore the old write stamp
+                    key = ("bind", varid)
+                    if old_stamp == -1:
+                        # Variable was never trailed before, remove from stamps
+                        self._var_stamps.pop(key, None)
+                    else:
+                        # Restore the previous stamp
+                        self._var_stamps[key] = old_stamp
+                else:
+                    # Old format: (kind, varid, old_cell) - backward compatibility
+                    _, varid, old_cell = entry
+                    store.cells[varid] = old_cell
             elif kind == "parent":
                 _, varid, old_parent = entry
                 store.cells[varid].ref = old_parent
