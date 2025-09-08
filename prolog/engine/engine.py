@@ -1078,13 +1078,23 @@ class Engine:
                 # CATCH choicepoint - two-phase redo anchor
                 phase = cp.payload.get("phase")
                 if phase == "GOAL":
-                    # Goal path is exhausted without throw -> fail this CP
-                    # This allows backtracking to continue to outer CPs
-                    continue  # Pop this CP and try next
+                    # Normal success through catch - restore pre-catch state and backtrack transparently
+                    # The catch should be invisible to backtracking after normal success
+                    cp_height = cp.payload["cp_height"]
+                    # Remove catch frame since we're backtracking past it
+                    catch_id = cp.payload["catch_id"]
+                    self._catch_frames = [f for f in self._catch_frames if f.get("catch_id") != catch_id]
+                    # Continue backtracking to choicepoints that existed before this catch
+                    continue
                 elif phase == "RECOVERY":
-                    # Recovery is exhausted -> fail this CP  
-                    # This allows backtracking to continue to outer CPs
-                    continue  # Pop this CP and try next
+                    # Successful recovery completed - restore pre-catch state and backtrack transparently  
+                    # After successful recovery, backtracking should continue to pre-catch choicepoints
+                    cp_height = cp.payload["cp_height"]
+                    # Remove catch frame since we're backtracking past it
+                    catch_id = cp.payload["catch_id"]
+                    self._catch_frames = [f for f in self._catch_frames if f.get("catch_id") != catch_id]
+                    # Continue backtracking to choicepoints that existed before this catch
+                    continue
                 else:
                     # Invalid phase - should not happen
                     continue  # Pop this CP and try next
