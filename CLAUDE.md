@@ -213,7 +213,7 @@ Follow this process for each GitHub issue:
 4. **Commit approved tests** - Only after review approval
 5. **Implement until tests pass** - Make the tests green
 6. **Run complete test suite** - No regressions tolerated!
-7. **Create PR** - Make an orderly PR, squashing commits if necessary
+7. **Create PR** - Make an orderly PR, squashing commits if necessary. DON'T  mention Claude or AI in the PR message
 8. **Verify CI** - Ensure all CI tests pass fully
 9. **Await PR review** - Wait for human review
 10. **Merge and update** - After approval, merge PR and update the epic
