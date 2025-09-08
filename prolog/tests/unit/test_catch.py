@@ -483,12 +483,12 @@ class TestCatchAdvancedSemantics:
         # Condition succeeds, then throws, catch handles it
         results = engine.run([
             Struct("catch", (
-                Struct("->", (
-                    Atom("cond"),
-                    Struct(";", (
-                        Struct("throw", (Atom("error"),)),
-                        Atom("true")
-                    ))
+                Struct(";", (
+                    Struct("->", (
+                        Atom("cond"),
+                        Struct("throw", (Atom("error"),))
+                    )),
+                    Atom("true")
                 )),
                 Atom("error"),
                 Atom("true")
@@ -506,12 +506,12 @@ class TestCatchAdvancedSemantics:
         # cond fails, else branch succeeds, no exception
         results = engine.run([
             Struct("catch", (
-                Struct("->", (
-                    Atom("cond"),
-                    Struct(";", (
-                        Struct("throw", (Atom("error"),)),
-                        Atom("true")
-                    ))
+                Struct(";", (
+                    Struct("->", (
+                        Atom("cond"),
+                        Struct("throw", (Atom("error"),))
+                    )),
+                    Atom("true")
                 )),
                 Atom("error"),
                 Atom("fail")
