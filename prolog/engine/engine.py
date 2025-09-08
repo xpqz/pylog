@@ -239,17 +239,32 @@ class Engine:
                         # This is needed when the catcher is a variable that should be bound
                         trail_adapter2 = TrailAdapter(self.trail, engine=self, store=self.store)
                         unify(caught_exception, catch_frame["catcher"], self.store, trail_adapter2, self.occurs_check)
+                        
+                        # When catching an exception, we need to restore the goal stack
+                        # to the baseline BUT we must preserve any continuation that was
+                        # active when catch/3 was called. 
+                        # The catch_frame["goal_height"] is the height when catch/3 was called,
+                        # which should be 0 if catch was called directly, or might have 
+                        # continuation goals if it was part of a conjunction.
                         self.goal_stack.shrink_to(catch_frame["goal_height"])
                         
-                        # When catching an exception, we're replacing the entire catch call
-                        # with the recovery goal, so we need to clear ALL choicepoints
-                        # created by the goal (even if they were created before the throw)
+                        # When catching an exception, we need to be more careful about
+                        # which choicepoints to remove. We should only remove choicepoints
+                        # that were created AFTER the catch was set up.
+                        # Choicepoints created before catch (outside its scope) must be preserved.
+                        # 
+                        # For now, we remove all choicepoints created within the goal
+                        # This prevents backtracking into the goal after an exception is caught
                         while len(self.cp_stack) > catch_frame["cp_height"]:
                             self.cp_stack.pop()
                         
                         # Similarly, restore frames to the baseline
                         while len(self.frame_stack) > catch_frame["frame_height"]:
                             self.frame_stack.pop()
+                        
+                        # Enter new choice region for recovery
+                        # This ensures recovery's bindings are properly trailed
+                        self.trail.next_stamp()
                         
                         # Push recovery goal
                         self.goal_stack.push(Goal.from_term(catch_frame["recovery"]))
