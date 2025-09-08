@@ -124,7 +124,9 @@ class TestLargeClauseDatabases:
         # Use a key that exists even at minimum scale
         query_key = min(50, num_clauses - 1)  # Make sure key exists
         with time_limit(0.1):  # Should be very fast
-            solutions = engine.run([Struct("indexed", (Atom(f"key_{query_key}"), Var(0, "Y")))])
+            solutions = engine.run(
+                [Struct("indexed", (Atom(f"key_{query_key}"), Var(0, "Y")))]
+            )
 
         assert len(solutions) == 1
         assert solutions[0]["Y"] == Atom(f"val_{query_key}")
