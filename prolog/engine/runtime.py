@@ -112,6 +112,7 @@ class Choicepoint:
         frame_stack_height: Frame stack height to restore to
         payload: Type-specific resume data
         cut_parent: Previous choicepoint before cut barrier (for cut)
+        stamp: Trail stamp when CP was created (for proper restoration)
     """
 
     kind: ChoicepointKind
@@ -120,6 +121,7 @@ class Choicepoint:
     frame_stack_height: int
     payload: Dict[str, Any]
     cut_parent: Optional[int] = None  # Index of parent CP for cut
+    stamp: Optional[int] = None  # Trail stamp when CP was created
 
     def __repr__(self) -> str:
         return f"CP({self.kind.name}, trail={self.trail_top})"
@@ -269,6 +271,13 @@ class Trail:
         stamp = self._write_stamp
         self._write_stamp += 1
         return stamp
+
+    def set_current_stamp(self, stamp: int) -> None:
+        """Set the current write stamp to a specific value.
+        
+        Used when restoring a choicepoint's stamp on redo.
+        """
+        self._write_stamp = stamp
 
     def unwind_to(self, position: int, store: Any) -> None:
         """Restore state by unwinding trail to given position.

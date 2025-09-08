@@ -253,9 +253,11 @@ class Engine:
                         # that were created AFTER the catch was set up.
                         # Choicepoints created before catch (outside its scope) must be preserved.
                         # 
-                        # For now, we remove all choicepoints created within the goal
+                        # Remove choicepoints created within the catch goal
                         # This prevents backtracking into the goal after an exception is caught
-                        while len(self.cp_stack) > catch_frame["cp_height"]:
+                        # BUT we must preserve choicepoints that existed before catch was called
+                        target_cp_height = catch_frame["cp_height"]
+                        while len(self.cp_stack) > target_cp_height:
                             self.cp_stack.pop()
                         
                         # Similarly, restore frames to the baseline
@@ -510,7 +512,8 @@ class Engine:
 
         # If there are more clauses, create a choicepoint
         if cursor.has_more():
-            self.trail.next_stamp()
+            # Capture the stamp before advancing it
+            current_stamp = self.trail.next_stamp()
 
             # Save the continuation (goals below the call) as an immutable snapshot
             continuation = self.goal_stack.snapshot()
@@ -538,6 +541,7 @@ class Engine:
                     "continuation": continuation,  # Frozen snapshot of continuation goals
                     "store_top": store_top,  # Store size for allocation cleanup
                 },
+                stamp=current_stamp,
             )
             self.cp_stack.append(cp)
 
@@ -646,7 +650,7 @@ class Engine:
             # Save continuation for re-execution after alternative
             continuation = self.goal_stack.snapshot()
 
-            self.trail.next_stamp()
+            current_stamp = self.trail.next_stamp()
             cp = Choicepoint(
                 kind=ChoicepointKind.DISJUNCTION,
                 trail_top=self.trail.position(),
@@ -656,6 +660,7 @@ class Engine:
                     "alternative": Goal.from_term(right),
                     "continuation": continuation,  # Save continuation for backtrack
                 },
+                stamp=current_stamp,
             )
             self.cp_stack.append(cp)
 
@@ -689,7 +694,7 @@ class Engine:
         tmp_barrier = len(self.cp_stack)
 
         # Create choicepoint that runs Else if Cond fails exhaustively
-        self.trail.next_stamp()
+        current_stamp = self.trail.next_stamp()
         self.cp_stack.append(
             Choicepoint(
                 kind=ChoicepointKind.IF_THEN_ELSE,
@@ -700,6 +705,7 @@ class Engine:
                     "else_goal": Goal.from_term(else_term),
                     "tmp_barrier": tmp_barrier,
                 },
+                stamp=current_stamp,
             )
         )
 
@@ -936,9 +942,13 @@ class Engine:
                     if "store_top" in cp.payload:
                         self.store.shrink_to(cp.payload["store_top"])
 
-                    # Enter new choice region when resuming
+                    # Restore the CP's stamp instead of advancing
                     # This ensures proper trailing for the new clause attempt
-                    self.trail.next_stamp()
+                    if cp.stamp is not None:
+                        self.trail.set_current_stamp(cp.stamp)
+                    else:
+                        # Fallback for old CPs without stamp
+                        self.trail.next_stamp()
 
                     # Compute cut barrier BEFORE pushing next alternatives CP
                     # This ensures cut will prune remaining alternatives (ISO semantics)
@@ -960,6 +970,7 @@ class Engine:
                                 "pred_ref": cp.payload["pred_ref"],
                                 "continuation": continuation,  # Preserve original continuation
                             },
+                            stamp=cp.stamp,  # Preserve the original stamp
                         )
                         self.cp_stack.append(new_cp)
                     else:
@@ -977,6 +988,7 @@ class Engine:
                                 "continuation": continuation,
                                 "terminal": True,  # Mark as terminal
                             },
+                            stamp=cp.stamp,  # Preserve the original stamp
                         )
                         self.cp_stack.append(terminal_cp)
 
@@ -1049,9 +1061,13 @@ class Engine:
                 while self._catch_frames and self._catch_frames[-1]["goal_height"] > new_goal_height:
                     self._catch_frames.pop()
                 
-                # Increment stamp before trying alternative branch
+                # Restore the CP's stamp for the alternative
                 # This ensures changes in the alternative are properly trailed
-                self.trail.next_stamp()
+                if cp.stamp is not None:
+                    self.trail.set_current_stamp(cp.stamp)
+                else:
+                    # Fallback for old CPs without stamp
+                    self.trail.next_stamp()
                 
                 # Try alternative branch
                 alternative = cp.payload["alternative"]
