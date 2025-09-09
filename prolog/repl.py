@@ -138,6 +138,9 @@ class PrologREPL:
         self.engine = Engine(self.program)
         self.completer = PrologCompleter()
         self.history_file = history_file or str(Path.home() / '.pylog_history')
+        
+        # Load standard library
+        self._load_standard_library()
         self.session = None
         self._init_session()
         self._query_generator = None
@@ -158,6 +161,33 @@ class PrologREPL:
             multiline=False,
             complete_while_typing=True,
         )
+    
+    def _load_standard_library(self):
+        """Load the standard library predicates."""
+        from prolog.parser import parser
+        
+        # Find the lib directory relative to this file
+        lib_dir = Path(__file__).parent / 'lib'
+        lists_file = lib_dir / 'lists.pl'
+        
+        if lists_file.exists():
+            try:
+                with open(lists_file, 'r') as f:
+                    program_text = f.read()
+                
+                # Parse and add clauses to the program
+                clauses = parser.parse_program(program_text)
+                
+                # Create new program with library clauses
+                all_clauses = list(self.program.clauses) + list(clauses)
+                self.program = Program(tuple(all_clauses))
+                self.engine = Engine(self.program)
+                
+                # Update completer with library predicates
+                self._update_completer()
+                
+            except Exception as e:
+                print(f"Warning: Could not load standard library: {e}")
     
     def load_file(self, filepath: str) -> bool:
         """Load a Prolog file.
@@ -221,7 +251,7 @@ class PrologREPL:
             self._cleanup_query_state()
             
             # Execute the query
-            solutions = list(self.engine.query(query_text))
+            solutions = self.engine.query(query_text)
             
             if solutions:
                 return {
@@ -268,7 +298,7 @@ class PrologREPL:
         """
         try:
             self._cleanup_query_state()
-            solutions = list(self.engine.query(query_text))
+            solutions = self.engine.query(query_text)
             
             results = []
             for solution in solutions:
@@ -408,11 +438,20 @@ class PrologREPL:
             self._cleanup_query_state()
             
             try:
-                for solution in self.engine.query(query_text):
+                # Get all solutions at once
+                solutions = self.engine.query(query_text)
+                
+                # Yield them one by one for interactive display
+                for solution in solutions:
                     yield {
                         'success': True,
                         'bindings': solution
                     }
+                    
+                # If no solutions, yield false
+                if not solutions:
+                    yield {'success': False}
+                    
             except GeneratorExit:
                 # User stopped with '.' or generator was closed
                 pass
@@ -546,21 +585,6 @@ class PrologREPL:
         if not input_text:
             return {'type': 'empty'}
         
-        # Check for query
-        if input_text.startswith('?-'):
-            query = input_text[2:].strip()
-            # Check if query is complete (has trailing period)
-            if not query.endswith('.'):
-                return {'type': 'incomplete', 'content': query}
-            # Remove trailing period
-            query = query[:-1].strip()
-            return {'type': 'query', 'content': query}
-        
-        # Check for consult
-        consult_match = re.match(r'consult\s*\(\s*[\'"]([^\'"]*)[\'"]\s*\)', input_text)
-        if consult_match:
-            return {'type': 'consult', 'file': consult_match.group(1)}
-        
         # Check for help
         if input_text.rstrip('.').lower() == 'help':
             return {'type': 'help'}
@@ -569,8 +593,23 @@ class PrologREPL:
         if input_text.rstrip('.').lower() in ['quit', 'exit', 'halt']:
             return {'type': 'quit'}
         
-        # Unknown command
-        return {'type': 'error', 'message': 'Unknown command'}
+        # Check for consult
+        consult_match = re.match(r'consult\s*\(\s*[\'"]([^\'"]*)[\'"]\s*\)\s*\.?', input_text)
+        if consult_match:
+            return {'type': 'consult', 'file': consult_match.group(1)}
+        
+        # Check for query (with or without ?- prefix)
+        query_text = input_text
+        if input_text.startswith('?-'):
+            query_text = input_text[2:].strip()
+        
+        # Check if query is complete (has trailing period)
+        if not query_text.endswith('.'):
+            return {'type': 'incomplete', 'content': query_text}
+        
+        # Remove trailing period and treat as query
+        query = query_text[:-1].strip()
+        return {'type': 'query', 'content': query}
     
     def get_help_text(self) -> str:
         """Get help text for the REPL."""
