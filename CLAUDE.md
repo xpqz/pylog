@@ -219,3 +219,7 @@ Follow this process for each GitHub issue:
 9. **Await PR review** - Wait for human review
 10. **Merge and update** - After approval, merge PR and update the epic
 - Don't use /tmp and other locations outside the current repository
+
+### Custom Commands
+When the user types these commands, perform the associated actions:
+- `/merge` - Merge the current PR, close the corresponding issue, delete remote and local branches, and pull main in --ff-only mode
