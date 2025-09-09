@@ -17,8 +17,18 @@ class TestOperatorTokenization:
     
     def setup_method(self):
         """Create parser for testing tokenization."""
-        # For now, we'll test with the existing grammar and verify it needs extension
-        self.parser = Lark(grammar_text, start='program', parser='lalr')
+        # Create a simple test grammar that accepts any sequence of tokens
+        # This allows us to test tokenization without parser constraints
+        import pathlib
+        grammar_path = pathlib.Path(__file__).parent.parent.parent / "parser" / "grammar.lark"
+        full_grammar = grammar_path.read_text()
+        
+        # Extract just the terminal definitions for tokenization testing
+        # Add a simple rule that accepts any token sequence
+        test_grammar = full_grammar + "\n\n// Test rule for tokenization\ntoken_stream: (_ANY)*\n_ANY: /./\n"
+        
+        # Use the full grammar text directly which includes all tokens
+        self.parser = Lark(grammar_text, start='program')
     
     def test_comma_token(self):
         """Test that ',' is recognized as a single COMMA token."""

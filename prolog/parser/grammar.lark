@@ -17,19 +17,19 @@ atom_only: atom  // For testing atoms specifically
 
 clause: fact | rule
 
-fact: callable "."
+fact: callable DOT
 
-rule: callable ":-" goal_list "."
+rule: callable COLON_MINUS goal_list DOT
 
 // Callable terms (valid clause heads)
 callable: atom
         | structure
 
-goal_list: term ("," term)*
+goal_list: term (COMMA term)*
 
-query: "?-" goal_list "."
+query: QUESTION_MINUS goal_list DOT
 
-directive: ":-" goal_list "."
+directive: COLON_MINUS goal_list DOT
 
 // Program is multiple clauses only (Stage 1)
 // Queries and directives are parsed separately, not in programs
@@ -49,14 +49,14 @@ integer: SIGNED_INT
 variable: VARIABLE
 
 // Lists
-list: "[" "]"                           -> empty_list
-    | "[" term_list "]"                 -> proper_list
-    | "[" term_list "|" term "]"        -> list_with_tail
+list: LBRACKET RBRACKET                           -> empty_list
+    | LBRACKET term_list RBRACKET                 -> proper_list
+    | LBRACKET term_list PIPE term RBRACKET        -> list_with_tail
 
-term_list: term ("," term)*
+term_list: term (COMMA term)*
 
 // Structures (compound terms)
-structure: atom "(" term_list ")"
+structure: atom LPAREN term_list RPAREN
 // Note: foo/2 predicate indicators removed from general terms
 // Will add pred_indicator rule if/when needed in specific contexts
 
@@ -79,6 +79,57 @@ SIGNED_INT: /-?\d+/
 
 // Variables (including anonymous _)
 VARIABLE: /[A-Z_][a-zA-Z0-9_]*/
+
+// ====================
+// Operator tokens (Stage 1.5)
+// ====================
+// These are recognized as tokens but have no precedence in the grammar.
+// The reader will transform them to canonical forms using the operator table.
+// IMPORTANT: Longest match takes priority (Lark's default behavior)
+
+// Multi-character operators (must come before single-char to ensure longest match)
+ARROW: "->"
+DOUBLE_SLASH: "//"
+EQ_COLON_EQ: "=:="
+EQ_BACKSLASH_EQ: "=\\="
+BACKSLASH_EQ: "\\="
+BACKSLASH_EQEQ: "\\=="
+AT_LT: "@<"
+AT_GT: "@>"
+AT_EQ_LT: "@=<"
+AT_GT_EQ: "@>="
+EQ_LT: "=<"
+GT_EQ: ">="
+DOUBLE_EQ: "=="
+DOUBLE_STAR: "**"
+BACKSLASH_PLUS: "\\+"
+
+// Single-character operators
+COMMA: ","
+SEMICOLON: ";"
+EQUALS: "="
+LT: "<"
+GT: ">"
+PLUS: "+"
+MINUS: "-"
+STAR: "*"
+SLASH: "/"
+
+// Word operators (must be recognized as separate tokens)
+MOD: "mod"
+IS: "is"
+
+// Parentheses (needed for operator expressions)
+LPAREN: "("
+RPAREN: ")"
+LBRACKET: "["
+RBRACKET: "]"
+
+// Other punctuation
+DOT: "."
+PIPE: "|"
+COLON_MINUS: ":-"
+QUESTION_MINUS: "?-"
 
 // Comments
 COMMENT: /%.*/
