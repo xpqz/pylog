@@ -109,29 +109,39 @@ class PrologTransformer(Transformer):
 
     def proper_list(self, children):
         """Proper list [a,b,c]."""
-        items = children[0]  # term_list
+        # Filter out LBRACKET and RBRACKET tokens
+        non_tokens = [c for c in children if not isinstance(c, Token)]
+        items = non_tokens[0] if non_tokens else []  # term_list
         return PrologList(tuple(items), Atom("[]"))
 
     def list_with_tail(self, children):
         """List with tail [H|T] or [a,b|T]."""
-        if len(children) == 1:
+        # Filter out LBRACKET, RBRACKET, and PIPE tokens
+        non_tokens = [c for c in children if not isinstance(c, Token)]
+        if len(non_tokens) == 1:
             # No term_list, just tail: should not happen with our grammar
-            tail = children[0]
+            tail = non_tokens[0]
             return PrologList((), tail)
-        else:
+        elif len(non_tokens) >= 2:
             # Has term_list and tail
-            items = children[0]  # term_list
-            tail = children[1]
+            items = non_tokens[0]  # term_list
+            tail = non_tokens[1]
             return PrologList(tuple(items), tail)
+        else:
+            # Fallback
+            return PrologList((), Atom("[]"))
 
     def term_list(self, children):
         """List of terms separated by commas."""
-        return list(children)
+        # Filter out COMMA tokens
+        return [c for c in children if not isinstance(c, Token)]
 
     def structure(self, children):
         """Structure foo(args)."""
-        functor = children[0]
-        args = children[1]  # term_list
+        # Filter out LPAREN and RPAREN tokens
+        non_tokens = [c for c in children if not isinstance(c, Token)]
+        functor = non_tokens[0] if len(non_tokens) > 0 else children[0]
+        args = non_tokens[1] if len(non_tokens) > 1 else []  # term_list
         if not isinstance(functor, Atom):
             # Should not happen with our grammar
             raise ParseError(f"Invalid functor: {functor}")
@@ -147,18 +157,23 @@ class PrologTransformer(Transformer):
 
     def fact(self, children):
         """Fact: callable followed by period."""
-        head = children[0]
+        # Filter out DOT token
+        non_tokens = [c for c in children if not isinstance(c, Token)]
+        head = non_tokens[0] if non_tokens else children[0]
         return Clause(head, [])
 
     def rule(self, children):
         """Rule: callable :- goal_list ."""
-        head = children[0]
-        body = children[1]  # goal_list
+        # Filter out COLON_MINUS and DOT tokens
+        non_tokens = [c for c in children if not isinstance(c, Token)]
+        head = non_tokens[0] if len(non_tokens) > 0 else children[0]
+        body = non_tokens[1] if len(non_tokens) > 1 else children[1]
         return Clause(head, body)
 
     def goal_list(self, children):
         """List of goals separated by commas."""
-        return list(children)
+        # Filter out COMMA tokens
+        return [c for c in children if not isinstance(c, Token)]
 
     def clause(self, children):
         """Clause is either fact or rule."""
@@ -166,11 +181,15 @@ class PrologTransformer(Transformer):
 
     def query(self, children):
         """Query: ?- goal_list ."""
-        return children[0]  # Return the goal list
+        # Filter out tokens, keep only the goal_list tree
+        goal_list = [c for c in children if not isinstance(c, Token)]
+        return goal_list[0] if goal_list else children[0]
 
     def directive(self, children):
         """Directive: :- goal_list ."""
-        return children[0]  # Return the goal list
+        # Filter out tokens, keep only the goal_list tree
+        goal_list = [c for c in children if not isinstance(c, Token)]
+        return goal_list[0] if goal_list else children[0]
 
     def program(self, children):
         """Program is a sequence of clauses."""

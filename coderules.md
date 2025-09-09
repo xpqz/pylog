@@ -1,5 +1,7 @@
 # Code Rules and Processes for this project
 
+**KEY RULE**: NEVER CLAIM THAT SOMETHING IS COMPLETE IF THERE ARE REGRESSIONS. RUN THE FULL TEST SUITE BEFORE AND AFTER EACH WORK UNIT. 
+
 ## Developing in Python 
 
 - Never do "fallback" programming in terms of requirements: if you expect module A, fail immediately if it's not present.
