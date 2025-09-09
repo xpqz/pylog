@@ -8,6 +8,9 @@ import pytest
 from lark import Lark, Token
 from prolog.parser.grammar import grammar_text
 
+# Mark all tests in this file for Stage 1.5
+pytestmark = pytest.mark.stage15
+
 
 class TestOperatorTokenization:
     """Test operator token recognition with longest-match priority."""
@@ -271,3 +274,84 @@ class TestOperatorTokenization:
         assert any(t.value == '|' for t in tokens)  # In list context
         assert any(t.value == ',' for t in tokens)  # As operator
         assert any(t.value == '=' for t in tokens)  # As operator
+    
+    # Additional test cases from review
+    
+    @pytest.mark.parametrize("text,expected", [
+        ("X =\\== Y", ["=", "\\=="]),
+        ("X =< = Y", ["=<", "="]),
+        ("X @=<Y", ["@=<"]),
+        ("X@=< Y", ["@=<"]),
+    ])
+    def test_longest_match_overlaps(self, text, expected):
+        """Test greedy tokenization with tricky overlaps."""
+        tokens = [t.value for t in self.parser.lex(text) if t.value.strip()]
+        # Keep only operator-ish tokens for comparison
+        ops = [t for t in tokens if any(ch in t for ch in "=<>@\\")]
+        assert ops == expected
+    
+    @pytest.mark.parametrize("text,op", [("X**Y", "**"), ("X//Y", "//")])
+    def test_pow_and_idiv_no_spaces(self, text, op):
+        """Test that ** and // work without spaces."""
+        tokens = list(self.parser.lex(text))
+        assert sum(1 for t in tokens if t.value == op) == 1
+    
+    @pytest.mark.parametrize("text,ops", [
+        ("+X", ["+"]),
+        ("-X", ["-"]),
+        ("1--1", ["-", "-"]),
+        ("- - X", ["-", "-"]),
+    ])
+    def test_unary_plus_minus_present(self, text, ops):
+        """Test that unary + and - tokens are present."""
+        toks = [t.value for t in self.parser.lex(text)]
+        assert [t for t in toks if t in ["+", "-"]] == ops
+    
+    def test_mod_does_not_match_substring(self):
+        """Test that 'mod' doesn't match in 'modulus'."""
+        tokens = [t.value for t in self.parser.lex("X modulus Y")]
+        assert "mod" not in tokens
+    
+    @pytest.mark.parametrize("text,needle", [
+        ("'=..'(X,Y)", "=.."),
+        ("'@=<'(A,B)", "@=<"),
+        ("'=\\\\='(A,B)", "=\\="),
+    ])
+    def test_quoted_operator_like_atoms(self, text, needle):
+        """Test that quoted operator-like strings remain atoms."""
+        toks = [t for t in self.parser.lex(text)]
+        quoted = [t for t in toks if t.type in {'ATOM', 'QUOTED_ATOM', 'NAME'}]
+        assert any(needle in t.value for t in quoted)
+    
+    def test_line_comment_excludes_operators(self):
+        """Test that operators in comments are ignored."""
+        toks = [t.value for t in self.parser.lex("X = Y % =< should be ignored\n Z = W")]
+        assert toks.count("=<") == 0
+        assert toks.count("=") >= 2
+    
+    def test_token_position_monotonicity(self):
+        """Test that token positions are monotonic."""
+        toks = list(self.parser.lex("a, b; c"))
+        # Lark may have line/column; if present, ensure monotonic start positions
+        positions = []
+        for t in toks:
+            if hasattr(t, "start_pos"):
+                positions.append(t.start_pos)
+            elif hasattr(t, "pos_in_stream"):
+                positions.append(t.pos_in_stream)
+        if positions:  # Only test if positions exist
+            assert positions == sorted(positions)
+    
+    def test_token_boundaries_around_punctuation(self):
+        """Test that X@=<Y produces single @=< token."""
+        tokens = list(self.parser.lex("X@=<Y"))
+        op_tokens = [t for t in tokens if '@' in t.value or '=' in t.value or '<' in t.value]
+        assert len(op_tokens) == 1
+        assert op_tokens[0].value == '@=<'
+    
+    def test_arithmetic_completeness(self):
+        """Test that ** is included in arithmetic operators."""
+        text = "X ** Y"
+        tokens = list(self.parser.lex(text))
+        op_tokens = [t for t in tokens if t.value == '**']
+        assert len(op_tokens) == 1

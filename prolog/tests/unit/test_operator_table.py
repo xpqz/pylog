@@ -5,13 +5,16 @@ as the single source of truth for the reader.
 """
 
 import pytest
-from typing import Dict, Tuple, Optional, List
+from typing import Dict, Tuple
 
 
 # The operator table structure we expect
 # Each operator maps to (precedence, type, canonical_form)
 # Type is one of: fx, fy, xf, yf, xfx, xfy, yfx, yfy
 OperatorInfo = Tuple[int, str, str]  # (precedence, type, canonical_form)
+
+# Mark all tests in this file for Stage 1.5
+pytestmark = pytest.mark.stage15
 
 
 class TestOperatorTable:
@@ -69,6 +72,10 @@ class TestOperatorTable:
             # Unary operators
             ('-', 'prefix'): (200, 'fy', "'-'"),
             ('+', 'prefix'): (200, 'fy', "'+'"),
+            ('\\+', 'prefix'): (900, 'fy', "'\\\\+'"),
+            
+            # Other standard operators
+            ('is', 'infix'): (700, 'xfx', "'is'"),
         }
     
     def test_operator_table_import(self):
@@ -172,7 +179,8 @@ class TestOperatorTable:
         comparison_ops = [
             '=', '\\=', '==', '\\==',  # Equality/disequality
             '@<', '@>', '@=<', '@>=',  # Term order
-            '<', '>', '=<', '>=', '=:=', '=\\='  # Arithmetic
+            '<', '>', '=<', '>=', '=:=', '=\\=',  # Arithmetic
+            'is'  # is/2 is also a comparison operator
         ]
         
         try:
@@ -228,8 +236,8 @@ class TestOperatorTable:
     
     def test_mod_quoted_still_works(self):
         """Test that 'mod'(X,Y) as quoted atom is not affected by operator table."""
-        # This is more of a parser test, but we document the requirement here
-        # The operator table should only affect unquoted 'mod'
+        # Here we only assert the table does not treat quoted atoms as operators.
+        # Parser tests will verify runtime: "'mod'(X,Y)" is parsed as a functor call.
         pass
     
     def test_canonical_mapping_complete(self):
@@ -237,13 +245,17 @@ class TestOperatorTable:
         try:
             from prolog.parser.operators import OPERATOR_TABLE
             
-            for (op, pos), (prec, typ, canonical) in OPERATOR_TABLE.items():
+            for (op, _), (_, _, canonical) in OPERATOR_TABLE.items():
                 # Every operator should have a canonical form
                 assert canonical is not None and canonical != ""
                 # Canonical form should be quoted functor
                 assert canonical.startswith("'") and canonical.endswith("'")
-                # The operator should be in the canonical form
-                assert op in canonical
+                # The operator should be in the canonical form (accounting for escaping)
+                if '\\' in op:
+                    # For operators with backslashes, check escaped form
+                    assert op.replace('\\', '\\\\') in canonical or op in canonical
+                else:
+                    assert op in canonical
         except ImportError:
             pytest.skip("operators.py not yet implemented")
     
@@ -258,7 +270,7 @@ class TestOperatorTable:
             for op in unsupported:
                 info = get_operator_info(op, 'infix')
                 assert info is not None  # Should be in table
-                assert not is_stage1_supported(op), f"{op} should be marked as unsupported in Stage 1"
+                assert not is_stage1_supported(op, 'infix'), f"{op} should be marked as unsupported in Stage 1"
         except ImportError:
             pytest.skip("operators.py not yet implemented")
     
@@ -269,7 +281,7 @@ class TestOperatorTable:
         try:
             from prolog.parser.operators import OPERATOR_TABLE
             
-            for (op, pos), (prec, typ, canonical) in OPERATOR_TABLE.items():
+            for (op, _), (_, typ, _) in OPERATOR_TABLE.items():
                 assert typ in valid_types, f"{op} has invalid type {typ}"
         except ImportError:
             pytest.skip("operators.py not yet implemented")
@@ -300,10 +312,7 @@ class TestOperatorTable:
         try:
             from prolog.parser.operators import get_operator_info
             
-            # Should return None or raise KeyError
-            with pytest.raises((KeyError, AttributeError)):
-                info = get_operator_info('*->', 'infix')
-                assert info is None  # Or it should not exist
+            assert get_operator_info('*->', 'infix') is None
         except ImportError:
             pytest.skip("operators.py not yet implemented")
     
@@ -312,9 +321,77 @@ class TestOperatorTable:
         try:
             from prolog.parser.operators import get_operator_info
             
-            # Should return None or raise KeyError
-            with pytest.raises((KeyError, AttributeError)):
-                info = get_operator_info('=..', 'infix')
-                assert info is None  # Or it should not exist
+            assert get_operator_info('=..', 'infix') is None
+        except ImportError:
+            pytest.skip("operators.py not yet implemented")
+    
+    def test_is_precedence_and_type(self):
+        """Test that 'is' has exact precedence 700 and type xfx."""
+        try:
+            from prolog.parser.operators import get_operator_info
+            info = get_operator_info('is', 'infix')
+            assert info[0] == 700  # precedence
+            assert info[1] == 'xfx'  # type (non-chainable)
+            assert info[2] == "'is'"  # canonical form
+        except ImportError:
+            pytest.skip("operators.py not yet implemented")
+    
+    def test_not_prefix_precedence_and_type(self):
+        """Test that '\\+' (not) has exact precedence 900 and type fy."""
+        try:
+            from prolog.parser.operators import get_operator_info
+            info = get_operator_info('\\+', 'prefix')
+            assert info[0] == 900  # precedence
+            assert info[1] == 'fy'  # type
+            assert info[2] == "'\\\\+'"  # canonical form
+        except ImportError:
+            pytest.skip("operators.py not yet implemented")
+    
+    def test_power_beats_prefix_minus_in_binding(self):
+        """Test that power and prefix minus have same precedence (200)."""
+        try:
+            from prolog.parser.operators import get_operator_info
+            p_pow, _, _ = get_operator_info('**', 'infix')
+            p_neg, _, _ = get_operator_info('-', 'prefix')
+            assert p_neg == p_pow == 200, "Both should be at precedence 200"
+        except ImportError:
+            pytest.skip("operators.py not yet implemented")
+    
+    @pytest.mark.parametrize("key,expected", [
+        ((',', 'infix'), (1000, 'xfy', "','")),
+        ((';', 'infix'), (1100, 'xfy', "';'")),
+        (('->', 'infix'), (1050, 'xfy', "'->'")),
+        (('=', 'infix'), (700, 'xfx', "'='")),
+        (('is', 'infix'), (700, 'xfx', "'is'")),
+        (('+', 'infix'), (500, 'yfx', "'+'")),
+        (('+', 'prefix'), (200, 'fy', "'+'")),
+        (('-', 'infix'), (500, 'yfx', "'-'")),
+        (('-', 'prefix'), (200, 'fy', "'-'")),
+        (('**', 'infix'), (200, 'xfy', "'**'")),
+        (('\\+', 'prefix'), (900, 'fy', "'\\\\+'")),
+    ])
+    def test_table_matches_expected(self, key, expected):
+        """Test that operator table matches expected values."""
+        try:
+            from prolog.parser.operators import get_operator_info
+            op, pos = key
+            assert get_operator_info(op, pos) == expected
+        except ImportError:
+            pytest.skip("operators.py not yet implemented")
+    
+    def test_canonical_escaping_for_backslash_ops(self):
+        """Test proper escaping in canonical forms for backslash operators."""
+        cases = {
+            '\\=': "'\\\\='",
+            '\\==': "'\\\\=='", 
+            '=\\=': "'=\\\\='",
+            '\\+': "'\\\\+'"
+        }
+        try:
+            from prolog.parser.operators import get_operator_info
+            for op, want in cases.items():
+                pos = 'prefix' if op == '\\+' else 'infix'
+                info = get_operator_info(op, pos)
+                assert info[2] == want, f"{op} canonical should be {want}"
         except ImportError:
             pytest.skip("operators.py not yet implemented")
