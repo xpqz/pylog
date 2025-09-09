@@ -70,11 +70,15 @@ def get_operator_info(operator: str, position: str) -> Optional[OperatorInfo]:
     Get operator information from the table.
     
     Args:
-        operator: The operator symbol
+        operator: The operator symbol (e.g., '+', '=<', 'mod')
         position: The position ('infix', 'prefix', or 'postfix')
     
     Returns:
-        Tuple of (precedence, type, canonical_form) or None if not found
+        Tuple of (precedence: int, type: str, canonical_form: str) or None if not found.
+        - precedence: Integer precedence value (200-1100)
+        - type: Associativity type ('xfx', 'xfy', 'yfx', 'yfy', 'fx', 'fy', 'xf', 'yf')
+        - canonical_form: Quoted atom form for the operator (e.g., "'+'", "'=<'")
+        Returns None for unknown operators (never raises).
     """
     return OPERATOR_TABLE.get((operator, position))
 
@@ -84,12 +88,18 @@ def is_stage1_supported(operator: str, position: str) -> bool:
     Check if an operator is supported in Stage 1 runtime.
     
     Args:
-        operator: The operator symbol
+        operator: The operator symbol (e.g., '+', '//', 'mod')
         position: The position ('infix', 'prefix', or 'postfix')
     
     Returns:
-        True if supported in Stage 1, False otherwise
+        True if the operator is supported in Stage 1, False otherwise.
+        Returns False for unknown operators (not in table) and for operators
+        explicitly marked as unsupported in UNSUPPORTED_IN_STAGE1.
     """
+    # Unknown operators are not supported
+    if (operator, position) not in OPERATOR_TABLE:
+        return False
+    # Check if explicitly unsupported
     return (operator, position) not in UNSUPPORTED_IN_STAGE1
 
 

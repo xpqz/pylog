@@ -86,6 +86,15 @@ VARIABLE: /[A-Z_][a-zA-Z0-9_]*/
 // These are recognized as tokens but have no precedence in the grammar.
 // The reader will transform them to canonical forms using the operator table.
 // IMPORTANT: Longest match takes priority (Lark's default behavior)
+//
+// ORDER MATTERS for longest-match:
+//   - "=\\=" must come before "=" to match the full operator
+//   - "@=<" must come before "@<" 
+//   - "\\==" must come before "\\="
+//   - ">=" must come before ">"
+//   - "=<" must come before "="
+//   - "//" must come before "/"
+// This ensures e.g. "X=\\=Y" tokenizes as [X, =\\=, Y] not [X, =, \\=, Y]
 
 // Multi-character operators (must come before single-char to ensure longest match)
 ARROW: "->"

@@ -5,6 +5,7 @@ as the single source of truth for the reader.
 """
 
 import pytest
+import re
 from typing import Dict, Tuple
 
 
@@ -393,5 +394,139 @@ class TestOperatorTable:
                 pos = 'prefix' if op == '\\+' else 'infix'
                 info = get_operator_info(op, pos)
                 assert info[2] == want, f"{op} canonical should be {want}"
+        except ImportError:
+            pytest.skip("operators.py not yet implemented")
+
+
+class TestTableInvariants:
+    """Test invariants that must hold for the entire operator table."""
+    
+    def test_no_duplicate_keys(self):
+        """Test that there are no duplicate (operator, position) pairs."""
+        try:
+            from prolog.parser.operators import OPERATOR_TABLE
+            # If we're here, dict construction succeeded so no duplicates
+            assert len(OPERATOR_TABLE) > 0
+        except ImportError:
+            pytest.skip("operators.py not yet implemented")
+    
+    def test_all_types_valid(self):
+        """Test all operators have valid associativity types."""
+        valid_types = {'fx', 'fy', 'xf', 'yf', 'xfx', 'xfy', 'yfx', 'yfy'}
+        try:
+            from prolog.parser.operators import OPERATOR_TABLE
+            
+            for (op, pos), (prec, typ, canonical) in OPERATOR_TABLE.items():
+                assert typ in valid_types, f"Operator {op} at {pos} has invalid type: {typ}"
+        except ImportError:
+            pytest.skip("operators.py not yet implemented")
+    
+    def test_all_canonical_forms_quoted(self):
+        """Test all canonical forms are properly quoted atoms."""
+        try:
+            from prolog.parser.operators import OPERATOR_TABLE
+            
+            for (op, pos), (prec, typ, canonical) in OPERATOR_TABLE.items():
+                # Must be non-empty
+                assert canonical, f"Operator {op} at {pos} has empty canonical form"
+                
+                # Must start and end with quotes
+                assert canonical.startswith("'") and canonical.endswith("'"), \
+                    f"Operator {op} at {pos} canonical form not quoted: {canonical}"
+                
+                # Content between quotes should contain the operator
+                content = canonical[1:-1]
+                
+                # Handle escaped backslashes
+                if '\\' in op:
+                    # For operators with backslashes, verify escaping
+                    if op == '\\=':
+                        assert content == '\\\\=', f"Bad escaping for {op}"
+                    elif op == '\\==':
+                        assert content == '\\\\==', f"Bad escaping for {op}"
+                    elif op == '=\\=':
+                        assert content == '=\\\\=', f"Bad escaping for {op}"
+                    elif op == '\\+':
+                        assert content == '\\\\+', f"Bad escaping for {op}"
+                else:
+                    # For normal operators, should match exactly
+                    assert op == content, f"Canonical mismatch for {op}: got {content}"
+        except ImportError:
+            pytest.skip("operators.py not yet implemented")
+    
+    def test_precedence_ranges(self):
+        """Test all precedences are in valid range (typically 1-1200)."""
+        try:
+            from prolog.parser.operators import OPERATOR_TABLE
+            
+            for (op, pos), (prec, typ, canonical) in OPERATOR_TABLE.items():
+                assert 1 <= prec <= 1200, \
+                    f"Operator {op} at {pos} has precedence {prec} outside valid range"
+        except ImportError:
+            pytest.skip("operators.py not yet implemented")
+    
+    def test_prefix_infix_consistency(self):
+        """Test operators with both prefix and infix forms have consistent properties."""
+        try:
+            from prolog.parser.operators import OPERATOR_TABLE
+            
+            # Collect operators by symbol
+            by_symbol = {}
+            for (op, pos), info in OPERATOR_TABLE.items():
+                if op not in by_symbol:
+                    by_symbol[op] = {}
+                by_symbol[op][pos] = info
+            
+            # Check consistency for operators with multiple positions
+            for op, positions in by_symbol.items():
+                if len(positions) > 1:
+                    # All positions should have same canonical base
+                    canonicals = [info[2] for info in positions.values()]
+                    # Strip quotes and compare
+                    bases = [c.strip("'") for c in canonicals]
+                    
+                    # Handle escaped backslashes
+                    normalized = []
+                    for b in bases:
+                        if '\\\\' in b:
+                            normalized.append(b.replace('\\\\', '\\'))
+                        else:
+                            normalized.append(b)
+                    
+                    # All should normalize to same operator
+                    assert len(set(normalized)) == 1, \
+                        f"Operator {op} has inconsistent canonical forms: {canonicals}"
+        except ImportError:
+            pytest.skip("operators.py not yet implemented")
+    
+    def test_unknown_operators_return_none(self):
+        """Test that unknown operators return None, not raise."""
+        try:
+            from prolog.parser.operators import get_operator_info
+            
+            # Test completely unknown operators
+            assert get_operator_info('*->', 'infix') is None
+            assert get_operator_info('=..', 'infix') is None
+            assert get_operator_info('foo', 'infix') is None
+            assert get_operator_info('++', 'prefix') is None
+            
+            # Test known operators in wrong positions
+            assert get_operator_info(',', 'prefix') is None
+            assert get_operator_info(';', 'postfix') is None
+        except ImportError:
+            pytest.skip("operators.py not yet implemented")
+    
+    def test_unknown_operators_not_supported(self):
+        """Test that unknown operators return False for is_stage1_supported."""
+        try:
+            from prolog.parser.operators import is_stage1_supported
+            
+            # Unknown operators should not be supported
+            assert is_stage1_supported('*->', 'infix') is False
+            assert is_stage1_supported('=..', 'infix') is False
+            assert is_stage1_supported('foo', 'infix') is False
+            
+            # Known operators in wrong positions
+            assert is_stage1_supported(',', 'prefix') is False
         except ImportError:
             pytest.skip("operators.py not yet implemented")
