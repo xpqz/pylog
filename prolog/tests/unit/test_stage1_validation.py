@@ -11,11 +11,11 @@ These tests verify that all Stage 1 requirements from PLAN.md are met:
 import pytest
 from pathlib import Path
 
-from prolog.parser.parser import Parser
-from prolog.ast.pretty import PrettyPrinter
+from prolog.parser import parser
+from prolog.ast import pretty
 from prolog.engine.engine import Engine
 from prolog.ast.terms import Atom, Int, Var, List, Struct
-from prolog.ast.ast import Program
+from prolog.ast.clauses import Program
 
 
 class TestLibraryPredicatesAcceptance:
@@ -23,19 +23,16 @@ class TestLibraryPredicatesAcceptance:
     
     def test_append_acceptance(self):
         """append/3 should work in all modes per PLAN.md."""
-        engine = Engine()
-        parser = Parser()
-        
         # Define append
-        program = parser.parse_program("""
+        clauses = parser.parse_program("""
             append([], L, L).
             append([H|T], L, [H|R]) :- append(T, L, R).
         """)
-        engine.program = program
+        engine = Engine(Program(tuple(clauses)))
         
         # Mode 1: append(+List1, +List2, ?List3) - concatenation
-        query1 = parser.parse_query("append([1,2], [3,4], X).")
-        solutions1 = list(engine.solve(query1.goals))
+        goals1 = parser.parse_query("?- append([1,2], [3,4], X).")
+        solutions1 = list(engine.run(goals1))
         assert len(solutions1) == 1
         result = solutions1[0]["X"]
         # Verify [1,2,3,4]
@@ -48,61 +45,55 @@ class TestLibraryPredicatesAcceptance:
         assert [i.value if isinstance(i, Int) else i for i in items] == [1, 2, 3, 4]
         
         # Mode 2: append(?List1, ?List2, +List3) - decomposition
-        query2 = parser.parse_query("append(X, Y, [1,2,3]).")
-        solutions2 = list(engine.solve(query2.goals))
+        goals2 = parser.parse_query("?- append(X, Y, [1,2,3]).")
+        solutions2 = list(engine.run(goals2))
         # Should generate all possible splits
         assert len(solutions2) == 4  # [], [1,2,3] | [1], [2,3] | [1,2], [3] | [1,2,3], []
         
         # Mode 3: append(+List1, ?List2, +List3) - difference
-        query3 = parser.parse_query("append([1,2], Y, [1,2,3,4]).")
-        solutions3 = list(engine.solve(query3.goals))
+        goals3 = parser.parse_query("?- append([1,2], Y, [1,2,3,4]).")
+        solutions3 = list(engine.run(goals3))
         assert len(solutions3) == 1
         # Y should be [3,4]
     
     def test_member_acceptance(self):
         """member/2 should work for checking and generation."""
-        engine = Engine()
-        parser = Parser()
-        
         # Define member
-        program = parser.parse_program("""
+        clauses = parser.parse_program("""
             member(X, [X|_]).
             member(X, [_|T]) :- member(X, T).
         """)
-        engine.program = program
+        engine = Engine(Program(tuple(clauses)))
         
         # Mode 1: member(+Elem, +List) - checking
-        query1 = parser.parse_query("member(2, [1,2,3]).")
-        solutions1 = list(engine.solve(query1.goals))
+        goals1 = parser.parse_query("?- member(2, [1,2,3]).")
+        solutions1 = list(engine.run(goals1))
         assert len(solutions1) == 1  # Found
         
-        query2 = parser.parse_query("member(4, [1,2,3]).")
-        solutions2 = list(engine.solve(query2.goals))
+        goals2 = parser.parse_query("?- member(4, [1,2,3]).")
+        solutions2 = list(engine.run(goals2))
         assert len(solutions2) == 0  # Not found
         
         # Mode 2: member(?Elem, +List) - generation
-        query3 = parser.parse_query("member(X, [a,b,c]).")
-        solutions3 = list(engine.solve(query3.goals))
+        goals3 = parser.parse_query("?- member(X, [a,b,c]).")
+        solutions3 = list(engine.run(goals3))
         assert len(solutions3) == 3
         values = [sol["X"].name for sol in solutions3]
         assert values == ["a", "b", "c"]
     
     def test_reverse_acceptance(self):
         """reverse/2 should correctly reverse lists."""
-        engine = Engine()
-        parser = Parser()
-        
         # Define reverse with accumulator (efficient version)
-        program = parser.parse_program("""
+        clauses = parser.parse_program("""
             reverse(L, R) :- reverse(L, [], R).
             reverse([], Acc, Acc).
             reverse([H|T], Acc, R) :- reverse(T, [H|Acc], R).
         """)
-        engine.program = program
+        engine = Engine(Program(tuple(clauses)))
         
         # Test reversing a list
-        query1 = parser.parse_query("reverse([1,2,3], X).")
-        solutions1 = list(engine.solve(query1.goals))
+        goals1 = parser.parse_query("?- reverse([1,2,3], X).")
+        solutions1 = list(engine.run(goals1))
         assert len(solutions1) == 1
         
         # Verify result is [3,2,1]
@@ -115,54 +106,51 @@ class TestLibraryPredicatesAcceptance:
         assert [i.value for i in items] == [3, 2, 1]
         
         # Test reverse of empty list
-        query2 = parser.parse_query("reverse([], X).")
-        solutions2 = list(engine.solve(query2.goals))
+        goals2 = parser.parse_query("?- reverse([], X).")
+        solutions2 = list(engine.run(goals2))
         assert len(solutions2) == 1
         assert solutions2[0]["X"] == Atom("[]")
         
         # Test checking mode
-        query3 = parser.parse_query("reverse([a,b,c], [c,b,a]).")
-        solutions3 = list(engine.solve(query3.goals))
+        goals3 = parser.parse_query("?- reverse([a,b,c], [c,b,a]).")
+        solutions3 = list(engine.run(goals3))
         assert len(solutions3) == 1  # Correct
         
-        query4 = parser.parse_query("reverse([a,b,c], [a,b,c]).")
-        solutions4 = list(engine.solve(query4.goals))
+        goals4 = parser.parse_query("?- reverse([a,b,c], [a,b,c]).")
+        solutions4 = list(engine.run(goals4))
         assert len(solutions4) == 0  # Incorrect
     
     def test_between_acceptance(self):
         """between/3 should generate integer ranges."""
-        engine = Engine()
-        parser = Parser()
-        
         # Define between
-        program = parser.parse_program("""
+        clauses = parser.parse_program("""
             between(Low, High, Low) :- '=<'(Low, High).
             between(Low, High, X) :- 
                 '<'(Low, High),
                 is(Low1, '+'(Low, 1)),
                 between(Low1, High, X).
         """)
-        engine.program = program
+        engine = Engine(Program(tuple(clauses)))
         
         # Test generation mode
-        query1 = parser.parse_query("between(1, 3, X).")
-        solutions1 = list(engine.solve(query1.goals))
+        goals1 = parser.parse_query("?- between(1, 3, X).")
+        solutions1 = list(engine.run(goals1))
         assert len(solutions1) == 3
         values = [sol["X"].value for sol in solutions1]
         assert values == [1, 2, 3]
         
         # Test checking mode
-        query2 = parser.parse_query("between(1, 5, 3).")
-        solutions2 = list(engine.solve(query2.goals))
+        goals2 = parser.parse_query("?- between(1, 5, 3).")
+        solutions2 = list(engine.run(goals2))
         assert len(solutions2) == 1  # 3 is in range
         
-        query3 = parser.parse_query("between(1, 5, 6).")
-        solutions3 = list(engine.solve(query3.goals))
+        goals3 = parser.parse_query("?- between(1, 5, 6).")
+        solutions3 = list(engine.run(goals3))
         assert len(solutions3) == 0  # 6 is out of range
         
         # Test edge case: low > high
-        query4 = parser.parse_query("between(5, 1, X).")
-        solutions4 = list(engine.solve(query4.goals))
+        goals4 = parser.parse_query("?- between(5, 1, X).")
+        solutions4 = list(engine.run(goals4))
         assert len(solutions4) == 0  # No solutions
 
 
@@ -171,63 +159,59 @@ class TestExceptionHandlingAcceptance:
     
     def test_catch_captures_thrown_terms(self):
         """catch/3 should correctly capture thrown terms."""
-        engine = Engine()
-        parser = Parser()
-        engine.program = Program([])
+        engine = Engine(Program(()))
         
         # Test 1: Exact match
-        query1 = parser.parse_query("catch(throw(ball), ball, true).")
-        solutions1 = list(engine.solve(query1.goals))
+        goals1 = parser.parse_query("?- catch(throw(ball), ball, true).")
+        solutions1 = list(engine.run(goals1))
         assert len(solutions1) == 1  # Caught and recovered
         
         # Test 2: Variable catcher
-        query2 = parser.parse_query("catch(throw(error(type, foo)), error(Type, Term), true).")
-        solutions2 = list(engine.solve(query2.goals))
+        goals2 = parser.parse_query("?- catch(throw(error(type, foo)), error(Type, Term), true).")
+        solutions2 = list(engine.run(goals2))
         assert len(solutions2) == 1
         assert solutions2[0]["Type"] == Atom("type")
         assert solutions2[0]["Term"] == Atom("foo")
         
         # Test 3: No match - rethrows
-        query3 = parser.parse_query("catch(throw(ball), box, true).")
-        solutions3 = list(engine.solve(query3.goals))
+        goals3 = parser.parse_query("?- catch(throw(ball), box, true).")
+        solutions3 = list(engine.run(goals3))
         assert len(solutions3) == 0  # Uncaught, fails
         
         # Test 4: Success passes through
-        query4 = parser.parse_query("catch(true, _, fail).")
-        solutions4 = list(engine.solve(query4.goals))
+        goals4 = parser.parse_query("?- catch(true, _, fail).")
+        solutions4 = list(engine.run(goals4))
         assert len(solutions4) == 1  # Success, recovery not executed
         
         # Test 5: Failure passes through
-        query5 = parser.parse_query("catch(fail, _, true).")
-        solutions5 = list(engine.solve(query5.goals))
+        goals5 = parser.parse_query("?- catch(fail, _, true).")
+        solutions5 = list(engine.run(goals5))
         assert len(solutions5) == 0  # Failure, no exception to catch
     
     def test_nested_catch_behavior(self):
         """Nested catch/3 should work correctly."""
-        engine = Engine()
-        parser = Parser()
-        engine.program = Program([])
+        engine = Engine(Program(()))
         
         # Inner catch handles exception
-        query1 = parser.parse_query("""
+        goals1 = parser.parse_query("""?- 
             catch(
                 catch(throw(inner), inner, true),
                 outer,
                 fail
             ).
         """)
-        solutions1 = list(engine.solve(query1.goals))
+        solutions1 = list(engine.run(goals1))
         assert len(solutions1) == 1  # Inner catch handles it
         
         # Inner catch doesn't match, outer does
-        query2 = parser.parse_query("""
+        goals2 = parser.parse_query("""?- 
             catch(
                 catch(throw(problem), inner, fail),
                 problem,
                 true
             ).
         """)
-        solutions2 = list(engine.solve(query2.goals))
+        solutions2 = list(engine.run(goals2))
         assert len(solutions2) == 1  # Outer catch handles it
 
 
@@ -236,41 +220,36 @@ class TestOnceAcceptance:
     
     def test_once_determinism(self):
         """once/1 should commit to first solution."""
-        engine = Engine()
-        parser = Parser()
-        
         # Define test predicates with multiple solutions
-        program = parser.parse_program("""
+        clauses = parser.parse_program("""
             choice(1).
             choice(2).
             choice(3).
             
             once(Goal) :- call(Goal), !.
         """)
-        engine.program = program
+        engine = Engine(Program(tuple(clauses)))
         
         # Test 1: once/1 returns only first solution
-        query1 = parser.parse_query("once(choice(X)).")
-        solutions1 = list(engine.solve(query1.goals))
+        goals1 = parser.parse_query("?- once(choice(X)).")
+        solutions1 = list(engine.run(goals1))
         assert len(solutions1) == 1
         assert solutions1[0]["X"] == Int(1)
         
         # Test 2: once/1 with failing goal
-        query2 = parser.parse_query("once(fail).")
-        solutions2 = list(engine.solve(query2.goals))
+        goals2 = parser.parse_query("?- once(fail).")
+        solutions2 = list(engine.run(goals2))
         assert len(solutions2) == 0
         
         # Test 3: once/1 with deterministic goal
-        query3 = parser.parse_query("once(true).")
-        solutions3 = list(engine.solve(query3.goals))
+        goals3 = parser.parse_query("?- once(true).")
+        solutions3 = list(engine.run(goals3))
         assert len(solutions3) == 1
     
     def test_once_no_choicepoint(self):
         """once/1 should not leave choicepoints."""
-        engine = Engine()
-        parser = Parser()
-        
-        program = parser.parse_program("""
+        # Define test predicates
+        clauses = parser.parse_program("""
             multi(a).
             multi(b).
             multi(c).
@@ -279,12 +258,12 @@ class TestOnceAcceptance:
             
             test(X, Y) :- once(multi(X)), multi(Y).
         """)
-        engine.program = program
+        engine = Engine(Program(tuple(clauses)))
         
         # once(multi(X)) should commit to X=a
         # But multi(Y) should still generate all solutions
-        query = parser.parse_query("test(X, Y).")
-        solutions = list(engine.solve(query.goals))
+        goals = parser.parse_query("?- test(X, Y).")
+        solutions = list(engine.run(goals))
         
         # X should always be 'a' (first solution)
         # Y should have all three values
@@ -301,7 +280,7 @@ class TestParserAcceptance:
     
     def test_operator_free_parsing(self):
         """Parser should handle Stage 1 operator-free syntax."""
-        parser = Parser()
+        # parser already imported
         
         # Arithmetic operators must be quoted
         term1 = parser.parse_term("'+'(1, 2)")
@@ -328,7 +307,7 @@ class TestParserAcceptance:
     
     def test_parser_accepts_valid_programs(self):
         """Parser should accept all valid Stage 1 programs."""
-        parser = Parser()
+        # parser already imported
         
         # Complex but valid program
         program_text = """
@@ -361,12 +340,12 @@ class TestParserAcceptance:
         """
         
         # Should parse without errors
-        program = parser.parse_program(program_text)
-        assert len(program.clauses) > 0
+        clauses = parser.parse_program(program_text)
+        assert len(clauses) > 0
         
         # Should parse queries
-        query = parser.parse_query("grandparent(tom, Z).")
-        assert len(query.goals) == 1
+        goals = parser.parse_query("?- grandparent(tom, Z).")
+        assert len(goals) == 1
 
 
 class TestPrettyPrinterAcceptance:
@@ -374,8 +353,7 @@ class TestPrettyPrinterAcceptance:
     
     def test_pretty_printer_readability(self):
         """Pretty printer output should be readable and parseable."""
-        parser = Parser()
-        printer = PrettyPrinter()
+        # parser already imported
         
         # Test various term types
         test_terms = [
@@ -393,7 +371,7 @@ class TestPrettyPrinterAcceptance:
             term = parser.parse_term(term_str)
             
             # Pretty print
-            output = printer.pretty(term)
+            output = pretty.pretty(term)
             
             # Should be able to parse the output
             reparsed = parser.parse_term(output)
@@ -404,32 +382,30 @@ class TestPrettyPrinterAcceptance:
     
     def test_pretty_printer_preserves_semantics(self):
         """Pretty printer should preserve term semantics."""
-        printer = PrettyPrinter()
         
         # Test special characters are properly quoted
         atom_needing_quotes = Atom("with spaces")
-        output1 = printer.pretty(atom_needing_quotes)
+        output1 = pretty.pretty(atom_needing_quotes)
         assert "'" in output1  # Should be quoted
         
         # Test escape sequences
         atom_with_quote = Atom("can't")
-        output2 = printer.pretty(atom_with_quote)
+        output2 = pretty.pretty(atom_with_quote)
         assert "\\'" in output2 or '\\' in output2  # Should escape quote
         
         # Test variable naming
         var = Var(0, "X")
-        output3 = printer.pretty(var)
+        output3 = pretty.pretty(var)
         assert output3 in ["X", "_G0"]  # Either name is acceptable
         
         # Test anonymous variables
         anon = Var(1, "_")
-        output4 = printer.pretty(anon)
+        output4 = pretty.pretty(anon)
         assert output4 == "_"
     
     def test_pretty_printer_handles_complex_terms(self):
         """Pretty printer should handle arbitrarily complex terms."""
-        printer = PrettyPrinter()
-        parser = Parser()
+        # parser already imported
         
         # Very complex nested term
         complex_term = parser.parse_term("""
@@ -443,7 +419,7 @@ class TestPrettyPrinterAcceptance:
         """)
         
         # Should produce output without crashing
-        output = printer.pretty(complex_term)
+        output = pretty.pretty(complex_term)
         
         # Output should contain key elements
         assert "foo" in output
@@ -462,11 +438,8 @@ class TestStage1Integration:
     
     def test_complete_program_execution(self):
         """Test execution of a complete Stage 1 program."""
-        engine = Engine()
-        parser = Parser()
-        
         # A complete program using Stage 1 features
-        program = parser.parse_program("""
+        clauses = parser.parse_program("""
             % Facts
             person(alice).
             person(bob).
@@ -488,36 +461,35 @@ class TestStage1Integration:
             test_univ :- '=..'(foo(a, b), [foo, a, b]).
             test_arg :- arg(2, foo(a, b, c), b).
         """)
-        engine.program = program
+        engine = Engine(Program(tuple(clauses)))
         
         # Test fact queries
-        query1 = parser.parse_query("person(alice).")
-        assert len(list(engine.solve(query1.goals))) == 1
+        goals1 = parser.parse_query("?- person(alice).")
+        assert len(list(engine.run(goals1))) == 1
         
         # Test rule queries
-        query2 = parser.parse_query("adult(X).")
-        solutions2 = list(engine.solve(query2.goals))
+        goals2 = parser.parse_query("?- adult(X).")
+        solutions2 = list(engine.run(goals2))
         assert len(solutions2) == 2
         
         # Test list operations
-        query3 = parser.parse_query("append([1, 2], [3, 4], X).")
-        solutions3 = list(engine.solve(query3.goals))
+        goals3 = parser.parse_query("?- append([1, 2], [3, 4], X).")
+        solutions3 = list(engine.run(goals3))
         assert len(solutions3) == 1
         
         # Test builtins
-        query4 = parser.parse_query("test_functor(foo).")
-        assert len(list(engine.solve(query4.goals))) == 1
+        goals4 = parser.parse_query("?- test_functor(foo).")
+        assert len(list(engine.run(goals4))) == 1
         
-        query5 = parser.parse_query("test_univ.")
-        assert len(list(engine.solve(query5.goals))) == 1
+        goals5 = parser.parse_query("?- test_univ.")
+        assert len(list(engine.run(goals5))) == 1
         
-        query6 = parser.parse_query("test_arg.")
-        assert len(list(engine.solve(query6.goals))) == 1
+        goals6 = parser.parse_query("?- test_arg.")
+        assert len(list(engine.run(goals6))) == 1
     
     def test_round_trip_property(self):
         """Test parse->pretty->parse round trip preserves semantics."""
-        parser = Parser()
-        printer = PrettyPrinter()
+        # parser already imported
         
         # Various programs to test
         programs = [
@@ -533,16 +505,16 @@ class TestStage1Integration:
             
             # Pretty print all clauses
             pretty_clauses = []
-            for clause in program1.clauses:
+            for clause in program1:
                 if clause.body:
-                    head_str = printer.pretty(clause.head)
-                    body_strs = [printer.pretty(goal) for goal in clause.body]
+                    head_str = pretty.pretty(clause.head)
+                    body_strs = [pretty.pretty(goal) for goal in clause.body]
                     pretty_clauses.append(f"{head_str} :- {', '.join(body_strs)}.")
                 else:
-                    pretty_clauses.append(printer.pretty(clause.head) + ".")
+                    pretty_clauses.append(pretty.pretty(clause.head) + ".")
             
             # Re-parse
             program2 = parser.parse_program("\n".join(pretty_clauses))
             
             # Should have same number of clauses
-            assert len(program1.clauses) == len(program2.clauses)
+            assert len(program1) == len(program2)

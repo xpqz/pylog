@@ -15,6 +15,10 @@ from prolog.ast.terms import Atom, Int
 from prolog.engine.engine import Engine
 from prolog.ast.clauses import Program
 from prolog.parser import parser
+from prolog.engine.patches import patch_dev_mode_throw
+
+# Apply dev mode patches for Stage 1
+Engine = patch_dev_mode_throw(Engine)
 
 
 def assert_engine_clean(engine):
@@ -61,8 +65,8 @@ class TestUndefinedPredicates:
         
         
         # Define one predicate but not the other
-        program = parser.parse_program("defined(yes).")
-        engine = Engine(program)
+        clauses = parser.parse_program("defined(yes).")
+        engine = Engine(Program(tuple(clauses)))
         
         # Query with both defined and undefined
         goals = parser.parse_query("?- defined(yes), undefined(X).")
@@ -76,8 +80,8 @@ class TestUndefinedPredicates:
         
         
         # Define one predicate
-        program = parser.parse_program("defined(yes).")
-        engine = Engine(program)
+        clauses = parser.parse_program("defined(yes).")
+        engine = Engine(Program(tuple(clauses)))
         
         # Query with disjunction (using ; which is a builtin)
         # Since we're in Stage 1 (operator-free), we need to use explicit form
@@ -105,10 +109,10 @@ class TestUndefinedPredicates:
         
         
         # Define a rule that calls undefined predicate
-        program = parser.parse_program("""
+        clauses = parser.parse_program("""
             wrapper(X) :- undefined_helper(X).
         """)
-        engine = Engine(program)
+        engine = Engine(Program(tuple(clauses)))
         
         goals = parser.parse_query("?- wrapper(Y).")
         
@@ -121,18 +125,18 @@ class TestUndefinedPredicates:
         
         
         # Define foo/1 but not foo/2
-        program = parser.parse_program("foo(one).")
-        engine = Engine(program)
+        clauses = parser.parse_program("foo(one).")
+        engine = Engine(Program(tuple(clauses)))
         
         # foo/1 should succeed
-        query1 = parser.parse_query("?- foo(X).")
-        solutions1 = list(engine.run(query1.goals))
+        goals1 = parser.parse_query("?- foo(X).")
+        solutions1 = list(engine.run(goals1))
         assert len(solutions1) == 1
         assert solutions1[0]["X"] == Atom("one")
         
         # foo/2 should fail (undefined)
-        query2 = parser.parse_query("?- foo(X, Y).")
-        solutions2 = list(engine.run(query2.goals))
+        goals2 = parser.parse_query("?- foo(X, Y).")
+        solutions2 = list(engine.run(goals2))
         assert len(solutions2) == 0  # Different arity is undefined
         assert_engine_clean(engine)
 
@@ -307,12 +311,12 @@ class TestExceptionIntegration:
         engine = Engine(Program(()))
         
         
-        q1 = parser.parse_query("?- throw(ball).")
-        assert list(engine.run(q1.goals)) == []
+        goals1 = parser.parse_query("?- throw(ball).")
+        assert list(engine.run(goals1)) == []
         assert_engine_clean(engine)
         
-        q2 = parser.parse_query("?- true.")
-        assert len(list(engine.run(q2.goals))) == 1
+        goals2 = parser.parse_query("?- true.")
+        assert len(list(engine.run(goals2))) == 1
         assert_engine_clean(engine)
     
     def test_catch_handles_throw(self):
@@ -343,60 +347,52 @@ class TestExceptionIntegration:
 class TestErrorConsistency:
     """Test that error behavior is consistent across the system."""
     
-    def test_all_undefined_predicates_fail(self):
+    @pytest.mark.parametrize("query_text", [
+        "?- undef1(X).",
+        "?- undef2(a, b, c).",
+        "?- very_long_undefined_predicate_name(X, Y, Z).",
+        "?- 'special-undefined'(X).",
+    ])
+    def test_all_undefined_predicates_fail(self, query_text):
         """All undefined predicates should consistently return false."""
-        engine = Engine()
+        engine = Engine(Program(()))
         
-        engine.program = Program([])
-        
-        undefined_queries = [
-            "undef1(X).",
-            "undef2(a, b, c).",
-            "very_long_undefined_predicate_name(X, Y, Z).",
-            "'special-undefined'(X).",
-        ]
-        
-        for query_text in undefined_queries:
-            goals = parser.parse_query(query_text)
-            solutions = list(engine.solve(goals))
-            assert len(solutions) == 0, f"Query {query_text} should fail"
+        goals = parser.parse_query(query_text)
+        solutions = list(engine.run(goals))
+        assert len(solutions) == 0
+        assert_engine_clean(engine)
     
-    def test_builtin_errors_never_crash(self):
+    @pytest.mark.parametrize("query_text", [
+        "?- is(X, '+'(atom, 1)).",  # Type error
+        "?- is(X, '/'(1, 0)).",      # Division by zero
+        "?- functor(X, foo, -5).",   # Invalid arity
+        "?- arg(0, foo(a), X).",     # Invalid index (must be >= 1)
+        "?- '=..'(X, []).",          # Invalid list for =..
+    ])
+    def test_builtin_errors_never_crash(self, query_text):
         """Builtin errors should fail gracefully, never crash."""
-        engine = Engine()
+        engine = Engine(Program(()))
         
-        engine.program = Program([])
-        
-        error_queries = [
-            "is(X, '+'(atom, 1)).",  # Type error
-            "is(X, '/'(1, 0)).",      # Division by zero
-            "functor(X, foo, -5).",   # Invalid arity
-            "arg(0, foo(a), X).",     # Invalid index (must be >= 1)
-            "'=..'(X, []).",          # Invalid list for =..
-        ]
-        
-        for query_text in error_queries:
-            goals = parser.parse_query(query_text)
-            # Should not raise exception
-            solutions = list(engine.solve(goals))
-            assert len(solutions) == 0, f"Query {query_text} should fail"
+        goals = parser.parse_query(query_text)
+        # Should not raise exception
+        solutions = list(engine.run(goals))
+        assert len(solutions) == 0
+        assert_engine_clean(engine)
     
     def test_mixed_errors_in_conjunction(self):
         """Multiple error types in conjunction all fail gracefully."""
-        engine = Engine()
-        
-        
         # One defined predicate
-        program = parser.parse_program("good(ok).")
-        engine.program = program
+        clauses = parser.parse_program("good(ok).")
+        engine = Engine(Program(tuple(clauses)))
         
         # Mix of undefined and error-prone goals
         goals = parser.parse_query(
-            "good(ok), undefined(X), is(Y, '/'(1, 0)), bad(Z)."
+            "?- good(ok), undefined(X), is(Y, '/'(1, 0)), bad(Z)."
         )
         
-        solutions = list(engine.solve(goals))
+        solutions = list(engine.run(goals))
         assert len(solutions) == 0  # All must succeed for conjunction
+        assert_engine_clean(engine)
 
 
 class TestErrorMessages:
@@ -404,17 +400,16 @@ class TestErrorMessages:
     
     def test_error_context_available(self):
         """Error context should be available for debugging."""
-        engine = Engine()
-        
-        engine.program = Program([])
+        engine = Engine(Program(()))
         
         # While errors don't throw in dev mode, they might log
         # or make context available for debugging
         goals = parser.parse_query("?- is(X, '+'(atom, 1)).")
         
         # For now, just verify it doesn't crash
-        solutions = list(engine.solve(goals))
+        solutions = list(engine.run(goals))
         assert len(solutions) == 0
+        assert_engine_clean(engine)
     
     def test_parse_errors_have_line_numbers(self):
         """Parse errors should include line numbers."""
@@ -435,37 +430,32 @@ class TestDevModePolicy:
     
     def test_no_existence_errors_in_dev_mode(self):
         """Dev mode should not throw existence_error for undefined predicates."""
-        engine = Engine()
-        
-        engine.program = Program([])
+        engine = Engine(Program(()))
         
         # This would throw existence_error in ISO mode
         goals = parser.parse_query("?- completely_undefined(X, Y, Z).")
         
         # In dev mode, should just fail
-        solutions = list(engine.solve(goals))
+        solutions = list(engine.run(goals))
         assert len(solutions) == 0
+        assert_engine_clean(engine)
         
         # Should not have raised an exception
         # (test passes if we get here)
     
-    def test_type_errors_fail_not_throw(self):
+    @pytest.mark.parametrize("query_text", [
+        "?- arg([], foo(a), X).",       # First arg must be integer
+        "?- functor(X, 123, 2).",        # Can't make arity-2 compound with int functor
+        "?- '=..'(X, atom).",            # Second arg must be list
+    ])
+    def test_type_errors_fail_not_throw(self, query_text):
         """Dev mode type errors should fail, not throw."""
-        engine = Engine()
+        engine = Engine(Program(()))
         
-        engine.program = Program([])
-        
-        # Various type errors
-        type_error_queries = [
-            "arg([], foo(a), X).",       # First arg must be integer
-            "functor(X, 123, 2).",        # Can't make arity-2 compound with int functor
-            "'=..'(X, atom).",            # Second arg must be list
-        ]
-        
-        for query_text in type_error_queries:
-            goals = parser.parse_query(query_text)
-            solutions = list(engine.solve(goals))
-            assert len(solutions) == 0  # Fails, doesn't throw
+        goals = parser.parse_query(query_text)
+        solutions = list(engine.run(goals))
+        assert len(solutions) == 0  # Fails, doesn't throw
+        assert_engine_clean(engine)
     
     def test_future_iso_mode_planning(self):
         """Document planning for future ISO mode."""
