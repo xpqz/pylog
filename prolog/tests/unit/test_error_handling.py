@@ -15,13 +15,10 @@ from prolog.ast.terms import Atom, Int
 from prolog.engine.engine import Engine
 from prolog.ast.clauses import Program
 from prolog.parser import parser
-from prolog.engine.patches import patch_dev_mode_throw
+from prolog.engine.patches import create_dev_engine
 
-
-def get_dev_engine():
-    """Get an engine with dev mode patches applied."""
-    DevEngine = patch_dev_mode_throw(Engine)
-    return DevEngine
+# Create dev mode engine class for these tests
+DevEngine = create_dev_engine(Engine)
 
 
 def assert_engine_clean(engine):
@@ -41,7 +38,7 @@ class TestUndefinedPredicates:
     
     def test_undefined_predicate_fails_silently(self):
         """Undefined predicates should return false, not throw."""
-        engine = get_dev_engine()(Program(()))
+        engine = DevEngine(Program(()))
         
         # Query for an undefined predicate
         
@@ -54,7 +51,7 @@ class TestUndefinedPredicates:
     
     def test_undefined_with_arguments_returns_false(self):
         """foo(X) with no foo/1 clauses returns false."""
-        engine = get_dev_engine()(Program(()))
+        engine = DevEngine(Program(()))
         
         
         goals = parser.parse_query("?- foo(X).")
@@ -69,7 +66,7 @@ class TestUndefinedPredicates:
         
         # Define one predicate but not the other
         clauses = parser.parse_program("defined(yes).")
-        engine = get_dev_engine()(Program(tuple(clauses)))
+        engine = DevEngine(Program(tuple(clauses)))
         
         # Query with both defined and undefined
         goals = parser.parse_query("?- defined(yes), undefined(X).")
@@ -84,7 +81,7 @@ class TestUndefinedPredicates:
         
         # Define one predicate
         clauses = parser.parse_program("defined(yes).")
-        engine = get_dev_engine()(Program(tuple(clauses)))
+        engine = DevEngine(Program(tuple(clauses)))
         
         # Query with disjunction (using ; which is a builtin)
         # Since we're in Stage 1 (operator-free), we need to use explicit form
@@ -97,7 +94,7 @@ class TestUndefinedPredicates:
     
     def test_undefined_with_cut_still_fails(self):
         """Undefined predicate fails even with cut."""
-        engine = get_dev_engine()(Program(()))
+        engine = DevEngine(Program(()))
         
         
         # Query with undefined predicate and cut
@@ -115,7 +112,7 @@ class TestUndefinedPredicates:
         clauses = parser.parse_program("""
             wrapper(X) :- undefined_helper(X).
         """)
-        engine = get_dev_engine()(Program(tuple(clauses)))
+        engine = DevEngine(Program(tuple(clauses)))
         
         goals = parser.parse_query("?- wrapper(Y).")
         
@@ -129,7 +126,7 @@ class TestUndefinedPredicates:
         
         # Define foo/1 but not foo/2
         clauses = parser.parse_program("foo(one).")
-        engine = get_dev_engine()(Program(tuple(clauses)))
+        engine = DevEngine(Program(tuple(clauses)))
         
         # foo/1 should succeed
         goals1 = parser.parse_query("?- foo(X).")
@@ -149,7 +146,7 @@ class TestBuiltinErrors:
     
     def test_type_error_in_arithmetic(self):
         """Type errors in arithmetic should fail gracefully."""
-        engine = get_dev_engine()(Program(()))
+        engine = DevEngine(Program(()))
         
         
         # Try to do arithmetic on an atom
@@ -161,7 +158,7 @@ class TestBuiltinErrors:
     
     def test_unbound_variable_in_arithmetic(self):
         """Unbound variables in arithmetic evaluation should fail."""
-        engine = get_dev_engine()(Program(()))
+        engine = DevEngine(Program(()))
         
         
         # Y is unbound
@@ -173,7 +170,7 @@ class TestBuiltinErrors:
     
     def test_division_by_zero(self):
         """Division by zero should fail gracefully."""
-        engine = get_dev_engine()(Program(()))
+        engine = DevEngine(Program(()))
         
         
         goals = parser.parse_query("?- is(X, '/'(1, 0)).")
@@ -184,7 +181,7 @@ class TestBuiltinErrors:
     
     def test_atomic_in_functor(self):
         """Atomic first arg returns its own name and arity 0."""
-        engine = get_dev_engine()(Program(()))
+        engine = DevEngine(Program(()))
         
         
         # Atomic terms have arity 0
@@ -199,7 +196,7 @@ class TestBuiltinErrors:
     
     def test_negative_arity_in_functor(self):
         """Negative arity in functor/3 should fail."""
-        engine = get_dev_engine()(Program(()))
+        engine = DevEngine(Program(()))
         
         
         goals = parser.parse_query("?- functor(X, foo, -1).")
@@ -210,7 +207,7 @@ class TestBuiltinErrors:
     
     def test_functor_construct_with_non_atom_name_fails(self):
         """Non-atom name with arity > 0 should fail in dev mode."""
-        engine = get_dev_engine()(Program(()))
+        engine = DevEngine(Program(()))
         
         
         goals = parser.parse_query("?- functor(T, 123, 2).")
@@ -220,7 +217,7 @@ class TestBuiltinErrors:
     
     def test_type_error_in_arg(self):
         """Type error in arg/3 should fail gracefully."""
-        engine = get_dev_engine()(Program(()))
+        engine = DevEngine(Program(()))
         
         
         # First argument to arg must be integer
@@ -232,7 +229,7 @@ class TestBuiltinErrors:
     
     def test_arg_on_atomic_term_fails(self):
         """arg/3 on atomic term should fail."""
-        engine = get_dev_engine()(Program(()))
+        engine = DevEngine(Program(()))
         
         
         goals = parser.parse_query("?- arg(1, 5, X).")
@@ -242,7 +239,7 @@ class TestBuiltinErrors:
     
     def test_out_of_bounds_arg(self):
         """Out of bounds index in arg/3 should fail."""
-        engine = get_dev_engine()(Program(()))
+        engine = DevEngine(Program(()))
         
         
         # foo(a, b) has arity 2, so arg 3 is out of bounds
@@ -254,7 +251,7 @@ class TestBuiltinErrors:
     
     def test_univ_with_invalid_list(self):
         """=.. with invalid list should fail."""
-        engine = get_dev_engine()(Program(()))
+        engine = DevEngine(Program(()))
         
         
         # Empty list is invalid for =..
@@ -266,7 +263,7 @@ class TestBuiltinErrors:
     
     def test_univ_with_improper_list_fails(self):
         """=.. with improper list should fail."""
-        engine = get_dev_engine()(Program(()))
+        engine = DevEngine(Program(()))
         
         
         goals = parser.parse_query("?- '=..'(foo(a), [foo|b]).")
@@ -276,7 +273,7 @@ class TestBuiltinErrors:
     
     def test_call_non_callable_fails_dev_mode(self):
         """Non-callable term should fail in dev mode."""
-        engine = get_dev_engine()(Program(()))
+        engine = DevEngine(Program(()))
         
         
         goals = parser.parse_query("?- call(123).")
@@ -286,7 +283,7 @@ class TestBuiltinErrors:
     
     def test_call_var_instantiation_fails_dev_mode(self):
         """Unbound variable in call/1 should fail in dev mode."""
-        engine = get_dev_engine()(Program(()))
+        engine = DevEngine(Program(()))
         
         
         goals = parser.parse_query("?- call(X).")
@@ -300,7 +297,7 @@ class TestExceptionIntegration:
     
     def test_uncaught_throw_fails(self):
         """Uncaught throw should cause goal to fail."""
-        engine = get_dev_engine()(Program(()))
+        engine = DevEngine(Program(()))
         
         
         goals = parser.parse_query("?- throw(ball).")
@@ -311,7 +308,7 @@ class TestExceptionIntegration:
     
     def test_uncaught_throw_leaves_engine_reusable(self):
         """Engine should be reusable after uncaught throw."""
-        engine = get_dev_engine()(Program(()))
+        engine = DevEngine(Program(()))
         
         
         goals1 = parser.parse_query("?- throw(ball).")
@@ -324,7 +321,7 @@ class TestExceptionIntegration:
     
     def test_catch_handles_throw(self):
         """catch/3 should handle thrown exceptions."""
-        engine = get_dev_engine()(Program(()))
+        engine = DevEngine(Program(()))
         
         
         goals = parser.parse_query("?- catch(throw(ball), ball, true).")
@@ -335,7 +332,7 @@ class TestExceptionIntegration:
     
     def test_catch_with_type_error(self):
         """catch/3 with arithmetic error - in dev mode it just fails."""
-        engine = get_dev_engine()(Program(()))
+        engine = DevEngine(Program(()))
         
         
         # In dev mode arithmetic fails, so nothing is caught
@@ -358,7 +355,7 @@ class TestErrorConsistency:
     ])
     def test_all_undefined_predicates_fail(self, query_text):
         """All undefined predicates should consistently return false."""
-        engine = get_dev_engine()(Program(()))
+        engine = DevEngine(Program(()))
         
         goals = parser.parse_query(query_text)
         solutions = list(engine.run(goals))
@@ -374,7 +371,7 @@ class TestErrorConsistency:
     ])
     def test_builtin_errors_never_crash(self, query_text):
         """Builtin errors should fail gracefully, never crash."""
-        engine = get_dev_engine()(Program(()))
+        engine = DevEngine(Program(()))
         
         goals = parser.parse_query(query_text)
         # Should not raise exception
@@ -386,7 +383,7 @@ class TestErrorConsistency:
         """Multiple error types in conjunction all fail gracefully."""
         # One defined predicate
         clauses = parser.parse_program("good(ok).")
-        engine = get_dev_engine()(Program(tuple(clauses)))
+        engine = DevEngine(Program(tuple(clauses)))
         
         # Mix of undefined and error-prone goals
         goals = parser.parse_query(
@@ -403,7 +400,7 @@ class TestErrorMessages:
     
     def test_error_context_available(self):
         """Error context should be available for debugging."""
-        engine = get_dev_engine()(Program(()))
+        engine = DevEngine(Program(()))
         
         # While errors don't throw in dev mode, they might log
         # or make context available for debugging
@@ -433,7 +430,7 @@ class TestDevModePolicy:
     
     def test_no_existence_errors_in_dev_mode(self):
         """Dev mode should not throw existence_error for undefined predicates."""
-        engine = get_dev_engine()(Program(()))
+        engine = DevEngine(Program(()))
         
         # This would throw existence_error in ISO mode
         goals = parser.parse_query("?- completely_undefined(X, Y, Z).")
@@ -453,7 +450,7 @@ class TestDevModePolicy:
     ])
     def test_type_errors_fail_not_throw(self, query_text):
         """Dev mode type errors should fail, not throw."""
-        engine = get_dev_engine()(Program(()))
+        engine = DevEngine(Program(()))
         
         goals = parser.parse_query(query_text)
         solutions = list(engine.run(goals))
