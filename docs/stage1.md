@@ -46,11 +46,11 @@ Stage 1 implements the core Prolog functionality with minimal ISO builtins, deli
 - `=../2`: Univ - convert between term and list
 - `copy_term/2`: Create copy with fresh variables
 
-#### Arithmetic
+#### Arithmetic (Partial)
 - `is/2`: Arithmetic evaluation
-- `</2`, `=</2`, `>/2`, `>=/2`: Numeric comparison
-- `=:=/2`, `=\\=/2`: Arithmetic equality/inequality
 - Arithmetic operations: `+`, `-`, `*`, `/`, `mod`, `abs`, `min`, `max`
+
+**Note**: Arithmetic comparison predicates (`</2`, `=</2`, `>/2`, `>=/2`, `=:=/2`, `=\\=/2`) are not yet implemented in Stage 1.
 
 #### Exception Handling
 - `throw/1`: Throw an exception
@@ -64,7 +64,7 @@ Stage 1 implements the core Prolog functionality with minimal ISO builtins, deli
 - `reverse/2`: List reversal
 
 #### Numeric
-- `between/3`: Integer range generation/checking
+- `between/3`: Integer range generation/checking *(requires arithmetic comparison predicates, not fully functional)*
 
 ### Error Handling (Dev Mode)
 
