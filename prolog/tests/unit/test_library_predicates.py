@@ -453,3 +453,14 @@ class TestLibraryPredicatesBaseline:
         assert swi.count(prog, "nth0(1,[],_)") == 0
         # Index 3 on 2-element list should fail
         assert swi.count(prog, "nth0(3,[a,b],_)") == 0
+    
+    def test_catch_recovery_fails_transparent_baseline(self, swi):
+        """Test the controversial catch case - recovery failure in conjunction.
+        
+        This documents that when catch's recovery fails, the entire
+        conjunction fails, giving 0 solutions. This matches ISO/SWI semantics.
+        """
+        prog = "p(1). p(2)."
+        goal = "p(X), catch(throw(t), t, fail)"
+        # ISO/SWI: catch fails, conjunction fails → 0 solutions
+        assert swi.count(prog, goal) == 0
