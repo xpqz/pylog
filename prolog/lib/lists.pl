@@ -1,5 +1,8 @@
 % Standard list predicates implemented in pure Prolog
 % These serve as both library functions and acceptance tests for the PyLog engine
+%
+% NOTE: between/3 with arithmetic is not included as it requires proper arithmetic
+% support which is not available in Stage-1 (operator-free) context
 
 % append/3 - Concatenate two lists or generate list decompositions
 % append(?List1, ?List2, ?List3)

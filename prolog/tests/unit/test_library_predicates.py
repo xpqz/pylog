@@ -300,13 +300,15 @@ class TestLibraryPredicates:
     
     # between/3 tests - simplified version
     
-    @pytest.mark.xfail(reason="Simplified between_s/3 is a placeholder - may not work correctly")
+    @pytest.mark.timeout(1)  # Timeout after 1 second to prevent infinite loop
+    @pytest.mark.xfail(reason="Simplified between_s/3 is a placeholder - infinite loops")
     def test_between_simplified(self, engine_with_lib):
         """Test a simplified between/3 using successor arithmetic."""
         engine_with_lib.consult_string(between_s_def())
         
         # between_s(s(0), s(s(s(0))), X) should ideally generate s(0), s(s(0)), s(s(s(0)))
-        # But our placeholder definition may not work correctly
+        # But our placeholder definition infinite loops
+        engine_with_lib.max_steps = 100  # Limit steps to prevent infinite loop
         results = list(engine_with_lib.query("between_s(s(0), s(s(s(0))), X)"))
         # Since this is a placeholder, we don't assert exact structure
         # Just check that we get some results without crashing
