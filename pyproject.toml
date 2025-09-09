@@ -6,7 +6,12 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "lark>=1.1.0",
+    "prompt-toolkit>=3.0.52",
+    "pygments>=2.19.2",
 ]
+
+[project.scripts]
+pylog = "prolog.repl:main"
 
 [project.optional-dependencies]
 dev = [
