@@ -9,7 +9,7 @@ Stage 1 implements the core Prolog functionality with minimal ISO builtins, deli
 ### Core Engine
 - **Goal stack execution**: Non-recursive implementation using explicit stacks
 - **Backtracking**: Choice points with proper trail management
-- **Unification**: Full unification with occurs check support
+- **Unification**: Full unification (occurs-check off by default; ISO occurs-check mode planned)
 - **Cut (!/)**: Removes choice points up to cut parent
 - **Variable binding**: Union-find based store with path compression
 
@@ -73,6 +73,9 @@ Stage 1 operates in "dev mode" for better developer experience:
 - **Type errors**: Fail gracefully instead of throwing type_error
 - **Arithmetic errors**: Fail instead of throwing evaluation_error
 - **Uncaught exceptions**: Fail with proper cleanup
+
+Note: Dev mode only converts PrologThrow exceptions to failures. All other exceptions
+(e.g., Python errors, system errors) are not masked and will propagate normally.
 
 This approach prioritizes development speed and debugging ease. ISO-compliant error handling will be added in a future stage.
 

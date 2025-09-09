@@ -3,7 +3,13 @@
 These patches modify the engine behavior for Stage 1 dev mode:
 - Uncaught throws fail gracefully instead of raising
 - Type errors fail instead of throwing
+
+Note: Dev mode does not mask non-Prolog exceptions; only PrologThrow
+exceptions are caught and converted to failures.
 """
+
+from prolog.engine.errors import PrologThrow
+
 
 def create_dev_engine(base_engine_class):
     """Create a dev mode engine class that handles uncaught throws as failures."""
@@ -15,17 +21,22 @@ def create_dev_engine(base_engine_class):
             """Run with dev mode error handling."""
             try:
                 return super().run(goals, max_solutions)
-            except Exception as e:
+            except PrologThrow:
                 # In dev mode, uncaught throws just fail
-                if hasattr(e, '__class__') and e.__class__.__name__ == 'PrologThrow':
-                    # Clean up state
-                    self.trail.unwind_to(0, self.store)
-                    self.goal_stack.shrink_to(0)
-                    self.frame_stack.clear()
-                    self.cp_stack.clear()
-                    return []  # Return empty solutions (failure)
-                else:
-                    # Re-raise other exceptions
-                    raise
+                # Clean up state
+                self.trail.unwind_to(0, self.store)
+                self.goal_stack.shrink_to(0)
+                self.frame_stack.clear()
+                self.cp_stack.clear()
+                
+                # Reset the trail write stamp and var stamps to avoid
+                # "already trailed" suppression on subsequent runs
+                if hasattr(self.trail, 'set_current_stamp'):
+                    self.trail.set_current_stamp(0)
+                if hasattr(self.trail, '_var_stamps'):
+                    self.trail._var_stamps.clear()
+                    
+                return []  # Return empty solutions (failure)
+            # All other exceptions are re-raised (not masked)
     
     return DevEngine

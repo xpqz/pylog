@@ -46,8 +46,40 @@ class TestLibraryPredicatesAcceptance:
         # Mode 2: append(?List1, ?List2, +List3) - decomposition
         goals2 = parser.parse_query("?- append(X, Y, [1,2,3]).")
         solutions2 = list(engine.run(goals2))
-        # Should generate all possible splits
-        assert len(solutions2) == 4  # [], [1,2,3] | [1], [2,3] | [1,2], [3] | [1,2,3], []
+        # Should generate all possible splits in order
+        assert len(solutions2) == 4
+        
+        # Verify exact split order (left-to-right decomposition)
+        # Helper to extract list elements
+        def list_to_values(lst):
+            if isinstance(lst, List):
+                values = [i.value for i in lst.items if isinstance(i, Int)]
+                return values
+            return []
+        
+        # Split 0: [], [1,2,3]
+        x0_vals = list_to_values(solutions2[0]["X"])
+        y0_vals = list_to_values(solutions2[0]["Y"])
+        assert x0_vals == []  # X is empty
+        assert y0_vals == [1, 2, 3]  # Y is [1,2,3]
+        
+        # Split 1: [1], [2,3]
+        x1_vals = list_to_values(solutions2[1]["X"])
+        y1_vals = list_to_values(solutions2[1]["Y"])
+        assert x1_vals == [1]  # X is [1]
+        assert y1_vals == [2, 3]  # Y is [2,3]
+        
+        # Split 2: [1,2], [3]
+        x2_vals = list_to_values(solutions2[2]["X"])
+        y2_vals = list_to_values(solutions2[2]["Y"])
+        assert x2_vals == [1, 2]  # X is [1,2]
+        assert y2_vals == [3]  # Y is [3]
+        
+        # Split 3: [1,2,3], []
+        x3_vals = list_to_values(solutions2[3]["X"])
+        y3_vals = list_to_values(solutions2[3]["Y"])
+        assert x3_vals == [1, 2, 3]  # X is [1,2,3]
+        assert y3_vals == []  # Y is empty
         
         # Mode 3: append(+List1, ?List2, +List3) - difference
         goals3 = parser.parse_query("?- append([1,2], Y, [1,2,3,4]).")
@@ -247,6 +279,18 @@ class TestOnceAcceptance:
         goals3 = parser.parse_query("?- once(true).")
         solutions3 = list(engine.run(goals3))
         assert len(solutions3) == 1
+        
+        # Test 4: once/1 composition - verify X is always first value for every Y
+        goals4 = parser.parse_query("?- once(choice(X)), choice(Y).")
+        solutions4 = list(engine.run(goals4))
+        assert len(solutions4) == 3  # 3 values for Y
+        # X should always be 1 (the first choice)
+        for sol in solutions4:
+            assert sol["X"] == Int(1)
+        # Y should vary
+        assert solutions4[0]["Y"] == Int(1)
+        assert solutions4[1]["Y"] == Int(2)
+        assert solutions4[2]["Y"] == Int(3)
     
     def test_once_no_choicepoint(self):
         """once/1 should not leave choicepoints."""
