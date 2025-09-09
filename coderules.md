@@ -1,5 +1,19 @@
 # Code Rules and Processes for this project
 
+**KEY RULE**: NEVER CLAIM THAT SOMETHING IS COMPLETE IF THERE ARE REGRESSIONS. RUN THE FULL TEST SUITE BEFORE AND AFTER EACH WORK UNIT. 
+
+## Developing in Python 
+
+- Never do "fallback" programming in terms of requirements: if you expect module A, fail immediately if it's not present.
+- All imports at the top of files only.
+- Use up-to-date Python syntax, version 3.10 and onwards. 
+- Backwards compatibility is NOT a goal.
+- Use modern type hinting (dict, not Dict)
+
+## Debugging
+
+- Always identify root causes of failures. Do NOT treat the symptoms of failures.
+
 ## Process
 - Don't back files up by copying! We use git for versioning.
 - For each new development stage, create a new git branch first.
@@ -10,8 +24,9 @@
     - NEVER tweak a test to "fit" the behaviour, unless the test is demonstrably broken.
 - Maintain progress in docs/TODO-X.md files
 - Don't use /tmp and other locations outside the current repository
+- If you create temporary scripts for debugging, remove them after use.
 
-### GitHub Workflow
+## GitHub Workflow
 
 - **NEVER EVER CHANGE THE DEFAULT BRANCH ON GIT OR GITHUB!**
 - When creating PRs or commits, **DO NOT** mention Claude, Anthropic, or AI assistance in the message

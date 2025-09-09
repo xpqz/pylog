@@ -713,3 +713,69 @@ class TestRoundTrip:
         assert isinstance(result, List)
         assert len(result.items) == 1
         assert isinstance(result.tail, Var)
+
+
+class TestQuotedOperatorAtoms:
+    """Test that quoted operator-like atoms remain atoms/functors, not operators."""
+    
+    def test_quoted_operator_atoms_as_functors(self):
+        """Test that quoted operators like '@=<'(A,B) parse as regular functors."""
+        # These should parse as Struct with operator name as functor
+        # Not as operator expressions (since we don't have operator parsing yet)
+        
+        # Test various quoted operators as functors
+        result = parse_term("'@=<'(a, b)")
+        assert isinstance(result, Struct)
+        assert result.functor == "@=<"
+        assert len(result.args) == 2
+        assert result.args[0] == Atom("a")
+        assert result.args[1] == Atom("b")
+        
+        result = parse_term("'=..'(term, list)")
+        assert isinstance(result, Struct)
+        assert result.functor == "=.."
+        assert len(result.args) == 2
+        
+        result = parse_term("'+'(1, 2)")
+        assert isinstance(result, Struct)
+        assert result.functor == "+"
+        assert len(result.args) == 2
+        assert result.args[0] == Int(1)
+        assert result.args[1] == Int(2)
+        
+        result = parse_term("','(a, b)")
+        assert isinstance(result, Struct)
+        assert result.functor == ","
+        assert len(result.args) == 2
+    
+    def test_quoted_operators_as_atoms(self):
+        """Test that standalone quoted operators parse as atoms."""
+        result = parse_term("'@=<'")
+        assert isinstance(result, Atom)
+        assert result.name == "@=<"
+        
+        result = parse_term("'=..'")
+        assert isinstance(result, Atom)
+        assert result.name == "=.."
+        
+        result = parse_term("'*->'")
+        assert isinstance(result, Atom)
+        assert result.name == "*->"
+    
+    def test_quoted_operators_in_clauses(self):
+        """Test quoted operators work correctly in clauses."""
+        # A fact using quoted operator as functor
+        result = parse_clause("'='(X, X).")
+        assert isinstance(result, Clause)
+        assert isinstance(result.head, Struct)
+        assert result.head.functor == "="
+        assert len(result.head.args) == 2
+        
+        # A rule using quoted operators
+        result = parse_clause("test(X) :- '>'(X, 0), '<'(X, 10).")
+        assert isinstance(result, Clause)
+        assert len(result.body) == 2
+        assert isinstance(result.body[0], Struct)
+        assert result.body[0].functor == ">"
+        assert isinstance(result.body[1], Struct)
+        assert result.body[1].functor == "<"
