@@ -105,22 +105,23 @@ class PrologCompleter(Completer):
         """Add a predicate to the completion list."""
         self.predicates.add(functor)
     
-    def get_completions(self, text: str) -> list[str]:
-        """Get completions for the given text."""
-        if not text:
-            return []
+    def get_completions(self, document, complete_event):
+        """Prompt_toolkit completion interface.
         
-        completions = []
-        for pred in self.predicates:
-            if pred.startswith(text):
-                completions.append(pred)
-        return sorted(completions)
-    
-    def get_completions_v2(self, document, complete_event):
-        """Prompt_toolkit v2 completion interface."""
+        Args:
+            document: Document object with the current text
+            complete_event: CompleteEvent with completion context
+            
+        Yields:
+            Completion objects
+        """
         word = document.get_word_before_cursor()
-        for pred in self.get_completions(word):
-            yield Completion(pred, start_position=-len(word))
+        if not word:
+            return
+        
+        for pred in sorted(self.predicates):
+            if pred.startswith(word):
+                yield Completion(pred, start_position=-len(word))
 
 
 class PrologREPL:

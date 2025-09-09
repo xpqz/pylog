@@ -421,6 +421,7 @@ class TestREPLWithPromptToolkit:
     def test_completer(self):
         """Test auto-completion for predicates."""
         from prolog.repl import PrologCompleter
+        from unittest.mock import Mock
         
         # Create completer with some predicates
         completer = PrologCompleter()
@@ -428,30 +429,49 @@ class TestREPLWithPromptToolkit:
         completer.add_predicate("grandparent", 2)
         completer.add_predicate("person", 1)
         
-        # Test completion
-        completions = completer.get_completions("par")
-        assert "parent" in completions
-        assert "grandparent" not in completions  # Doesn't start with "par"
+        # Mock document for testing
+        doc = Mock()
+        doc.get_word_before_cursor.return_value = "par"
         
-        completions = completer.get_completions("p")
-        assert "parent" in completions
-        assert "person" in completions
+        # Test completion
+        completions = list(completer.get_completions(doc, None))
+        assert len(completions) == 1
+        assert completions[0].text == "parent"
+        
+        # Test with "p" prefix
+        doc.get_word_before_cursor.return_value = "p"
+        completions = list(completer.get_completions(doc, None))
+        assert len(completions) == 2
+        comp_texts = [c.text for c in completions]
+        assert "parent" in comp_texts
+        assert "person" in comp_texts
     
     def test_completer_updates_from_engine(self):
         """Test that completer reflects dynamic program changes."""
         from prolog.repl import PrologCompleter, PrologREPL
+        from unittest.mock import Mock
         
         repl = PrologREPL()
         repl.engine.consult_string("parent(tom, bob).")
         
         completer = PrologCompleter()
         completer.add_predicate("parent", 2)
-        assert "parent" in completer.get_completions("par")
+        
+        # Mock document for testing
+        doc = Mock()
+        doc.get_word_before_cursor.return_value = "par"
+        completions = list(completer.get_completions(doc, None))
+        assert len(completions) == 1
+        assert completions[0].text == "parent"
         
         # Add new predicate
         repl.engine.consult_string("grandparent(tom, pat).")
         completer.add_predicate("grandparent", 2)
-        assert "grandparent" in completer.get_completions("grand")
+        
+        doc.get_word_before_cursor.return_value = "grand"
+        completions = list(completer.get_completions(doc, None))
+        assert len(completions) == 1
+        assert completions[0].text == "grandparent"
     
     def test_history_persistence(self, tmp_path):
         """Test that command history is saved and loaded."""
