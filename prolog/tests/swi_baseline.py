@@ -13,8 +13,10 @@ from pathlib import Path
 from typing import Optional
 
 
-# Allow override via environment variable
+# Allow override via environment variables
 SWIPL = os.environ.get("SWIPL", "swipl")
+TIMEOUT = float(os.environ.get("SWIPL_TIMEOUT_SEC", "5"))
+DEBUG_PROG = os.environ.get("SWIPL_DEBUG_PROG", "").lower() in ("1", "true", "yes")
 
 
 def _run_swipl(pl_source: str, goal: str, mode: str, var: Optional[str] = None) -> str:
@@ -43,7 +45,6 @@ def _run_swipl(pl_source: str, goal: str, mode: str, var: Optional[str] = None) 
             # Count solutions using aggregate_all
             main = f"""
             :- use_module(library(aggregate)).
-            :- initialization(run, main).
             
             run :-
                 Goal = ({goal}),
@@ -58,55 +59,47 @@ def _run_swipl(pl_source: str, goal: str, mode: str, var: Optional[str] = None) 
                 raise ValueError("var is required for mode=onevar")
             # Collect all bindings for a single variable
             # Use numbervars to stabilize anonymous variables
+            # Use JSON library for proper escaping
             main = f"""
-            :- initialization(run, main).
+            :- use_module(library(http/json)).
             
             run :-
                 Goal = ({goal}),
                 findall({var}, Goal, L0),
                 maplist(numbervars_stable, L0, L1),
                 maplist(term_string, L1, SL),
-                write_canonical_list(SL),
+                json_write(current_output, SL),
                 halt.
             
             % Helper to apply numbervars
             numbervars_stable(Term, Term) :-
                 numbervars(Term, 0, _).
-            
-            % Write list in JSON-compatible format
-            write_canonical_list([]) :- write('[]').
-            write_canonical_list(L) :-
-                write('['),
-                write_list_items(L),
-                write(']').
-            
-            write_list_items([H]) :-
-                write('"'), write(H), write('"').
-            write_list_items([H|T]) :-
-                write('"'), write(H), write('",'),
-                write_list_items(T).
             """
         else:
             raise ValueError(f"Unknown mode: {mode}")
         
         # Write the combined program
-        p.write_text(prog + "\n" + main, encoding="utf-8")
+        full_program = prog + "\n" + main
+        p.write_text(full_program, encoding="utf-8")
         
-        # Call SWI-Prolog quietly
+        # Call SWI-Prolog quietly (using -g run -t halt for explicit control)
         try:
             res = subprocess.run(
-                [SWIPL, "-q", "-t", "halt", "-s", str(p)],
+                [SWIPL, "-q", "-g", "run", "-t", "halt", "-s", str(p)],
                 capture_output=True,
                 text=True,
-                timeout=5  # 5 second timeout
+                timeout=TIMEOUT
             )
         except subprocess.TimeoutExpired:
-            raise RuntimeError("SWI-Prolog execution timed out")
+            raise RuntimeError(f"SWI-Prolog execution timed out after {TIMEOUT}s")
         except FileNotFoundError:
             raise RuntimeError(f"SWI-Prolog not found at: {SWIPL}")
         
         if res.returncode != 0:
             error_msg = res.stderr.strip() or res.stdout.strip()
+            # Include program text in debug mode for easier debugging
+            if DEBUG_PROG:
+                error_msg += f"\n\nProgram:\n{full_program}"
             raise RuntimeError(f"SWI-Prolog failed: {error_msg}")
         
         return res.stdout.strip()

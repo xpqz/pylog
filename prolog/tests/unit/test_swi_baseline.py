@@ -79,6 +79,17 @@ class TestSWIBaseline:
         # Caught with unification
         assert swi.count(prog, "catch(throw(error(type, context)), error(X, Y), true)") == 1
     
+    def test_catch_recovery_fails_conjunction_baseline(self, swi):
+        """Test the controversial catch case - recovery failure in conjunction.
+        
+        This explicitly documents that when catch's recovery fails, the entire
+        conjunction fails, giving 0 solutions. This matches ISO/SWI semantics.
+        """
+        prog = "p(1). p(2)."
+        goal = "p(X), catch(throw(t), t, fail)"
+        # ISO/SWI: catch fails, conjunction fails → 0 solutions
+        assert swi.count(prog, goal) == 0
+    
     def test_once_baseline(self, swi):
         """Test once/1 behavior."""
         prog = "p(1). p(2). p(3)."
