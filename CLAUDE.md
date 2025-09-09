@@ -139,6 +139,7 @@ The project follows a staged development plan where each stage builds on stable 
 - **Stress tests** with millions of choicepoints
 - **Propagation confluence** tests for CLP(FD)
 - **Occurs-check modes** for both on/off behavior
+- **SWI-Prolog baseline tests** - When writing unit tests for Prolog semantics, add corresponding baseline tests using the `swi` fixture to validate against SWI-Prolog behavior. Mark these with `@pytest.mark.swi_baseline`. This ensures PyLog conforms to ISO/SWI semantics.
 
 ## Implementation Guidelines
 
