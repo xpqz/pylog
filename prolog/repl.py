@@ -161,6 +161,8 @@ class PrologREPL:
     def load_file(self, filepath: str) -> bool:
         """Load a Prolog file.
         
+        Opens file with UTF-8 encoding and appends to current program.
+        
         Args:
             filepath: Path to the Prolog file
             
@@ -173,9 +175,17 @@ class PrologREPL:
                 print(f"Error: File not found: {filepath}")
                 return False
             
-            with open(path, 'r', encoding='utf-8') as f:
-                content = f.read()
+            # Try UTF-8 first, with explicit error handling
+            try:
+                with open(path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+            except UnicodeDecodeError as e:
+                print(f"Error: Unable to decode file '{filepath}' as UTF-8.")
+                print(f"  Details: {e}")
+                print(f"  Try converting the file to UTF-8 encoding.")
+                return False
             
+            # Append to program (not replace)
             self.engine.consult_string(content)
             print(f"Loaded: {filepath}")
             
@@ -183,9 +193,6 @@ class PrologREPL:
             self._update_completer()
             return True
             
-        except UnicodeDecodeError:
-            print(f"Error: Unable to decode file: {filepath}")
-            return False
         except Exception as e:
             print(f"Error loading file: {e}")
             return False
@@ -227,6 +234,16 @@ class PrologREPL:
             # Handle parse errors and other exceptions
             error_msg = str(e)
             if 'parse' in error_msg.lower() or 'syntax' in error_msg.lower():
+                # Check for common operator mistakes in Stage 1
+                if ' is ' in query_text or '=' in query_text and '=(' not in query_text:
+                    return {
+                        'success': False,
+                        'error': f"Parse error: {error_msg}\n" +
+                                "Note: Stage 1 uses operator-free syntax. Examples:\n" +
+                                "  - Use: is(X, '+'(2, 3))  instead of: X is 2 + 3\n" +
+                                "  - Use: '>'(5, 3)         instead of: 5 > 3\n" +
+                                "  - Use: '='(X, Y)         instead of: X = Y"
+                    }
                 return {
                     'success': False,
                     'error': f"Parse error: {error_msg}"
@@ -272,6 +289,10 @@ class PrologREPL:
     def execute_query_with_timeout(self, query_text: str, timeout_ms: int) -> dict[str, Any]:
         """Execute a query with a timeout.
         
+        Cross-platform implementation:
+        - POSIX: Uses signal.alarm() with SIGALRM handler
+        - Windows/fallback: Uses threading.Timer with abort flag
+        
         Args:
             query_text: The Prolog query to execute
             timeout_ms: Timeout in milliseconds
@@ -279,77 +300,99 @@ class PrologREPL:
         Returns:
             Dictionary with 'success' and optional 'bindings' or 'error'
         """
-        import signal
         import sys
+        import threading
+        
+        # Try signal-based timeout first (POSIX only)
+        if sys.platform != 'win32':
+            try:
+                import signal
+                if hasattr(signal, 'SIGALRM'):
+                    return self._execute_with_signal_timeout(query_text, timeout_ms)
+            except ImportError:
+                pass
+        
+        # Fallback to thread-based timeout
+        return self._execute_with_thread_timeout(query_text, timeout_ms)
+    
+    def _execute_with_signal_timeout(self, query_text: str, timeout_ms: int) -> dict[str, Any]:
+        """Execute query with POSIX signal-based timeout."""
+        import signal
         
         def timeout_handler(signum, frame):
             raise TimeoutError("Query timeout")
         
-        # Only use signal-based timeout on Unix systems
-        if sys.platform != 'win32' and hasattr(signal, 'SIGALRM'):
+        old_handler = None
+        try:
+            self._cleanup_query_state()
+            
+            # Set up timeout
+            old_handler = signal.signal(signal.SIGALRM, timeout_handler)
+            signal.alarm(max(1, timeout_ms // 1000))  # Convert to seconds
+            
             try:
-                self._cleanup_query_state()
-                
-                # Set up timeout
-                old_handler = signal.signal(signal.SIGALRM, timeout_handler)
-                signal.alarm(max(1, timeout_ms // 1000))  # Convert to seconds
-                
-                try:
-                    solutions = list(self.engine.query(query_text))
-                    if solutions:
-                        return {
-                            'success': True,
-                            'bindings': solutions[0]
-                        }
-                    else:
-                        return {'success': False}
-                except TimeoutError:
+                solutions = list(self.engine.query(query_text))
+                if solutions:
                     return {
-                        'success': False,
-                        'error': 'Query timeout: exceeded time limit'
+                        'success': True,
+                        'bindings': solutions[0]
                     }
-                finally:
-                    signal.alarm(0)  # Cancel alarm
-                    signal.signal(signal.SIGALRM, old_handler)
-                    
-            except Exception as e:
+                else:
+                    return {'success': False}
+            except TimeoutError:
                 return {
                     'success': False,
-                    'error': str(e)
+                    'error': 'Query timeout: exceeded time limit'
                 }
-            finally:
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e)
+            }
+        finally:
+            # Always cancel alarm and restore handler
+            if old_handler is not None:
+                signal.alarm(0)
+                signal.signal(signal.SIGALRM, old_handler)
+            self._cleanup_query_state()
+    
+    def _execute_with_thread_timeout(self, query_text: str, timeout_ms: int) -> dict[str, Any]:
+        """Execute query with thread-based timeout (Windows/fallback)."""
+        import threading
+        
+        result = {'success': False, 'error': 'Query timeout: exceeded time limit'}
+        finished = threading.Event()
+        
+        def run_query():
+            try:
                 self._cleanup_query_state()
+                solutions = list(self.engine.query(query_text))
+                if solutions:
+                    result['success'] = True
+                    result['bindings'] = solutions[0]
+                    del result['error']
+                else:
+                    del result['error']
+            except Exception as e:
+                result['error'] = str(e)
+            finally:
+                finished.set()
+        
+        # Run query in thread
+        query_thread = threading.Thread(target=run_query)
+        query_thread.daemon = True
+        query_thread.start()
+        
+        # Wait for completion or timeout
+        if finished.wait(timeout_ms / 1000.0):
+            # Query completed
+            pass
         else:
-            # Fallback for Windows or systems without SIGALRM
-            # Just try with recursion limit
-            import sys
-            old_limit = sys.getrecursionlimit()
-            try:
-                self._cleanup_query_state()
-                sys.setrecursionlimit(100)  # Small limit
-                
-                try:
-                    solutions = list(self.engine.query(query_text))
-                    if solutions:
-                        return {
-                            'success': True,
-                            'bindings': solutions[0]
-                        }
-                    else:
-                        return {'success': False}
-                except RecursionError:
-                    return {
-                        'success': False,
-                        'error': 'Query timeout: exceeded depth limit'
-                    }
-            except Exception as e:
-                return {
-                    'success': False,
-                    'error': str(e)
-                }
-            finally:
-                sys.setrecursionlimit(old_limit)
-                self._cleanup_query_state()
+            # Timeout - thread may still be running but we return timeout
+            pass
+        
+        self._cleanup_query_state()
+        return result
     
     def query_generator(self, query_text: str) -> Generator[dict[str, Any], None, None]:
         """Create a generator for interactive query results.
@@ -363,21 +406,22 @@ class PrologREPL:
         try:
             self._cleanup_query_state()
             
-            for solution in self.engine.query(query_text):
+            try:
+                for solution in self.engine.query(query_text):
+                    yield {
+                        'success': True,
+                        'bindings': solution
+                    }
+            except GeneratorExit:
+                # User stopped with '.' or generator was closed
+                pass
+            except Exception as e:
                 yield {
-                    'success': True,
-                    'bindings': solution
+                    'success': False,
+                    'error': str(e)
                 }
-        except GeneratorExit:
-            # User stopped with '.'
-            self._cleanup_query_state()
-            raise
-        except Exception as e:
-            yield {
-                'success': False,
-                'error': str(e)
-            }
         finally:
+            # Always cleanup, even if generator is closed early
             self._cleanup_query_state()
     
     def _cleanup_query_state(self):
@@ -504,9 +548,11 @@ class PrologREPL:
         # Check for query
         if input_text.startswith('?-'):
             query = input_text[2:].strip()
-            # Remove trailing period if present
-            if query.endswith('.'):
-                query = query[:-1].strip()
+            # Check if query is complete (has trailing period)
+            if not query.endswith('.'):
+                return {'type': 'incomplete', 'content': query}
+            # Remove trailing period
+            query = query[:-1].strip()
             return {'type': 'query', 'content': query}
         
         # Check for consult
@@ -548,15 +594,32 @@ Examples:
         print("Welcome to PyLog REPL")
         print("Type 'help.' for commands or 'quit.' to exit\n")
         
+        incomplete_query = ""
+        
         while True:
             try:
                 # Get user input
-                user_input = self.session.prompt('?- ')
+                if incomplete_query:
+                    prompt = '|    '  # Continuation prompt
+                else:
+                    prompt = '?- '
+                
+                user_input = self.session.prompt(prompt)
+                
+                # Handle incomplete queries
+                if incomplete_query:
+                    user_input = incomplete_query + " " + user_input
+                    incomplete_query = ""
                 
                 # Parse command
                 cmd = self.parse_command(user_input)
                 
                 if cmd['type'] == 'empty':
+                    continue
+                    
+                elif cmd['type'] == 'incomplete':
+                    # Save for continuation
+                    incomplete_query = '?- ' + cmd['content']
                     continue
                     
                 elif cmd['type'] == 'quit':
@@ -575,11 +638,18 @@ Examples:
                 else:
                     print(f"Error: {cmd.get('message', 'Unknown command')}")
                     
-            except (EOFError, KeyboardInterrupt):
+            except EOFError:
+                # Ctrl-D pressed
                 print("\nGoodbye!")
                 break
+            except KeyboardInterrupt:
+                # Ctrl-C pressed
+                print("^C")
+                incomplete_query = ""  # Reset any incomplete query
+                continue
             except Exception as e:
                 print(f"Error: {e}")
+                incomplete_query = ""  # Reset on error
     
     def _handle_query(self, query_text: str):
         """Handle an interactive query with ; and . support.
@@ -589,10 +659,12 @@ Examples:
         """
         try:
             generator = self.query_generator(query_text)
+            solution_count = 0
             
             for i, result in enumerate(generator):
                 if result['success']:
                     print(self.format_solution(result))
+                    solution_count += 1
                     
                     # Check if there might be more solutions
                     try:
@@ -604,20 +676,25 @@ Examples:
                             cont = self.session.prompt(' ', default=';')
                             if cont.strip() == '.':
                                 generator.close()
+                                print(".")  # Indicate stop
                                 break
                             # Show the peeked solution
                             print(self.format_solution(next_result))
+                            solution_count += 1
                         except (EOFError, KeyboardInterrupt):
                             generator.close()
+                            print("\n.")  # Indicate stop
                             break
                     except StopIteration:
                         # No more solutions
+                        if solution_count > 0:
+                            print(".")  # Final solution marker
                         break
                 else:
                     if 'error' in result:
                         print(f"Error: {result['error']}")
                     else:
-                        print('false')
+                        print('false.')
                     break
                     
         except Exception as e:

@@ -282,8 +282,13 @@ class TestREPLCommands:
         
         repl = PrologREPL()
         
-        # Query with extra whitespace
+        # Query with extra whitespace but no period (incomplete)
         cmd = repl.parse_command("  ?-  parent(X, Y)   ")
+        assert cmd["type"] == "incomplete"
+        assert cmd["content"] == "parent(X, Y)"
+        
+        # Query with extra whitespace and period (complete)
+        cmd = repl.parse_command("  ?-  parent(X, Y).   ")
         assert cmd["type"] == "query"
         assert cmd["content"] == "parent(X, Y)"
         
@@ -486,6 +491,17 @@ class TestREPLWithPromptToolkit:
 
 class TestREPLErrorHandling:
     """Test error handling in the REPL."""
+    
+    def test_division_by_zero(self):
+        """Test that division by zero is handled gracefully."""
+        from prolog.repl import PrologREPL
+        
+        repl = PrologREPL()
+        
+        # Division by zero in operator-free syntax
+        result = repl.execute_query("is(X, '/'(1, 0))")
+        assert result["success"] is False
+        assert_engine_clean(repl.engine)
     
     def test_arithmetic_evaluation_errors(self):
         """Test handling of arithmetic evaluation errors."""

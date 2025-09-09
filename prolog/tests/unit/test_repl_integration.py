@@ -86,6 +86,11 @@ class TestREPLLibraryIntegration:
         result = repl.execute_query("knows(charlie, bob)")
         assert result["success"] is True
         assert_engine_clean(repl.engine)
+        
+        # Test a join query combining both files
+        result = repl.execute_query("person(bob), knows(bob, charlie)")
+        assert result["success"] is True
+        assert_engine_clean(repl.engine)
     
     def test_repl_with_recursive_rules(self):
         """Test REPL with recursive predicates."""
@@ -319,8 +324,9 @@ class TestREPLRobustness:
         # Query without closing period
         cmd = repl.parse_command("?- parent(X, Y)")
         
-        # Should either handle gracefully or prompt for more
-        assert cmd["type"] in ["incomplete", "error", "query"]
+        # Should be marked as incomplete (deterministic behavior)
+        assert cmd["type"] == "incomplete"
+        assert cmd["content"] == "parent(X, Y)"
     
     def test_very_long_query(self):
         """Test handling of very long queries."""
@@ -348,6 +354,13 @@ class TestREPLRobustness:
         result = repl.execute_query("'special-atom'(X)")
         assert result["success"] is True
         assert result["bindings"]["X"] == Int(123)
+        assert_engine_clean(repl.engine)
+        
+        # Test 'with spaces' atom
+        result = repl.execute_query("'with spaces'(X)")
+        assert result["success"] is True
+        assert result["bindings"]["X"] == Atom("ok")
+        assert_engine_clean(repl.engine)
     
     def test_unicode_support(self):
         """Test Unicode support in the REPL."""

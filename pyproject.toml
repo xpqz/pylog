@@ -10,6 +10,9 @@ dependencies = [
     "pygments>=2.19.2",
 ]
 
+[project.scripts]
+pylog = "prolog.repl:main"
+
 [project.optional-dependencies]
 dev = [
     "black>=23.0.0",
