@@ -37,6 +37,11 @@ jobs:
       - name: Set up Python
         run: uv python install ${{ matrix.python-version }}
 
+      - name: Install SWI-Prolog
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y swi-prolog-nox
+
       - name: Install dependencies
         run: |
           uv sync --all-extras
@@ -45,6 +50,7 @@ jobs:
         run: |
           uv run python -V
           uv pip list
+          swipl --version
 
       - name: Run tests
         env:
