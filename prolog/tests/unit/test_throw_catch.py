@@ -183,6 +183,15 @@ class TestThrowCatch:
         results = list(engine.query("p(X), catch(throw(t), t, fail)"))
         assert len(results) == 0
     
+    @pytest.mark.swi_baseline
+    def test_catch_recovery_fails_transparent_baseline(self, swi):
+        """Validate transparent backtracking against SWI-Prolog."""
+        prog = "p(1). p(2)."
+        goal = "p(X), catch(throw(t), t, fail)"
+        
+        # SWI-Prolog should also give 0 solutions
+        assert swi.count(prog, goal) == 0
+    
     def test_nested_catch(self):
         """Test nested catch/3 calls."""
         engine = Engine(Program(()))
@@ -344,6 +353,19 @@ class TestThrowCatch:
         assert len(results) == 2
         assert results[0]["X"] == Int(1)
         assert results[1]["X"] == Int(2)
+    
+    @pytest.mark.swi_baseline
+    def test_transparent_backtracking_observable_baseline(self, swi):
+        """Validate transparency observation against SWI-Prolog."""
+        prog = "p(1). p(2)."
+        goal = "p(X), (catch(throw(t), t, fail) ; true)"
+        
+        # SWI should give 2 solutions (both p/1 alternatives succeed)
+        assert swi.count(prog, goal) == 2
+        
+        # Check the actual values
+        values = swi.onevar(prog, goal, "X")
+        assert values == ["1", "2"]
     
     def test_throw_cleans_unwinding(self):
         """Test that throw properly unwinds stacks."""
