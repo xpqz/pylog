@@ -20,6 +20,7 @@ from prolog.parser.reader import Reader, ReaderError
 from prolog.parser.parser import parse_clause, parse_program, parse_query
 from prolog.engine.engine import Engine
 from prolog.unify.store import Store
+from prolog.ast.clauses import Program
 
 
 def _assert_engine_clean(engine):
@@ -329,18 +330,12 @@ class TestControlFlowInClauses:
         clause = parse_clause(text)
         assert isinstance(clause, Clause)
         assert clause.head == Atom("head")
-        assert len(clause.body) == 1
         
-        # Body should be [','(a, ','(b, c))]
-        body_goal = clause.body[0]
-        assert isinstance(body_goal, Struct)
-        assert body_goal.functor == ","
-        assert body_goal.args[0] == Atom("a")
-        
-        rest = body_goal.args[1]
-        assert isinstance(rest, Struct)
-        assert rest.functor == ","
-        assert rest.args == (Atom("b"), Atom("c"))
+        # Body is flattened conjunction: [a, b, c]
+        assert len(clause.body) == 3
+        assert clause.body[0] == Atom("a")
+        assert clause.body[1] == Atom("b")
+        assert clause.body[2] == Atom("c")
     
     def test_clause_with_disjunction_body(self):
         """Clause with disjunction in body: head :- a; b; c."""
@@ -348,9 +343,9 @@ class TestControlFlowInClauses:
         clause = parse_clause(text)
         assert isinstance(clause, Clause)
         assert clause.head == Atom("head")
-        assert len(clause.body) == 1
         
-        # Body should be [';'(a, ';'(b, c))]
+        # Body has disjunction structure (not flattened)
+        assert len(clause.body) == 1
         body_goal = clause.body[0]
         assert isinstance(body_goal, Struct)
         assert body_goal.functor == ";"
@@ -413,12 +408,12 @@ class TestEngineIntegration:
         fact2.
         test :- fact1, fact2.
         """
-        program = parse_program(program_text)
+        clauses = parse_program(program_text)
+        program = Program(tuple(clauses))
         engine = Engine(program)
-        store = Store()
         
         # Query: ?- test.
-        results = list(engine.query([Struct("test", ())], store))
+        results = list(engine.query("?- test."))
         assert len(results) == 1  # Should succeed once
         _assert_engine_clean(engine)
     
@@ -430,18 +425,17 @@ class TestEngineIntegration:
         test1 :- fact1; fact2.
         test2 :- fact3; fact1.
         """
-        program = parse_program(program_text)
+        clauses = parse_program(program_text)
+        program = Program(tuple(clauses))
         engine = Engine(program)
-        store = Store()
         
         # Query: ?- test1. (both alternatives exist)
-        results = list(engine.query([Struct("test1", ())], store))
+        results = list(engine.query("?- test1."))
         assert len(results) == 2  # Should succeed twice
         _assert_engine_clean(engine)
         
         # Query: ?- test2. (only second alternative exists)
-        store2 = Store()
-        results = list(engine.query([Struct("test2", ())], store2))
+        results = list(engine.query("?- test2."))
         assert len(results) == 1  # Should succeed once
         _assert_engine_clean(engine)
     
@@ -454,18 +448,17 @@ class TestEngineIntegration:
         test1 :- (cond_true -> result1; result2).
         test2 :- (cond_false -> result1; result2).
         """
-        program = parse_program(program_text)
+        clauses = parse_program(program_text)
+        program = Program(tuple(clauses))
         engine = Engine(program)
-        store = Store()
         
         # Query: ?- test1. (condition succeeds, use then branch)
-        results = list(engine.query([Struct("test1", ())], store))
+        results = list(engine.query("?- test1."))
         assert len(results) == 1
         _assert_engine_clean(engine)
         
         # Query: ?- test2. (condition fails, use else branch)
-        store2 = Store()
-        results = list(engine.query([Struct("test2", ())], store2))
+        results = list(engine.query("?- test2."))
         assert len(results) == 1
         _assert_engine_clean(engine)
     
@@ -477,13 +470,13 @@ class TestEngineIntegration:
         c.
         test :- (a, b); c.
         """
-        program = parse_program(program_text)
+        clauses = parse_program(program_text)
+        program = Program(tuple(clauses))
         engine = Engine(program)
-        store = Store()
         
         # Query: ?- test.
         # Should succeed twice: once via (a,b), once via c
-        results = list(engine.query([Struct("test", ())], store))
+        results = list(engine.query("?- test."))
         assert len(results) == 2
         _assert_engine_clean(engine)
     
@@ -495,20 +488,25 @@ class TestEngineIntegration:
         q(1).
         test(X) :- (p(X) -> q(X); true).
         """
-        program = parse_program(program_text)
+        clauses = parse_program(program_text)
+        program = Program(tuple(clauses))
         engine = Engine(program)
-        store = Store()
         
         # Query: ?- test(X).
         # X=1 succeeds via then-branch
         # X=2 does not take else because condition succeeds and commits
-        results = list(engine.query([Struct("test", (Var(0, "X"),))], store))
+        results = list(engine.query("?- test(X)."))
         
         # Extract X values from results
         x_values = set()
         for result in results:
             if "X" in result:
-                x_values.add(result["X"].value if hasattr(result["X"], "value") else result["X"])
+                value = result["X"]
+                # Handle both Int objects and plain ints
+                if hasattr(value, "value"):
+                    x_values.add(value.value)
+                else:
+                    x_values.add(value)
         
         assert x_values == {1}, f"Expected {{1}}, got {x_values}"
         _assert_engine_clean(engine)
@@ -522,20 +520,25 @@ class TestEngineIntegration:
         r(2).
         test(X) :- (p(X) -> q(X); r(X)).
         """
-        program = parse_program(program_text)
+        clauses = parse_program(program_text)
+        program = Program(tuple(clauses))
         engine = Engine(program)
-        store = Store()
         
         # Query: ?- test(X).
         # X=1: condition succeeds, then succeeds
         # X=2: condition succeeds, then fails, no else branch taken
-        results = list(engine.query([Struct("test", (Var(0, "X"),))], store))
+        results = list(engine.query("?- test(X)."))
         
         # Extract X values from results
         x_values = set()
         for result in results:
             if "X" in result:
-                x_values.add(result["X"].value if hasattr(result["X"], "value") else result["X"])
+                value = result["X"]
+                # Handle both Int objects and plain ints
+                if hasattr(value, "value"):
+                    x_values.add(value.value)
+                else:
+                    x_values.add(value)
         
         assert x_values == {1}, f"Expected {{1}}, got {x_values}"
         _assert_engine_clean(engine)

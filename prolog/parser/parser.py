@@ -2,6 +2,8 @@
 
 This module provides functions to parse Prolog text into AST objects
 using the Lark grammar defined in grammar.lark.
+
+For Stage 1.5, this module integrates with the reader for operator support.
 """
 
 import pathlib
@@ -11,6 +13,7 @@ from lark.exceptions import UnexpectedCharacters, UnexpectedToken
 
 from prolog.ast.terms import Atom, Int, Var, Struct, List as PrologList
 from prolog.ast.clauses import Clause
+from prolog.parser.reader import Reader
 
 
 class ParseError(Exception):
@@ -255,6 +258,14 @@ def parse_clause(text: str) -> Clause:
     Raises:
         ParseError: If the text cannot be parsed as a clause
     """
+    # Try using the reader first for operator support
+    try:
+        reader = Reader()
+        return reader.read_clause(text)
+    except Exception:
+        # Fall back to grammar-based parser for backward compatibility
+        pass
+    
     try:
         parser = Lark(_get_grammar(), start="clause", parser="lalr")
         tree = parser.parse(text)
@@ -289,6 +300,14 @@ def parse_query(text: str) -> List[Any]:
     Raises:
         ParseError: If the text cannot be parsed as a query
     """
+    # Try using the reader first for operator support
+    try:
+        reader = Reader()
+        return reader.read_query(text)
+    except Exception:
+        # Fall back to grammar-based parser for backward compatibility
+        pass
+    
     try:
         parser = Lark(_get_grammar(), start="query", parser="lalr")
         tree = parser.parse(text)
@@ -326,6 +345,14 @@ def parse_program(text: str) -> List[Clause]:
     """
     if not text.strip():
         return []
+    
+    # Try using the reader first for operator support
+    try:
+        reader = Reader()
+        return reader.read_program(text)
+    except Exception:
+        # Fall back to grammar-based parser for backward compatibility
+        pass
 
     # Remove comments but preserve line structure for error reporting
     lines = text.split("\n")

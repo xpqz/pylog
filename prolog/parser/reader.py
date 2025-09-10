@@ -392,6 +392,8 @@ class PrattParser:
                 closing = self.stream.consume()
                 if not closing or closing.type != 'RPAREN':
                     raise ReaderError("Expected closing parenthesis in structure")
+                if not args:
+                    raise ReaderError(f"Empty parentheses not allowed - use plain atom '{name}' instead")
                 return Struct(name, tuple(args))
             
             return Atom(name)
@@ -408,11 +410,17 @@ class PrattParser:
                 closing = self.stream.consume()
                 if not closing or closing.type != 'RPAREN':
                     raise ReaderError("Expected closing parenthesis in structure")
+                if not args:
+                    raise ReaderError(f"Empty parentheses not allowed - use plain atom '{token.value}' instead")
                 return Struct(token.value, tuple(args))
             
             return Atom(token.value)
         
-        raise ReaderError(f"Unexpected token: {token.type} '{token.value}'", position=token.position)
+        raise ReaderError(
+            f"Unexpected token: {token.type} '{token.value}'", 
+            position=token.position,
+            token=token.value
+        )
     
     def parse_list(self) -> PrologList:
         """Parse a list."""
@@ -670,6 +678,10 @@ class Reader:
             # Tokenize
             tokens = self.tokenizer.tokenize(text)
             
+            # Check for trailing DOT
+            if not tokens or tokens[-1].type != 'DOT':
+                raise ReaderError("Clause must end with period")
+            
             # Find :- separator if present
             colon_minus_idx = None
             for i, token in enumerate(tokens):
@@ -678,8 +690,7 @@ class Reader:
                     break
             
             # Remove trailing DOT
-            if tokens and tokens[-1].type == 'DOT':
-                tokens = tokens[:-1]
+            tokens = tokens[:-1]
             
             if colon_minus_idx is not None:
                 # Rule: head :- body
@@ -696,19 +707,31 @@ class Reader:
                 head_parser = PrattParser(head_stream, self.strict_unsupported)
                 head = head_parser.parse_term()
                 
+                # Validate head (must be atom or structure, not variable/int/list)
+                if not isinstance(head, (Atom, Struct)):
+                    raise ReaderError("Invalid clause head - must be atom or structure")
+                
                 # Parse body
                 body_stream = TokenStream(body_tokens)
                 body_parser = PrattParser(body_stream, self.strict_unsupported)
-                body = body_parser.parse_term()
+                body_term = body_parser.parse_term()
                 
-                return Clause(head, body)
+                # Flatten conjunction into list for Clause
+                body_goals = []
+                self._flatten_conjunction(body_term, body_goals)
+                
+                return Clause(head, body_goals)
             else:
                 # Fact: just head
                 stream = TokenStream(tokens)
                 parser = PrattParser(stream, self.strict_unsupported)
                 head = parser.parse_term()
                 
-                return Clause(head, None)
+                # Validate head (must be atom or structure, not variable/int/list)
+                if not isinstance(head, (Atom, Struct)):
+                    raise ReaderError("Invalid clause head - must be atom or structure")
+                
+                return Clause(head, [])
             
         except ReaderError:
             raise
@@ -739,9 +762,12 @@ class Reader:
             else:
                 raise ReaderError("Query must start with ?-")
             
+            # Check for trailing DOT
+            if not tokens or tokens[-1].type != 'DOT':
+                raise ReaderError("Query must end with period")
+            
             # Remove trailing DOT
-            if tokens and tokens[-1].type == 'DOT':
-                tokens = tokens[:-1]
+            tokens = tokens[:-1]
             
             if not tokens:
                 raise ReaderError("Empty query")
@@ -769,3 +795,48 @@ class Reader:
             self._flatten_conjunction(term.args[1], goals)
         else:
             goals.append(term)
+    
+    def read_program(self, text: str) -> List[Clause]:
+        """Read a Prolog program from text.
+        
+        Args:
+            text: The Prolog program text to parse (multiple clauses)
+            
+        Returns:
+            List of Clause objects with operators in canonical form
+            
+        Raises:
+            ReaderError: If the text cannot be parsed as a program
+        """
+        if not text.strip():
+            return []
+        
+        clauses = []
+        # Split by periods to find individual clauses
+        # This is a simple approach - more robust would be to track parentheses
+        lines = text.strip().split('\n')
+        current_clause = []
+        
+        for line in lines:
+            # Skip comments and empty lines
+            line = line.strip()
+            if not line or line.startswith('%'):
+                continue
+            
+            current_clause.append(line)
+            # Check if this line ends a clause
+            if line.rstrip().endswith('.'):
+                clause_text = ' '.join(current_clause)
+                try:
+                    clause = self.read_clause(clause_text)
+                    clauses.append(clause)
+                except ReaderError:
+                    # Try to provide context
+                    raise
+                current_clause = []
+        
+        # Check for incomplete clause
+        if current_clause:
+            raise ReaderError("Incomplete clause at end of program")
+        
+        return clauses
