@@ -12,6 +12,10 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+  id-token: write  # Required for OIDC
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -80,11 +84,19 @@ jobs:
             .coverage
           if-no-files-found: ignore
 
+      - name: Upload coverage.xml artifact
+        if: matrix.python-version == '3.11'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
+          if-no-files-found: warn
+
       - name: Upload coverage to Codecov
         if: matrix.python-version == '3.11'
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
-          file: ./coverage.xml
+          use_oidc: true
+          files: ./coverage.xml
           fail_ci_if_error: false
           verbose: true
-          token: ${{ secrets.CODECOV_TOKEN }}

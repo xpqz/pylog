@@ -25,6 +25,10 @@ coverage-report:  ## Show coverage report in terminal
 coverage-xml:  ## Generate XML coverage report for CI
 	uv run pytest --cov=prolog --cov-branch --cov-report=xml --cov-report=term
 
+coverage-combine:  ## Combine parallel coverage files
+	uv run coverage combine || true
+	uv run coverage xml -i
+
 clean:  ## Clean up generated files
 	rm -rf htmlcov/
 	rm -f .coverage
