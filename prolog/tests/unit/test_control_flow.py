@@ -729,3 +729,72 @@ class TestEdgeCases:
         reader = Reader()
         c = reader.read_clause("a.")
         assert isinstance(c.body, list) and c.body == []
+    
+    def test_multiline_quoted_atom_with_percent(self):
+        """Test that % inside multi-line quoted atoms is preserved."""
+        reader = Reader()
+        text = """f('line 1
+% this looks like a comment
+but it is not').
+g."""
+        clauses = reader.read_program(text)
+        assert len(clauses) == 2
+        expected_content = "line 1\n% this looks like a comment\nbut it is not"
+        assert clauses[0].head == Struct("f", (Atom(expected_content),))
+        assert clauses[0].body == []
+        assert clauses[1].head == Atom("g")
+        assert clauses[1].body == []
+    
+    def test_whitespace_insensitivity_conjunction(self):
+        """Test that whitespace around operators doesn't affect parsing."""
+        reader = Reader()
+        
+        # Tight spacing
+        result1 = reader.read_term("a,b,c")
+        # Spaced out
+        result2 = reader.read_term("a , b , c")
+        # Mixed spacing
+        result3 = reader.read_term("a, b ,c")
+        
+        expected = Struct(",", (Atom("a"), Struct(",", (Atom("b"), Atom("c")))))
+        assert result1 == expected
+        assert result2 == expected
+        assert result3 == expected
+    
+    def test_whitespace_insensitivity_mixed_operators(self):
+        """Test whitespace insensitivity with mixed operators."""
+        reader = Reader()
+        
+        # Tight
+        result1 = reader.read_term("a,b;c")
+        # Spaced
+        result2 = reader.read_term("a , b ; c")
+        # Extreme spacing
+        result3 = reader.read_term("a  ,  b  ;  c")
+        
+        expected = Struct(";", (
+            Struct(",", (Atom("a"), Atom("b"))),
+            Atom("c")
+        ))
+        assert result1 == expected
+        assert result2 == expected
+        assert result3 == expected
+    
+    def test_whitespace_insensitivity_if_then(self):
+        """Test whitespace around if-then operator."""
+        reader = Reader()
+        
+        # Tight
+        result1 = reader.read_term("a->b;c")
+        # Spaced
+        result2 = reader.read_term("a -> b ; c")
+        # Mixed
+        result3 = reader.read_term("a-> b; c")
+        
+        expected = Struct(";", (
+            Struct("->", (Atom("a"), Atom("b"))),
+            Atom("c")
+        ))
+        assert result1 == expected
+        assert result2 == expected
+        assert result3 == expected

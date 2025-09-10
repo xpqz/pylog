@@ -23,10 +23,11 @@ logger = logging.getLogger(__name__)
 class ReaderError(Exception):
     """Exception raised for reader/parser errors.
     
-    Attributes:
+    Guaranteed fields for tools and CI logs:
         message: The error message describing what went wrong
         position: Character position in the input where the error occurred (0-based)
         column: Alias for position for compatibility
+        line: Line number where error occurred (always None in current impl, reserved for future)
         token: The token/lexeme that caused the error (e.g., "@@" for unknown operator)
         lexeme: Alias for token for consistency
     """
@@ -36,6 +37,7 @@ class ReaderError(Exception):
         self.message = message
         self.position = position
         self.column = position  # Alias for compatibility
+        self.line = None  # Reserved for future line tracking
         self.token = token
         self.lexeme = token  # Alias for consistency
     
@@ -606,7 +608,8 @@ class Reader:
     
     Args:
         strict_unsupported: If True, raise ReaderError on unsupported operators
-                          instead of just logging warnings (default: False)
+                          instead of just logging warnings (default: False).
+                          Useful for CI to flip warnings → errors without code changes.
     """
     
     def __init__(self, strict_unsupported: bool = False):

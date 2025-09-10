@@ -248,6 +248,8 @@ def parse_term(text: str) -> Any:
 
 def parse_clause(text: str) -> Clause:
     """Parse a single Prolog clause (fact or rule).
+    
+    Reader first; grammar fallback on ReaderError.
 
     Args:
         text: Clause text ending with period
@@ -290,6 +292,8 @@ def parse_clause(text: str) -> Clause:
 
 def parse_query(text: str) -> List[Any]:
     """Parse a Prolog query.
+    
+    Reader first; grammar fallback on ReaderError.
 
     Args:
         text: Query text starting with ?- and ending with period
@@ -330,6 +334,8 @@ def parse_query(text: str) -> List[Any]:
 
 def parse_program(text: str) -> List[Clause]:
     """Parse a complete Prolog program.
+    
+    Reader first; grammar fallback on ReaderError.
 
     Programs can only contain clauses (facts and rules).
     Queries and directives are not allowed in programs.
