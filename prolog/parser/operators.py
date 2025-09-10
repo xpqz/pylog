@@ -4,6 +4,7 @@ This module provides the single source of truth for operator precedence and asso
 """
 
 from typing import Dict, Tuple, Optional
+from types import MappingProxyType
 
 # Type alias for operator info: (precedence, type, canonical_form)
 OperatorInfo = Tuple[int, str, str]
@@ -11,7 +12,7 @@ OperatorInfo = Tuple[int, str, str]
 # The operator table: maps (operator, position) to (precedence, type, canonical)
 # Position is 'infix', 'prefix', or 'postfix'
 # Type is one of: fx, fy, xf, yf, xfx, xfy, yfx, yfy
-OPERATOR_TABLE: Dict[Tuple[str, str], OperatorInfo] = {
+_OPERATOR_TABLE_MUTABLE: Dict[Tuple[str, str], OperatorInfo] = {
     # Control flow operators
     (',', 'infix'): (1000, 'xfy', "','"),      # Conjunction (right-associative)
     (';', 'infix'): (1100, 'xfy', "';'"),      # Disjunction (right-associative)
@@ -56,6 +57,9 @@ OPERATOR_TABLE: Dict[Tuple[str, str], OperatorInfo] = {
     # Other standard operators
     ('is', 'infix'): (700, 'xfx', "'is'"),     # Arithmetic evaluation
 }
+
+# Read-only view of the operator table to prevent accidental mutation
+OPERATOR_TABLE = MappingProxyType(_OPERATOR_TABLE_MUTABLE)
 
 # Set of operators that are not yet supported in Stage 1 runtime
 UNSUPPORTED_IN_STAGE1 = {

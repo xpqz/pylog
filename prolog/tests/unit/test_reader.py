@@ -264,7 +264,9 @@ class TestPrattParser:
             Struct("=", (Var(2, "Z"), Var(1, "Y")))
         ))
         assert result.head == expected_head
-        assert result.body == expected_body
+        # Body is now a list containing the disjunction
+        assert len(result.body) == 1
+        assert result.body[0] == expected_body
 
     def test_query_with_operators(self):
         """Parse queries with operator expressions."""
@@ -558,7 +560,7 @@ class TestPrattParser:
         # Test clause without body (fact)
         clause = reader.read_clause("foo.")
         assert clause.head == Atom("foo")
-        assert clause.body is None
+        assert clause.body == []  # Facts have empty body list
         
         # Test query with single goal
         goals = reader.read_query("?- foo.")

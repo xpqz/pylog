@@ -23,10 +23,11 @@ logger = logging.getLogger(__name__)
 class ReaderError(Exception):
     """Exception raised for reader/parser errors.
     
-    Attributes:
+    Guaranteed fields for tools and CI logs:
         message: The error message describing what went wrong
         position: Character position in the input where the error occurred (0-based)
         column: Alias for position for compatibility
+        line: Line number where error occurred (always None in current impl, reserved for future)
         token: The token/lexeme that caused the error (e.g., "@@" for unknown operator)
         lexeme: Alias for token for consistency
     """
@@ -36,6 +37,7 @@ class ReaderError(Exception):
         self.message = message
         self.position = position
         self.column = position  # Alias for compatibility
+        self.line = None  # Reserved for future line tracking
         self.token = token
         self.lexeme = token  # Alias for consistency
     
@@ -392,6 +394,8 @@ class PrattParser:
                 closing = self.stream.consume()
                 if not closing or closing.type != 'RPAREN':
                     raise ReaderError("Expected closing parenthesis in structure")
+                if not args:
+                    raise ReaderError(f"Empty parentheses not allowed - use plain atom '{name}' instead")
                 return Struct(name, tuple(args))
             
             return Atom(name)
@@ -408,11 +412,17 @@ class PrattParser:
                 closing = self.stream.consume()
                 if not closing or closing.type != 'RPAREN':
                     raise ReaderError("Expected closing parenthesis in structure")
+                if not args:
+                    raise ReaderError(f"Empty parentheses not allowed - use plain atom '{token.value}' instead")
                 return Struct(token.value, tuple(args))
             
             return Atom(token.value)
         
-        raise ReaderError(f"Unexpected token: {token.type} '{token.value}'", position=token.position)
+        raise ReaderError(
+            f"Unexpected token: {token.type} '{token.value}'", 
+            position=token.position,
+            token=token.value
+        )
     
     def parse_list(self) -> PrologList:
         """Parse a list."""
@@ -598,7 +608,8 @@ class Reader:
     
     Args:
         strict_unsupported: If True, raise ReaderError on unsupported operators
-                          instead of just logging warnings (default: False)
+                          instead of just logging warnings (default: False).
+                          Useful for CI to flip warnings → errors without code changes.
     """
     
     def __init__(self, strict_unsupported: bool = False):
@@ -670,6 +681,10 @@ class Reader:
             # Tokenize
             tokens = self.tokenizer.tokenize(text)
             
+            # Check for trailing DOT
+            if not tokens or tokens[-1].type != 'DOT':
+                raise ReaderError("Clause must end with period")
+            
             # Find :- separator if present
             colon_minus_idx = None
             for i, token in enumerate(tokens):
@@ -678,8 +693,7 @@ class Reader:
                     break
             
             # Remove trailing DOT
-            if tokens and tokens[-1].type == 'DOT':
-                tokens = tokens[:-1]
+            tokens = tokens[:-1]
             
             if colon_minus_idx is not None:
                 # Rule: head :- body
@@ -696,19 +710,34 @@ class Reader:
                 head_parser = PrattParser(head_stream, self.strict_unsupported)
                 head = head_parser.parse_term()
                 
-                # Parse body
-                body_stream = TokenStream(body_tokens)
-                body_parser = PrattParser(body_stream, self.strict_unsupported)
-                body = body_parser.parse_term()
+                # Validate head (must be atom or structure, not variable/int/list)
+                if not isinstance(head, (Atom, Struct)):
+                    raise ReaderError("Invalid clause head - must be atom or structure")
                 
-                return Clause(head, body)
+                # Parse body with same variable context
+                body_stream = TokenStream(body_tokens)
+                # Copy variable state from head to body
+                body_stream.var_map = head_stream.var_map.copy()
+                body_stream.next_var_id = head_stream.next_var_id
+                body_parser = PrattParser(body_stream, self.strict_unsupported)
+                body_term = body_parser.parse_term()
+                
+                # Flatten conjunction into list for Clause
+                body_goals = []
+                self._flatten_conjunction(body_term, body_goals)
+                
+                return Clause(head, body_goals)
             else:
                 # Fact: just head
                 stream = TokenStream(tokens)
                 parser = PrattParser(stream, self.strict_unsupported)
                 head = parser.parse_term()
                 
-                return Clause(head, None)
+                # Validate head (must be atom or structure, not variable/int/list)
+                if not isinstance(head, (Atom, Struct)):
+                    raise ReaderError("Invalid clause head - must be atom or structure")
+                
+                return Clause(head, [])
             
         except ReaderError:
             raise
@@ -739,9 +768,12 @@ class Reader:
             else:
                 raise ReaderError("Query must start with ?-")
             
+            # Check for trailing DOT
+            if not tokens or tokens[-1].type != 'DOT':
+                raise ReaderError("Query must end with period")
+            
             # Remove trailing DOT
-            if tokens and tokens[-1].type == 'DOT':
-                tokens = tokens[:-1]
+            tokens = tokens[:-1]
             
             if not tokens:
                 raise ReaderError("Empty query")
@@ -769,3 +801,100 @@ class Reader:
             self._flatten_conjunction(term.args[1], goals)
         else:
             goals.append(term)
+    
+    def read_program(self, text: str) -> List[Clause]:
+        """Read a Prolog program from text.
+        
+        Args:
+            text: The Prolog program text to parse (multiple clauses)
+            
+        Returns:
+            List of Clause objects with operators in canonical form
+            
+        Raises:
+            ReaderError: If the text cannot be parsed as a program
+        """
+        if not text.strip():
+            return []
+        
+        clauses = []
+        
+        # Parse clauses by finding periods at the top level (not inside parens/brackets)
+        current_clause = []
+        paren_depth = 0
+        bracket_depth = 0
+        in_quoted_atom = False
+        escape_next = False
+        
+        i = 0
+        while i < len(text):
+            char = text[i]
+            
+            # Handle escape sequences in quoted atoms
+            if escape_next:
+                current_clause.append(char)
+                escape_next = False
+                i += 1
+                continue
+            
+            # Track quoted atoms
+            if char == "'" and not escape_next:
+                in_quoted_atom = not in_quoted_atom
+                current_clause.append(char)
+                i += 1
+                continue
+            
+            # Handle escapes in quoted atoms
+            if in_quoted_atom and char == '\\':
+                escape_next = True
+                current_clause.append(char)
+                i += 1
+                continue
+            
+            # Skip tracking inside quoted atoms
+            if in_quoted_atom:
+                current_clause.append(char)
+                i += 1
+                continue
+            
+            # Handle comments (% starts a line comment when not in quoted atom)
+            if char == '%':
+                # Skip to end of line
+                while i < len(text) and text[i] != '\n':
+                    i += 1
+                # Don't skip the newline itself
+                continue
+            
+            # Track parentheses and brackets
+            if char == '(':
+                paren_depth += 1
+            elif char == ')':
+                paren_depth -= 1
+            elif char == '[':
+                bracket_depth += 1
+            elif char == ']':
+                bracket_depth -= 1
+            elif char == '.' and paren_depth == 0 and bracket_depth == 0:
+                # Found a clause terminator at top level
+                current_clause.append(char)
+                clause_text = ''.join(current_clause).strip()
+                if clause_text:
+                    try:
+                        clause = self.read_clause(clause_text)
+                        clauses.append(clause)
+                    except ReaderError as e:
+                        # Add context about which clause failed
+                        raise ReaderError(f"Error in clause: {e}")
+                current_clause = []
+                i += 1
+                continue
+            
+            current_clause.append(char)
+            i += 1
+        
+        # Check for incomplete clause
+        remaining = ''.join(current_clause).strip()
+        if remaining:
+            raise ReaderError(f"Incomplete clause at end of program: {remaining[:50]}")
+        
+        return clauses
