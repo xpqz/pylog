@@ -3,7 +3,8 @@
 Tests for builtin infrastructure and basic builtins like true/0, fail/0, and call/1.
 """
 
-from prolog.ast.terms import Atom, Var, Struct, Int
+import pytest
+from prolog.ast.terms import Atom, Var, Struct, Int, List
 from prolog.engine.engine import Engine
 
 
@@ -581,3 +582,624 @@ class TestBuiltinIntegration:
         # Cut should still work despite builtins
         assert len(solutions) == 1
         assert solutions[0]["X"] == Atom("first")
+
+
+# =============================================================================
+# MERGED FROM test_builtin_arity_errors.py
+# =============================================================================
+
+class TestUnificationBuiltinArity:
+    """Test arity errors for unification builtins."""
+
+    def test_unify_wrong_arity(self):
+        """Test =/2 with wrong number of arguments."""
+        engine = Engine(program())
+        
+        # = with 1 argument
+        query1 = Struct("=", (Int(5),))
+        solutions1 = engine.run([query1])
+        assert len(solutions1) == 0
+        
+        # = with 3 arguments
+        query2 = Struct("=", (Int(5), Int(5), Int(5)))
+        solutions2 = engine.run([query2])
+        assert len(solutions2) == 0
+        
+        # = with 0 arguments
+        query3 = Struct("=", ())
+        solutions3 = engine.run([query3])
+        assert len(solutions3) == 0
+
+    def test_not_unify_wrong_arity(self):
+        """Test \\=/2 with wrong number of arguments."""
+        engine = Engine(program())
+        
+        # \\= with 1 argument
+        query1 = Struct("\\=", (Int(5),))
+        solutions1 = engine.run([query1])
+        assert len(solutions1) == 0
+        
+        # \\= with 3 arguments
+        query2 = Struct("\\=", (Int(5), Int(6), Int(7)))
+        solutions2 = engine.run([query2])
+        assert len(solutions2) == 0
+
+
+class TestTypeCheckBuiltinArity:
+    """Test arity errors for type checking builtins."""
+
+    def test_var_wrong_arity(self):
+        """Test var/1 with wrong number of arguments."""
+        engine = Engine(program())
+        
+        # var with 0 arguments
+        query1 = Struct("var", ())
+        solutions1 = engine.run([query1])
+        assert len(solutions1) == 0
+        
+        # var with 2 arguments
+        query2 = Struct("var", (Var(0, "X"), Var(1, "Y")))
+        solutions2 = engine.run([query2])
+        assert len(solutions2) == 0
+
+    def test_nonvar_wrong_arity(self):
+        """Test nonvar/1 with wrong number of arguments."""
+        engine = Engine(program())
+        
+        # nonvar with 0 arguments
+        query1 = Struct("nonvar", ())
+        solutions1 = engine.run([query1])
+        assert len(solutions1) == 0
+        
+        # nonvar with 2 arguments
+        query2 = Struct("nonvar", (Int(5), Int(6)))
+        solutions2 = engine.run([query2])
+        assert len(solutions2) == 0
+
+    def test_atom_wrong_arity(self):
+        """Test atom/1 with wrong number of arguments."""
+        engine = Engine(program())
+        
+        # atom with 0 arguments
+        query1 = Struct("atom", ())
+        solutions1 = engine.run([query1])
+        assert len(solutions1) == 0
+        
+        # atom with 2 arguments
+        query2 = Struct("atom", (Atom("a"), Atom("b")))
+        solutions2 = engine.run([query2])
+        assert len(solutions2) == 0
+
+
+class TestMetaBuiltinArity:
+    """Test arity errors for meta-predicates."""
+
+    def test_call_wrong_arity(self):
+        """Test call/1 with wrong number of arguments."""
+        engine = Engine(program())
+        
+        # call with 0 arguments
+        query1 = Struct("call", ())
+        solutions1 = engine.run([query1])
+        assert len(solutions1) == 0
+        
+        # call with 2 arguments
+        query2 = Struct("call", (Atom("true"), Atom("extra")))
+        solutions2 = engine.run([query2])
+        assert len(solutions2) == 0
+
+    def test_catch_wrong_arity(self):
+        """Test catch/3 with wrong number of arguments."""
+        engine = Engine(program())
+        
+        # catch with 1 argument
+        query1 = Struct("catch", (Atom("true"),))
+        solutions1 = engine.run([query1])
+        assert len(solutions1) == 0
+        
+        # catch with 2 arguments
+        query2 = Struct("catch", (Atom("true"), Var(0, "X")))
+        solutions2 = engine.run([query2])
+        assert len(solutions2) == 0
+        
+        # catch with 4 arguments
+        query3 = Struct("catch", (
+            Atom("true"),
+            Var(0, "X"),
+            Atom("fail"),
+            Atom("extra")
+        ))
+        solutions3 = engine.run([query3])
+        assert len(solutions3) == 0
+
+    def test_throw_wrong_arity(self):
+        """Test throw/1 with wrong number of arguments."""
+        engine = Engine(program())
+        
+        # throw with 0 arguments
+        query1 = Struct("catch", (
+            Struct("throw", ()),
+            Var(0, "X"),
+            Atom("true")
+        ))
+        solutions1 = engine.run([query1])
+        assert len(solutions1) == 0  # throw fails
+        
+        # throw with 2 arguments
+        query2 = Struct("catch", (
+            Struct("throw", (Atom("e"), Atom("extra"))),
+            Var(1, "Y"),
+            Atom("true")
+        ))
+        solutions2 = engine.run([query2])
+        assert len(solutions2) == 0  # throw fails
+
+
+class TestStructureBuiltinArity:
+    """Test arity errors for structure manipulation builtins."""
+
+    def test_functor_wrong_arity(self):
+        """Test functor/3 with wrong number of arguments."""
+        engine = Engine(program())
+        
+        # functor with 1 argument
+        query1 = Struct("functor", (Atom("foo"),))
+        solutions1 = engine.run([query1])
+        assert len(solutions1) == 0
+        
+        # functor with 2 arguments
+        query2 = Struct("functor", (Atom("foo"), Atom("foo")))
+        solutions2 = engine.run([query2])
+        assert len(solutions2) == 0
+        
+        # functor with 4 arguments
+        query3 = Struct("functor", (
+            Atom("foo"),
+            Atom("foo"),
+            Int(0),
+            Atom("extra")
+        ))
+        solutions3 = engine.run([query3])
+        assert len(solutions3) == 0
+
+    def test_arg_wrong_arity(self):
+        """Test arg/3 with wrong number of arguments."""
+        engine = Engine(program())
+        
+        # arg with 1 argument
+        query1 = Struct("arg", (Int(1),))
+        solutions1 = engine.run([query1])
+        assert len(solutions1) == 0
+        
+        # arg with 2 arguments
+        query2 = Struct("arg", (Int(1), Struct("f", (Atom("a"),))))
+        solutions2 = engine.run([query2])
+        assert len(solutions2) == 0
+        
+        # arg with 4 arguments
+        query3 = Struct("arg", (
+            Int(1),
+            Struct("f", (Atom("a"),)),
+            Var(0, "X"),
+            Atom("extra")
+        ))
+        solutions3 = engine.run([query3])
+        assert len(solutions3) == 0
+
+    def test_univ_wrong_arity(self):
+        """Test =../2 with wrong number of arguments."""
+        engine = Engine(program())
+        
+        # =.. with 1 argument
+        query1 = Struct("=..", (Atom("foo"),))
+        solutions1 = engine.run([query1])
+        assert len(solutions1) == 0
+        
+        # =.. with 3 arguments
+        from prolog.ast.terms import List
+        query2 = Struct("=..", (
+            Atom("foo"),
+            List((Atom("foo"),)),
+            Atom("extra")
+        ))
+        solutions2 = engine.run([query2])
+        assert len(solutions2) == 0
+
+
+class TestControlBuiltinArity:
+    """Test arity errors for control flow builtins."""
+
+    def test_cut_wrong_arity(self):
+        """Test !/0 with wrong number of arguments."""
+        engine = Engine(program())
+        
+        # ! with 1 argument
+        query1 = Struct("!", (Atom("arg"),))
+        solutions1 = engine.run([query1])
+        assert len(solutions1) == 0
+        
+        # ! with 2 arguments
+        query2 = Struct("!", (Atom("arg1"), Atom("arg2")))
+        solutions2 = engine.run([query2])
+        assert len(solutions2) == 0
+
+    def test_true_wrong_arity(self):
+        """Test true/0 with wrong number of arguments."""
+        engine = Engine(program())
+        
+        # true with 1 argument
+        query1 = Struct("true", (Atom("arg"),))
+        solutions1 = engine.run([query1])
+        assert len(solutions1) == 0
+
+    def test_fail_wrong_arity(self):
+        """Test fail/0 with wrong number of arguments."""
+        engine = Engine(program())
+        
+        # fail with 1 argument
+        query1 = Struct("fail", (Atom("arg"),))
+        solutions1 = engine.run([query1])
+        assert len(solutions1) == 0
+
+
+# =============================================================================
+# MERGED FROM test_builtins_type_checking.py
+# =============================================================================
+
+class TestNotUnifiable:
+    """Tests for \\=/2 (not unifiable) predicate."""
+
+    def test_not_unifiable_different_atoms(self):
+        """Test \\= succeeds with different atoms."""
+        engine = Engine(program())
+        query = Struct("\\=", (Atom("a"), Atom("b")))
+        solutions = engine.run([query])
+        assert len(solutions) == 1
+
+    def test_not_unifiable_same_atoms_fails(self):
+        """Test \\= fails with same atoms."""
+        engine = Engine(program())
+        query = Struct("\\=", (Atom("a"), Atom("a")))
+        solutions = engine.run([query])
+        assert len(solutions) == 0
+
+    def test_not_unifiable_different_numbers(self):
+        """Test \\= succeeds with different numbers."""
+        engine = Engine(program())
+        query = Struct("\\=", (Int(1), Int(2)))
+        solutions = engine.run([query])
+        assert len(solutions) == 1
+
+    def test_not_unifiable_same_numbers_fails(self):
+        """Test \\= fails with same numbers."""
+        engine = Engine(program())
+        query = Struct("\\=", (Int(42), Int(42)))
+        solutions = engine.run([query])
+        assert len(solutions) == 0
+
+    def test_not_unifiable_different_structures(self):
+        """Test \\= succeeds with different structures."""
+        engine = Engine(program())
+        s1 = Struct("f", (Int(1), Int(2)))
+        s2 = Struct("f", (Int(1), Int(3)))
+        query = Struct("\\=", (s1, s2))
+        solutions = engine.run([query])
+        assert len(solutions) == 1
+
+    def test_not_unifiable_different_functors(self):
+        """Test \\= succeeds with structures having different functors."""
+        engine = Engine(program())
+        s1 = Struct("f", (Int(1),))
+        s2 = Struct("g", (Int(1),))
+        query = Struct("\\=", (s1, s2))
+        solutions = engine.run([query])
+        assert len(solutions) == 1
+
+    def test_not_unifiable_var_and_ground_fails(self):
+        """Test \\= fails with variable and ground term (they can unify)."""
+        engine = Engine(program())
+        X = Var(0, "X")
+        query = Struct("\\=", (X, Int(5)))
+        solutions = engine.run([query])
+        assert len(solutions) == 0
+
+    def test_not_unifiable_variables_always_fails(self):
+        """Test \\= always fails with two unbound variables."""
+        engine = Engine(program())
+        X = Var(0, "X")
+        Y = Var(1, "Y")
+        query = Struct("\\=", (X, Y))
+        solutions = engine.run([query])
+        assert len(solutions) == 0
+
+    def test_not_unifiable_lists(self):
+        """Test \\= with lists."""
+        engine = Engine(program())
+        list1 = List((Int(1), Int(2)))
+        list2 = List((Int(1), Int(3)))
+        query = Struct("\\=", (list1, list2))
+        solutions = engine.run([query])
+        assert len(solutions) == 1
+
+    def test_not_unifiable_partial_can_unify_fails(self):
+        """Test \\= fails when structures can be unified through variables."""
+        engine = Engine(program())
+        X = Var(0, "X")
+        s1 = Struct("f", (X, Int(2)))
+        s2 = Struct("f", (Int(1), Int(2)))
+        query = Struct("\\=", (s1, s2))
+        solutions = engine.run([query])
+        assert len(solutions) == 0  # They can unify if X = 1
+
+    def test_not_unifiable_wrong_arity_fails(self):
+        """Test \\= with wrong arity (should fail as builtin check)."""
+        engine = Engine(program())
+        # Try with 1 argument (wrong arity)
+        query = Struct("\\=", (Int(1),))
+        solutions = engine.run([query])
+        assert len(solutions) == 0
+
+    def test_not_unifiable_with_bound_var(self):
+        """Test \\= with a bound variable."""
+        engine = Engine(program())
+        X = Var(0, "X")
+        Y = Var(1, "Y")
+        # X = 1, Y = 2, X \\= Y
+        query = Struct(",", (
+            Struct("=", (X, Int(1))),
+            Struct(",", (
+                Struct("=", (Y, Int(2))),
+                Struct("\\=", (X, Y))
+            ))
+        ))
+        solutions = engine.run([query])
+        assert len(solutions) == 1
+        assert solutions[0]["X"] == Int(1)
+        assert solutions[0]["Y"] == Int(2)
+
+    def test_not_unifiable_cyclic_structure(self):
+        """Test \\= with potentially cyclic structures."""
+        engine = Engine(program())
+        X = Var(0, "X")
+        # X \\= f(X) - should succeed as they can't unify (occurs check)
+        query = Struct("\\=", (X, Struct("f", (X,))))
+        solutions = engine.run([query])
+        # With occurs check on, X cannot unify with f(X)
+        if engine.occurs_check:
+            assert len(solutions) == 1
+        else:
+            # Without occurs check, they could unify
+            assert len(solutions) == 0
+
+    def test_not_unifiable_empty_list_vs_nonempty(self):
+        """Test \\= between empty list and non-empty list."""
+        engine = Engine(program())
+        query = Struct("\\=", (Atom("[]"), List((Int(1),))))
+        solutions = engine.run([query])
+        assert len(solutions) == 1
+
+    def test_not_unifiable_nested_structures(self):
+        """Test \\= with deeply nested structures."""
+        engine = Engine(program())
+        s1 = Struct("f", (Struct("g", (Int(1),)),))
+        s2 = Struct("f", (Struct("g", (Int(2),)),))
+        query = Struct("\\=", (s1, s2))
+        solutions = engine.run([query])
+        assert len(solutions) == 1
+
+
+class TestVarPredicate:
+    """Tests for var/1 predicate."""
+
+    def test_var_with_unbound_variable(self):
+        """Test var/1 succeeds with unbound variable."""
+        engine = Engine(program())
+        X = Var(0, "X")
+        query = Struct("var", (X,))
+        solutions = engine.run([query])
+        assert len(solutions) == 1
+        # X remains unbound in the solution
+        assert isinstance(solutions[0]["X"], Var)
+
+    def test_var_with_bound_variable_fails(self):
+        """Test var/1 fails with bound variable."""
+        engine = Engine(program())
+        X = Var(0, "X")
+        # X = 5, var(X)
+        query = Struct(",", (Struct("=", (X, Int(5))), Struct("var", (X,))))
+        solutions = engine.run([query])
+        assert len(solutions) == 0
+
+    def test_var_with_atom_fails(self):
+        """Test var/1 fails with atom."""
+        engine = Engine(program())
+        query = Struct("var", (Atom("abc"),))
+        solutions = engine.run([query])
+        assert len(solutions) == 0
+
+    def test_var_with_number_fails(self):
+        """Test var/1 fails with number."""
+        engine = Engine(program())
+        query = Struct("var", (Int(42),))
+        solutions = engine.run([query])
+        assert len(solutions) == 0
+
+    def test_var_with_structure_fails(self):
+        """Test var/1 fails with structure."""
+        engine = Engine(program())
+        query = Struct("var", (Struct("f", (Int(1), Int(2))),))
+        solutions = engine.run([query])
+        assert len(solutions) == 0
+
+
+class TestNonvarPredicate:
+    """Tests for nonvar/1 predicate."""
+
+    def test_nonvar_with_atom(self):
+        """Test nonvar/1 succeeds with atom."""
+        engine = Engine(program())
+        query = Struct("nonvar", (Atom("abc"),))
+        solutions = engine.run([query])
+        assert len(solutions) == 1
+
+    def test_nonvar_with_number(self):
+        """Test nonvar/1 succeeds with number."""
+        engine = Engine(program())
+        query = Struct("nonvar", (Int(42),))
+        solutions = engine.run([query])
+        assert len(solutions) == 1
+
+    def test_nonvar_with_structure(self):
+        """Test nonvar/1 succeeds with structure."""
+        engine = Engine(program())
+        query = Struct("nonvar", (Struct("f", (Int(1), Int(2))),))
+        solutions = engine.run([query])
+        assert len(solutions) == 1
+
+    def test_nonvar_with_unbound_variable_fails(self):
+        """Test nonvar/1 fails with unbound variable."""
+        engine = Engine(program())
+        X = Var(0, "X")
+        query = Struct("nonvar", (X,))
+        solutions = engine.run([query])
+        assert len(solutions) == 0
+
+    def test_nonvar_with_bound_variable(self):
+        """Test nonvar/1 succeeds with bound variable."""
+        engine = Engine(program())
+        X = Var(0, "X")
+        # X = 5, nonvar(X)
+        query = Struct(",", (Struct("=", (X, Int(5))), Struct("nonvar", (X,))))
+        solutions = engine.run([query])
+        assert len(solutions) == 1
+        assert solutions[0]["X"] == Int(5)
+
+
+class TestAtomPredicate:
+    """Tests for atom/1 predicate."""
+
+    def test_atom_with_atom(self):
+        """Test atom/1 succeeds with atom."""
+        engine = Engine(program())
+        query = Struct("atom", (Atom("abc"),))
+        solutions = engine.run([query])
+        assert len(solutions) == 1
+
+    def test_atom_with_empty_list(self):
+        """Test atom/1 succeeds with empty list []."""
+        engine = Engine(program())
+        query = Struct("atom", (Atom("[]"),))
+        solutions = engine.run([query])
+        assert len(solutions) == 1
+
+    def test_atom_with_number_fails(self):
+        """Test atom/1 fails with number."""
+        engine = Engine(program())
+        query = Struct("atom", (Int(42),))
+        solutions = engine.run([query])
+        assert len(solutions) == 0
+
+    def test_atom_with_structure_fails(self):
+        """Test atom/1 fails with structure."""
+        engine = Engine(program())
+        query = Struct("atom", (Struct("f", (Int(1),)),))
+        solutions = engine.run([query])
+        assert len(solutions) == 0
+
+    def test_atom_with_list_fails(self):
+        """Test atom/1 fails with non-empty list."""
+        engine = Engine(program())
+        query = Struct("atom", (List((Int(1), Int(2))),))
+        solutions = engine.run([query])
+        assert len(solutions) == 0
+
+    def test_atom_with_unbound_variable_fails(self):
+        """Test atom/1 fails with unbound variable."""
+        engine = Engine(program())
+        X = Var(0, "X")
+        query = Struct("atom", (X,))
+        solutions = engine.run([query])
+        assert len(solutions) == 0
+
+    def test_atom_with_var_bound_to_empty_list(self):
+        """Test atom/1 with variable bound to []."""
+        engine = Engine(program())
+        X = Var(0, "X")
+        # X = [], atom(X)
+        query = Struct(",", (Struct("=", (X, Atom("[]"))), Struct("atom", (X,))))
+        solutions = engine.run([query])
+        assert len(solutions) == 1
+        assert solutions[0]["X"] == Atom("[]")
+
+    def test_atom_with_variable_bound_to_atom(self):
+        """Test atom/1 with variable bound to atom."""
+        engine = Engine(program())
+        X = Var(0, "X")
+        # X = abc, atom(X)
+        query = Struct(",", (Struct("=", (X, Atom("abc"))), Struct("atom", (X,))))
+        solutions = engine.run([query])
+        assert len(solutions) == 1
+        assert solutions[0]["X"] == Atom("abc")
+
+    def test_atom_with_variable_bound_to_number_fails(self):
+        """Test atom/1 fails with variable bound to number."""
+        engine = Engine(program())
+        X = Var(0, "X")
+        # X = 42, atom(X)
+        query = Struct(",", (Struct("=", (X, Int(42))), Struct("atom", (X,))))
+        solutions = engine.run([query])
+        assert len(solutions) == 0
+
+
+class TestMixedTypeChecking:
+    """Tests for combinations of type-checking predicates."""
+
+    def test_var_nonvar_exclusive(self):
+        """Test that var/1 and nonvar/1 are mutually exclusive."""
+        engine = Engine(program())
+        X = Var(0, "X")
+        # var(X), nonvar(X) - should fail
+        query = Struct(",", (Struct("var", (X,)), Struct("nonvar", (X,))))
+        solutions = engine.run([query])
+        assert len(solutions) == 0
+
+    def test_bound_var_type_checking(self):
+        """Test type checking with bound variables."""
+        engine = Engine(program())
+        X = Var(0, "X")
+        Y = Var(1, "Y")
+        # X = abc, Y = 42, atom(X), nonvar(Y)
+        query = Struct(",", (
+            Struct("=", (X, Atom("abc"))),
+            Struct(",", (
+                Struct("=", (Y, Int(42))),
+                Struct(",", (
+                    Struct("atom", (X,)),
+                    Struct("nonvar", (Y,))
+                ))
+            ))
+        ))
+        solutions = engine.run([query])
+        assert len(solutions) == 1
+        assert solutions[0]["X"] == Atom("abc")
+        assert solutions[0]["Y"] == Int(42)
+
+    def test_type_check_in_compound_goal(self):
+        """Test type checking predicates in compound goals."""
+        engine = Engine(program())
+        X = Var(0, "X")
+        Y = Var(1, "Y")
+        # (var(X) ; atom(X)), X = abc, atom(X)
+        query = Struct(",", (
+            Struct(";", (
+                Struct("var", (X,)),
+                Struct("atom", (X,))
+            )),
+            Struct(",", (
+                Struct("=", (X, Atom("abc"))),
+                Struct("atom", (X,))
+            ))
+        ))
+        solutions = engine.run([query])
+        assert len(solutions) == 1
+        assert solutions[0]["X"] == Atom("abc")
