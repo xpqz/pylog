@@ -13,7 +13,7 @@ from lark.exceptions import UnexpectedCharacters, UnexpectedToken
 
 from prolog.ast.terms import Atom, Int, Var, Struct, List as PrologList
 from prolog.ast.clauses import Clause
-from prolog.parser.reader import Reader
+from prolog.parser.reader import Reader, ReaderError
 
 
 class ParseError(Exception):
@@ -262,7 +262,7 @@ def parse_clause(text: str) -> Clause:
     try:
         reader = Reader()
         return reader.read_clause(text)
-    except Exception:
+    except ReaderError:
         # Fall back to grammar-based parser for backward compatibility
         pass
     
@@ -304,7 +304,7 @@ def parse_query(text: str) -> List[Any]:
     try:
         reader = Reader()
         return reader.read_query(text)
-    except Exception:
+    except ReaderError:
         # Fall back to grammar-based parser for backward compatibility
         pass
     
@@ -350,7 +350,7 @@ def parse_program(text: str) -> List[Clause]:
     try:
         reader = Reader()
         return reader.read_program(text)
-    except Exception:
+    except ReaderError:
         # Fall back to grammar-based parser for backward compatibility
         pass
 

@@ -712,3 +712,20 @@ class TestEdgeCases:
             Struct("->", (Atom("d"), Atom("e")))
         ))
         assert result == expected
+    
+    def test_read_program_preserves_percent_in_quoted_atom(self):
+        """Test that % inside quoted atoms is preserved, not treated as comment."""
+        reader = Reader()
+        text = "f('% literal % here'). g."
+        clauses = reader.read_program(text)
+        assert len(clauses) == 2
+        assert clauses[0].head == Struct("f", (Atom("% literal % here"),))
+        assert clauses[0].body == []
+        assert clauses[1].head == Atom("g")
+        assert clauses[1].body == []
+    
+    def test_fact_body_is_empty_goal_list(self):
+        """Test that fact bodies are empty lists, not None."""
+        reader = Reader()
+        c = reader.read_clause("a.")
+        assert isinstance(c.body, list) and c.body == []

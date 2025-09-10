@@ -816,19 +816,6 @@ class Reader:
         
         clauses = []
         
-        # Remove comments first but preserve line structure
-        lines = text.split('\n')
-        cleaned_lines = []
-        for line in lines:
-            # Remove line comments
-            if '%' in line:
-                line = line[:line.index('%')]
-            cleaned_lines.append(line)
-        cleaned_text = '\n'.join(cleaned_lines).strip()
-        
-        if not cleaned_text:
-            return []
-        
         # Parse clauses by finding periods at the top level (not inside parens/brackets)
         current_clause = []
         paren_depth = 0
@@ -837,8 +824,8 @@ class Reader:
         escape_next = False
         
         i = 0
-        while i < len(cleaned_text):
-            char = cleaned_text[i]
+        while i < len(text):
+            char = text[i]
             
             # Handle escape sequences in quoted atoms
             if escape_next:
@@ -865,6 +852,14 @@ class Reader:
             if in_quoted_atom:
                 current_clause.append(char)
                 i += 1
+                continue
+            
+            # Handle comments (% starts a line comment when not in quoted atom)
+            if char == '%':
+                # Skip to end of line
+                while i < len(text) and text[i] != '\n':
+                    i += 1
+                # Don't skip the newline itself
                 continue
             
             # Track parentheses and brackets
