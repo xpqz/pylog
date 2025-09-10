@@ -46,4 +46,40 @@ markers = [
     "iso_mode: marks tests that should run in ISO Prolog mode",
     "timeout: marks tests with a timeout limit",
     "stage15: marks tests for Stage 1.5 (operator support)",
+    "swi_baseline: marks tests that validate against SWI-Prolog behavior",
 ]
+
+[tool.coverage.run]
+source = ["prolog"]
+branch = true
+parallel = true
+omit = [
+    "*/tests/*",
+    "*/test_*.py",
+    "*/__pycache__/*",
+    "*/site-packages/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "@abstractmethod",
+    "@typing.overload",
+]
+precision = 2
+show_missing = true
+skip_covered = false
+skip_empty = true
+sort = "Cover"
+
+[tool.coverage.html]
+directory = "htmlcov"
+title = "PyLog Coverage Report"
+
+[tool.coverage.xml]
+output = "coverage.xml"

@@ -40,6 +40,8 @@ htmlcov/
 .coverage.*
 *.cover
 .hypothesis/
+coverage.xml
+pytest.xml
 
 # IDE
 .vscode/
