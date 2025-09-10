@@ -21,7 +21,15 @@ logger = logging.getLogger(__name__)
 
 
 class ReaderError(Exception):
-    """Exception raised for reader/parser errors."""
+    """Exception raised for reader/parser errors.
+    
+    Attributes:
+        message: The error message describing what went wrong
+        position: Character position in the input where the error occurred (0-based)
+        column: Alias for position for compatibility
+        token: The token/lexeme that caused the error (e.g., "@@" for unknown operator)
+        lexeme: Alias for token for consistency
+    """
     
     def __init__(self, message: str, position: Optional[int] = None, token: Optional[str] = None):
         super().__init__(message)
@@ -29,6 +37,7 @@ class ReaderError(Exception):
         self.position = position
         self.column = position  # Alias for compatibility
         self.token = token
+        self.lexeme = token  # Alias for consistency
     
     def __str__(self):
         if self.position is not None:
@@ -132,7 +141,16 @@ class Tokenizer:
                     break
             
             if not matched:
-                raise ReaderError(f"Unexpected character: {text[pos]}", position=pos)
+                # Try to extract the problematic token for better error
+                end = pos + 1
+                while end < len(text) and not text[end].isspace():
+                    end += 1
+                problem_token = text[pos:end]
+                raise ReaderError(
+                    f"Unexpected token: {problem_token}",
+                    position=pos,
+                    token=problem_token
+                )
         
         return tokens
 
@@ -187,8 +205,9 @@ class TokenStream:
 class PrattParser:
     """Pratt parser for operator expressions."""
     
-    def __init__(self, stream: TokenStream):
+    def __init__(self, stream: TokenStream, strict_unsupported: bool = False):
         self.stream = stream
+        self.strict_unsupported = strict_unsupported
     
     def parse_term(self, min_precedence: int = 1200) -> Term:
         """Parse a term with operator precedence."""
@@ -213,9 +232,16 @@ class PrattParser:
             # Consume the operator
             self.stream.consume()
             
-            # Warn about unsupported operators in dev mode
+            # Handle unsupported operators
             if not is_stage1_supported(token.value, 'infix'):
-                logger.warning(f"Unsupported operator '{token.value}' used (will parse but may fail at runtime)")
+                if self.strict_unsupported:
+                    raise ReaderError(
+                        f"Unsupported operator '{token.value}' in Stage 1",
+                        position=token.position,
+                        token=token.value
+                    )
+                else:
+                    logger.warning(f"Unsupported operator '{token.value}' used (will parse but may fail at runtime)")
             
             # Determine right-side precedence based on associativity
             if assoc_type == 'xfx':
@@ -290,9 +316,16 @@ class PrattParser:
                             else:
                                 return Int(abs(value))
             
-            # Warn about unsupported operators
+            # Handle unsupported operators
             if not is_stage1_supported(token.value, 'prefix'):
-                logger.warning(f"Unsupported operator '{token.value}' used (will parse but may fail at runtime)")
+                if self.strict_unsupported:
+                    raise ReaderError(
+                        f"Unsupported operator '{token.value}' in Stage 1",
+                        position=token.position,
+                        token=token.value
+                    )
+                else:
+                    logger.warning(f"Unsupported operator '{token.value}' used (will parse but may fail at runtime)")
             
             # For fy, allow same precedence; for fx, require less
             if assoc_type == 'fy':
@@ -483,9 +516,16 @@ class PrattParser:
                 # Consume the operator
                 self.stream.consume()
                 
-                # Warn about unsupported operators in dev mode
+                # Handle unsupported operators
                 if not is_stage1_supported(token.value, 'infix'):
-                    logger.warning(f"Unsupported operator '{token.value}' used (will parse but may fail at runtime)")
+                    if self.strict_unsupported:
+                        raise ReaderError(
+                            f"Unsupported operator '{token.value}' in Stage 1",
+                            position=token.position,
+                            token=token.value
+                        )
+                    else:
+                        logger.warning(f"Unsupported operator '{token.value}' used (will parse but may fail at runtime)")
                 
                 # Determine right-side precedence based on associativity
                 if assoc_type == 'xfx':
@@ -555,11 +595,20 @@ class Reader:
     - Associativity (left/right/non-associative)
     - xfx non-chainable enforcement
     - Negative numeral policy
+    
+    Args:
+        strict_unsupported: If True, raise ReaderError on unsupported operators
+                          instead of just logging warnings (default: False)
     """
     
-    def __init__(self):
-        """Initialize the reader."""
+    def __init__(self, strict_unsupported: bool = False):
+        """Initialize the reader.
+        
+        Args:
+            strict_unsupported: If True, unsupported operators raise errors instead of warnings
+        """
         self.tokenizer = Tokenizer()
+        self.strict_unsupported = strict_unsupported
     
     def read_term(self, text: str) -> Term:
         """Read a term from text, handling operator expressions.
@@ -568,10 +617,12 @@ class Reader:
             text: The Prolog text to parse
             
         Returns:
-            The parsed term in canonical AST form
+            The parsed term in canonical AST form with operators transformed
+            to canonical structures (e.g., "1+2" becomes Struct("+", (Int(1), Int(2))))
             
         Raises:
-            ReaderError: If the text cannot be parsed
+            ReaderError: If the text cannot be parsed, contains unknown operators,
+                       or uses unsupported operators in strict mode
         """
         try:
             # Tokenize
@@ -586,7 +637,7 @@ class Reader:
             
             # Parse with Pratt parser
             stream = TokenStream(tokens)
-            parser = PrattParser(stream)
+            parser = PrattParser(stream, self.strict_unsupported)
             result = parser.parse_term()
             
             # Check for leftover tokens
@@ -605,13 +656,15 @@ class Reader:
         """Read a clause from text.
         
         Args:
-            text: The Prolog clause text to parse
+            text: The Prolog clause text to parse (e.g., "foo(X) :- bar(X).")
             
         Returns:
-            The parsed clause
+            A Clause object with head and optional body, with operators in
+            canonical form
             
         Raises:
-            ReaderError: If the text cannot be parsed as a clause
+            ReaderError: If the text cannot be parsed as a clause or contains
+                       syntax errors
         """
         try:
             # Tokenize
@@ -640,19 +693,19 @@ class Reader:
                 
                 # Parse head
                 head_stream = TokenStream(head_tokens)
-                head_parser = PrattParser(head_stream)
+                head_parser = PrattParser(head_stream, self.strict_unsupported)
                 head = head_parser.parse_term()
                 
                 # Parse body
                 body_stream = TokenStream(body_tokens)
-                body_parser = PrattParser(body_stream)
+                body_parser = PrattParser(body_stream, self.strict_unsupported)
                 body = body_parser.parse_term()
                 
                 return Clause(head, body)
             else:
                 # Fact: just head
                 stream = TokenStream(tokens)
-                parser = PrattParser(stream)
+                parser = PrattParser(stream, self.strict_unsupported)
                 head = parser.parse_term()
                 
                 return Clause(head, None)
@@ -666,13 +719,15 @@ class Reader:
         """Read a query from text.
         
         Args:
-            text: The Prolog query text to parse (including ?-)
+            text: The Prolog query text to parse (including ?-, e.g., "?- foo(X), bar(X).")
             
         Returns:
-            List of goal terms
+            List of goal terms with operators in canonical form. Conjunctions
+            are flattened into a list.
             
         Raises:
-            ReaderError: If the text cannot be parsed as a query
+            ReaderError: If the text cannot be parsed as a query or doesn't
+                       start with ?-
         """
         try:
             # Tokenize
@@ -693,7 +748,7 @@ class Reader:
             
             # Parse goals
             stream = TokenStream(tokens)
-            parser = PrattParser(stream)
+            parser = PrattParser(stream, self.strict_unsupported)
             goal_term = parser.parse_term()
             
             # Flatten conjunction into list

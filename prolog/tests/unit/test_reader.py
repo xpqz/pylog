@@ -16,6 +16,8 @@ Test Coverage:
 
 import pytest
 from prolog.ast.terms import Atom, Int, Var, Struct, List
+from prolog.ast.terms import List as PrologList
+from prolog.ast.clauses import Clause
 from prolog.parser.reader import Reader, ReaderError
 
 
@@ -456,6 +458,90 @@ class TestPrattParser:
         expected = Struct("mod", (Var(0, "X"), Var(1, "Y")))
         assert result == expected
         
-        # Without spaces, XmodY is just an atom
+        # Without spaces, XmodY is just a variable
         result = reader.read_term("XmodY")
-        assert result == Atom("XmodY") or isinstance(result, Var)  # Might be seen as variable
+        assert isinstance(result, Var) and result.hint == "XmodY"
+    
+    def test_strict_unsupported_mode(self):
+        """Strict mode should raise errors for unsupported operators."""
+        reader = Reader(strict_unsupported=True)
+        
+        # // is unsupported in Stage 1
+        with pytest.raises(ReaderError) as exc_info:
+            reader.read_term("X // Y")
+        assert "//" in str(exc_info.value)
+        
+        # mod is unsupported in Stage 1
+        with pytest.raises(ReaderError) as exc_info:
+            reader.read_term("X mod Y")
+        assert "mod" in str(exc_info.value)
+        
+        # ** is unsupported in Stage 1
+        with pytest.raises(ReaderError) as exc_info:
+            reader.read_term("X ** Y")
+        assert "**" in str(exc_info.value)
+    
+    def test_greedy_tokenization_overlaps(self):
+        """Test greedy tokenization of overlapping operators."""
+        reader = Reader()
+        
+        # Test that =\\= is a single token, not = then \\=
+        result = reader.read_term("X=\\=Y")
+        expected = Struct("=\\=", (Var(0, "X"), Var(1, "Y")))
+        assert result == expected
+        
+        # @=< should be a single token (not @= then <)
+        result = reader.read_term("X@=<Y")
+        expected = Struct("@=<", (Var(0, "X"), Var(1, "Y")))
+        assert result == expected
+        
+        # Test multiple = signs parse correctly
+        result = reader.read_term("X == Y")
+        expected = Struct("==", (Var(0, "X"), Var(1, "Y")))
+        assert result == expected
+    
+    def test_comma_context_sensitivity(self):
+        """Comma behaves differently in structures vs top-level."""
+        reader = Reader()
+        
+        # Top-level: comma is conjunction operator
+        result = reader.read_term("a,b")
+        assert result == Struct(",", (Atom("a"), Atom("b")))
+        
+        # In structure: comma is separator
+        result = reader.read_term("f(a,b)")
+        assert result == Struct("f", (Atom("a"), Atom("b")))
+        
+        # In list: comma is separator
+        result = reader.read_term("[a,b|T]")
+        assert result == PrologList((Atom("a"), Atom("b")), Var(0, "T"))
+    
+    def test_unknown_operator_error_fields(self):
+        """Unknown operator errors should include lexeme and position."""
+        src = "X @@ Y"
+        with pytest.raises(ReaderError) as exc_info:
+            Reader().read_term(src)
+        err = exc_info.value
+        
+        # Should have lexeme/token field
+        assert getattr(err, "lexeme", None) == "@@" or getattr(err, "token", None) == "@@"
+        
+        # Should have position/column
+        assert hasattr(err, "column") or hasattr(err, "position")
+    
+    def test_reader_api_consistency(self):
+        """Test Reader API methods return expected types."""
+        reader = Reader()
+        
+        # read_term returns Term (one of Atom, Int, Var, Struct, List)
+        term = reader.read_term("foo(bar)")
+        assert isinstance(term, (Atom, Int, Var, Struct, List))
+        
+        # read_clause returns Clause
+        clause = reader.read_clause("foo(X) :- bar(X).")
+        assert isinstance(clause, Clause)
+        
+        # read_query returns list of Terms
+        goals = reader.read_query("?- foo(X), bar(X).")
+        assert isinstance(goals, list)
+        assert all(isinstance(g, (Atom, Int, Var, Struct, List)) for g in goals)
