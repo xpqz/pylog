@@ -14,12 +14,24 @@ Test Coverage:
 """
 
 import pytest
-from prolog.ast.terms import Atom, Int, Var, Struct, List as PrologList
+from prolog.ast.terms import Atom, Var, Struct
 from prolog.ast.clauses import Clause
 from prolog.parser.reader import Reader, ReaderError
 from prolog.parser.parser import parse_clause, parse_program, parse_query
 from prolog.engine.engine import Engine
 from prolog.unify.store import Store
+
+
+def _assert_engine_clean(engine):
+    """Assert the engine is in a clean state with no residual data."""
+    if hasattr(engine, "trail"):
+        assert engine.trail.position() == 0, "Trail not clean"
+    if hasattr(engine, "goal_stack"):
+        assert engine.goal_stack.height() == 0, "Goal stack not empty"
+    if hasattr(engine, "cp_stack"):
+        assert len(engine.cp_stack) == 0, "Choicepoint stack not empty"
+    if hasattr(engine, "frame_stack"):
+        assert len(engine.frame_stack) == 0, "Frame stack not empty"
 
 
 class TestConjunctionOperator:
@@ -74,7 +86,7 @@ class TestConjunctionOperator:
         info = get_operator_info(",", "infix")
         assert info is not None
         assert info[0] == 1000  # precedence
-        assert info[1] == "xfy"  # right-associative
+        assert info[1] == "xfy"  # xfy type (parses as right-branching tree)
         assert info[2] == "','"  # canonical form
 
 
@@ -402,16 +414,13 @@ class TestEngineIntegration:
         test :- fact1, fact2.
         """
         program = parse_program(program_text)
-        engine = Engine()
+        engine = Engine(program)
         store = Store()
         
-        # Load the program
-        for clause in program:
-            engine.add_clause(clause)
-        
         # Query: ?- test.
-        results = list(engine.query([Atom("test")], store))
+        results = list(engine.query([Struct("test", ())], store))
         assert len(results) == 1  # Should succeed once
+        _assert_engine_clean(engine)
     
     def test_disjunction_execution(self):
         """Test disjunction tries alternatives."""
@@ -422,20 +431,19 @@ class TestEngineIntegration:
         test2 :- fact3; fact1.
         """
         program = parse_program(program_text)
-        engine = Engine()
+        engine = Engine(program)
         store = Store()
         
-        # Load the program
-        for clause in program:
-            engine.add_clause(clause)
-        
         # Query: ?- test1. (both alternatives exist)
-        results = list(engine.query([Atom("test1")], store))
+        results = list(engine.query([Struct("test1", ())], store))
         assert len(results) == 2  # Should succeed twice
+        _assert_engine_clean(engine)
         
         # Query: ?- test2. (only second alternative exists)
-        results = list(engine.query([Atom("test2")], store))
+        store2 = Store()
+        results = list(engine.query([Struct("test2", ())], store2))
         assert len(results) == 1  # Should succeed once
+        _assert_engine_clean(engine)
     
     def test_if_then_else_execution(self):
         """Test if-then-else conditional execution."""
@@ -447,20 +455,19 @@ class TestEngineIntegration:
         test2 :- (cond_false -> result1; result2).
         """
         program = parse_program(program_text)
-        engine = Engine()
+        engine = Engine(program)
         store = Store()
         
-        # Load the program
-        for clause in program:
-            engine.add_clause(clause)
-        
         # Query: ?- test1. (condition succeeds, use then branch)
-        results = list(engine.query([Atom("test1")], store))
+        results = list(engine.query([Struct("test1", ())], store))
         assert len(results) == 1
+        _assert_engine_clean(engine)
         
         # Query: ?- test2. (condition fails, use else branch)
-        results = list(engine.query([Atom("test2")], store))
+        store2 = Store()
+        results = list(engine.query([Struct("test2", ())], store2))
         assert len(results) == 1
+        _assert_engine_clean(engine)
     
     def test_nested_control_flow_execution(self):
         """Test nested control flow structures execute correctly."""
@@ -471,17 +478,67 @@ class TestEngineIntegration:
         test :- (a, b); c.
         """
         program = parse_program(program_text)
-        engine = Engine()
+        engine = Engine(program)
         store = Store()
-        
-        # Load the program
-        for clause in program:
-            engine.add_clause(clause)
         
         # Query: ?- test.
         # Should succeed twice: once via (a,b), once via c
-        results = list(engine.query([Atom("test")], store))
+        results = list(engine.query([Struct("test", ())], store))
         assert len(results) == 2
+        _assert_engine_clean(engine)
+    
+    def test_if_then_commits_on_first_success(self):
+        """Test that if-then commits to first solution of condition."""
+        program_text = """
+        p(1).
+        p(2).
+        q(1).
+        test(X) :- (p(X) -> q(X); true).
+        """
+        program = parse_program(program_text)
+        engine = Engine(program)
+        store = Store()
+        
+        # Query: ?- test(X).
+        # X=1 succeeds via then-branch
+        # X=2 does not take else because condition succeeds and commits
+        results = list(engine.query([Struct("test", (Var(0, "X"),))], store))
+        
+        # Extract X values from results
+        x_values = set()
+        for result in results:
+            if "X" in result:
+                x_values.add(result["X"].value if hasattr(result["X"], "value") else result["X"])
+        
+        assert x_values == {1}, f"Expected {{1}}, got {x_values}"
+        _assert_engine_clean(engine)
+    
+    def test_if_then_failure_does_not_fall_back_to_else(self):
+        """Test that then-branch failure doesn't fall back to else."""
+        program_text = """
+        p(1).
+        p(2).
+        q(1).
+        r(2).
+        test(X) :- (p(X) -> q(X); r(X)).
+        """
+        program = parse_program(program_text)
+        engine = Engine(program)
+        store = Store()
+        
+        # Query: ?- test(X).
+        # X=1: condition succeeds, then succeeds
+        # X=2: condition succeeds, then fails, no else branch taken
+        results = list(engine.query([Struct("test", (Var(0, "X"),))], store))
+        
+        # Extract X values from results
+        x_values = set()
+        for result in results:
+            if "X" in result:
+                x_values.add(result["X"].value if hasattr(result["X"], "value") else result["X"])
+        
+        assert x_values == {1}, f"Expected {{1}}, got {x_values}"
+        _assert_engine_clean(engine)
 
 
 class TestCanonicalFormEquivalence:
@@ -538,6 +595,19 @@ class TestCanonicalFormEquivalence:
         
         # Should be identical
         assert operator_form == canonical_form
+    
+    def test_if_then_else_then_conjunction_canonical_equivalence(self):
+        """Test if-then-else followed by conjunction equivalence."""
+        reader = Reader()
+        
+        # Parse operator form: (a -> b; c), d
+        operator_form = reader.read_term("(a -> b; c), d")
+        
+        # Parse canonical form: ','(';'('->'(a,b), c), d)
+        canonical_form = reader.read_term("','(';'('->'(a,b), c), d)")
+        
+        # Should be identical
+        assert operator_form == canonical_form
 
 
 class TestEdgeCases:
@@ -573,6 +643,18 @@ class TestEdgeCases:
         with pytest.raises(ReaderError):
             reader.read_term("a ->")
     
+    @pytest.mark.parametrize("src", ["a , , b", "a ; ; b", "a -> ; b", "a ; -> b"])
+    def test_malformed_operator_sequences_error(self, src):
+        """Test malformed operator sequences produce errors with position info."""
+        reader = Reader()
+        with pytest.raises(ReaderError) as exc_info:
+            reader.read_term(src)
+        error = exc_info.value
+        # Should have position/column info
+        assert error.position is not None or error.column is not None
+        # Should identify the problematic token
+        assert error.lexeme in {",", ";", "->"} or error.token in {",", ";", "->"}
+    
     def test_deeply_nested_control_flow(self):
         """Test deeply nested control flow structures parse correctly."""
         reader = Reader()
@@ -594,3 +676,36 @@ class TestEdgeCases:
         right = result.args[1]
         assert isinstance(right, Struct)
         assert right.functor == ","
+    
+    @pytest.mark.parametrize("tight,spaced", [
+        ("a,b;c", "a , b ; c"),
+        ("a->b;c", "a -> b ; c"),
+        ("a,(b;c)", "a, (b ; c)"),
+        ("(a->b),c", "(a -> b) , c"),
+    ])
+    def test_whitespace_insensitivity(self, tight, spaced):
+        """Test that whitespace doesn't affect parsing."""
+        reader = Reader()
+        assert reader.read_term(tight) == reader.read_term(spaced)
+    
+    def test_commas_in_functor_and_list_are_separators(self):
+        """Test that commas inside functors and lists are separators, not operators."""
+        reader = Reader()
+        # In structures: comma is separator
+        result = reader.read_term("f(a,b,c)")
+        assert result == Struct("f", (Atom("a"), Atom("b"), Atom("c")))
+        
+        # In lists: comma is separator 
+        result = reader.read_term("[a,b,c]")
+        from prolog.ast.terms import List as PrologList
+        assert result == PrologList((Atom("a"), Atom("b"), Atom("c")), Atom("[]"))
+    
+    def test_right_assoc_chains_mixed(self):
+        """Test mixed right-associative chains."""
+        reader = Reader()
+        result = reader.read_term("a -> b -> c ; d -> e")
+        expected = Struct(";", (
+            Struct("->", (Atom("a"), Struct("->", (Atom("b"), Atom("c"))))),
+            Struct("->", (Atom("d"), Atom("e")))
+        ))
+        assert result == expected
