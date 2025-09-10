@@ -711,8 +711,11 @@ class Reader:
                 if not isinstance(head, (Atom, Struct)):
                     raise ReaderError("Invalid clause head - must be atom or structure")
                 
-                # Parse body
+                # Parse body with same variable context
                 body_stream = TokenStream(body_tokens)
+                # Copy variable state from head to body
+                body_stream.var_map = head_stream.var_map.copy()
+                body_stream.next_var_id = head_stream.next_var_id
                 body_parser = PrattParser(body_stream, self.strict_unsupported)
                 body_term = body_parser.parse_term()
                 
