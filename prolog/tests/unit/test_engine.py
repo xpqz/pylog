@@ -469,3 +469,709 @@ class TestRuleExpansion:
         # And should be way below limit
         limit = sys.getrecursionlimit()
         assert depth_after < limit * 0.1
+
+
+# === CONSOLIDATED CLASSES FROM OTHER TEST FILES ===
+
+# From test_engine_utilities.py
+class TestEngineQueryMethod:
+    """Tests for the query() convenience method."""
+
+    def test_query_simple(self):
+        """Test query() method with simple query."""
+        p = program(
+            mk_fact("parent", Atom("alice"), Atom("bob")),
+            mk_fact("parent", Atom("alice"), Atom("carol")),
+        )
+        engine = Engine(p)
+        
+        # Query without ?- and .
+        solutions = engine.query("parent(alice, X)")
+        assert len(solutions) == 2
+        assert solutions[0]["X"] == Atom("bob")
+        assert solutions[1]["X"] == Atom("carol")
+
+    def test_query_with_prefix_suffix(self):
+        """Test query() handles queries that already have ?- and ."""
+        p = program(mk_fact("fact", Atom("a")))
+        engine = Engine(p)
+        
+        # Query already has ?- and .
+        solutions = engine.query("?- fact(X).")
+        assert len(solutions) == 1
+        assert solutions[0]["X"] == Atom("a")
+
+    def test_query_with_conjunction(self):
+        """Test query() with conjunction."""
+        p = program(
+            mk_fact("p", Atom("a")),
+            mk_fact("q", Atom("b")),
+        )
+        engine = Engine(p)
+        
+        solutions = engine.query("p(X), q(Y)")
+        assert len(solutions) == 1
+        assert solutions[0]["X"] == Atom("a")
+        assert solutions[0]["Y"] == Atom("b")
+
+    def test_query_empty_result(self):
+        """Test query() that fails."""
+        engine = Engine(program())
+        solutions = engine.query("nonexistent(X)")
+        assert len(solutions) == 0
+
+
+class TestEngineConsultString:
+    """Tests for consult_string() method."""
+
+    def test_consult_string_adds_clauses(self):
+        """Test consult_string() adds clauses to program."""
+        engine = Engine(program())
+        
+        # Initially no clauses
+        solutions = engine.query("fact(X)")
+        assert len(solutions) == 0
+        
+        # Add clauses via consult_string
+        engine.consult_string("fact(a). fact(b).")
+        
+        # Now queries should succeed
+        solutions = engine.query("fact(X)")
+        assert len(solutions) == 2
+        assert solutions[0]["X"] == Atom("a")
+        assert solutions[1]["X"] == Atom("b")
+
+    def test_consult_string_preserves_existing(self):
+        """Test consult_string() preserves existing clauses."""
+        p = program(mk_fact("existing", Atom("old")))
+        engine = Engine(p)
+        
+        # Add new clauses
+        engine.consult_string("new(fact).")
+        
+        # Both old and new should work
+        old_solutions = engine.query("existing(X)")
+        assert len(old_solutions) == 1
+        assert old_solutions[0]["X"] == Atom("old")
+        
+        new_solutions = engine.query("new(X)")
+        assert len(new_solutions) == 1
+        assert new_solutions[0]["X"] == Atom("fact")
+
+    def test_consult_string_with_rules(self):
+        """Test consult_string() with rules."""
+        engine = Engine(program())
+        
+        engine.consult_string("""
+            parent(alice, bob).
+            parent(bob, carol).
+            grandparent(X, Z) :- parent(X, Y), parent(Y, Z).
+        """)
+        
+        solutions = engine.query("grandparent(alice, Z)")
+        assert len(solutions) == 1
+        assert solutions[0]["Z"] == Atom("carol")
+
+
+class TestEngineDebugProperties:
+    """Tests for debug properties."""
+
+    def test_debug_trail_depth(self):
+        """Test debug_trail_depth property."""
+        engine = Engine(program())
+        
+        # Initially empty
+        assert engine.debug_trail_depth == 0
+        
+        # After a query with unification, trail grows
+        engine.program = program(mk_fact("p", Var(0, "X")))
+        solutions = engine.run([Struct("p", (Atom("a"),))])
+        # Trail is cleaned up after query
+        assert engine.debug_trail_depth == 0
+
+    def test_debug_cp_stack_size(self):
+        """Test debug_cp_stack_size property."""
+        engine = Engine(program())
+        assert engine.debug_cp_stack_size == 0
+        
+        # During query execution, choicepoints may be created
+        # But they're cleaned up after
+        p = program(
+            mk_fact("p", Atom("a")),
+            mk_fact("p", Atom("b")),
+        )
+        engine.program = p
+        solutions = engine.run([Struct("p", (Var(0, "X"),))])
+        assert engine.debug_cp_stack_size == 0  # Cleaned up
+
+    def test_debug_goal_stack_size(self):
+        """Test debug_goal_stack_size property."""
+        engine = Engine(program())
+        assert engine.debug_goal_stack_size == 0
+
+    def test_debug_frame_stack_size(self):
+        """Test debug_frame_stack_size property."""
+        engine = Engine(program())
+        assert engine.debug_frame_stack_size == 0
+
+    def test_debug_frame_pops(self):
+        """Test debug_frame_pops property."""
+        engine = Engine(program())
+        assert engine.debug_frame_pops == 0
+
+    def test_debug_trail_writes(self):
+        """Test debug_trail_writes property."""
+        engine = Engine(program())
+        assert engine.debug_trail_writes == 0
+
+
+class TestEngineWithTrace:
+    """Tests for engine with trace enabled."""
+
+    def test_trace_simple_query(self):
+        """Test engine with trace enabled."""
+        p = program(mk_fact("p", Atom("a")))
+        engine = Engine(p, trace=True)
+        
+        solutions = engine.run([Struct("p", (Var(0, "X"),))])
+        assert len(solutions) == 1
+        
+        # Trace log should be populated
+        assert len(engine._trace_log) > 0
+        # Should contain goal traces
+        assert any("Goal:" in log for log in engine._trace_log)
+
+    def test_trace_with_backtracking(self):
+        """Test trace with backtracking."""
+        p = program(
+            mk_fact("p", Atom("a")),
+            mk_fact("p", Atom("b")),
+        )
+        engine = Engine(p, trace=True)
+        
+        solutions = engine.run([Struct("p", (Var(0, "X"),))])
+        assert len(solutions) == 2
+        
+        # Should have multiple trace entries
+        assert len(engine._trace_log) > 2
+
+    def test_trace_with_conjunction(self):
+        """Test trace with conjunction."""
+        p = program(
+            mk_fact("p", Atom("a")),
+            mk_fact("q", Atom("b")),
+        )
+        engine = Engine(p, trace=True)
+        
+        X = Var(0, "X")
+        Y = Var(1, "Y")
+        conj = Struct(",", (
+            Struct("p", (X,)),
+            Struct("q", (Y,))
+        ))
+        
+        solutions = engine.run([conj])
+        assert len(solutions) == 1
+        
+        # Trace should show both goals
+        trace_str = " ".join(engine._trace_log)
+        # Goals are shown as Struct objects in trace
+        assert "functor='p'" in trace_str
+        assert "functor='q'" in trace_str
+
+
+class TestEngineMaxSteps:
+    """Tests for max_steps limiting."""
+
+    def test_max_steps_limits_execution(self):
+        """Test max_steps prevents infinite loops."""
+        from prolog.tests.helpers import mk_rule
+        
+        # Create infinite loop: loop :- loop.
+        p = program(
+            mk_rule("loop", (), Atom("loop"))
+        )
+        engine = Engine(p, max_steps=10)
+        
+        solutions = engine.run([Atom("loop")])
+        assert len(solutions) == 0  # Fails due to step limit
+
+    def test_max_steps_allows_completion(self):
+        """Test max_steps doesn't interfere with normal queries."""
+        p = program(mk_fact("p", Atom("a")))
+        engine = Engine(p, max_steps=100)
+        
+        solutions = engine.run([Struct("p", (Var(0, "X"),))])
+        assert len(solutions) == 1
+        assert solutions[0]["X"] == Atom("a")
+
+
+class TestEngineOccursCheck:
+    """Tests for occurs check mode."""
+
+    def test_occurs_check_on(self):
+        """Test engine with occurs check enabled."""
+        engine = Engine(program(), occurs_check=True)
+        
+        X = Var(0, "X")
+        # X = f(X) should fail with occurs check
+        query = Struct("=", (X, Struct("f", (X,))))
+        solutions = engine.run([query])
+        assert len(solutions) == 0
+
+    def test_occurs_check_off(self):
+        """Test engine with occurs check disabled."""
+        engine = Engine(program(), occurs_check=False)
+        
+        X = Var(0, "X")
+        # X = f(X) might succeed without occurs check
+        # (creating cyclic structure)
+        query = Struct("=", (X, Struct("f", (X,))))
+        solutions = engine.run([query])
+        # Behavior depends on implementation
+        # Just verify it doesn't crash
+        assert isinstance(solutions, list)
+
+
+# From test_engine_coverage_final.py
+class TestIfThenElsePatterns:
+    """Tests for if-then-else edge cases."""
+
+    def test_malformed_if_then_else(self):
+        """Test that malformed if-then-else is treated as normal goal."""
+        engine = Engine(program())
+        
+        # Not a proper if-then-else structure (missing ->)
+        X = Var(0, "X")
+        malformed = Struct(";", (
+            Atom("true"),  # Not a -> structure
+            Struct("=", (X, Int(1)))
+        ))
+        
+        # Should treat as normal disjunction
+        solutions = engine.run([malformed])
+        assert len(solutions) == 2  # Both branches succeed
+    
+    def test_if_then_else_with_arrow_operator(self):
+        """Test proper if-then-else with -> operator."""
+        engine = Engine(program())
+        
+        X = Var(0, "X")
+        # Proper (cond -> then ; else) structure
+        ite = Struct(";", (
+            Struct("->", (
+                Atom("true"),
+                Struct("=", (X, Int(1)))
+            )),
+            Struct("=", (X, Int(2)))
+        ))
+        
+        solutions = engine.run([ite])
+        assert len(solutions) == 1
+        assert solutions[0]["X"] == Int(1)
+        
+    def test_if_then_else_condition_fails(self):
+        """Test if-then-else when condition fails."""
+        engine = Engine(program())
+        
+        X = Var(0, "X")
+        # (fail -> X = 1 ; X = 2)
+        ite = Struct(";", (
+            Struct("->", (
+                Atom("fail"),
+                Struct("=", (X, Int(1)))
+            )),
+            Struct("=", (X, Int(2)))
+        ))
+        
+        solutions = engine.run([ite])
+        assert len(solutions) == 1
+        assert solutions[0]["X"] == Int(2)  # Else branch taken
+
+
+class TestTrailOperations:
+    """Tests for trail operations and undo."""
+
+    def test_undo_with_empty_trail(self):
+        """Test undo operation with empty trail."""
+        engine = Engine(program())
+        
+        # Undo with empty trail is a no-op
+        initial_depth = engine.debug_trail_depth
+        # Can't directly call _undo, but we can verify trail is empty
+        assert initial_depth == 0
+
+
+class TestBuiltinDispatch:
+    """Tests for builtin dispatch edge cases."""
+
+    def test_unrecognized_builtin(self):
+        """Test calling unrecognized builtin."""
+        engine = Engine(program())
+        
+        # Try to call a non-existent builtin
+        query = Struct("nonexistent_builtin", (Atom("arg"),))
+        solutions = engine.run([query])
+        assert len(solutions) == 0
+
+
+class TestClauseIteration:
+    """Tests for clause iteration edge cases."""
+
+    def test_empty_program_iteration(self):
+        """Test iterating clauses in empty program."""
+        engine = Engine(program())
+        
+        # Query with no matching clauses
+        query = Struct("undefined_predicate", (Var(0, "X"),))
+        solutions = engine.run([query])
+        assert len(solutions) == 0
+
+
+class TestDebugOutput:
+    """Tests for debug output methods."""
+
+    def test_trace_format_with_various_goals(self):
+        """Test trace formatting with various goal types."""
+        engine = Engine(program(), trace=True)
+        
+        # Test with atom goal
+        solutions = engine.run([Atom("true")])
+        assert len(solutions) == 1
+        assert any("true" in log for log in engine._trace_log)
+        
+        # Reset for next test
+        engine._trace_log = []
+        
+        # Test with integer goal (should fail)
+        solutions = engine.run([Int(42)])
+        assert len(solutions) == 0
+        assert len(engine._trace_log) > 0
+
+
+class TestMaxSolutionsLimit:
+    """Tests for max_solutions limiting."""
+
+    def test_max_solutions_zero(self):
+        """Test max_solutions=0 returns no solutions."""
+        p = program(
+            mk_fact("num", Int(1)),
+            mk_fact("num", Int(2)),
+        )
+        engine = Engine(p, max_solutions=0)
+        
+        solutions = engine.run([Struct("num", (Var(0, "X"),))])
+        assert len(solutions) == 0
+    
+    def test_max_solutions_exact(self):
+        """Test max_solutions with exact number of available solutions."""
+        p = program(
+            mk_fact("num", Int(1)),
+            mk_fact("num", Int(2)),
+        )
+        engine = Engine(p, max_solutions=2)
+        
+        solutions = engine.run([Struct("num", (Var(0, "X"),))])
+        assert len(solutions) == 2
+
+
+class TestQueryVariableExtraction:
+    """Tests for query variable extraction."""
+
+    def test_query_with_no_variables(self):
+        """Test query with no variables."""
+        p = program(mk_fact("fact", Atom("a")))
+        engine = Engine(p)
+        
+        solutions = engine.run([Struct("fact", (Atom("a"),))])
+        assert len(solutions) == 1
+        assert solutions[0] == {}  # No variables to report
+    
+    def test_query_with_duplicate_variables(self):
+        """Test query with same variable used multiple times."""
+        engine = Engine(program())
+        
+        X = Var(0, "X")
+        query = Struct(",", (
+            Struct("=", (X, Int(5))),
+            Struct("=", (X, X))  # Same variable
+        ))
+        
+        solutions = engine.run([query])
+        assert len(solutions) == 1
+        assert solutions[0]["X"] == Int(5)
+        assert len(solutions[0]) == 1  # Only one X in solution
+
+
+class TestConjunctionDisjunctionCombos:
+    """Tests for combined conjunction and disjunction."""
+    
+    def test_nested_disjunction_in_conjunction(self):
+        """Test nested disjunction within conjunction."""
+        engine = Engine(program())
+        
+        X = Var(0, "X")
+        Y = Var(1, "Y")
+        # X = 1, (Y = 2 ; Y = 3)
+        query = Struct(",", (
+            Struct("=", (X, Int(1))),
+            Struct(";", (
+                Struct("=", (Y, Int(2))),
+                Struct("=", (Y, Int(3)))
+            ))
+        ))
+        
+        solutions = engine.run([query])
+        assert len(solutions) == 2
+        assert solutions[0]["X"] == Int(1)
+        assert solutions[0]["Y"] == Int(2)
+        assert solutions[1]["X"] == Int(1)
+        assert solutions[1]["Y"] == Int(3)
+
+
+class TestBacktrackingEdgeCases:
+    """Tests for backtracking edge cases."""
+    
+    def test_backtrack_with_multiple_choicepoints(self):
+        """Test backtracking through multiple choicepoints."""
+        p = program(
+            mk_fact("a", Int(1)),
+            mk_fact("a", Int(2)),
+            mk_fact("b", Int(1), Int(10)),
+            mk_fact("b", Int(1), Int(20)),
+            mk_fact("b", Int(2), Int(30)),
+        )
+        engine = Engine(p)
+        
+        X = Var(0, "X")
+        Y = Var(1, "Y")
+        # a(X), b(X, Y)
+        query = Struct(",", (
+            Struct("a", (X,)),
+            Struct("b", (X, Y))
+        ))
+        
+        solutions = engine.run([query])
+        assert len(solutions) == 3
+        # X=1 gives Y=10,20; X=2 gives Y=30
+        assert solutions[0]["X"] == Int(1)
+        assert solutions[0]["Y"] == Int(10)
+        assert solutions[1]["X"] == Int(1)
+        assert solutions[1]["Y"] == Int(20)
+        assert solutions[2]["X"] == Int(2)
+        assert solutions[2]["Y"] == Int(30)
+
+
+class TestUnificationWithLists:
+    """Tests for list unification."""
+    
+    def test_unify_empty_lists(self):
+        """Test unifying empty lists."""
+        engine = Engine(program())
+        
+        X = Var(0, "X")
+        query = Struct("=", (X, PrologList(())))
+        solutions = engine.run([query])
+        assert len(solutions) == 1
+        assert solutions[0]["X"] == PrologList(())
+    
+    def test_unify_list_with_tail(self):
+        """Test unifying list with tail variable."""
+        engine = Engine(program())
+        
+        H = Var(0, "H")
+        T = Var(1, "T")
+        # [1, 2, 3] = [H|T]
+        query = Struct("=", (
+            PrologList((Int(1), Int(2), Int(3))),
+            PrologList((H,), T)
+        ))
+        solutions = engine.run([query])
+        assert len(solutions) == 1
+        assert solutions[0]["H"] == Int(1)
+        # T should be [2, 3]
+        expected_tail = PrologList((Int(2), Int(3)))
+        assert solutions[0]["T"] == expected_tail
+
+
+# From test_engine_final_push.py
+class TestEngineAdvancedFeatures:
+    """Advanced edge case tests for engine functionality."""
+
+    def test_query_with_list_unification(self):
+        """Test query with list unification patterns."""
+        engine = Engine(program())
+        
+        # Use run() directly since query() doesn't support infix operators yet
+        H = Var(0, "H")
+        T = Var(1, "T")
+        query = Struct("=", (PrologList((Int(1), Int(2), Int(3))), PrologList((H,), T)))
+        solutions = engine.run([query])
+        assert len(solutions) == 1
+        assert solutions[0]["H"] == Int(1)
+        # T should be [2, 3]
+
+    def test_query_with_arithmetic(self):
+        """Test query with arithmetic evaluation."""
+        engine = Engine(program())
+        
+        # Use run() directly since query() doesn't support infix operators yet
+        X = Var(0, "X")
+        query = Struct("is", (X, Struct("+", (Int(5), Int(3)))))
+        solutions = engine.run([query])
+        assert len(solutions) == 1
+        assert solutions[0]["X"] == Int(8)
+
+    def test_complex_program_via_consult(self):
+        """Test loading a more complex program."""
+        engine = Engine(program())
+        
+        # Simpler program without operators or comments
+        engine.consult_string("""
+            parent(tom, bob).
+            parent(tom, liz).
+            parent(bob, ann).
+            parent(bob, pat).
+            parent(pat, jim).
+            
+            ancestor(X, Y) :- parent(X, Y).
+            ancestor(X, Z) :- parent(X, Y), ancestor(Y, Z).
+        """)
+        
+        # Test ancestor relationship
+        solutions = engine.query("ancestor(tom, jim)")
+        assert len(solutions) == 1
+        
+        # Test sibling relationship (use run() for inequality)
+        X = Var(0, "X")
+        Y = Var(1, "Y")
+        query = Struct(",", (
+            Struct("sibling_of", (Atom("bob"), Atom("liz"))),
+            Struct("true", ())
+        ))
+        # Just test that the program loaded correctly
+        solutions = engine.query("ancestor(tom, bob)")
+        assert len(solutions) == 1
+
+    def test_trace_with_failure(self):
+        """Test trace output when query fails."""
+        engine = Engine(program(), trace=True)
+        
+        solutions = engine.query("nonexistent(X)")
+        assert len(solutions) == 0
+        assert len(engine._trace_log) > 0
+
+    def test_max_solutions_with_trace(self):
+        """Test max_solutions with trace enabled."""
+        p = program(
+            mk_fact("num", Int(1)),
+            mk_fact("num", Int(2)),
+            mk_fact("num", Int(3)),
+        )
+        engine = Engine(p, trace=True, max_solutions=2)
+        
+        solutions = engine.run([Struct("num", (Var(0, "X"),))])
+        assert len(solutions) == 2
+        assert len(engine._trace_log) > 0
+
+    def test_builtin_with_trace(self):
+        """Test builtin execution with trace."""
+        engine = Engine(program(), trace=True)
+        
+        X = Var(0, "X")
+        solutions = engine.run([Struct("is", (X, Struct("+", (Int(2), Int(3)))))])
+        assert len(solutions) == 1
+        assert solutions[0]["X"] == Int(5)
+        assert len(engine._trace_log) > 0
+
+    def test_cut_with_trace(self):
+        """Test cut execution with trace."""
+        p = program(
+            mk_rule("test", (Var(0, "X"),),
+                Struct(",", (
+                    Struct(";", (
+                        Struct("=", (Var(0, "X"), Int(1))),
+                        Struct("=", (Var(0, "X"), Int(2)))
+                    )),
+                    Atom("!")
+                ))
+            )
+        )
+        engine = Engine(p, trace=True)
+        
+        solutions = engine.run([Struct("test", (Var(0, "X"),))])
+        assert len(solutions) == 1
+        assert solutions[0]["X"] == Int(1)
+        assert len(engine._trace_log) > 0
+
+    def test_if_then_else_with_trace(self):
+        """Test if-then-else with trace."""
+        engine = Engine(program(), trace=True)
+        
+        X = Var(0, "X")
+        # Simple disjunction test with trace
+        # (X = 1 ; X = 2) gives both solutions
+        ite = Struct(";", (
+            Struct("=", (X, Int(1))),
+            Struct("=", (X, Int(2)))
+        ))
+        
+        solutions = engine.run([ite])
+        assert len(solutions) == 2  # Both branches succeed
+        assert solutions[0]["X"] == Int(1)
+        assert solutions[1]["X"] == Int(2)
+        assert len(engine._trace_log) > 0
+
+    def test_nested_conjunction_with_trace(self):
+        """Test deeply nested conjunction with trace."""
+        engine = Engine(program(), trace=True)
+        
+        X = Var(0, "X")
+        Y = Var(1, "Y")
+        Z = Var(2, "Z")
+        
+        # X = 1, (Y = 2, Z = 3)
+        query = Struct(",", (
+            Struct("=", (X, Int(1))),
+            Struct(",", (
+                Struct("=", (Y, Int(2))),
+                Struct("=", (Z, Int(3)))
+            ))
+        ))
+        
+        solutions = engine.run([query])
+        assert len(solutions) == 1
+        assert len(engine._trace_log) > 0
+
+    def test_empty_program_query(self):
+        """Test querying empty program."""
+        engine = Engine(program())
+        
+        # Try to query non-existent predicate
+        solutions = engine.run([Struct("foo", (Var(0, "X"),))])
+        assert len(solutions) == 0
+
+    def test_reset_between_queries(self):
+        """Test engine state is properly reset between queries."""
+        p = program(mk_fact("p", Atom("a")))
+        engine = Engine(p)
+        
+        # First query
+        solutions1 = engine.run([Struct("p", (Var(0, "X"),))])
+        assert len(solutions1) == 1
+        
+        # Second query with same variable
+        solutions2 = engine.run([Struct("p", (Var(0, "X"),))])
+        assert len(solutions2) == 1
+        
+        # Results should be identical
+        assert solutions1[0]["X"] == solutions2[0]["X"]
+
+    def test_query_with_special_characters(self):
+        """Test query with special characters in atoms."""
+        engine = Engine(program())
+        engine.consult_string("'special-atom'('with spaces').")
+        
+        solutions = engine.query("'special-atom'(X)")
+        assert len(solutions) == 1
+        assert solutions[0]["X"] == Atom("with spaces")
