@@ -219,13 +219,26 @@ class TestPrattParser:
         assert result == expected
 
     def test_error_position_tracking(self):
-        """Errors should include character positions."""
+        """Errors should include character positions pointing to the offending token."""
         reader = Reader()
+        src = "X = Y = Z"
         with pytest.raises(ReaderError) as exc_info:
-            reader.read_term("X = Y = Z")
+            reader.read_term(src)
         error = exc_info.value
+        
+        # Error should have position information
         assert hasattr(error, 'position') or hasattr(error, 'column')
-        # Should point to the second = operator
+        
+        # Should identify the problematic operator
+        assert "=" in str(error)
+        
+        # If position is available, it should point to the second =
+        # Positions: X(0) ' '(1) =(2) ' '(3) Y(4) ' '(5) =(6)
+        if hasattr(error, 'position'):
+            assert error.position >= 6  # Should be at or after the second =
+        elif hasattr(error, 'column'):
+            # 1-based column counting
+            assert error.column >= 7
 
     def test_unknown_operator(self):
         """Unknown operators should raise an error."""
@@ -266,14 +279,17 @@ class TestPrattParser:
             Struct("*", (Var(0, "X"), Int(3)))
         ))
 
-    def test_unsupported_operator_warning(self):
-        """Unsupported operators should parse but may warn in dev mode."""
+    def test_unsupported_operator_warning(self, caplog):
+        """Unsupported operators should parse but warn in dev mode."""
+        import logging
         reader = Reader()
         # //, mod, ** are marked as unsupported in Stage 1
-        result = reader.read_term("X // Y")
+        with caplog.at_level(logging.WARNING):
+            result = reader.read_term("X // Y")
         expected = Struct("//", (Var(0, "X"), Var(1, "Y")))
         assert result == expected
-        # The warning would be logged, not raised as an exception
+        # Should have logged a warning about unsupported operator
+        assert any("unsupported" in msg.lower() or "//" in msg for msg in caplog.messages)
 
     def test_variable_consistency(self):
         """Variables with same name should have same ID."""
@@ -281,11 +297,15 @@ class TestPrattParser:
         result = reader.read_term("X = Y, Y = X")
         # X should have consistent ID, Y should have consistent ID
         conj = result  # This is the top-level conjunction
+        assert isinstance(conj, Struct)
         assert conj.functor == ","
         left = conj.args[0]  # X = Y
         right = conj.args[1]  # Y = X
         
-        # Extract variable IDs
+        # Extract variable IDs (these should be Structs with Var args)
+        assert isinstance(left, Struct) and left.functor == "="
+        assert isinstance(right, Struct) and right.functor == "="
+        
         x_id_1 = left.args[0].id  # X in first equation
         y_id_1 = left.args[1].id  # Y in first equation
         y_id_2 = right.args[0].id  # Y in second equation
@@ -299,9 +319,22 @@ class TestPrattParser:
         reader = Reader()
         result = reader.read_term("f(_, _, _)")
         # Each _ should have a different ID
+        assert isinstance(result, Struct)
         args = result.args
         ids = [arg.id for arg in args]
         assert len(ids) == len(set(ids))  # All unique
+    
+    def test_mixed_anonymous_and_named_vars(self):
+        """Anonymous vars get unique IDs while named vars stay stable."""
+        reader = Reader()
+        result = reader.read_term("f(_, X, _, X, _)")
+        assert isinstance(result, Struct)
+        args = result.args
+        # Check _ vars are unique
+        anon_ids = [args[0].id, args[2].id, args[4].id]
+        assert len(anon_ids) == len(set(anon_ids))  # All unique
+        # Check X vars are same
+        assert args[1].id == args[3].id
 
     def test_prefix_disambiguation(self):
         """Prefix operators should be disambiguated from infix."""
@@ -310,3 +343,119 @@ class TestPrattParser:
         result = reader.read_term("+ -1")
         expected = Struct("+", (Int(-1),))
         assert result == expected
+    
+    def test_then_right_associative(self):
+        """Arrow operator chains right-associatively."""
+        reader = Reader()
+        result = reader.read_term("A -> B -> C")
+        expected = Struct("->", (Atom("A"), Struct("->", (Atom("B"), Atom("C")))))
+        assert result == expected
+    
+    def test_or_right_associative(self):
+        """Disjunction chains right-associatively."""
+        reader = Reader()
+        result = reader.read_term("A ; B ; C")
+        expected = Struct(";", (Atom("A"), Struct(";", (Atom("B"), Atom("C")))))
+        assert result == expected
+    
+    def test_and_binds_tighter_than_or(self):
+        """Conjunction binds tighter than disjunction."""
+        reader = Reader()
+        # A, B ; C, D → ;(,(A, B), ,(C, D))
+        result = reader.read_term("A, B ; C, D")
+        expected = Struct(";", (
+            Struct(",", (Atom("A"), Atom("B"))),
+            Struct(",", (Atom("C"), Atom("D")))
+        ))
+        assert result == expected
+        
+        # (A ; B), C → ,( ;(A, B), C)
+        result = reader.read_term("(A ; B), C")
+        expected = Struct(",", (Struct(";", (Atom("A"), Atom("B"))), Atom("C")))
+        assert result == expected
+    
+    def test_unary_minus_vs_power_tie_break(self):
+        """Unary minus vs power precedence tie-breaking.
+        
+        At precedence 200, unary minus and power have same precedence.
+        De-facto Prolog parses -2 ** 3 as -(2 ** 3).
+        """
+        reader = Reader()
+        # -2 ** 3 → -(2 ** 3)
+        result = reader.read_term("-2 ** 3")
+        expected = Struct("-", (Struct("**", (Int(2), Int(3))),))
+        assert result == expected
+        
+        # (-2) ** 3 → **(-2, 3)
+        result = reader.read_term("(-2) ** 3")
+        expected = Struct("**", (Int(-2), Int(3)))
+        assert result == expected
+    
+    def test_positive_literal(self):
+        """Positive literal policy: +3 → Int(3)."""
+        reader = Reader()
+        result = reader.read_term("+3")
+        # Following SWI convention: +3 is Int(3), not Struct("+", (Int(3),))
+        expected = Int(3)
+        assert result == expected
+    
+    @pytest.mark.parametrize("src", [
+        "X =:= Y =:= Z",
+        "X =< Y =< Z", 
+        "X == Y == Z",
+        "X \\= Y \\= Z"
+    ])
+    def test_xfx_non_chainable_family(self, src):
+        """All xfx operators should reject chaining."""
+        reader = Reader()
+        with pytest.raises(ReaderError) as exc_info:
+            reader.read_term(src)
+        assert "non-chainable" in str(exc_info.value).lower()
+    
+    def test_term_order_operators(self):
+        """Term order comparison operators."""
+        reader = Reader()
+        result = reader.read_term("X @=< Y")
+        expected = Struct("@=<", (Var(0, "X"), Var(1, "Y")))
+        assert result == expected
+        
+        result = reader.read_term("X @> Y")
+        expected = Struct("@>", (Var(0, "X"), Var(1, "Y")))
+        assert result == expected
+    
+    @pytest.mark.parametrize("spaced,tight", [
+        ("X = Y + Z * W", "X=Y+Z*W"),
+        ("A ; B , C", "A;B,C"),
+        ("-2 ** 3", "-2**3"),
+    ])
+    def test_whitespace_insensitivity(self, spaced, tight):
+        """Whitespace should not affect parsing."""
+        reader = Reader()
+        assert reader.read_term(spaced) == reader.read_term(tight)
+    
+    def test_list_tail_with_operator_expression(self):
+        """List tail can be an operator expression."""
+        reader = Reader()
+        result = reader.read_term("[H | T + U]")
+        # [H|T+U] → [H | +(T, U)]
+        expected = List((Var(0, "H"),), Struct("+", (Var(1, "T"), Var(2, "U"))))
+        assert result == expected
+    
+    def test_parenthesized_prefix(self):
+        """Parenthesized prefix operator."""
+        reader = Reader()
+        result = reader.read_term("(-X)")
+        expected = Struct("-", (Var(0, "X"),))
+        assert result == expected
+    
+    def test_word_operator_boundary(self):
+        """Word operators need token boundaries."""
+        reader = Reader()
+        # 'mod' is a word operator, needs spaces
+        result = reader.read_term("X mod Y")
+        expected = Struct("mod", (Var(0, "X"), Var(1, "Y")))
+        assert result == expected
+        
+        # Without spaces, should be an atom or error
+        with pytest.raises(ReaderError):
+            reader.read_term("XmodY")
