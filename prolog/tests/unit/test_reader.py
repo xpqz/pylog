@@ -545,3 +545,46 @@ class TestPrattParser:
         goals = reader.read_query("?- foo(X), bar(X).")
         assert isinstance(goals, list)
         assert all(isinstance(g, (Atom, Int, Var, Struct, List)) for g in goals)
+    
+    def test_edge_cases_for_coverage(self):
+        """Test edge cases to improve coverage."""
+        reader = Reader()
+        
+        # Empty input
+        with pytest.raises(ReaderError) as exc_info:
+            reader.read_term("")
+        assert "empty" in str(exc_info.value).lower()
+        
+        # Test clause without body (fact)
+        clause = reader.read_clause("foo.")
+        assert clause.head == Atom("foo")
+        assert clause.body is None
+        
+        # Test query with single goal
+        goals = reader.read_query("?- foo.")
+        assert len(goals) == 1
+        assert goals[0] == Atom("foo")
+        
+        # Test leftover tokens error
+        with pytest.raises(ReaderError) as exc_info:
+            reader.read_term("foo bar")
+        assert "unexpected token" in str(exc_info.value).lower()
+    
+    def test_classic_tie_break_cases(self):
+        """Classic precedence tie-breaking and associativity tests."""
+        reader = Reader()
+        
+        # Unary minus vs power: -2 ** 3 → -(2 ** 3) 
+        result = reader.read_term("-2 ** 3")
+        expected = Struct("-", (Struct("**", (Int(2), Int(3))),))
+        assert result == expected
+        
+        # Right associativity of ->
+        result = reader.read_term("a -> b -> c")
+        expected = Struct("->", (Atom("a"), Struct("->", (Atom("b"), Atom("c")))))
+        assert result == expected
+        
+        # Positive literal policy
+        result = reader.read_term("+3")
+        expected = Int(3)
+        assert result == expected
