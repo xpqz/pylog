@@ -45,4 +45,5 @@ markers = [
     "dev_mode: marks tests that should run in development mode",
     "iso_mode: marks tests that should run in ISO Prolog mode",
     "timeout: marks tests with a timeout limit",
+    "stage15: marks tests for Stage 1.5 (operator support)",
 ]

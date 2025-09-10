@@ -272,9 +272,9 @@ class TestREPLCommands:
         cmd = repl.parse_command("quit.")
         assert cmd["type"] == "quit"
         
-        # Test invalid command
+        # Test incomplete command (missing period)
         cmd = repl.parse_command("invalid input")
-        assert cmd["type"] == "error"
+        assert cmd["type"] == "incomplete"
     
     def test_parse_command_whitespace_and_missing_dot(self):
         """Test parsing commands with whitespace and missing dots."""
