@@ -815,31 +815,88 @@ class Reader:
             return []
         
         clauses = []
-        # Split by periods to find individual clauses
-        # This is a simple approach - more robust would be to track parentheses
-        lines = text.strip().split('\n')
-        current_clause = []
         
+        # Remove comments first but preserve line structure
+        lines = text.split('\n')
+        cleaned_lines = []
         for line in lines:
-            # Skip comments and empty lines
-            line = line.strip()
-            if not line or line.startswith('%'):
+            # Remove line comments
+            if '%' in line:
+                line = line[:line.index('%')]
+            cleaned_lines.append(line)
+        cleaned_text = '\n'.join(cleaned_lines).strip()
+        
+        if not cleaned_text:
+            return []
+        
+        # Parse clauses by finding periods at the top level (not inside parens/brackets)
+        current_clause = []
+        paren_depth = 0
+        bracket_depth = 0
+        in_quoted_atom = False
+        escape_next = False
+        
+        i = 0
+        while i < len(cleaned_text):
+            char = cleaned_text[i]
+            
+            # Handle escape sequences in quoted atoms
+            if escape_next:
+                current_clause.append(char)
+                escape_next = False
+                i += 1
                 continue
             
-            current_clause.append(line)
-            # Check if this line ends a clause
-            if line.rstrip().endswith('.'):
-                clause_text = ' '.join(current_clause)
-                try:
-                    clause = self.read_clause(clause_text)
-                    clauses.append(clause)
-                except ReaderError:
-                    # Try to provide context
-                    raise
+            # Track quoted atoms
+            if char == "'" and not escape_next:
+                in_quoted_atom = not in_quoted_atom
+                current_clause.append(char)
+                i += 1
+                continue
+            
+            # Handle escapes in quoted atoms
+            if in_quoted_atom and char == '\\':
+                escape_next = True
+                current_clause.append(char)
+                i += 1
+                continue
+            
+            # Skip tracking inside quoted atoms
+            if in_quoted_atom:
+                current_clause.append(char)
+                i += 1
+                continue
+            
+            # Track parentheses and brackets
+            if char == '(':
+                paren_depth += 1
+            elif char == ')':
+                paren_depth -= 1
+            elif char == '[':
+                bracket_depth += 1
+            elif char == ']':
+                bracket_depth -= 1
+            elif char == '.' and paren_depth == 0 and bracket_depth == 0:
+                # Found a clause terminator at top level
+                current_clause.append(char)
+                clause_text = ''.join(current_clause).strip()
+                if clause_text:
+                    try:
+                        clause = self.read_clause(clause_text)
+                        clauses.append(clause)
+                    except ReaderError as e:
+                        # Add context about which clause failed
+                        raise ReaderError(f"Error in clause: {e}")
                 current_clause = []
+                i += 1
+                continue
+            
+            current_clause.append(char)
+            i += 1
         
         # Check for incomplete clause
-        if current_clause:
-            raise ReaderError("Incomplete clause at end of program")
+        remaining = ''.join(current_clause).strip()
+        if remaining:
+            raise ReaderError(f"Incomplete clause at end of program: {remaining[:50]}")
         
         return clauses
