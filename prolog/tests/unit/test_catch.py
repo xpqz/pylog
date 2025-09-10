@@ -607,3 +607,145 @@ class TestCatchAdvancedSemantics:
         ])
         
         assert len(results) == 1
+
+# =============================================================================
+# MERGED FROM test_catch_throw_advanced.py, test_throw_catch.py, test_throw.py  
+# =============================================================================
+
+from prolog.ast.terms import List
+
+class TestThrowEdgeCases:
+    """Edge case tests for throw/1."""
+
+    def test_throw_with_complex_structure(self):
+        """Test throwing complex structured terms."""
+        engine = Engine(program())
+        
+        error_term = Struct("error", (
+            Struct("type_error", (Atom("integer"), Atom("abc"))),
+            Struct("context", (
+                Struct("/", (Atom("foo"), Int(2))),
+                Atom("message")
+            ))
+        ))
+        
+        X = Var(0, "X")
+        query = Struct("catch", (
+            Struct("throw", (error_term,)),
+            X,
+            Atom("true")
+        ))
+        solutions = engine.run([query])
+        assert len(solutions) == 1
+        assert solutions[0]["X"] == error_term
+
+    def test_throw_with_list(self):
+        """Test throwing a list term.""" 
+        engine = Engine(program())
+        
+        list_term = List((Int(1), Int(2), Int(3)))
+        
+        X = Var(0, "X")
+        query = Struct("catch", (
+            Struct("throw", (list_term,)),
+            X,
+            Atom("true")
+        ))
+        solutions = engine.run([query])
+        assert len(solutions) == 1
+        assert solutions[0]["X"] == list_term
+
+
+def assert_engine_clean(engine):
+    """Assert that engine state is clean (no leftover stacks/trail)."""
+    if hasattr(engine, "cp_stack"):
+        assert len(engine.cp_stack) == 0
+    if hasattr(engine, "goal_stack"):
+        assert engine.goal_stack.height() == 0
+    if hasattr(engine, "frame_stack"):
+        assert len(engine.frame_stack) == 0
+    if hasattr(engine, "trail"):
+        assert engine.trail.position() == 0
+
+
+class TestThrowCatchEngineIntegration:
+    """Test throw/catch exception handling with engine integration."""
+    
+    def test_uncaught_throw(self):
+        """Test that uncaught throw/1 raises PrologThrow."""
+        from prolog.ast.clauses import Program
+        engine = Engine(Program(()))
+        
+        with pytest.raises(PrologThrow) as exc_info:
+            list(engine.query("throw(test_ball)"))
+        
+        assert exc_info.value.ball == Atom("test_ball")
+    
+    def test_basic_catch_success(self):
+        """Test that catch/3 with non-throwing goal succeeds normally."""
+        from prolog.ast.clauses import Program
+        engine = Engine(Program(()))
+        
+        results = list(engine.query("catch(true, _, fail)"))
+        assert len(results) == 1
+    
+    def test_engine_reusable_after_throw(self):
+        """Test that engine is reusable after an uncaught throw."""
+        from prolog.ast.clauses import Program
+        engine = Engine(Program(()))
+        engine.consult_string("p(ok).")
+        
+        with pytest.raises(PrologThrow):
+            list(engine.query("throw(boom)"))
+        
+        results = list(engine.query("p(X)"))
+        assert len(results) == 1
+        assert results[0]["X"] == Atom("ok")
+        assert_engine_clean(engine)
+
+
+class TestThrowBasic:
+    """Test basic throw/1 functionality."""
+    
+    def test_throw_propagates_atom(self):
+        """Test throw(error) propagates atom error term."""
+        engine = Engine(program())
+        
+        with pytest.raises(PrologThrow) as exc:
+            engine.run([Struct("throw", (Atom("error"),))])
+        assert exc.value.ball == Atom("error")
+    
+    def test_throw_with_variable_term(self):
+        """Test throw(X) after X is bound."""
+        engine = Engine(program())
+        
+        with pytest.raises(PrologThrow) as exc:
+            engine.run([
+                Struct(",", (
+                    Struct("=", (Var(0, "X"), Atom("error"))),
+                    Struct("throw", (Var(0, "X"),))
+                ))
+            ])
+        assert exc.value.ball == Atom("error")
+    
+    def test_throw_unbound_variable_fails(self):
+        """Test throw(X) with unbound X fails in dev-mode."""
+        engine = Engine(program())
+        
+        results = engine.run([Struct("throw", (Var(0, "X"),))])
+        assert len(results) == 0  # Dev-mode: fail on unbound
+    
+    def test_throw_in_conjunction_interrupts(self):
+        """Test throw/1 interrupts conjunction execution."""
+        p = program(mk_fact("q"))
+        engine = Engine(p)
+        
+        with pytest.raises(PrologThrow) as exc:
+            engine.run([
+                Struct(",", (
+                    Struct("throw", (Atom("error"),)),
+                    Atom("q")
+                ))
+            ])
+        assert exc.value.ball == Atom("error")
+
