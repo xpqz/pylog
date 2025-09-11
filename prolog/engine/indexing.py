@@ -11,7 +11,7 @@ Key invariants:
 - Static program assumption (no dynamic predicates in Stage 2)
 """
 
-from typing import Dict, List, Set, Tuple, Union
+from typing import Dict, List, Set, Tuple, Union, Iterator
 from prolog.ast.terms import Term, Atom, Int, Var, Struct, List as PrologList
 from prolog.unify.store import Store
 from prolog.ast.clauses import Clause
@@ -82,6 +82,96 @@ class ClauseIndex:
         assert not self.finalized, "Cannot add clauses after index is built (static program assumption)"
         # This will be called during build_from_clauses
         raise NotImplementedError("Use build_from_clauses instead")
+    
+    def select(self, pred_key: PredKey, goal: Term, store: Store) -> Iterator[Clause]:
+        """
+        Select clauses for the given predicate and goal.
+        
+        Uses first-argument indexing to filter candidates, then yields
+        clauses in source order (Order ∩ Candidates pattern).
+        
+        Args:
+            pred_key: (predicate_name, arity) tuple
+            goal: The goal term to match
+            store: Store for dereferencing variables
+            
+        Yields:
+            Matching clauses in source order
+        """
+        # Check if predicate exists
+        if pred_key not in self.preds:
+            return
+        
+        pred_idx = self.preds[pred_key]
+        
+        # Handle zero-arity predicates
+        if pred_key[1] == 0:
+            # All clauses match for zero-arity predicates
+            for clause_id in pred_idx.order:
+                yield self.clauses[(pred_key, clause_id)]
+            return
+        
+        # Get and dereference the first argument of the goal
+        if isinstance(goal, Struct) and goal.args:
+            first_arg = goal.args[0]
+        else:
+            # Shouldn't happen for properly formed goals
+            return
+        
+        # Dereference if it's a variable
+        if isinstance(first_arg, Var):
+            # Dereference the variable
+            deref_result = store.deref(first_arg.id)
+            if deref_result[0] == "BOUND":
+                # Use the bound term
+                first_arg = deref_result[2]
+            # else: remains unbound variable
+        
+        # Build candidate set based on first argument type
+        candidates: Set[ClauseID] = set()
+        
+        if isinstance(first_arg, Var):
+            # Unbound variable matches everything
+            candidates = set(pred_idx.order)
+        elif isinstance(first_arg, Int):
+            # Integer matches integer clauses and variable clauses
+            candidates |= pred_idx.int_ids
+            candidates |= pred_idx.var_ids
+        elif isinstance(first_arg, PrologList):
+            if len(first_arg.items) == 0:
+                # Empty list
+                candidates |= pred_idx.empty_list_ids
+                candidates |= pred_idx.var_ids
+            else:
+                # Non-empty list
+                candidates |= pred_idx.list_nonempty_ids
+                candidates |= pred_idx.var_ids
+        elif isinstance(first_arg, Atom):
+            if first_arg.name == "[]":
+                # Empty list atom
+                candidates |= pred_idx.empty_list_ids
+                candidates |= pred_idx.var_ids
+            else:
+                # Regular atom
+                functor_key = (first_arg.name, 0)
+                candidates |= pred_idx.struct_functor.get(functor_key, set())
+                candidates |= pred_idx.var_ids
+        elif isinstance(first_arg, Struct):
+            # Check for canonical list representation
+            if first_arg.functor == "." and len(first_arg.args) == 2:
+                # Non-empty list in canonical form
+                candidates |= pred_idx.list_nonempty_ids
+                candidates |= pred_idx.var_ids
+            else:
+                # Regular structure
+                functor_key = (first_arg.functor, len(first_arg.args))
+                candidates |= pred_idx.struct_functor.get(functor_key, set())
+                candidates |= pred_idx.var_ids
+        
+        # Yield clauses in source order (Order ∩ Candidates pattern)
+        for clause_id in pred_idx.order:
+            if clause_id in candidates:
+                yield self.clauses[(pred_key, clause_id)]
 
 
 def analyze_first_arg(head: Term, store: Store) -> Union[str, Tuple[str, str, int]]:

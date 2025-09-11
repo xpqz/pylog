@@ -18,6 +18,42 @@ from prolog.unify.unify_helpers import union_vars, bind_root_to_term, deref_term
 from prolog.unify.occurs import occurs
 
 
+def bind(store: Store, var_id: int, term: Any, trail: List) -> None:
+    """
+    Bind a variable to a term.
+    
+    This is a convenience function for testing that binds a variable
+    to a term, handling the dereferencing and binding properly.
+    
+    Args:
+        store: Variable store
+        var_id: Variable ID to bind
+        term: Term to bind the variable to
+        trail: Trail for recording changes
+    """
+    # Dereference to find the root
+    deref_result = store.deref(var_id)
+    
+    if deref_result[0] == "BOUND":
+        # Already bound, nothing to do
+        return
+    
+    root_id = deref_result[1]
+    
+    # If binding to another variable, dereference that too
+    if isinstance(term, Var):
+        term_deref = store.deref(term.id)
+        if term_deref[0] == "BOUND":
+            # Bind to the term the other variable is bound to
+            bind_root_to_term(root_id, term_deref[2], trail, store)
+        else:
+            # Both unbound, union them
+            union_vars(root_id, term_deref[1], trail, store)
+    else:
+        # Bind to non-variable term
+        bind_root_to_term(root_id, term, trail, store)
+
+
 def unify(
     t1: Any, t2: Any, store: Store, trail: List, occurs_check: bool = False
 ) -> bool:
