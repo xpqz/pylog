@@ -71,12 +71,12 @@ class Tokenizer:
         (r'//', 'DOUBLE_SLASH'),
         (r'=:=', 'EQ_COLON_EQ'),
         (r'=\\=', 'EQ_BACKSLASH_EQ'),
+        (r'\\==', 'BACKSLASH_EQEQ'),  # Must come before \=
         (r'\\=', 'BACKSLASH_EQ'),
-        (r'\\==', 'BACKSLASH_EQEQ'),
+        (r'@=<', 'AT_EQ_LT'),  # Must come before @<
+        (r'@>=', 'AT_GT_EQ'),  # Must come before @>
         (r'@<', 'AT_LT'),
         (r'@>', 'AT_GT'),
-        (r'@=<', 'AT_EQ_LT'),
-        (r'@>=', 'AT_GT_EQ'),
         (r'=<', 'EQ_LT'),
         (r'>=', 'GT_EQ'),
         (r'==', 'DOUBLE_EQ'),
