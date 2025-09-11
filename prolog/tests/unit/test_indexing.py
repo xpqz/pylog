@@ -462,3 +462,505 @@ class TestAdditionalInvariants:
         assert hasattr(idx.__class__, "__slots__")
         with pytest.raises(AttributeError):
             _ = idx.__dict__
+
+
+class TestClauseSelection:
+    """Tests for clause selection algorithm."""
+
+    def test_select_clauses_for_atom_goal(self):
+        """Select should return matching clauses for atom goal."""
+        clauses = [
+            Clause(head=Struct("p", (Atom("a"),)), body=()),     # 0
+            Clause(head=Struct("p", (Atom("b"),)), body=()),     # 1
+            Clause(head=Struct("p", (Var(0, "X"),)), body=()),   # 2
+            Clause(head=Struct("p", (Atom("c"),)), body=()),     # 3
+        ]
+        idx = build_from_clauses(clauses)
+        
+        # Query: p(a)
+        goal = Struct("p", (Atom("a"),))
+        store = Store()
+        selected = list(idx.select(("p", 1), goal, store))
+        
+        # Should return clauses 0 and 2 (exact match and variable)
+        assert len(selected) == 2
+        assert selected[0] is idx.clauses[(("p", 1), 0)]  # p(a)
+        assert selected[1] is idx.clauses[(("p", 1), 2)]  # p(X)
+    
+    def test_select_clauses_for_struct_goal(self):
+        """Select should return matching clauses for struct goal."""
+        clauses = [
+            Clause(head=Struct("p", (Struct("f", (Atom("x"),)),)), body=()),  # 0
+            Clause(head=Struct("p", (Struct("g", (Atom("y"),)),)), body=()),  # 1
+            Clause(head=Struct("p", (Var(0, "X"),)), body=()),                # 2
+            Clause(head=Struct("p", (Struct("f", (Atom("z"),)),)), body=()),  # 3
+        ]
+        idx = build_from_clauses(clauses)
+        
+        # Query: p(f(w))
+        goal = Struct("p", (Struct("f", (Atom("w"),)),))
+        store = Store()
+        selected = list(idx.select(("p", 1), goal, store))
+        
+        # Should return clauses 0, 2, 3 (f/1 functors and variable)
+        assert len(selected) == 3
+        assert selected[0] is idx.clauses[(("p", 1), 0)]  # p(f(x))
+        assert selected[1] is idx.clauses[(("p", 1), 2)]  # p(X)
+        assert selected[2] is idx.clauses[(("p", 1), 3)]  # p(f(z))
+    
+    def test_select_clauses_for_variable_goal(self):
+        """Select should return all clauses for variable goal."""
+        clauses = [
+            Clause(head=Struct("p", (Atom("a"),)), body=()),     # 0
+            Clause(head=Struct("p", (Int(42),)), body=()),       # 1
+            Clause(head=Struct("p", (Var(0, "X"),)), body=()),   # 2
+            Clause(head=Struct("p", (List((), Atom("[]")),)), body=()),  # 3
+        ]
+        idx = build_from_clauses(clauses)
+        
+        # Query: p(Y) where Y is unbound
+        store = Store()
+        var_id = store.new_var("Y")
+        goal = Struct("p", (Var(var_id, "Y"),))
+        selected = list(idx.select(("p", 1), goal, store))
+        
+        # Should return all 4 clauses in source order
+        assert len(selected) == 4
+        for i in range(4):
+            assert selected[i] is idx.clauses[(("p", 1), i)]
+    
+    def test_select_clauses_for_integer_goal(self):
+        """Select should return matching clauses for integer goal."""
+        clauses = [
+            Clause(head=Struct("p", (Int(1),)), body=()),        # 0
+            Clause(head=Struct("p", (Int(2),)), body=()),        # 1
+            Clause(head=Struct("p", (Var(0, "X"),)), body=()),   # 2
+            Clause(head=Struct("p", (Atom("a"),)), body=()),     # 3
+            Clause(head=Struct("p", (Int(-5),)), body=()),       # 4
+        ]
+        idx = build_from_clauses(clauses)
+        
+        # Query: p(3)
+        goal = Struct("p", (Int(3),))
+        store = Store()
+        selected = list(idx.select(("p", 1), goal, store))
+        
+        # Should return clauses 0, 1, 2, 4 (all integers and variable)
+        assert len(selected) == 4
+        assert selected[0] is idx.clauses[(("p", 1), 0)]  # p(1)
+        assert selected[1] is idx.clauses[(("p", 1), 1)]  # p(2)
+        assert selected[2] is idx.clauses[(("p", 1), 2)]  # p(X)
+        assert selected[3] is idx.clauses[(("p", 1), 4)]  # p(-5)
+    
+    def test_select_clauses_for_empty_list_goal(self):
+        """Select should return matching clauses for empty list goal."""
+        clauses = [
+            Clause(head=Struct("p", (List((), Atom("[]")),)), body=()),       # 0: []
+            Clause(head=Struct("p", (List((Atom("a"),), Atom("[]")),)), body=()),  # 1: [a]
+            Clause(head=Struct("p", (Var(0, "X"),)), body=()),                # 2: X
+            Clause(head=Struct("p", (Atom("[]"),)), body=()),                 # 3: atom '[]'
+        ]
+        idx = build_from_clauses(clauses)
+        
+        # Query: p([])
+        goal = Struct("p", (List((), Atom("[]")),))
+        store = Store()
+        selected = list(idx.select(("p", 1), goal, store))
+        
+        # Should return clauses 0, 2, 3 (empty lists and variable)
+        assert len(selected) == 3
+        assert selected[0] is idx.clauses[(("p", 1), 0)]  # p([])
+        assert selected[1] is idx.clauses[(("p", 1), 2)]  # p(X)
+        assert selected[2] is idx.clauses[(("p", 1), 3)]  # p('[]')
+    
+    def test_select_clauses_for_nonempty_list_goal(self):
+        """Select should return matching clauses for non-empty list goal."""
+        clauses = [
+            Clause(head=Struct("p", (List((), Atom("[]")),)), body=()),           # 0: []
+            Clause(head=Struct("p", (List((Atom("a"),), Atom("[]")),)), body=()),  # 1: [a]
+            Clause(head=Struct("p", (Var(0, "X"),)), body=()),                    # 2: X
+            Clause(head=Struct("p", (List((Atom("b"),), Var(1, "T")),)), body=()), # 3: [b|T]
+        ]
+        idx = build_from_clauses(clauses)
+        
+        # Query: p([c,d])
+        goal = Struct("p", (List((Atom("c"), Atom("d")), Atom("[]")),))
+        store = Store()
+        selected = list(idx.select(("p", 1), goal, store))
+        
+        # Should return clauses 1, 2, 3 (non-empty lists and variable)
+        assert len(selected) == 3
+        assert selected[0] is idx.clauses[(("p", 1), 1)]  # p([a])
+        assert selected[1] is idx.clauses[(("p", 1), 2)]  # p(X)
+        assert selected[2] is idx.clauses[(("p", 1), 3)]  # p([b|T])
+    
+    def test_select_for_zero_arity_predicate(self):
+        """Select should handle predicates with no arguments."""
+        clauses = [
+            Clause(head=Atom("p"), body=()),                      # p/0
+            Clause(head=Struct("p", (Atom("a"),)), body=()),      # p/1 (different predicate)
+        ]
+        idx = build_from_clauses(clauses)
+        
+        # Query: p (zero-arity)
+        goal = Atom("p")
+        store = Store()
+        selected = list(idx.select(("p", 0), goal, store))
+        
+        # Should return only the p/0 clause
+        assert len(selected) == 1
+        assert selected[0] is idx.clauses[(("p", 0), 0)]
+    
+    def test_select_returns_empty_for_missing_predicate(self):
+        """Select should return empty for non-existent predicate."""
+        clauses = [
+            Clause(head=Struct("p", (Atom("a"),)), body=()),
+        ]
+        idx = build_from_clauses(clauses)
+        
+        # Query: q(a) - predicate q doesn't exist
+        goal = Struct("q", (Atom("a"),))
+        store = Store()
+        selected = list(idx.select(("q", 1), goal, store))
+        
+        assert len(selected) == 0
+
+
+class TestOrderPreservation:
+    """Tests for critical order preservation invariant."""
+
+    def test_order_preservation_with_interleaved_var_heads(self):
+        """Variable heads must not disrupt source order."""
+        clauses = [
+            Clause(head=Struct("p", (Atom("a"),)), body=()),     # 0
+            Clause(head=Struct("p", (Var(0, "X"),)), body=()),   # 1
+            Clause(head=Struct("p", (Atom("b"),)), body=()),     # 2
+        ]
+        idx = build_from_clauses(clauses)
+        store = Store()
+        
+        # Query p(a) must try clauses 0 then 1 (not skip to 2)
+        goal_a = Struct("p", (Atom("a"),))
+        selected_a = list(idx.select(("p", 1), goal_a, store))
+        assert len(selected_a) == 2
+        assert selected_a[0] is idx.clauses[(("p", 1), 0)]  # p(a) first
+        assert selected_a[1] is idx.clauses[(("p", 1), 1)]  # p(X) second
+        
+        # Query p(b) must try clauses 1 then 2 (not 0)
+        goal_b = Struct("p", (Atom("b"),))
+        selected_b = list(idx.select(("p", 1), goal_b, store))
+        assert len(selected_b) == 2
+        assert selected_b[0] is idx.clauses[(("p", 1), 1)]  # p(X) first
+        assert selected_b[1] is idx.clauses[(("p", 1), 2)]  # p(b) second
+    
+    def test_source_order_maintained_within_candidates(self):
+        """Source order must be strictly maintained within candidates."""
+        clauses = [
+            Clause(head=Struct("p", (Struct("f", (Atom("1"),)),)), body=()),  # 0
+            Clause(head=Struct("p", (Atom("a"),)), body=()),                  # 1
+            Clause(head=Struct("p", (Struct("f", (Atom("2"),)),)), body=()),  # 2
+            Clause(head=Struct("p", (Var(0, "X"),)), body=()),                # 3
+            Clause(head=Struct("p", (Struct("f", (Atom("3"),)),)), body=()),  # 4
+        ]
+        idx = build_from_clauses(clauses)
+        store = Store()
+        
+        # Query: p(f(_))
+        goal = Struct("p", (Struct("f", (Var(1, "_"),)),))
+        selected = list(idx.select(("p", 1), goal, store))
+        
+        # Should return clauses 0, 2, 3, 4 in that exact order
+        assert len(selected) == 4
+        assert selected[0] is idx.clauses[(("p", 1), 0)]  # f(1)
+        assert selected[1] is idx.clauses[(("p", 1), 2)]  # f(2)
+        assert selected[2] is idx.clauses[(("p", 1), 3)]  # X
+        assert selected[3] is idx.clauses[(("p", 1), 4)]  # f(3)
+    
+    def test_never_concatenate_buckets(self):
+        """Selection must filter through order, never concatenate buckets."""
+        clauses = [
+            Clause(head=Struct("p", (Int(1),)), body=()),        # 0
+            Clause(head=Struct("p", (Atom("a"),)), body=()),     # 1
+            Clause(head=Struct("p", (Int(2),)), body=()),        # 2
+            Clause(head=Struct("p", (Var(0, "X"),)), body=()),   # 3
+            Clause(head=Struct("p", (Int(3),)), body=()),        # 4
+        ]
+        idx = build_from_clauses(clauses)
+        store = Store()
+        
+        # Query: p(5) - integer goal
+        goal = Struct("p", (Int(5),))
+        selected = list(idx.select(("p", 1), goal, store))
+        
+        # Must be [0, 2, 3, 4] in that order (not [0,2,4] then [3])
+        assert len(selected) == 4
+        assert selected[0] is idx.clauses[(("p", 1), 0)]
+        assert selected[1] is idx.clauses[(("p", 1), 2)]
+        assert selected[2] is idx.clauses[(("p", 1), 3)]
+        assert selected[3] is idx.clauses[(("p", 1), 4)]
+    
+    def test_variable_clauses_always_included(self):
+        """Variable clauses must always be included when matching."""
+        clauses = [
+            Clause(head=Struct("p", (Atom("a"),)), body=()),      # 0
+            Clause(head=Struct("p", (Var(0, "X"),)), body=()),    # 1
+            Clause(head=Struct("p", (Int(42),)), body=()),        # 2
+            Clause(head=Struct("p", (Var(1, "Y"),)), body=()),    # 3
+        ]
+        idx = build_from_clauses(clauses)
+        store = Store()
+        
+        # Any goal should include both variable clauses
+        goals = [
+            Struct("p", (Atom("a"),)),
+            Struct("p", (Int(99),)),
+            Struct("p", (List((), Atom("[]")),)),
+            Struct("p", (Struct("f", (Atom("x"),)),)),
+        ]
+        
+        for goal in goals:
+            selected = list(idx.select(("p", 1), goal, store))
+            selected_ids = [idx.preds[("p", 1)].order[i] 
+                           for i, c in enumerate(idx.clauses.values()) 
+                           if c in selected]
+            # Both variable clauses (1 and 3) must be included
+            assert 1 in selected_ids
+            assert 3 in selected_ids
+    
+    def test_order_intersect_candidates_pattern(self):
+        """Verify the Order ∩ Candidates pattern is correctly implemented."""
+        clauses = [
+            Clause(head=Struct("p", (Atom("x"),)), body=()),      # 0
+            Clause(head=Struct("p", (Var(0, "V"),)), body=()),    # 1
+            Clause(head=Struct("p", (Atom("y"),)), body=()),      # 2
+            Clause(head=Struct("p", (Atom("x"),)), body=()),      # 3
+            Clause(head=Struct("p", (Var(1, "W"),)), body=()),    # 4
+        ]
+        idx = build_from_clauses(clauses)
+        store = Store()
+        
+        # Query: p(x)
+        goal = Struct("p", (Atom("x"),))
+        selected = list(idx.select(("p", 1), goal, store))
+        
+        # Candidates are {0, 1, 3, 4} (x atoms and vars)
+        # Order is [0, 1, 2, 3, 4]
+        # Result should be [0, 1, 3, 4] - order filtered by candidates
+        assert len(selected) == 4
+        assert selected[0] is idx.clauses[(("p", 1), 0)]
+        assert selected[1] is idx.clauses[(("p", 1), 1)]
+        assert selected[2] is idx.clauses[(("p", 1), 3)]
+        assert selected[3] is idx.clauses[(("p", 1), 4)]
+
+
+class TestDereferencingBeforeSelection:
+    """Tests for dereferencing first argument before selection."""
+
+    def test_selection_uses_dereferenced_first_argument(self):
+        """Selection must use dereferenced value of first argument."""
+        clauses = [
+            Clause(head=Struct("s", (Atom("a"),)), body=()),      # 0
+            Clause(head=Struct("s", (Atom("b"),)), body=()),      # 1
+            Clause(head=Struct("s", (Var(0, "X"),)), body=()),    # 2
+        ]
+        idx = build_from_clauses(clauses)
+        store = Store()
+        
+        # Create a variable and bind it to 'a'
+        var_id = store.new_var("Y")
+        from prolog.unify.unify import bind
+        bind(store, var_id, Atom("a"), [])
+        
+        # Query: s(Y) where Y is bound to 'a'
+        goal = Struct("s", (Var(var_id, "Y"),))
+        selected = list(idx.select(("s", 1), goal, store))
+        
+        # Should select s(a) and s(X) clauses, not all clauses
+        assert len(selected) == 2
+        assert selected[0] is idx.clauses[(("s", 1), 0)]  # s(a)
+        assert selected[1] is idx.clauses[(("s", 1), 2)]  # s(X)
+    
+    def test_bound_variables_select_correct_bucket(self):
+        """Bound variables should select based on their bound value."""
+        clauses = [
+            Clause(head=Struct("p", (Int(1),)), body=()),         # 0
+            Clause(head=Struct("p", (Int(2),)), body=()),         # 1
+            Clause(head=Struct("p", (Atom("a"),)), body=()),      # 2
+            Clause(head=Struct("p", (Var(0, "X"),)), body=()),    # 3
+        ]
+        idx = build_from_clauses(clauses)
+        store = Store()
+        
+        # Bind variable to integer
+        var_id = store.new_var("Z")
+        from prolog.unify.unify import bind
+        bind(store, var_id, Int(5), [])
+        
+        # Query: p(Z) where Z is bound to 5
+        goal = Struct("p", (Var(var_id, "Z"),))
+        selected = list(idx.select(("p", 1), goal, store))
+        
+        # Should select integer clauses and variable clause
+        assert len(selected) == 3
+        assert selected[0] is idx.clauses[(("p", 1), 0)]  # p(1)
+        assert selected[1] is idx.clauses[(("p", 1), 1)]  # p(2)
+        assert selected[2] is idx.clauses[(("p", 1), 3)]  # p(X)
+    
+    def test_unbound_variables_select_all_clauses(self):
+        """Unbound variables should select all clauses."""
+        clauses = [
+            Clause(head=Struct("p", (Atom("a"),)), body=()),      # 0
+            Clause(head=Struct("p", (Int(1),)), body=()),         # 1
+            Clause(head=Struct("p", (List((), Atom("[]")),)), body=()),  # 2
+            Clause(head=Struct("p", (Var(0, "X"),)), body=()),    # 3
+        ]
+        idx = build_from_clauses(clauses)
+        store = Store()
+        
+        # Unbound variable
+        var_id = store.new_var("U")
+        
+        # Query: p(U) where U is unbound
+        goal = Struct("p", (Var(var_id, "U"),))
+        selected = list(idx.select(("p", 1), goal, store))
+        
+        # Should select all clauses
+        assert len(selected) == 4
+        for i in range(4):
+            assert selected[i] is idx.clauses[(("p", 1), i)]
+    
+    def test_deref_of_attributed_variable_treated_as_variable(self):
+        """Attributed variables should be treated as unbound for selection."""
+        # This test is a placeholder for when attributed variables are implemented
+        # For now, we test that regular variables work correctly
+        clauses = [
+            Clause(head=Struct("p", (Atom("a"),)), body=()),      # 0
+            Clause(head=Struct("p", (Var(0, "X"),)), body=()),    # 1
+        ]
+        idx = build_from_clauses(clauses)
+        store = Store()
+        
+        # Create an unbound variable (simulating attributed var)
+        var_id = store.new_var("Attr")
+        
+        # Query: p(Attr) - should select all clauses
+        goal = Struct("p", (Var(var_id, "Attr"),))
+        selected = list(idx.select(("p", 1), goal, store))
+        
+        # Should select all clauses (treated as unbound)
+        assert len(selected) == 2
+        assert selected[0] is idx.clauses[(("p", 1), 0)]
+        assert selected[1] is idx.clauses[(("p", 1), 1)]
+    
+    def test_deref_chains_followed_correctly(self):
+        """Dereferencing should follow union-find chains correctly."""
+        clauses = [
+            Clause(head=Struct("p", (Atom("final"),)), body=()),  # 0
+            Clause(head=Struct("p", (Atom("other"),)), body=()),  # 1
+            Clause(head=Struct("p", (Var(0, "X"),)), body=()),    # 2
+        ]
+        idx = build_from_clauses(clauses)
+        store = Store()
+        
+        # Create a chain of variables: V1 -> V2 -> V3 -> 'final'
+        v1 = store.new_var("V1")
+        v2 = store.new_var("V2")
+        v3 = store.new_var("V3")
+        
+        from prolog.unify.unify import bind
+        bind(store, v3, Atom("final"), [])
+        bind(store, v2, Var(v3, "V3"), [])
+        bind(store, v1, Var(v2, "V2"), [])
+        
+        # Query: p(V1) - should deref to 'final'
+        goal = Struct("p", (Var(v1, "V1"),))
+        selected = list(idx.select(("p", 1), goal, store))
+        
+        # Should select p(final) and p(X)
+        assert len(selected) == 2
+        assert selected[0] is idx.clauses[(("p", 1), 0)]  # p(final)
+        assert selected[1] is idx.clauses[(("p", 1), 2)]  # p(X)
+    
+    def test_runtime_binding_respected(self):
+        """Runtime bindings must be respected in selection."""
+        clauses = [
+            Clause(head=Struct("test", (Var(0, "Y"),)), body=()),            # 0
+            Clause(head=Struct("test", (Atom("a"),)), body=()),              # 1
+            Clause(head=Struct("test", (Atom("b"),)), body=()),              # 2
+        ]
+        idx = build_from_clauses(clauses)
+        
+        # First query with Y bound to 'a'
+        store1 = Store()
+        var_y = store1.new_var("Y")
+        from prolog.unify.unify import bind
+        bind(store1, var_y, Atom("a"), [])
+        
+        goal1 = Struct("test", (Var(var_y, "Y"),))
+        selected1 = list(idx.select(("test", 1), goal1, store1))
+        
+        # Should select test(Y) and test(a)
+        assert len(selected1) == 2
+        assert selected1[0] is idx.clauses[(("test", 1), 0)]
+        assert selected1[1] is idx.clauses[(("test", 1), 1)]
+        
+        # Second query with Y bound to 'b'
+        store2 = Store()
+        var_y2 = store2.new_var("Y")
+        bind(store2, var_y2, Atom("b"), [])
+        
+        goal2 = Struct("test", (Var(var_y2, "Y"),))
+        selected2 = list(idx.select(("test", 1), goal2, store2))
+        
+        # Should select test(Y) and test(b)
+        assert len(selected2) == 2
+        assert selected2[0] is idx.clauses[(("test", 1), 0)]
+        assert selected2[1] is idx.clauses[(("test", 1), 2)]
+
+
+class TestStreamingSemantics:
+    """Tests for streaming/generator behavior of select()."""
+
+    def test_select_returns_iterator_not_list(self):
+        """select() should return an iterator/generator, not a list."""
+        clauses = [
+            Clause(head=Struct("p", (Atom("a"),)), body=()),
+            Clause(head=Struct("p", (Atom("b"),)), body=()),
+        ]
+        idx = build_from_clauses(clauses)
+        store = Store()
+        
+        goal = Struct("p", (Atom("a"),))
+        result = idx.select(("p", 1), goal, store)
+        
+        # Should be an iterator/generator, not a list
+        import types
+        assert hasattr(result, '__iter__')
+        assert hasattr(result, '__next__') or isinstance(result, types.GeneratorType)
+        # Should not be a list
+        assert not isinstance(result, list)
+    
+    def test_lazy_evaluation_with_early_termination(self):
+        """select() should support lazy evaluation for early termination."""
+        # This test verifies that we can stop iteration early
+        clauses = [
+            Clause(head=Struct("p", (Atom("a"),)), body=()),     # 0
+            Clause(head=Struct("p", (Var(0, "X"),)), body=()),   # 1
+            Clause(head=Struct("p", (Atom("a"),)), body=()),     # 2
+            Clause(head=Struct("p", (Atom("a"),)), body=()),     # 3
+        ]
+        idx = build_from_clauses(clauses)
+        store = Store()
+        
+        goal = Struct("p", (Atom("a"),))
+        selected_iter = idx.select(("p", 1), goal, store)
+        
+        # Take only first two elements
+        first = next(selected_iter)
+        second = next(selected_iter)
+        
+        assert first is idx.clauses[(("p", 1), 0)]
+        assert second is idx.clauses[(("p", 1), 1)]
+        
+        # Iterator should still have more elements, but we don't consume them
+        # This simulates a cut operation that stops after finding first solution
