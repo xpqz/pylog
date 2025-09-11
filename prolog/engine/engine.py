@@ -125,7 +125,11 @@ class Engine:
         self._builtins[("atom", 1)] = lambda eng, args: eng._builtin_atom(args)
         self._builtins[("is", 2)] = lambda eng, args: eng._builtin_is(args)
         self._builtins[(">", 2)] = lambda eng, args: eng._builtin_gt(args)
+        self._builtins[("<", 2)] = lambda eng, args: eng._builtin_lt(args)
+        self._builtins[(">=", 2)] = lambda eng, args: eng._builtin_ge(args)
+        self._builtins[("=<", 2)] = lambda eng, args: eng._builtin_le(args)
         self._builtins[("=:=", 2)] = lambda eng, args: eng._builtin_num_eq(args)
+        self._builtins[("=\\=", 2)] = lambda eng, args: eng._builtin_num_ne(args)
         self._builtins[("=..", 2)] = lambda eng, args: eng._builtin_univ(args)
         self._builtins[("functor", 3)] = lambda eng, args: eng._builtin_functor(args)
         self._builtins[("arg", 3)] = lambda eng, args: eng._builtin_arg(args)
@@ -1395,8 +1399,8 @@ class Engine:
         if len(args) != 2:
             return False
         try:
-            return self._eval_int(args[0]) > self._eval_int(args[1])
-        except ValueError:
+            return self._eval_arithmetic(args[0]) > self._eval_arithmetic(args[1])
+        except (ValueError, TypeError):
             return False  # ISO: type/instantiation errors
 
     def _builtin_num_eq(self, args: tuple) -> bool:
@@ -1404,8 +1408,44 @@ class Engine:
         if len(args) != 2:
             return False
         try:
-            return self._eval_int(args[0]) == self._eval_int(args[1])
-        except ValueError:
+            return self._eval_arithmetic(args[0]) == self._eval_arithmetic(args[1])
+        except (ValueError, TypeError):
+            return False  # ISO: type/instantiation errors
+
+    def _builtin_lt(self, args: tuple) -> bool:
+        """<(X, Y) - arithmetic less-than comparison."""
+        if len(args) != 2:
+            return False
+        try:
+            return self._eval_arithmetic(args[0]) < self._eval_arithmetic(args[1])
+        except (ValueError, TypeError):
+            return False  # ISO: type/instantiation errors
+
+    def _builtin_ge(self, args: tuple) -> bool:
+        """>=(X, Y) - arithmetic greater-or-equal comparison."""
+        if len(args) != 2:
+            return False
+        try:
+            return self._eval_arithmetic(args[0]) >= self._eval_arithmetic(args[1])
+        except (ValueError, TypeError):
+            return False  # ISO: type/instantiation errors
+
+    def _builtin_le(self, args: tuple) -> bool:
+        """=<(X, Y) - arithmetic less-or-equal comparison."""
+        if len(args) != 2:
+            return False
+        try:
+            return self._eval_arithmetic(args[0]) <= self._eval_arithmetic(args[1])
+        except (ValueError, TypeError):
+            return False  # ISO: type/instantiation errors
+
+    def _builtin_num_ne(self, args: tuple) -> bool:
+        """=\\=(X, Y) - arithmetic inequality comparison."""
+        if len(args) != 2:
+            return False
+        try:
+            return self._eval_arithmetic(args[0]) != self._eval_arithmetic(args[1])
+        except (ValueError, TypeError):
             return False  # ISO: type/instantiation errors
 
     def _builtin_univ(self, args: tuple) -> bool:

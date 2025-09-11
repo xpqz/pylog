@@ -159,7 +159,6 @@ class TestOperatorExecution:
         assert len(solutions4) == 1
         assert solutions4[0]["X"] == Int(4)
     
-    @pytest.mark.skip(reason="Most comparison operators (<, =<, >=) not yet implemented in Stage 1.5 engine")
     def test_comparison_operators(self):
         """Comparison operators work correctly."""
         clauses = parser.parse_program("""
@@ -354,7 +353,7 @@ class TestUnsupportedOperatorRuntime:
 class TestFileLoadingWithOperators:
     """Test that files with operators can be loaded correctly."""
     
-    @pytest.mark.skip(reason="Test uses comparison operators (>=) not in Stage 1.5 engine scope")
+    @pytest.mark.skip(reason="Test uses term ordering operator (@=<) not in Stage 1.5 engine scope")
     def test_parse_file_with_operators(self, tmp_path):
         """Files containing operators parse correctly."""
         # Create a test file with operators

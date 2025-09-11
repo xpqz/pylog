@@ -75,6 +75,7 @@ class TestParsingPerformance:
         ]
         
         for op_form, canonical_form in test_cases:
+            # Both should use the reader for fair comparison
             # Warm-up and time operator parsing
             for _ in range(50):
                 reader.read_term(op_form)
@@ -83,19 +84,19 @@ class TestParsingPerformance:
                 reader.read_term(op_form)
             op_time = time.perf_counter() - start
             
-            # Warm-up and time canonical parsing (using parser directly)
+            # Warm-up and time canonical parsing (also through reader)
             for _ in range(50):
-                parser_module.parse_term(canonical_form)
+                reader.read_term(canonical_form)
             start = time.perf_counter()
             for _ in range(1000):
-                parser_module.parse_term(canonical_form)
+                reader.read_term(canonical_form)
             canonical_time = time.perf_counter() - start
             
-            # Should be within reasonable bounds
-            # Note: operator parsing includes reader overhead, can be much slower
+            # Operator form should be faster or comparable
+            # (simpler syntax, fewer tokens)
             ratio = op_time / canonical_time
-            assert 0.001 < ratio < 20.0, \
-                f"Parsing time ratio {ratio:.2f} for: {op_form}"
+            assert ratio < 2.0, \
+                f"Operator parsing slower than canonical: ratio {ratio:.2f} for: {op_form}"
     
     def test_large_expression_parsing(self):
         """Test parsing performance with large expressions."""
@@ -165,9 +166,10 @@ class TestExecutionPerformance:
         assert len(solutions1) == 1 == len(solutions2)
         assert solutions1[0]["R"] == solutions2[0]["R"]
         
-        # Execution times should be very similar (within 20%)
+        # Execution times should be comparable (operators may be faster or slower)
+        # Allow operators to be up to 2x faster (ratio >= 0.5) or up to 20% slower (ratio <= 1.2)
         ratio = op_time / canonical_time
-        assert 0.8 < ratio < 1.2, \
+        assert 0.5 <= ratio <= 1.2, \
             f"Execution time ratio {ratio:.2f}: op={op_time:.3f}s, canonical={canonical_time:.3f}s"
     
     def test_backtracking_performance(self):
