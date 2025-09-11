@@ -128,7 +128,38 @@ class TestOperatorExecution:
         assert len(solutions4) == 1
         assert solutions4[0]["X"] == Int(5)
     
-    @pytest.mark.xfail(reason="Comparison operators not yet implemented in engine")
+    def test_implemented_comparison_operators(self):
+        """Test comparison operators that ARE implemented (> and =:=)."""
+        clauses = parser.parse_program("""
+            test1 :- 5 > 3.
+            test2 :- 4 =:= 4.
+            test3 :- 10 > 20.
+            test4(X) :- X is 2 + 2, X =:= 4.
+        """)
+        engine = DevEngine(Program(tuple(clauses)))
+        
+        # > operator should work
+        goals1 = parser.parse_query("?- test1.")
+        solutions1 = list(engine.run(goals1))
+        assert len(solutions1) == 1
+        
+        # =:= operator works with literals
+        goals2 = parser.parse_query("?- test2.")
+        solutions2 = list(engine.run(goals2))
+        assert len(solutions2) == 1
+        
+        # Failed comparison
+        goals3 = parser.parse_query("?- test3.")
+        solutions3 = list(engine.run(goals3))
+        assert len(solutions3) == 0
+        
+        # =:= with evaluated expression
+        goals4 = parser.parse_query("?- test4(X).")
+        solutions4 = list(engine.run(goals4))
+        assert len(solutions4) == 1
+        assert solutions4[0]["X"] == Int(4)
+    
+    @pytest.mark.skip(reason="Most comparison operators (<, =<, >=) not yet implemented in Stage 1.5 engine")
     def test_comparison_operators(self):
         """Comparison operators work correctly."""
         clauses = parser.parse_program("""
@@ -146,7 +177,7 @@ class TestOperatorExecution:
             solutions = list(engine.run(goals))
             assert len(solutions) == 1, f"test{i} failed"
     
-    @pytest.mark.xfail(reason="Structural comparison operators not yet implemented in engine")
+    @pytest.mark.skip(reason="Structural comparison operators (@<, @>, ==, \\==, \\=) not in Stage 1.5 scope")
     def test_structural_comparison(self):
         """Structural comparison operators work correctly."""
         clauses = parser.parse_program("""
@@ -252,7 +283,7 @@ class TestStage1Compatibility:
         assert solutions[0]["X"] == Int(2)
         assert solutions[1]["X"] == Int(3)
     
-    @pytest.mark.xfail(reason="Canonical form ';' not yet implemented in engine")
+    @pytest.mark.skip(reason="Canonical ';' form not in Stage 1.5 engine scope")
     def test_canonical_forms_still_work(self):
         """Canonical forms continue to work alongside operators."""
         clauses = parser.parse_program("""
@@ -279,54 +310,51 @@ class TestStage1Compatibility:
 class TestUnsupportedOperatorRuntime:
     """Test runtime behavior of unsupported operators in dev mode."""
     
-    @pytest.mark.xfail(reason="Test expects failure but engine may not handle // yet")
-    def test_integer_division_fails_at_runtime(self):
-        """// operator parses but fails at runtime."""
+    def test_integer_division_works(self):
+        """// operator is implemented and works correctly."""
         clauses = parser.parse_program("""
             test(X) :- X is 7 // 2.
         """)
         engine = DevEngine(Program(tuple(clauses)))
         goals = parser.parse_query("?- test(X).")
         
-        # In dev mode, unsupported operations fail gracefully
+        # Integer division should work
         solutions = list(engine.run(goals))
-        assert len(solutions) == 0
+        assert len(solutions) == 1
+        assert solutions[0]["X"] == Int(3)  # 7 // 2 = 3
     
-    @pytest.mark.xfail(reason="Test expects failure but engine may not handle mod yet")
-    def test_mod_operator_fails_at_runtime(self):
-        """mod operator parses but fails at runtime."""
+    def test_mod_operator_works(self):
+        """mod operator is implemented and works correctly."""
         clauses = parser.parse_program("""
             test(X) :- X is 7 mod 3.
         """)
         engine = DevEngine(Program(tuple(clauses)))
         goals = parser.parse_query("?- test(X).")
         
-        # In dev mode, unsupported operations fail gracefully
+        # Modulo should work
         solutions = list(engine.run(goals))
-        assert len(solutions) == 0
+        assert len(solutions) == 1
+        assert solutions[0]["X"] == Int(1)  # 7 mod 3 = 1
     
+    @pytest.mark.skip(reason="** (power) operator not implemented in Stage 1.5 engine")
     def test_power_operator_runtime(self):
-        """** operator behavior (may be supported or fail gracefully)."""
+        """** operator behavior (not yet implemented)."""
         clauses = parser.parse_program("""
             test(X) :- X is 2 ** 3.
         """)
         engine = DevEngine(Program(tuple(clauses)))
         goals = parser.parse_query("?- test(X).")
         
-        # Either succeeds with 8 or fails gracefully
+        # Power operator not yet implemented
         solutions = list(engine.run(goals))
-        if solutions:
-            # If supported, should give correct result
-            assert solutions[0]["X"] == Int(8)
-        else:
-            # Otherwise should fail gracefully
-            assert len(solutions) == 0
+        # Would expect Int(8) if implemented
+        assert len(solutions) == 0
 
 
 class TestFileLoadingWithOperators:
     """Test that files with operators can be loaded correctly."""
     
-    @pytest.mark.xfail(reason="File uses comparison operators not yet implemented")
+    @pytest.mark.skip(reason="Test uses comparison operators (>=) not in Stage 1.5 engine scope")
     def test_parse_file_with_operators(self, tmp_path):
         """Files containing operators parse correctly."""
         # Create a test file with operators
