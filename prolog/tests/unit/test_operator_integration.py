@@ -340,6 +340,9 @@ class TestFileLoadingWithOperators:
             classify(X, positive) :- X > 0.
             classify(0, zero).
             classify(X, negative) :- X < 0.
+            
+            % Test tight tokenization
+            tight_order(X, Y) :- X @=< Y.
         """)
         
         # Parse the file
@@ -370,3 +373,8 @@ class TestFileLoadingWithOperators:
         solutions3 = list(engine.run(goals3))
         assert len(solutions3) == 1
         assert solutions3[0]["C"] == Atom("negative")
+        
+        # Test tight tokenization
+        goals4 = parser.parse_query("?- tight_order(1, 2).")
+        solutions4 = list(engine.run(goals4))
+        assert len(solutions4) == 1  # Should succeed

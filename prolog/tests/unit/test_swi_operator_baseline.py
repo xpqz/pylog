@@ -12,8 +12,7 @@ Test Coverage:
 """
 
 import pytest
-from prolog.parser.parser import Parser
-from prolog.parser.reader import Reader
+from prolog.parser.reader import Reader, ReaderError
 from prolog.ast.terms import Struct, Atom, Int, Var, List
 from prolog.ast.pretty import pretty
 
@@ -22,10 +21,45 @@ from prolog.ast.pretty import pretty
 class TestSWIPrecedenceBaseline:
     """Test that PyLog matches SWI-Prolog's operator precedence."""
     
-    def test_comma_vs_semicolon_precedence(self, swi):
-        """Verify , binds tighter than ; matching SWI."""
+    def test_comma_vs_arrow_precedence(self, swi):
+        """Verify , (1000) binds tighter than -> (1050) matching SWI."""
         reader = Reader()
-        parser = Parser()
+        
+        # ',' (1000) binds tighter than '->' (1050)
+        result1 = reader.read_term("a, b -> c")
+        expected1 = Struct("->", (Struct(",", (Atom("a"), Atom("b"))), Atom("c")))
+        assert result1 == expected1
+        
+        result2 = reader.read_term("a -> b, c")
+        expected2 = Struct(",", (Struct("->", (Atom("a"), Atom("b"))), Atom("c")))
+        assert result2 == expected2
+        
+        # Verify SWI behavior
+        prog = """
+            a. b. c.
+            t1 :- a, b -> c.
+            t2 :- a -> b, c.
+        """
+        assert swi.count(prog, "t1") == 1
+        assert swi.count(prog, "t2") == 1
+    
+    def test_arrow_with_semicolon_grouping(self, swi):
+        """Lock the canonical ITE precedence."""
+        reader = Reader()
+        
+        result = reader.read_term("a -> b ; c, d")
+        expected = Struct(";", (
+            Struct("->", (Atom("a"), Atom("b"))),
+            Struct(",", (Atom("c"), Atom("d")))
+        ))
+        assert result == expected
+        
+        prog = "a. b. c. d. t :- a -> b ; c, d."
+        assert swi.count(prog, "t") == 1
+    
+    def test_comma_vs_semicolon_precedence(self, swi):
+        """Verify , (1000) binds tighter than ; (1100) matching SWI."""
+        reader = Reader()
         
         # Test 'A , B ; C' - comma should bind tighter
         result1 = reader.read_term("a , b ; c")
@@ -44,16 +78,16 @@ class TestSWIPrecedenceBaseline:
             test1 :- a , b ; c.
             test2 :- a ; b , c.
             a :- fail.
-            b :- fail.
+            b.
             c.
         """
         # test1 should succeed via c (after a,b fails)
         assert swi.count(prog, "test1") == 1
-        # test2 should also succeed via b,c (after a fails)
+        # test2 should fail (a fails, then b,c succeeds)
         assert swi.count(prog, "test2") == 1
     
     def test_arrow_vs_semicolon_precedence(self, swi):
-        """Verify -> binds tighter than ; matching SWI."""
+        """Verify -> (1050) binds tighter than ; (1100) matching SWI."""
         reader = Reader()
         
         # Test 'A -> B ; C' - arrow should bind tighter
@@ -96,6 +130,19 @@ class TestSWIPrecedenceBaseline:
         values2 = swi.onevar("", "X is (1 + 2) * 3", "X")
         assert values2 == ["9"]
     
+    def test_unary_minus_vs_power(self, swi):
+        """Verify unary minus vs power precedence matches SWI."""
+        reader = Reader()
+        
+        # Unary minus binds tighter than power
+        result = reader.read_term("-2 ** 3")
+        expected = Struct("-", (Struct("**", (Int(2), Int(3))),))
+        assert result == expected
+        
+        # Verify SWI evaluates this as -(2 ** 3) = -8
+        values = swi.onevar("", "X is -2 ** 3", "X")
+        assert values in (["-8"], ["-8.0"])
+    
     def test_power_right_associativity(self, swi):
         """Verify ** is right-associative matching SWI."""
         reader = Reader()
@@ -108,18 +155,19 @@ class TestSWIPrecedenceBaseline:
         # Verify SWI evaluates this as 2 ** (3 ** 2) = 2 ** 9 = 512
         values = swi.onevar("", "X is 2 ** 3 ** 2", "X")
         # Note: SWI returns float for ** operator
-        assert values == ["512.0"] or values == ["512"]
+        got = float(values[0])
+        assert abs(got - 512.0) < 1e-9
     
     def test_comparison_non_chainable(self, swi):
         """Verify comparison operators don't chain in SWI."""
         reader = Reader()
         
         # These should fail to parse in PyLog (xfx non-chainable)
-        with pytest.raises(Exception) as exc1:
+        with pytest.raises(ReaderError) as exc1:
             reader.read_term("X = Y = Z")
         assert "non-chainable" in str(exc1.value).lower()
         
-        with pytest.raises(Exception) as exc2:
+        with pytest.raises(ReaderError) as exc2:
             reader.read_term("X < Y < Z")
         assert "non-chainable" in str(exc2.value).lower()
         
@@ -133,16 +181,45 @@ class TestSWIPrecedenceBaseline:
         assert swi.count(prog, "test1") == 1  # Works with explicit parentheses
         assert swi.count(prog, "test2") == 1  # Works as separate goals
     
+    def test_tight_multichar_tokens(self):
+        """Guard tokenizer greediness for multi-character operators."""
+        reader = Reader()
+        
+        # Tight tokens should parse correctly
+        assert reader.read_term("X@=<Y") == Struct("@=<", (Var(0, "X"), Var(1, "Y")))
+        assert reader.read_term("X\\==Y") == Struct("\\==", (Var(0, "X"), Var(1, "Y")))
+        assert reader.read_term("X>=Y") == Struct(">=", (Var(0, "X"), Var(1, "Y")))
+        
+        # This should fail since \\== has no prefix form
+        with pytest.raises(ReaderError):
+            reader.read_term("X=\\==Y")
+    
+    def test_mixed_xfx_non_chainable(self):
+        """Mixed xfx operators should also fail to chain."""
+        reader = Reader()
+        
+        test_cases = [
+            "X = Y == Z",
+            "A < B =< C",
+            "X =:= Y =\\= Z"
+        ]
+        
+        for src in test_cases:
+            with pytest.raises(ReaderError) as exc:
+                reader.read_term(src)
+            assert "non-chainable" in str(exc.value).lower()
+    
     def test_list_operator_interaction(self, swi):
         """Verify operators work correctly with lists."""
         reader = Reader()
         
         # Test 'member(X, [1,2,3]), X > 0'
         result = reader.read_term("member(X, [1,2,3]), X > 0")
+        # Note: Atom('[]') is the canonical tail for proper lists in PyLog
         expected = Struct(",", (
             Struct("member", (
                 Var(0, "X"),
-                List((Int(1), Int(2), Int(3)), None)
+                List((Int(1), Int(2), Int(3)), Atom("[]"))
             )),
             Struct(">", (Var(0, "X"), Int(0)))
         ))
@@ -156,6 +233,24 @@ class TestSWIPrecedenceBaseline:
 @pytest.mark.swi_baseline
 class TestSemanticEquivalence:
     """Test that operator forms execute identically to canonical forms."""
+    
+    def test_semantics_a_or_b_and_c(self, swi):
+        """Test , vs ; interplay for execution parity."""
+        prog = """
+            t1 :- a ; b, c.
+            t2 :- ';'(a, ','(b, c)).
+            a. b. c.
+        """
+        assert swi.count(prog, "t1") == 1
+        assert swi.count(prog, "t2") == 1
+        
+        prog2 = """
+            t3 :- (a ; b), c.
+            t4 :- ','(';'(a, b), c).
+            a. b. c.
+        """
+        assert swi.count(prog2, "t3") == 2
+        assert swi.count(prog2, "t4") == 2
     
     def test_conjunction_equivalence(self, swi):
         """Verify 'A, B' executes same as ','(A, B)."""
@@ -301,6 +396,30 @@ class TestUnsupportedOperators:
 
 class TestPropertyBasedEquivalence:
     """Property-based tests for operator/canonical equivalence."""
+    
+    def test_operator_pretty_roundtrip(self):
+        """Round-trip operator strings through pretty printing."""
+        reader = Reader()
+        
+        samples = [
+            "a , b ; c",
+            "a -> b ; c",
+            "a , (b ; c)",
+            "- (X + Y)",
+            "2 ** 3 ** 2",
+            "X @=< Y",
+            "X =\\= Y"
+        ]
+        
+        for s in samples:
+            # Parse original
+            t = reader.read_term(s)
+            # Pretty print with operators
+            s2 = pretty(t, operator_mode=True)
+            # Re-parse pretty printed version
+            t2 = reader.read_term(s2)
+            # Should be identical AST
+            assert t2 == t, f"Round-trip failed for: {s}"
     
     def test_parse_pretty_roundtrip_property(self):
         """Property: parse_op(s) == parse_canonical(pretty_canonical(parse_op(s)))."""

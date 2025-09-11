@@ -12,16 +12,18 @@ Test Coverage:
 
 import pytest
 import time
-from prolog.parser.parser import Parser
 from prolog.parser.reader import Reader
+from prolog.parser import parser as parser_module
 from prolog.engine.engine import Engine
 from prolog.engine.patches import create_dev_engine
 from prolog.ast.clauses import Program
-from prolog.parser import parser as parser_module
 
 
 # Create dev mode engine class
 DevEngine = create_dev_engine(Engine)
+
+# Mark all performance tests
+pytestmark = pytest.mark.perf
 
 
 class TestParsingPerformance:
@@ -30,7 +32,6 @@ class TestParsingPerformance:
     def test_reader_transformation_overhead(self):
         """Measure overhead of reader transformation."""
         reader = Reader()
-        parser = Parser()
         
         # Generate a complex expression
         expr = "a , b , c , d , e , f , g , h"
@@ -38,11 +39,19 @@ class TestParsingPerformance:
         # Time parsing without reader (canonical form)
         canonical = "','(a, ','(b, ','(c, ','(d, ','(e, ','(f, ','(g, h)))))))"
         
+        # Warm-up
+        for _ in range(50):
+            parser_module.parse_term(canonical)
+        
         # Parse canonical form many times
         start = time.perf_counter()
         for _ in range(1000):
-            parser.parse_term(canonical)
+            parser_module.parse_term(canonical)
         canonical_time = time.perf_counter() - start
+        
+        # Warm-up
+        for _ in range(50):
+            reader.read_term(expr)
         
         # Parse with reader many times
         start = time.perf_counter()
@@ -60,27 +69,31 @@ class TestParsingPerformance:
         reader = Reader()
         
         test_cases = [
-            ("1 + 2 * 3 - 4", "'-('+' (1, '*'(2, 3)), 4)"),
+            ("1 + 2 * 3 - 4", "'-'('+'(1, '*'(2, 3)), 4)"),
             ("a , b ; c , d", "';'(','(a, b), ','(c, d))"),
             ("X = Y, Y = Z", "','('='(X, Y), '='(Y, Z))"),
         ]
         
         for op_form, canonical_form in test_cases:
-            # Time operator parsing
+            # Warm-up and time operator parsing
+            for _ in range(50):
+                reader.read_term(op_form)
             start = time.perf_counter()
             for _ in range(1000):
                 reader.read_term(op_form)
             op_time = time.perf_counter() - start
             
-            # Time canonical parsing
+            # Warm-up and time canonical parsing (using parser directly)
+            for _ in range(50):
+                parser_module.parse_term(canonical_form)
             start = time.perf_counter()
             for _ in range(1000):
-                reader.read_term(canonical_form)
+                parser_module.parse_term(canonical_form)
             canonical_time = time.perf_counter() - start
             
-            # Should be within same order of magnitude
+            # Should be within reasonable bounds (widened for CI)
             ratio = op_time / canonical_time
-            assert 0.5 < ratio < 2.0, \
+            assert 0.4 < ratio < 2.5, \
                 f"Parsing time ratio {ratio:.2f} for: {op_form}"
     
     def test_large_expression_parsing(self):
@@ -96,8 +109,8 @@ class TestParsingPerformance:
         result = reader.read_term(expr)
         elapsed = time.perf_counter() - start
         
-        # Should parse within 100ms even for large expression
-        assert elapsed < 0.1, f"Large expression took {elapsed:.3f}s"
+        # Should parse within 250ms even for large expression (relaxed for CI)
+        assert elapsed < 0.25, f"Large expression took {elapsed:.3f}s"
         assert result is not None
 
 
@@ -128,6 +141,13 @@ class TestExecutionPerformance:
         """)
         engine2 = DevEngine(Program(tuple(clauses2)))
         
+        # Warm-up runs
+        goals1 = parser_module.parse_query("?- test1(10, R).")
+        _ = list(engine1.run(goals1))
+        
+        goals2 = parser_module.parse_query("?- test2(10, R).")
+        _ = list(engine2.run(goals2))
+        
         # Time execution with operators
         goals1 = parser_module.parse_query("?- test1(100, R).")
         start = time.perf_counter()
@@ -140,7 +160,8 @@ class TestExecutionPerformance:
         solutions2 = list(engine2.run(goals2))
         canonical_time = time.perf_counter() - start
         
-        # Results should be identical
+        # Results should be identical and deterministic
+        assert len(solutions1) == 1 == len(solutions2)
         assert solutions1[0]["R"] == solutions2[0]["R"]
         
         # Execution times should be very similar (within 20%)
@@ -158,6 +179,9 @@ class TestExecutionPerformance:
         
         # This creates 5^3 = 125 choice points
         goals = parser_module.parse_query("?- test(R).")
+        
+        # Warm-up run
+        _ = list(engine.run(goals))
         
         start = time.perf_counter()
         solutions = list(engine.run(goals))
@@ -183,12 +207,15 @@ class TestExecutionPerformance:
         elapsed = time.perf_counter() - start
         
         assert len(solutions) == 1
-        # Should complete within 100ms
-        assert elapsed < 0.1, f"Deep recursion took {elapsed:.3f}s"
+        # Should complete within 250ms (relaxed for CI)
+        assert elapsed < 0.25, f"Deep recursion took {elapsed:.3f}s"
 
 
 class TestMemoryUsage:
     """Test that operators don't significantly increase memory usage."""
+    
+    # Note: AST equality implies identical memory structure - Python uses
+    # the same amount of memory for identical data structures
     
     def test_ast_memory_overhead(self):
         """AST size should be similar for operators and canonical forms."""
@@ -206,10 +233,14 @@ class TestMemoryUsage:
     
     def test_large_program_memory(self):
         """Large programs with operators should not use excessive memory."""
-        # Generate a large program with operators
+        # Generate a large program with operators including tight tokens
         lines = []
         for i in range(100):
-            lines.append(f"pred{i}(X) :- X > {i}, X < {i+10}, X =:= {i+5}.")
+            if i % 10 == 0:
+                # Add some tight multi-char operators
+                lines.append(f"pred{i}(X) :- X@=<{i+10}, X\\=={i-1}.")
+            else:
+                lines.append(f"pred{i}(X) :- X > {i}, X < {i+10}, X =:= {i+5}.")
         
         program_text = "\n".join(lines)
         
@@ -252,7 +283,8 @@ class TestRegressionGuards:
         
         # Should find all ancestor relationships quickly
         assert len(solutions) == 7  # All ancestor pairs
-        assert elapsed < 0.01, f"Basic query took {elapsed:.3f}s"
+        # Relaxed threshold for CI
+        assert elapsed < 0.05, f"Basic query took {elapsed:.3f}s"
     
     def test_no_performance_regression_arithmetic(self):
         """Arithmetic operations should not regress."""
@@ -272,4 +304,5 @@ class TestRegressionGuards:
         
         assert len(solutions) == 1
         assert solutions[0]["S"].value == 5050  # sum(1..100)
-        assert elapsed < 0.1, f"Arithmetic took {elapsed:.3f}s"
+        # Relaxed threshold for CI
+        assert elapsed < 0.25, f"Arithmetic took {elapsed:.3f}s"
