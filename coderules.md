@@ -22,6 +22,7 @@
     - Pause for human review of the tests
     - Progress the implementation until the tests succeed. 
     - NEVER tweak a test to "fit" the behaviour, unless the test is demonstrably broken.
+    - Once a test set has been reviewed and approved, that's a contract: do NOT skip or change without re-approval. All approved tests MUST pass before PR.
 - Maintain progress in docs/TODO-X.md files
 - Don't use /tmp and other locations outside the current repository
 - If you create temporary scripts for debugging, remove them after use.
