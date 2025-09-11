@@ -22,14 +22,18 @@ def bind(store: Store, var_id: int, term: Any, trail: List) -> None:
     """
     Bind a variable to a term.
     
-    This is a convenience function for testing that binds a variable
+    This is a convenience function primarily for testing that binds a variable
     to a term, handling the dereferencing and binding properly.
+    
+    Note: This function is primarily intended for tests. In production engine
+    paths, the trail must be a real trail structure for proper backtracking.
+    Tests often use trail=[] when backtracking is not needed.
     
     Args:
         store: Variable store
         var_id: Variable ID to bind
         term: Term to bind the variable to
-        trail: Trail for recording changes
+        trail: Trail for recording changes (must be real trail in engine paths)
     """
     # Dereference to find the root
     deref_result = store.deref(var_id)

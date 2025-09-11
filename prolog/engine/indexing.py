@@ -98,42 +98,44 @@ class ClauseIndex:
         Yields:
             Matching clauses in source order
         """
-        # Check if predicate exists
+        # Check if predicate exists (empty iterator if not)
         if pred_key not in self.preds:
             return
         
         pred_idx = self.preds[pred_key]
         
-        # Handle zero-arity predicates
+        # Handle zero-arity predicates: yield all in source order
         if pred_key[1] == 0:
             # All clauses match for zero-arity predicates
             for clause_id in pred_idx.order:
                 yield self.clauses[(pred_key, clause_id)]
             return
         
-        # Get and dereference the first argument of the goal
-        if isinstance(goal, Struct) and goal.args:
+        # Get the first argument of the goal
+        if isinstance(goal, Struct) and goal.args and len(goal.args) >= 1:
             first_arg = goal.args[0]
         else:
-            # Shouldn't happen for properly formed goals
+            # Defensive: malformed goal shape for non-zero arity
             return
         
         # Dereference if it's a variable
         if isinstance(first_arg, Var):
-            # Dereference the variable
             deref_result = store.deref(first_arg.id)
             if deref_result[0] == "BOUND":
                 # Use the bound term
                 first_arg = deref_result[2]
-            # else: remains unbound variable
+            else:
+                # Fast-path: Unbound variable matches everything
+                # Stream all clauses in source order without building a set
+                for clause_id in pred_idx.order:
+                    yield self.clauses[(pred_key, clause_id)]
+                return
         
         # Build candidate set based on first argument type
+        # Note: We already handled unbound Var above with fast-path
         candidates: Set[ClauseID] = set()
         
-        if isinstance(first_arg, Var):
-            # Unbound variable matches everything
-            candidates = set(pred_idx.order)
-        elif isinstance(first_arg, Int):
+        if isinstance(first_arg, Int):
             # Integer matches integer clauses and variable clauses
             candidates |= pred_idx.int_ids
             candidates |= pred_idx.var_ids
