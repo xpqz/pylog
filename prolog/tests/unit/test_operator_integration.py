@@ -128,8 +128,8 @@ class TestOperatorExecution:
         assert len(solutions4) == 1
         assert solutions4[0]["X"] == Int(5)
     
-    def test_implemented_comparison_operators(self):
-        """Test comparison operators that ARE implemented (> and =:=)."""
+    def test_arithmetic_comparison_operators(self):
+        """Arithmetic comparison operators implemented: <, =<, >, >=, =:=, =\\=."""
         clauses = parser.parse_program("""
             test1 :- 5 > 3.
             test2 :- 4 =:= 4.
@@ -193,6 +193,30 @@ class TestOperatorExecution:
             goals = parser.parse_query(f"?- test{i}.")
             solutions = list(engine.run(goals))
             assert len(solutions) == 1, f"test{i} failed"
+    
+    def test_unbound_var_in_comparison_fails_dev_mode(self):
+        """Unbound variables in arithmetic comparisons fail (don't throw) in dev mode."""
+        clauses = parser.parse_program("t :- X > 1.")
+        engine = DevEngine(Program(tuple(clauses)))
+        goals = parser.parse_query("?- t.")
+        # Should fail, not throw
+        assert list(engine.run(goals)) == []
+    
+    def test_comparison_with_comma_precedence(self):
+        """Comparison operators work correctly with comma precedence."""
+        from prolog.parser.reader import Reader
+        reader = Reader()
+        
+        # Comma should have lower precedence than comparisons
+        ast = reader.read_term("X =< 5, Y >= 2")
+        assert isinstance(ast, Struct)
+        assert ast.functor == ","
+        # Left arg is X =< 5
+        assert isinstance(ast.args[0], Struct)
+        assert ast.args[0].functor == "=<"
+        # Right arg is Y >= 2
+        assert isinstance(ast.args[1], Struct)
+        assert ast.args[1].functor == ">="
 
 
 class TestBacktrackingOrder:
@@ -282,13 +306,11 @@ class TestStage1Compatibility:
         assert solutions[0]["X"] == Int(2)
         assert solutions[1]["X"] == Int(3)
     
-    @pytest.mark.skip(reason="Canonical ';' form not in Stage 1.5 engine scope")
-    def test_canonical_forms_still_work(self):
-        """Canonical forms continue to work alongside operators."""
+    def test_canonical_forms_still_work_for_comma_and_eq(self):
+        """Canonical ',' and '=' continue to work alongside operators."""
         clauses = parser.parse_program("""
             test1 :- ','(true, true).
             test2(X) :- '='(X, 5).
-            test3(X, Y) :- ';'('='(X, a), '='(Y, b)).
         """)
         engine = DevEngine(Program(tuple(clauses)))
         
@@ -299,11 +321,15 @@ class TestStage1Compatibility:
         solutions2 = list(engine.run(goals2))
         assert len(solutions2) == 1
         assert solutions2[0]["X"] == Int(5)
-        
-        goals3 = parser.parse_query("?- test3(X, Y).")
-        solutions3 = list(engine.run(goals3))
-        # Should get X=a or Y=b (but not both due to how the clause is written)
-        assert len(solutions3) == 1
+    
+    @pytest.mark.skip(reason="Canonical ';' form not in Stage 1.5 engine scope")
+    def test_canonical_semicolon_form_later(self):
+        """Canonical ';' form will be supported in later stages."""
+        clauses = parser.parse_program("t(X,Y) :- ';'('='(X,a), '='(Y,b)).")
+        engine = DevEngine(Program(tuple(clauses)))
+        goals = parser.parse_query("?- t(X,Y).")
+        # Just check it's a list - actual execution would need ';' support
+        assert isinstance(list(engine.run(goals)), list)
 
 
 class TestUnsupportedOperatorRuntime:

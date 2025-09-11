@@ -65,7 +65,11 @@ class TestParsingPerformance:
             f"Reader too slow: {reader_time:.3f}s vs canonical {canonical_time:.3f}s"
     
     def test_operator_vs_canonical_parsing(self):
-        """Compare parsing speed of operators vs canonical forms."""
+        """Compare parsing speed of operators vs canonical forms.
+        
+        Note: We compare both via Reader to isolate syntax/token load;
+        the Reader-vs-Grammar gap is measured in test_reader_transformation_overhead.
+        """
         reader = Reader()
         
         test_cases = [

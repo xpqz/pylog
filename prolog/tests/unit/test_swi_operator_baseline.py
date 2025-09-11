@@ -84,7 +84,7 @@ class TestSWIPrecedenceBaseline:
         """
         # test1 should succeed via c (after a,b fails)
         assert swi.count(prog, "test1") == 1
-        # test2 should fail (a fails, then b,c succeeds)
+        # test2 succeeds via b,c (a fails, then b,c succeeds)
         assert swi.count(prog, "test2") == 1
     
     def test_arrow_vs_semicolon_precedence(self, swi):
@@ -132,7 +132,7 @@ class TestSWIPrecedenceBaseline:
         assert values2 == ["9"]
     
     def test_unary_minus_vs_power(self, swi):
-        """Verify unary minus vs power precedence matches SWI."""
+        """Verify power binds tighter than unary minus (matches SWI)."""
         reader = Reader()
         
         # Unary minus binds tighter than power
