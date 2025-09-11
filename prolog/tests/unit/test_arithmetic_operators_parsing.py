@@ -458,11 +458,15 @@ class TestArithmeticOperatorsParsing:
         assert reader.read_term(spaced) == reader.read_term(tight)
     
     def test_is_with_unary_and_power(self):
-        """is/2 with unary and power operators."""
+        """is/2 with unary, power, and integer division operators."""
         reader = Reader()
         assert reader.read_term("X is -2 ** 3") == Struct("is", (
             Var(0, "X"),
             Struct("-", (Struct("**", (Int(2), Int(3))),))
+        ))
+        assert reader.read_term("Y is A // 3") == Struct("is", (
+            Var(0, "Y"),
+            Struct("//", (Var(1, "A"), Int(3)))
         ))
     
     def test_parentheses_nested_override(self):
