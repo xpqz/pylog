@@ -25,8 +25,8 @@ class ReaderError(Exception):
     
     Guaranteed fields for tools and CI logs:
         message: The error message describing what went wrong
-        position: Character position in the input where the error occurred (0-based)
-        column: Alias for position for compatibility
+        position: Character position in the input where the error occurred (0-based indexing)
+        column: Alias for position for compatibility (0-based)
         line: Line number where error occurred (always None in current impl, reserved for future)
         token: The token/lexeme that caused the error (e.g., "@@" for unknown operator)
         lexeme: Alias for token for consistency
@@ -64,23 +64,29 @@ class Tokenizer:
         (r'%.*', None),
         (r'/\*(.|\n)*?\*/', None),
         
-        # Multi-character operators (must come before single-char)
+        # Multi-character operators (longest-first to ensure greedy matches)
         (r':-', 'COLON_MINUS'),
         (r'\?-', 'QUESTION_MINUS'),
         (r'->', 'ARROW'),
+        
+        # Arithmetic operators
         (r'//', 'DOUBLE_SLASH'),
-        (r'=:=', 'EQ_COLON_EQ'),
-        (r'=\\=', 'EQ_BACKSLASH_EQ'),
-        (r'\\==', 'BACKSLASH_EQEQ'),  # Must come before \=
-        (r'\\=', 'BACKSLASH_EQ'),
-        (r'@=<', 'AT_EQ_LT'),  # Must come before @<
-        (r'@>=', 'AT_GT_EQ'),  # Must come before @>
-        (r'@<', 'AT_LT'),
-        (r'@>', 'AT_GT'),
-        (r'=<', 'EQ_LT'),
-        (r'>=', 'GT_EQ'),
-        (r'==', 'DOUBLE_EQ'),
         (r'\*\*', 'DOUBLE_STAR'),
+        
+        # Comparison operators (longest-first for greedy matching)
+        (r'=\\=', 'EQ_BACKSLASH_EQ'),   # Arithmetic inequality
+        (r'=:=', 'EQ_COLON_EQ'),         # Arithmetic equality
+        (r'\\==', 'BACKSLASH_EQEQ'),     # Before \= (structural inequality)
+        (r'\\=', 'BACKSLASH_EQ'),        # Not unifiable
+        (r'@>=', 'AT_GT_EQ'),            # Before @> (term greater-equal)
+        (r'@=<', 'AT_EQ_LT'),            # Before @< (term less-equal)  
+        (r'@>', 'AT_GT'),                # Term greater than
+        (r'@<', 'AT_LT'),                # Term less than
+        (r'>=', 'GT_EQ'),                # Before > (greater-equal)
+        (r'=<', 'EQ_LT'),                # Before = and < (less-equal)
+        (r'==', 'DOUBLE_EQ'),            # Before = (structural equality)
+        
+        # Negation
         (r'\\\+', 'BACKSLASH_PLUS'),
         
         # Single-character operators and punctuation

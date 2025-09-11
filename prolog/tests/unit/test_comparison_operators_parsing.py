@@ -465,6 +465,10 @@ class TestAdditionalCases:
         assert reader.read_term("X\\==Y") == Struct("\\==", (Var(0, "X"), Var(1, "Y")))
         assert reader.read_term("X@=<Y") == Struct("@=<", (Var(0, "X"), Var(1, "Y")))
         
+        # Additional tight tokenization tests for >= and @>=
+        assert reader.read_term("X>=Y") == Struct(">=", (Var(0, "X"), Var(1, "Y")))
+        assert reader.read_term("X@>=Y") == Struct("@>=", (Var(0, "X"), Var(1, "Y")))
+        
         # Tricky case: "=\\==" is actually invalid (can't have unary \\==)
         # This should raise an error
         with pytest.raises(ReaderError):
