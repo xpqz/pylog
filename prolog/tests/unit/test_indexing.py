@@ -324,11 +324,11 @@ class TestStaticProgramAssumption:
         """Float bucket should exist but be marked as future work."""
         idx = PredIndex()
         assert hasattr(idx, "float_ids")
-        # For now, floats would raise NotImplementedError
+        # For now, floats would raise ValueError as unknown type
         store = Store()
         from prolog.ast.terms import Float  # May not exist yet
         head = Struct("p", (Float(3.14),))
-        with pytest.raises(NotImplementedError):
+        with pytest.raises(ValueError):
             analyze_first_arg(head, store)
 
 
@@ -390,6 +390,12 @@ class TestPredicateIsolation:
 
 class TestAdditionalInvariants:
     """Additional tests for common regression scenarios."""
+
+    def test_float_ids_slot_exists(self):
+        """Ensure float_ids placeholder slot is not removed prematurely."""
+        idx = PredIndex()
+        assert hasattr(idx, "float_ids")
+        assert idx.float_ids == set()
 
     def test_predicate_key_includes_arity(self):
         """Predicate keys must distinguish by arity (p/0 vs p/1)."""

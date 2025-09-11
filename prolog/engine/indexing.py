@@ -11,10 +11,15 @@ Key invariants:
 - Static program assumption (no dynamic predicates in Stage 2)
 """
 
-from typing import Dict, List, Set, Tuple, Optional, Union, Iterator
+from typing import Dict, List, Set, Tuple, Union
 from prolog.ast.terms import Term, Atom, Int, Var, Struct, List as PrologList
 from prolog.unify.store import Store
 from prolog.ast.clauses import Clause
+
+# Type aliases for clarity
+PredKey = Tuple[str, int]  # (predicate_name, arity)
+ClauseID = int
+FunctorKey = Tuple[str, int]  # (functor, arity)
 
 
 class PredIndex:
@@ -31,7 +36,7 @@ class PredIndex:
         'empty_list_ids',     # Set[int]: clauses with [] first arg
         'int_ids',            # Set[int]: clauses with integer first arg
         'list_nonempty_ids',  # Set[int]: clauses with [H|T] first arg
-        'struct_functor',     # Dict[Tuple[str,int], Set[int]]: (functor, arity) -> clause IDs
+        'struct_functor',     # Dict[FunctorKey, Set[ClauseID]]: (functor, arity) -> clause IDs
         'float_ids',          # Set[int]: placeholder for future float support
     )
     
@@ -42,7 +47,7 @@ class PredIndex:
         self.empty_list_ids: Set[int] = set()
         self.int_ids: Set[int] = set()
         self.list_nonempty_ids: Set[int] = set()
-        self.struct_functor: Dict[Tuple[str, int], Set[int]] = {}
+        self.struct_functor: Dict[FunctorKey, Set[ClauseID]] = {}
         self.float_ids: Set[int] = set()  # Future extension
 
 
@@ -55,16 +60,16 @@ class ClauseIndex:
     """
     
     __slots__ = (
-        'preds',         # Dict[Tuple[str,int], PredIndex]: (name, arity) -> per-pred index
-        'clauses',       # Dict[Tuple[Tuple[str,int], int], Clause]: ((name, arity), id) -> clause
+        'preds',         # Dict[PredKey, PredIndex]: (name, arity) -> per-pred index
+        'clauses',       # Dict[Tuple[PredKey, ClauseID], Clause]: ((name, arity), id) -> clause
         'finalized',     # bool: whether index is finalized (static program)
         'supports_rebuild',  # bool: whether rebuilding is supported
     )
     
     def __init__(self):
         """Initialize empty global index."""
-        self.preds: Dict[Tuple[str, int], PredIndex] = {}
-        self.clauses: Dict[Tuple[Tuple[str, int], int], Clause] = {}
+        self.preds: Dict[PredKey, PredIndex] = {}
+        self.clauses: Dict[Tuple[PredKey, ClauseID], Clause] = {}
         self.finalized: bool = False
         self.supports_rebuild: bool = False  # Stage 2 assumes static programs
     
@@ -147,10 +152,12 @@ def build_from_clauses(clauses: List[Clause]) -> ClauseIndex:
     The resulting index is finalized and assumes a static program.
     """
     idx = ClauseIndex()
-    store = Store()  # Empty store for analysis (no bindings during indexing)
+    # Store reserved for future deref support (e.g., attributed variables)
+    # Currently unused as we analyze clause heads at build time without bindings
+    store = Store()
     
     # Track clause IDs per predicate
-    pred_counters: Dict[Tuple[str, int], int] = {}
+    pred_counters: Dict[PredKey, ClauseID] = {}
     
     for clause in clauses:
         # Determine predicate key
