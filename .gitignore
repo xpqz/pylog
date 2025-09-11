@@ -55,6 +55,7 @@ pytest.xml
 *.dot
 *.png
 *.pdf
+*.diff
 debug_output/
 traces/
 
