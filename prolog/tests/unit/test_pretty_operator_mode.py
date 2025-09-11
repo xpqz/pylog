@@ -16,6 +16,28 @@ from prolog.ast.pretty import pretty
 from prolog.parser.reader import Reader
 
 
+class TestOperatorTableConsistency:
+    """Test that pretty printer uses operator table as single source of truth."""
+    
+    def test_operator_table_is_single_source(self):
+        """Verify pretty printer uses exactly the operator table definitions."""
+        from prolog.parser.operators import OPERATOR_TABLE
+        
+        # Test a sample of operators to ensure pretty uses table values
+        test_cases = [
+            ((',', 'infix'), Struct(',', (Atom('a'), Atom('b'))), 'a, b'),
+            (('+', 'infix'), Struct('+', (Int(1), Int(2))), '1 + 2'),
+            (('-', 'prefix'), Struct('-', (Var(1, 'X'),)), '-X'),
+            (('=', 'infix'), Struct('=', (Var(1, 'X'), Int(5))), 'X = 5'),
+        ]
+        
+        for (op, pos), term, expected in test_cases:
+            # Verify operator is in table
+            assert (op, pos) in OPERATOR_TABLE
+            # Verify pretty output matches expected
+            assert pretty(term, operator_mode=True) == expected
+
+
 class TestOperatorDetection:
     """Test detection of canonical operator forms."""
     
@@ -90,34 +112,29 @@ class TestOperatorDetection:
 class TestOperatorModePrinting:
     """Test pretty printing in operator mode."""
     
-    @pytest.mark.xfail(reason="operator mode not implemented yet")
     def test_operator_mode_flag(self):
         """Test operator_mode parameter enables operator printing."""
         term = Struct(",", (Atom("a"), Atom("b")))
         assert pretty(term, operator_mode=True) == "a, b"
         assert pretty(term, operator_mode=False) == "','(a, b)"
         
-    @pytest.mark.xfail(reason="operator mode not implemented yet")
     def test_simple_infix_operators(self):
         """Test simple infix operators print correctly."""
         assert pretty(Struct("+", (Int(1), Int(2))), operator_mode=True) == "1 + 2"
         assert pretty(Struct("*", (Int(3), Int(4))), operator_mode=True) == "3 * 4"
         
-    @pytest.mark.xfail(reason="operator mode not implemented yet")
     def test_nested_operators_same_precedence(self):
         """Test nested operators with same precedence."""
         # 1 + 2 + 3 should be ((1 + 2) + 3) due to left associativity
         term = Struct("+", (Struct("+", (Int(1), Int(2))), Int(3)))
         assert pretty(term, operator_mode=True) == "1 + 2 + 3"
         
-    @pytest.mark.xfail(reason="operator mode not implemented yet")
     def test_nested_operators_different_precedence(self):
         """Test nested operators with different precedence."""
         # 1 + 2 * 3 should be 1 + (2 * 3)
         term = Struct("+", (Int(1), Struct("*", (Int(2), Int(3)))))
         assert pretty(term, operator_mode=True) == "1 + 2 * 3"
         
-    @pytest.mark.xfail(reason="operator mode not implemented yet")
     def test_prefix_operators(self):
         """Test prefix operators print correctly."""
         # -X, +Y, \+Z
@@ -128,14 +145,12 @@ class TestOperatorModePrinting:
         assert pretty(pos_term, operator_mode=True) == "+Y"
         assert pretty(not_term, operator_mode=True) == "\\+Z"
         
-    @pytest.mark.xfail(reason="operator mode not implemented yet")
     def test_mixed_prefix_infix(self):
         """Test mixed prefix and infix operators."""
         # -X + Y
         term = Struct("+", (Struct("-", (Var(1, "X"),)), Var(2, "Y")))
         assert pretty(term, operator_mode=True) == "-X + Y"
         
-    @pytest.mark.xfail(reason="operator mode not implemented yet")
     def test_control_flow_operators(self):
         """Test control flow operators (comma, semicolon, arrow)."""
         # (A -> B ; C)
@@ -150,46 +165,53 @@ class TestOperatorModePrinting:
         # -3 should print as "-3" not "-(3)"
         term = Int(-3)
         assert pretty(term) == "-3"
+        assert pretty(term, operator_mode=True) == "-3"
         
-    @pytest.mark.xfail(reason="operator mode not implemented yet")
     def test_negative_var_operator(self):
         """Test -(X) where X is a variable should use operator."""
         neg_var = Struct("-", (Var(1, "X"),))
         assert pretty(neg_var, operator_mode=True) == "-X"
+        
+    def test_negative_literal_policy(self):
+        """Comprehensive test of negative literal policy."""
+        # Int(-3) prints as literal
+        assert pretty(Int(-3), operator_mode=True) == "-3"
+        
+        # -(X) prints with operator
+        assert pretty(Struct("-", (Var(1, "X"),)), operator_mode=True) == "-X"
+        
+        # -(X + Y) needs parens
+        term = Struct("-", (Struct("+", (Var(1, "X"), Var(2, "Y"))),))
+        assert pretty(term, operator_mode=True) == "-(X + Y)"
 
 
 class TestParenthesizationRules:
     """Test parenthesization for correct precedence and associativity."""
     
-    @pytest.mark.xfail(reason="operator mode not implemented yet")
     def test_lower_precedence_needs_parens(self):
         """Child with lower precedence needs parentheses."""
         # (1 + 2) * 3 - plus has lower precedence (500) than multiply (400)
         term = Struct("*", (Struct("+", (Int(1), Int(2))), Int(3)))
         assert pretty(term, operator_mode=True) == "(1 + 2) * 3"
         
-    @pytest.mark.xfail(reason="operator mode not implemented yet")
     def test_higher_precedence_no_parens(self):
         """Child with higher precedence doesn't need parentheses."""
         # 1 + 2 * 3 - multiply (400) has higher precedence than plus (500)
         term = Struct("+", (Int(1), Struct("*", (Int(2), Int(3)))))
         assert pretty(term, operator_mode=True) == "1 + 2 * 3"
         
-    @pytest.mark.xfail(reason="operator mode not implemented yet")
     def test_same_precedence_correct_assoc_no_parens(self):
         """Same precedence with correct associativity needs no parens."""
         # 1 + 2 + 3 - left associative (yfx), left child doesn't need parens
         term = Struct("+", (Struct("+", (Int(1), Int(2))), Int(3)))
         assert pretty(term, operator_mode=True) == "1 + 2 + 3"
         
-    @pytest.mark.xfail(reason="operator mode not implemented yet")
     def test_same_precedence_wrong_assoc_needs_parens(self):
         """Same precedence with wrong associativity needs parens."""
         # 1 + (2 + 3) - left associative (yfx), right child needs parens
         term = Struct("+", (Int(1), Struct("+", (Int(2), Int(3)))))
         assert pretty(term, operator_mode=True) == "1 + (2 + 3)"
         
-    @pytest.mark.xfail(reason="operator mode not implemented yet")
     def test_right_assoc_operators(self):
         """Right-associative operators like comma."""
         # A, B, C should be A, (B, C) but prints without parens
@@ -201,7 +223,6 @@ class TestParenthesizationRules:
         term2 = Struct(",", (Struct(",", (Atom("a"), Atom("b"))), Atom("c")))
         assert pretty(term2, operator_mode=True) == "(a, b), c"
         
-    @pytest.mark.xfail(reason="operator mode not implemented yet")
     def test_power_right_associative(self):
         """Power operator is right-associative."""
         # 2 ** 3 ** 4 should be 2 ** (3 ** 4)
@@ -213,7 +234,6 @@ class TestParenthesizationRules:
         term2 = Struct("**", (Struct("**", (Int(2), Int(3))), Int(4)))
         assert pretty(term2, operator_mode=True) == "(2 ** 3) ** 4"
         
-    @pytest.mark.xfail(reason="operator mode not implemented yet")
     def test_xfx_operators_need_parens(self):
         """Non-chainable (xfx) operators always need parens when nested."""
         # X = Y = Z is illegal, must be explicit about grouping
@@ -221,7 +241,6 @@ class TestParenthesizationRules:
         term = Struct("=", (Struct("=", (Var(1, "X"), Var(2, "Y"))), Var(3, "Z")))
         assert pretty(term, operator_mode=True) == "(X = Y) = Z"
         
-    @pytest.mark.xfail(reason="operator mode not implemented yet")
     def test_mixed_control_flow_precedence(self):
         """Test precedence of control flow operators."""
         # A ; B , C should be A ; (B , C) since comma (1000) binds tighter than semicolon (1100)
@@ -232,7 +251,6 @@ class TestParenthesizationRules:
         term2 = Struct(",", (Struct(";", (Atom("a"), Atom("b"))), Atom("c")))
         assert pretty(term2, operator_mode=True) == "(a ; b), c"
         
-    @pytest.mark.xfail(reason="operator mode not implemented yet")
     def test_if_then_else_parenthesization(self):
         """Test if-then-else parenthesization."""
         # Standard if-then-else: (A -> B ; C)
@@ -240,7 +258,6 @@ class TestParenthesizationRules:
         term = Struct(";", (Struct("->", (Atom("a"), Atom("b"))), Atom("c")))
         assert pretty(term, operator_mode=True) == "(a -> b ; c)"
         
-    @pytest.mark.xfail(reason="operator mode not implemented yet")
     def test_complex_expression_parens(self):
         """Test complex expression with multiple precedence levels."""
         # -X + Y * -Z
@@ -250,28 +267,24 @@ class TestParenthesizationRules:
         ))
         assert pretty(term, operator_mode=True) == "-X + Y * -Z"
         
-    @pytest.mark.xfail(reason="operator mode not implemented yet")
     def test_left_assoc_right_child_needs_parens(self):
         """Left-associative operator with right child needs parens."""
         # 1 + (2 + 3)
         term = Struct("+", (Int(1), Struct("+", (Int(2), Int(3)))))
         assert pretty(term, operator_mode=True) == "1 + (2 + 3)"
 
-    @pytest.mark.xfail(reason="operator mode not implemented yet")
     def test_right_assoc_left_child_needs_parens(self):
         """Right-associative operator with left child needs parens."""
         # (A -> B) -> C must print parens on the left
         term = Struct("->", (Struct("->", (Atom("a"), Atom("b"))), Atom("c")))
         assert pretty(term, operator_mode=True) == "(a -> b) -> c"
         
-    @pytest.mark.xfail(reason="operator mode not implemented yet")
     def test_xfx_nested_right_child_needs_parens(self):
         """XFX operator nested on right needs parens."""
         # X = (Y = Z)
         term = Struct("=", (Var(1, "X"), Struct("=", (Var(2, "Y"), Var(3, "Z")))))
         assert pretty(term, operator_mode=True) == "X = (Y = Z)"
         
-    @pytest.mark.xfail(reason="operator mode not implemented yet")
     def test_unary_minus_with_power_and_division(self):
         """Unary minus with power and division precedence."""
         # -(2 ** 3) * 4 prints as "-(2 ** 3) * 4"
@@ -282,7 +295,12 @@ class TestParenthesizationRules:
         term2 = Struct("/", (Int(1), Int(-2)))
         assert pretty(term2, operator_mode=True) == "1 / -2"
         
-    @pytest.mark.xfail(reason="operator mode not implemented yet")
+    def test_unary_vs_power_canonical(self):
+        """Test -2 ** 3 parses as -(2 ** 3) and prints correctly."""
+        reader = Reader()
+        term = reader.read_term("-2 ** 3")
+        assert pretty(term, operator_mode=True) == "-(2 ** 3)"
+        
     def test_mod_operator_pretty_spacing_and_binding(self):
         """Mod operator spacing and precedence."""
         # 10 mod 3 * 2 with mod at 400 yfx, same as *
@@ -290,7 +308,11 @@ class TestParenthesizationRules:
         term = Struct("*", (Struct("mod", (Int(10), Int(3))), Int(2)))
         assert pretty(term, operator_mode=True) == "10 mod 3 * 2"
         
-    @pytest.mark.xfail(reason="operator mode not implemented yet")
+        # 10 mod (3 * 2) needs parens for right-associativity violation
+        # Both mod and * are at 400 yfx (left-associative)
+        term2 = Struct("mod", (Int(10), Struct("*", (Int(3), Int(2)))))
+        assert pretty(term2, operator_mode=True) == "10 mod (3 * 2)"
+        
     def test_term_order_pretty(self):
         """Term order operators pretty printing."""
         term = Struct("@=<", (Var(1, "X"), Var(2, "Y")))
@@ -307,8 +329,27 @@ class TestRoundTripProperty:
         for s in srcs:
             term = reader.read_term(s)
             assert pretty(term) == s
+            
+    def test_round_trip_property_corpus(self):
+        """Property test: operator mode round-trips correctly."""
+        reader = Reader()
+        corpus = [
+            "1 + 2 * 3",
+            "A, B ; C", 
+            "(A -> B ; C)",
+            "-(X + Y)",
+            "2 ** 3 ** 4",
+            "(2 ** 3) ** 4",
+            "X = Y",
+            "member(X, L), X > 0",
+        ]
+        
+        for s in corpus:
+            t = reader.read_term(s)
+            s2 = pretty(t, operator_mode=True)
+            t2 = reader.read_term(s2)
+            assert t == t2, f"Round-trip failed for {s} -> {s2}"
     
-    @pytest.mark.xfail(reason="operator mode not implemented yet")
     def test_simple_operators_round_trip(self):
         """Simple operators round-trip correctly."""
         reader = Reader()
@@ -326,7 +367,6 @@ class TestRoundTripProperty:
             reparsed = reader.read_term(pretty_str)
             assert reparsed == term
             
-    @pytest.mark.xfail(reason="operator mode not implemented yet")
     def test_nested_operators_round_trip(self):
         """Nested operators round-trip correctly."""
         reader = Reader()
@@ -344,7 +384,6 @@ class TestRoundTripProperty:
             reparsed = reader.read_term(pretty_str)
             assert reparsed == term
             
-    @pytest.mark.xfail(reason="operator mode not implemented yet")
     def test_prefix_operators_round_trip(self):
         """Prefix operators round-trip correctly."""
         reader = Reader()
@@ -362,7 +401,6 @@ class TestRoundTripProperty:
             reparsed = reader.read_term(pretty_str)
             assert reparsed == term
             
-    @pytest.mark.xfail(reason="operator mode not implemented yet")
     def test_control_flow_round_trip(self):
         """Control flow operators round-trip correctly."""
         reader = Reader()
@@ -379,7 +417,6 @@ class TestRoundTripProperty:
             reparsed = reader.read_term(pretty_str)
             assert reparsed == term
             
-    @pytest.mark.xfail(reason="operator mode not implemented yet")
     def test_mixed_expressions_round_trip(self):
         """Complex mixed expressions round-trip correctly."""
         reader = Reader()
@@ -404,7 +441,6 @@ class TestRoundTripProperty:
         # Canonical mode should always produce canonical form
         assert pretty(term) == "','(a, b)"
         
-    @pytest.mark.xfail(reason="operator mode not implemented yet")
     def test_mode_switching(self):
         """Can switch between operator and canonical modes."""
         term = Struct("+", (Int(1), Struct("*", (Int(2), Int(3)))))
@@ -428,6 +464,22 @@ class TestRoundTripProperty:
 class TestEdgeCases:
     """Test edge cases and special situations."""
     
+    def test_functor_and_list_contexts(self):
+        """Commas in functors and lists are not control-flow operators."""
+        reader = Reader()
+        
+        # Functor with comma arguments
+        term1 = reader.read_term("f(a,b)")
+        assert pretty(term1, operator_mode=True) == "f(a, b)"
+        
+        # List with tail
+        term2 = reader.read_term("[a,b|T]")
+        assert pretty(term2, operator_mode=True) == "[a, b|T]"
+        
+        # List without tail
+        term3 = reader.read_term("[a,b,c]")
+        assert pretty(term3, operator_mode=True) == "[a, b, c]"
+    
     def test_operators_in_functors(self):
         """Operators used as functor names in structures."""
         # foo(+, -, *)
@@ -450,7 +502,6 @@ class TestEdgeCases:
         # Canonical list pretty-printing already sugarizes lists
         assert pretty(term) == "['+'(1, 2), '*'(3, 4)]"
         
-    @pytest.mark.xfail(reason="operator mode not implemented yet")
     def test_list_with_operators_operator_mode(self):
         """Lists with operators in operator mode."""
         term = PrologList((
@@ -500,7 +551,6 @@ class TestOperatorModeIntegration:
         result = pretty(term, var_names=var_names)
         assert result == "'+'(MyVar, Other)"
         
-    @pytest.mark.xfail(reason="operator mode not implemented yet")
     def test_operator_mode_with_var_names(self):
         """Operator mode respects var_names parameter."""
         term = Struct("+", (Var(1), Var(2)))

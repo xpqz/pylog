@@ -163,15 +163,26 @@ def pretty(term: Term, var_names: Optional[Dict[int, str]] = None,
           operator_mode: bool = False,
           parent_op: Optional[Tuple[str, int, str, str]] = None) -> str:
     """Convert a term to its string representation.
+    
+    Supports two modes:
+    - Canonical mode (default): Prints terms in canonical form with quoted functors
+    - Operator mode: Prints operators using infix/prefix notation with minimal parentheses
+    
+    In operator mode, the pretty printer consults the operator table for precedence
+    and associativity, printing the minimal parentheses required to preserve parse.
+    The output is a valid Prolog term that round-trips via the Reader.
 
     Args:
         term: The term to pretty print
-        var_names: Optional mapping of variable IDs to names
-        operator_mode: If True, print operators in operator syntax
-        parent_op: Parent operator info for parenthesization (internal use)
+        var_names: Optional mapping of variable IDs to names. Applied after formatting
+                  and does not interfere with operator spacing.
+        operator_mode: If True, print operators in operator syntax. Default False
+                      maintains backward compatibility with canonical mode.
+        parent_op: Parent operator info for parenthesization (internal use only)
 
     Returns:
-        String representation of the term
+        String representation of the term. In operator mode, returns a valid Prolog
+        term that satisfies: Reader().read_term(pretty(t, operator_mode=True)) == t
     """
     if var_names is None:
         var_names = {}
