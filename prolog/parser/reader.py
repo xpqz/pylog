@@ -23,13 +23,23 @@ logger = logging.getLogger(__name__)
 class ReaderError(Exception):
     """Exception raised for reader/parser errors.
     
-    Guaranteed fields for tools and CI logs:
-        message: The error message describing what went wrong
-        position: Character position in the input where the error occurred (0-based indexing)
-        column: Alias for position for compatibility (0-based)
-        line: Line number where error occurred (always None in current impl, reserved for future)
-        token: The token/lexeme that caused the error (e.g., "@@" for unknown operator)
-        lexeme: Alias for token for consistency
+    Attributes:
+        message (str): The error message describing what went wrong
+        position (int | None): Character position in input (0-based code-point index)
+        column (int | None): Alias for position for compatibility (same as position)
+        line (None): Line number (not yet implemented, reserved for future)
+        token (str | None): The problematic token/lexeme (e.g., "@@" for unknown operator)
+        lexeme (str | None): Alias for token for consistency
+    
+    Position Policy:
+        - 0-based indexing counting from start of input
+        - Counts Unicode code points (not bytes)
+        - Includes newlines in the count
+        - Points to the exact character where error was detected
+        - EOF errors report position after last token
+    
+    Note: Line/column tracking within lines is not yet implemented.
+    The 'line' field is always None and 'column' is just an alias for 'position'.
     """
     
     def __init__(self, message: str, position: Optional[int] = None, token: Optional[str] = None):
@@ -154,11 +164,19 @@ class Tokenizer:
                 while end < len(text) and not text[end].isspace():
                     end += 1
                 problem_token = text[pos:end]
-                raise ReaderError(
-                    f"Unexpected token: {problem_token}",
-                    position=pos,
-                    token=problem_token
-                )
+                # Check if it looks like an operator
+                if problem_token and not problem_token[0].isalnum() and problem_token not in ['(', ')', '[', ']', '.', '|']:
+                    raise ReaderError(
+                        f"Unknown operator '{problem_token}'",
+                        position=pos,
+                        token=problem_token
+                    )
+                else:
+                    raise ReaderError(
+                        f"Unexpected token: '{problem_token}'",
+                        position=pos,
+                        token=problem_token
+                    )
         
         return tokens
 
@@ -195,6 +213,17 @@ class TokenStream:
         if self.pos < len(self.tokens):
             return self.tokens[self.pos].position
         return -1
+    
+    def eof_position(self) -> int:
+        """Get position at end of input (after last token).
+        
+        Returns:
+            Position immediately after the last token, or 0 if no tokens.
+        """
+        if self.tokens:
+            last_token = self.tokens[-1]
+            return last_token.position + len(last_token.value)
+        return 0
     
     def get_var_id(self, name: str) -> int:
         """Get or create variable ID for name."""
@@ -263,7 +292,18 @@ class PrattParser:
                 next_min = precedence
             
             # Parse right side
-            right = self.parse_term(next_min)
+            saved_op = token  # Save operator for better error messages
+            try:
+                right = self.parse_term(next_min)
+            except ReaderError as e:
+                # If end of input after operator, give better message
+                if "end of input" in str(e).lower():
+                    raise ReaderError(
+                        f"Missing right argument for operator '{saved_op.value}'",
+                        position=saved_op.position,
+                        token=saved_op.value
+                    )
+                raise
             
             # For xfx operators, check if the right side tries to use the same operator
             # This happens when we have X = Y = Z
@@ -274,10 +314,9 @@ class PrattParser:
                     next_op_info = self._get_infix_info(next_token)
                     if next_op_info and next_op_info[0] == precedence:
                         # Same precedence operator trying to chain - this is an error
-                        pos = self.stream.get_position()
                         raise ReaderError(
-                            f"Operator '{next_token.value}' is non-chainable (xfx)",
-                            position=pos,
+                            f"xfx operator '{next_token.value}' is non-chainable; add parentheses",
+                            position=next_token.position,
                             token=next_token.value
                         )
             
@@ -292,7 +331,11 @@ class PrattParser:
         token = self.stream.peek()
         
         if not token:
-            raise ReaderError("Unexpected end of input")
+            # Position at end of input
+            raise ReaderError(
+                "Unexpected end of input; expected a term",
+                position=self.stream.eof_position()
+            )
         
         # Check for prefix operator
         op_info = self._get_prefix_info(token)
@@ -352,7 +395,11 @@ class PrattParser:
         token = self.stream.peek()
         
         if not token:
-            raise ReaderError("Unexpected end of input")
+            # Position at end of input
+            raise ReaderError(
+                "Unexpected end of input; expected a term",
+                position=self.stream.eof_position()
+            )
         
         # Parenthesized expression
         if token.type == 'LPAREN':
@@ -360,7 +407,13 @@ class PrattParser:
             term = self.parse_term()
             next_token = self.stream.consume()
             if not next_token or next_token.type != 'RPAREN':
-                raise ReaderError("Expected closing parenthesis")
+                # Position at end of input or at the unexpected token
+                pos = self.stream.eof_position() if self.stream.at_end() else self.stream.get_position()
+                raise ReaderError(
+                    "Expected closing parenthesis ')'",
+                    position=pos,
+                    token=next_token.value if next_token else None
+                )
             return term
         
         # List
@@ -399,9 +452,18 @@ class PrattParser:
                 args = self.parse_term_list()
                 closing = self.stream.consume()
                 if not closing or closing.type != 'RPAREN':
-                    raise ReaderError("Expected closing parenthesis in structure")
+                    pos = self.stream.eof_position() if self.stream.at_end() else self.stream.get_position()
+                    raise ReaderError(
+                        f"Expected closing parenthesis ')' for structure '{name}'",
+                        position=pos,
+                        token=closing.value if closing else None
+                    )
                 if not args:
-                    raise ReaderError(f"Empty parentheses not allowed - use plain atom '{name}' instead")
+                    raise ReaderError(
+                        f"Empty parentheses not allowed - use plain atom '{name}' instead",
+                        position=token.position,
+                        token=name
+                    )
                 return Struct(name, tuple(args))
             
             return Atom(name)
@@ -417,9 +479,18 @@ class PrattParser:
                 args = self.parse_term_list()
                 closing = self.stream.consume()
                 if not closing or closing.type != 'RPAREN':
-                    raise ReaderError("Expected closing parenthesis in structure")
+                    pos = self.stream.eof_position() if self.stream.at_end() else self.stream.get_position()
+                    raise ReaderError(
+                        f"Expected closing parenthesis ')' for structure '{token.value}'",
+                        position=pos,
+                        token=closing.value if closing else None
+                    )
                 if not args:
-                    raise ReaderError(f"Empty parentheses not allowed - use plain atom '{token.value}' instead")
+                    raise ReaderError(
+                        f"Empty parentheses not allowed - use plain atom '{token.value}' instead",
+                        position=token.position,
+                        token=token.value
+                    )
                 return Struct(token.value, tuple(args))
             
             return Atom(token.value)
@@ -452,7 +523,10 @@ class PrattParser:
             
             next_token = self.stream.peek()
             if not next_token:
-                raise ReaderError("Unexpected end of list")
+                raise ReaderError(
+                    "Unexpected end of list; expected ']' or more elements",
+                    position=self.stream.eof_position()
+                )
             
             if next_token.type == 'COMMA':
                 self.stream.consume()
@@ -462,7 +536,12 @@ class PrattParser:
                 tail = self.parse_term_arg()
                 next_token = self.stream.peek()
                 if not next_token or next_token.type != 'RBRACKET':
-                    raise ReaderError("Expected closing bracket after tail")
+                    pos = self.stream.eof_position() if self.stream.at_end() else self.stream.get_position()
+                    raise ReaderError(
+                        "Expected closing bracket ']' after list tail",
+                        position=pos,
+                        token=next_token.value if next_token else None
+                    )
                 self.stream.consume()
                 break
             elif next_token.type == 'RBRACKET':
@@ -470,7 +549,11 @@ class PrattParser:
                 tail = Atom("[]")
                 break
             else:
-                raise ReaderError(f"Unexpected token in list: {next_token.type}")
+                raise ReaderError(
+                    f"Unexpected token in list: '{next_token.value}'; expected ',' or ']'",
+                    position=next_token.position,
+                    token=next_token.value
+                )
         
         return PrologList(tuple(elements), tail)
     
@@ -553,7 +636,18 @@ class PrattParser:
                 
                 # Parse right side (recursively with no-comma version)
                 self.parse_term = parse_term_no_comma
-                right = self.parse_term(next_min)
+                saved_op = token  # Save operator for better error messages
+                try:
+                    right = self.parse_term(next_min)
+                except ReaderError as e:
+                    # If end of input after operator, give better message
+                    if "end of input" in str(e).lower():
+                        raise ReaderError(
+                            f"Missing right argument for operator '{saved_op.value}'",
+                            position=saved_op.position,
+                            token=saved_op.value
+                        )
+                    raise
                 
                 # For xfx operators, check if trying to chain
                 if assoc_type == 'xfx':
@@ -561,10 +655,9 @@ class PrattParser:
                     if next_token and next_token.type != 'COMMA':
                         next_op_info = self._get_infix_info(next_token)
                         if next_op_info and next_op_info[0] == precedence:
-                            pos = self.stream.get_position()
                             raise ReaderError(
-                                f"Operator '{next_token.value}' is non-chainable (xfx)",
-                                position=pos,
+                                f"xfx operator '{next_token.value}' cannot chain; add parentheses",
+                                position=next_token.position,
                                 token=next_token.value
                             )
                 
@@ -660,7 +753,11 @@ class Reader:
             # Check for leftover tokens
             if not stream.at_end():
                 leftover = stream.peek()
-                raise ReaderError(f"Unexpected token after expression: {leftover.value}")
+                raise ReaderError(
+                    f"Unexpected token after expression: '{leftover.value}'",
+                    position=leftover.position,
+                    token=leftover.value
+                )
             
             return result
             
