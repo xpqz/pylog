@@ -41,6 +41,8 @@ python_functions = ["test_*"]
 addopts = "-v"
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "swi_baseline: Tests that require SWI-Prolog for baseline comparison",
+    "perf: Performance tests that may be time-sensitive",
     "stress: marks tests as stress tests (deselect with '-m \"not stress\"')",
     "dev_mode: marks tests that should run in development mode",
     "iso_mode: marks tests that should run in ISO Prolog mode",
