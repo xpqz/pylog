@@ -8,6 +8,9 @@ Note on list representations:
 - Empty lists can be represented as List((), Atom("[]")) or Atom('[]')
 - Non-empty lists can be List((head, ...), tail) or canonical Struct('.', (head, tail))
 - Stage 2 indexing must handle both representations correctly
+
+Selection is first-argument only; tests ensure second and later arguments 
+do not affect candidate filtering.
 """
 
 import pytest
@@ -720,9 +723,12 @@ class TestOrderPreservation:
         
         for goal in goals:
             selected = list(idx.select(("p", 1), goal, store))
-            selected_ids = [idx.preds[("p", 1)].order[i] 
-                           for i, c in enumerate(idx.clauses.values()) 
-                           if c in selected]
+            p_key = ("p", 1)
+            pred = idx.preds[p_key]
+            selected_ids = [
+                cid for cid in pred.order
+                if idx.clauses[(p_key, cid)] in selected
+            ]
             # Both variable clauses (1 and 3) must be included
             assert 1 in selected_ids
             assert 3 in selected_ids
@@ -964,3 +970,123 @@ class TestStreamingSemantics:
         
         # Iterator should still have more elements, but we don't consume them
         # This simulates a cut operation that stops after finding first solution
+    
+    def test_select_for_nonempty_list_goal_canonical_dot(self):
+        """Select should handle canonical '.'/2 form for list goals."""
+        clauses = [
+            Clause(head=Struct("p", (List((Atom("a"),), Atom("[]")),)), body=()),  # [a]
+            Clause(head=Struct("p", (Var(0, "X"),)), body=()),                    # X
+            Clause(head=Struct("p", (List((), Atom("[]")),)), body=()),           # []
+        ]
+        idx = build_from_clauses(clauses)
+        store = Store()
+        
+        # Goal using canonical '.'/2 structure for [c]
+        goal = Struct("p", (Struct(".", (Atom("c"), Atom("[]"))),))
+        selected = list(idx.select(("p", 1), goal, store))
+        
+        # Should select non-empty list and variable clauses
+        assert len(selected) == 2
+        assert selected[0] is idx.clauses[(("p", 1), 0)]  # p([a])
+        assert selected[1] is idx.clauses[(("p", 1), 1)]  # p(X)
+    
+    def test_select_for_empty_list_goal_atom_form(self):
+        """Select should handle Atom('[]') form for empty list goals."""
+        clauses = [
+            Clause(head=Struct("p", (List((), Atom("[]")),)), body=()),  # []
+            Clause(head=Struct("p", (Var(0, "X"),)), body=()),          # X
+            Clause(head=Struct("p", (List((Atom("a"),), Atom("[]")),)), body=()),  # [a]
+        ]
+        idx = build_from_clauses(clauses)
+        store = Store()
+        
+        # Goal using Atom('[]') form
+        goal = Struct("p", (Atom("[]"),))
+        selected = list(idx.select(("p", 1), goal, store))
+        
+        # Should select empty list and variable clauses
+        assert len(selected) == 2
+        assert selected[0] is idx.clauses[(("p", 1), 0)]  # p([])
+        assert selected[1] is idx.clauses[(("p", 1), 1)]  # p(X)
+    
+    def test_variable_clauses_preserve_relative_order(self):
+        """Multiple variable clauses must preserve their source order."""
+        clauses = [
+            Clause(head=Struct("p", (Var(0, "A"),)), body=()),  # 0
+            Clause(head=Struct("p", (Atom("a"),)), body=()),    # 1
+            Clause(head=Struct("p", (Var(1, "B"),)), body=()),  # 2
+            Clause(head=Struct("p", (Atom("a"),)), body=()),    # 3
+        ]
+        idx = build_from_clauses(clauses)
+        store = Store()
+        
+        # Query: p(a) - should match specific atoms and all variables
+        goal = Struct("p", (Atom("a"),))
+        selected = list(idx.select(("p", 1), goal, store))
+        
+        p_key = ("p", 1)
+        pred = idx.preds[p_key]
+        selected_ids = [
+            cid for cid in pred.order
+            if idx.clauses[(p_key, cid)] in selected
+        ]
+        
+        # Order should be [0, 1, 2, 3] - all clauses match
+        # Variables 0 and 2 should maintain their relative order
+        assert selected_ids == [0, 1, 2, 3]
+        assert selected[0] is idx.clauses[(p_key, 0)]  # p(A) - first var
+        assert selected[1] is idx.clauses[(p_key, 1)]  # p(a) - first match
+        assert selected[2] is idx.clauses[(p_key, 2)]  # p(B) - second var
+        assert selected[3] is idx.clauses[(p_key, 3)]  # p(a) - second match
+    
+    def test_selection_respects_arity(self):
+        """Selection must respect predicate arity boundaries."""
+        clauses = [
+            Clause(head=Atom("p"), body=()),                      # p/0
+            Clause(head=Struct("p", (Atom("a"),)), body=()),      # p/1
+            Clause(head=Struct("p", (Atom("a"), Atom("b"))), body=()),  # p/2
+        ]
+        idx = build_from_clauses(clauses)
+        store = Store()
+        
+        # Select for p/0
+        sel0 = list(idx.select(("p", 0), Atom("p"), store))
+        assert len(sel0) == 1
+        assert sel0[0] is idx.clauses[(("p", 0), 0)]
+        
+        # Select for p/1
+        sel1 = list(idx.select(("p", 1), Struct("p", (Atom("a"),)), store))
+        assert len(sel1) == 1
+        assert sel1[0] is idx.clauses[(("p", 1), 0)]
+        
+        # Select for p/2
+        sel2 = list(idx.select(("p", 2), Struct("p", (Atom("a"), Atom("b"))), store))
+        assert len(sel2) == 1
+        assert sel2[0] is idx.clauses[(("p", 2), 0)]
+    
+    def test_select_returns_fresh_iterator_each_time(self):
+        """Each call to select should return a fresh iterator."""
+        clauses = [
+            Clause(head=Struct("p", (Atom("a"),)), body=()),
+            Clause(head=Struct("p", (Var(0, "X"),)), body=()),
+            Clause(head=Struct("p", (Atom("a"),)), body=()),
+        ]
+        idx = build_from_clauses(clauses)
+        store = Store()
+        
+        goal = Struct("p", (Atom("a"),))
+        
+        # First call
+        sel1 = list(idx.select(("p", 1), goal, store))
+        
+        # Second call - should get fresh iterator
+        sel2 = list(idx.select(("p", 1), goal, store))
+        
+        # Both should yield the same results
+        assert len(sel1) == len(sel2) == 3
+        assert sel1 == sel2
+        
+        # But calling select again should give a new iterator
+        iter1 = idx.select(("p", 1), goal, store)
+        iter2 = idx.select(("p", 1), goal, store)
+        assert iter1 is not iter2
