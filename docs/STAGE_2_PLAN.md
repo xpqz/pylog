@@ -21,32 +21,41 @@ Stage 2 introduces indexing optimizations to improve clause selection performanc
 
 #### 1. IndexedProgram
 - Replaces flat clause list with indexed structure
-- Maps `(functor, arity)` → clause buckets
-- Maintains special buckets for variables and type dispatch
+- Maps `(predicate_name, arity)` → PredIndex
+- Each predicate has its own index structure
 
-#### 2. ClauseIndex
+#### 2. Per-Predicate Index Structure
 ```python
+class PredIndex:
+    """Index for a single predicate's clauses."""
+    def __init__(self):
+        # Source order of clause IDs for this predicate
+        self.order: List[int] = []
+        # Buckets for first-argument types
+        self.var_ids: Set[int] = set()              # Heads with variable first arg
+        self.empty_list_ids: Set[int] = set()       # Heads with []
+        self.int_ids: Set[int] = set()              # Heads with integer first arg
+        self.list_nonempty_ids: Set[int] = set()    # Heads with [H|T] i.e. '.'/2
+        self.struct_functor: Dict[Tuple[str,int], Set[int]] = {}  # Heads with f/n
+
 class ClauseIndex:
-    """Index for efficient clause lookup."""
-    def __init__(self, clauses: List[Clause]):
-        self.by_functor: Dict[Tuple[str, int], List[Clause]] = {}
-        self.var_clauses: List[Clause] = []  # Clauses with var in first arg
-        self.by_type: Dict[str, List[Clause]] = {
-            'atom': [],
-            'int': [],
-            'list': [],
-            'struct': []
-        }
+    """Global index mapping predicates to their clause indices."""
+    def __init__(self):
+        # Map from (pred_name, pred_arity) to PredIndex
+        self.preds: Dict[Tuple[str,int], PredIndex] = {}
+        # Map from (pred_key, clause_id) to actual Clause
+        self.clauses: Dict[Tuple[Tuple[str,int], int], Clause] = {}
 ```
 
 #### 3. First-Argument Analysis
 - Extract principal functor from clause heads
-- Handle special cases:
-  - Variables → var bucket (match everything)
-  - Atoms → `(name, 0)` bucket
-  - Integers → int bucket
-  - Lists → `('.', 2)` bucket
-  - Structures → `(functor, arity)` bucket
+- Handle special cases **per predicate**:
+  - Variables → var_ids bucket (match everything)
+  - Atoms (except `[]`) → struct_functor `(name, 0)` bucket
+  - Empty list `[]` → empty_list_ids bucket
+  - Non-empty lists `[H|T]` → list_nonempty_ids bucket  
+  - Integers → int_ids bucket
+  - Structures → struct_functor `(functor, arity)` bucket
 
 ### Integration Points
 
@@ -55,25 +64,54 @@ class ClauseIndex:
 # In Engine.__init__
 self.program = IndexedProgram(clauses) if use_indexing else Program(clauses)
 
-# In Engine.select_clauses(goal)
+# In Engine.get_matching_clauses(goal)
+pred_key = (goal.functor, len(goal.args)) if is_struct(goal) else (goal, 0)
 if isinstance(self.program, IndexedProgram):
-    return self.program.get_matching_clauses(goal)
+    return self.program.select(pred_key, goal)
 else:
-    return self.program.clauses  # Fallback to linear scan
+    # Fallback: filter by predicate from flat list
+    return [c for c in self.program.clauses if matches_predicate(c, pred_key)]
 ```
 
 #### Clause Selection Algorithm
-1. Dereference goal's first argument
-2. Determine type/functor:
-   - Unbound var → return all clauses
-   - Atom → lookup `(atom_name, 0)`
-   - Int → lookup int bucket
-   - List → lookup `('.', 2)`
-   - Struct → lookup `(functor, arity)`
-3. Combine matching buckets:
-   - Type-specific clauses
-   - Variable clauses (always match)
-4. Return in original source order
+```python
+def select(self, pred_key: Tuple[str, int], goal) -> Iterable[Clause]:
+    """Select clauses preserving source order."""
+    if pred_key not in self.preds:
+        return []
+    
+    p = self.preds[pred_key]
+    
+    # 1. Dereference goal's first argument
+    first_arg = deref(goal.args[0]) if goal.args else None
+    
+    # 2. Build candidate set based on first arg type
+    candidates: Set[int] = set()
+    
+    if is_var(first_arg):
+        candidates = set(p.order)  # All clauses
+    elif is_atom(first_arg) and first_arg.name != '[]':
+        candidates |= p.var_ids
+        candidates |= p.struct_functor.get((first_arg.name, 0), set())
+    elif is_atom(first_arg) and first_arg.name == '[]':
+        candidates |= p.var_ids
+        candidates |= p.empty_list_ids
+    elif is_int(first_arg):
+        candidates |= p.var_ids
+        candidates |= p.int_ids
+    elif is_list_nonempty(first_arg):  # [H|T] structure
+        candidates |= p.var_ids
+        candidates |= p.list_nonempty_ids
+    elif is_struct(first_arg):
+        candidates |= p.var_ids
+        key = (first_arg.functor, len(first_arg.args))
+        candidates |= p.struct_functor.get(key, set())
+    
+    # 3. Yield clauses in original source order
+    for clause_id in p.order:
+        if clause_id in candidates:
+            yield self.clauses[(pred_key, clause_id)]
+```
 
 ## Implementation Phases
 
@@ -88,16 +126,27 @@ else:
 
 **Tests:**
 ```python
-def test_index_building():
+def test_per_predicate_index_building():
+    """Ensure clauses are indexed per predicate, not globally."""
     clauses = parse_program("""
         foo(a).
         foo(b).
         foo(X) :- bar(X).
         baz(1).
+        baz(X).
     """)
     index = ClauseIndex(clauses)
-    assert len(index.by_functor[('foo', 1)]) == 2
-    assert len(index.var_clauses) == 1
+    
+    # foo/1 should have its own index
+    foo_idx = index.preds[('foo', 1)]
+    assert len(foo_idx.order) == 3  # Three foo clauses
+    assert len(foo_idx.var_ids) == 1  # One with var head
+    
+    # baz/1 should be separate
+    baz_idx = index.preds[('baz', 1)]
+    assert len(baz_idx.order) == 2
+    assert len(baz_idx.int_ids) == 1
+    assert len(baz_idx.var_ids) == 1
 ```
 
 ### Phase 2: First-Argument Indexing
@@ -170,9 +219,73 @@ def test_type_switching():
 
 ## Testing Strategy
 
+### Critical Correctness Tests
+
+#### 1. Order Preservation with Interleaved Var Heads
+```python
+def test_order_preservation_with_var_heads():
+    """Variable heads must not disrupt source order."""
+    program = """
+        p(a).           % 1
+        p(X) :- b(X).   % 2 (var head)
+        p(b).           % 3
+    """
+    # Query p(a) must try #1 then #2 (not skip to #3)
+    # Query p(b) must try #2 then #3 (not #1)
+```
+
+#### 2. Empty List vs Non-Empty List Separation  
+```python
+def test_list_type_separation():
+    """[] and [H|T] require separate buckets."""
+    program = """
+        q([]).          % Only for empty list
+        q([_|_]).       % Only for non-empty list
+        q(X).           % For any list
+    """
+    # q([]) tries #1 and #3, never #2
+    # q([1]) tries #2 and #3, never #1
+```
+
+#### 3. Struct Functor Discrimination
+```python
+def test_struct_functor_filtering():
+    """Different functors must use different buckets."""
+    program = """
+        r(f(_)).
+        r(g(_)).
+        r(_).
+    """
+    # r(f(1)) tries r(f(_)) then r(_), never g(_)
+```
+
+#### 4. Dereferencing Critical
+```python
+def test_deref_before_selection():
+    """Selection must use dereferenced first argument."""
+    program = """
+        s(a) :- !.
+        s(b).
+        test(Y) :- Y = a, s(Y).
+    """
+    # When s(Y) is called with Y bound to 'a',
+    # must select s(a) clause, not all s/1 clauses
+```
+
+#### 5. Predicate Isolation
+```python
+def test_predicate_isolation():
+    """Different predicates never share buckets."""
+    program = """
+        p(a).
+        q(a).
+    """
+    # Selecting for p/1 must never return q/1 clauses
+```
+
 ### Unit Tests
 - Index building correctness
-- Clause bucket organization
+- Per-predicate bucket organization
 - Type detection accuracy
 - Edge cases (empty programs, single clause)
 
@@ -199,7 +312,18 @@ def test_indexing_speedup():
     linear_engine = Engine(program, use_indexing=False)
     linear_time = time_query(linear_engine, "fact(a500, X)")
     
-    assert indexed_time < linear_time / 100  # Expect 100x+ speedup
+    # Expect significant speedup (30x-300x range)
+    speedup_ratio = linear_time / indexed_time
+    assert speedup_ratio >= 30, f"Insufficient speedup: {speedup_ratio:.1f}x"
+    
+def test_small_predicate_no_regression():
+    """Small predicates should not regress."""
+    program = """
+        tiny(a).
+        tiny(b).
+        tiny(c).
+    """
+    # Performance should be within ±20% of linear scan
 ```
 
 ### Property Tests
@@ -225,10 +349,10 @@ def test_indexing_preserves_semantics(program, query):
 - ✅ No semantic changes
 
 ### Performance
-- ✅ 100x+ speedup for large fact bases (best case)
+- ✅ 30x-300x speedup for large fact bases (mid-table queries)
 - ✅ 3-5x speedup for type dispatch scenarios
 - ✅ 2-3x speedup for typical recursive predicates
-- ✅ No performance regression for small programs
+- ✅ No regression (within ±20%) for small predicates (≤3 clauses)
 
 ### Code Quality
 - ✅ Clean separation of concerns (indexing module)
@@ -238,11 +362,25 @@ def test_indexing_preserves_semantics(program, query):
 
 ## Implementation Notes
 
+### Key Implementation Principle
+**Order ∩ Candidates Pattern**: The core correctness invariant is to filter candidates through source order, never concatenate buckets. This ensures identical solution ordering:
+```python
+# CORRECT: Filter through order
+for clause_id in p.order:
+    if clause_id in candidates:
+        yield clause
+
+# WRONG: Concatenate buckets (breaks ordering)
+yield from var_clauses + type_clauses + functor_clauses
+```
+
 ### Design Decisions
-1. **Copy-on-write not needed** - Clauses are immutable after parsing
+1. **Per-predicate indexing** - Each predicate has its own PredIndex to avoid cross-contamination
 2. **Source order preservation** - Critical for Prolog semantics
 3. **Variable clauses always checked** - Cannot be filtered out
 4. **Index built once** - At program load time
+5. **Dereference before selection** - Must use bound values for correct bucket selection
+6. **Separate [] and [H|T]** - Empty list is an atom, non-empty is '.'/2 structure
 
 ### Optimization Opportunities
 - **Multi-argument indexing** (future stage)
