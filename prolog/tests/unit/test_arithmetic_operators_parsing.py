@@ -425,13 +425,19 @@ class TestArithmeticOperatorsParsing:
     def test_mod_word_boundary_on_one_side(self):
         """mod word-boundary edge cases."""
         reader = Reader()
-        # No space before 'mod' => variable 'Xmod'
-        result = reader.read_term("Xmod Y")
+        # No space before 'mod' => variable 'Xmod' (but we need a complete term)
+        result = reader.read_term("Xmod")
         assert isinstance(result, Var) and result.hint == "Xmod"
         
-        # No space after 'mod' => not a mod operator
-        result = reader.read_term("X modY")
-        assert not (isinstance(result, Struct) and result.functor == "mod")
+        # No space after 'mod' => 'modY' is an atom, not mod operator
+        result = reader.read_term("f(X, modY)")
+        # Should parse as f(X, modY) where modY is an atom
+        assert isinstance(result, Struct)
+        assert result.functor == "f"
+        assert len(result.args) == 2
+        assert isinstance(result.args[0], Var)
+        assert isinstance(result.args[1], Atom)
+        assert result.args[1].name == "modY"
     
     def test_power_three_right_assoc(self):
         """Deeper right-associative power chain."""
