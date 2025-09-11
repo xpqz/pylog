@@ -336,6 +336,29 @@ class TestErrorRecovery:
         assert exc3.value.token == "@@"
 
 
+class TestRegressionGuards:
+    """Guard against regressions in key improvements."""
+    
+    def test_eof_position_helper_is_used(self):
+        """EOF helper provides consistent position calculation."""
+        reader = Reader()
+        with pytest.raises(ReaderError) as e:
+            reader.read_term("(a, b")  # unmatched
+        assert e.value.position == len("(a, b")
+        
+    def test_xfx_non_chainable_message_uniform(self):
+        """xfx error messages have uniform format."""
+        reader = Reader()
+        with pytest.raises(ReaderError) as e:
+            reader.read_term("x = y = z")
+        msg = str(e.value).lower()
+        # Check all expected parts are present
+        assert "xfx" in msg
+        assert "non-chainable" in msg
+        assert "parenthes" in msg
+        assert "=" in msg  # The operator should be mentioned
+
+
 class TestMultiLineAndSpecialCharacters:
     """Test position handling across newlines, tabs, and Unicode."""
     

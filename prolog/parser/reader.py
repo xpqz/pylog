@@ -23,13 +23,23 @@ logger = logging.getLogger(__name__)
 class ReaderError(Exception):
     """Exception raised for reader/parser errors.
     
-    Guaranteed fields for tools and CI logs:
-        message: The error message describing what went wrong
-        position: Character position in the input where the error occurred (0-based indexing)
-        column: Alias for position for compatibility (0-based)
-        line: Line number where error occurred (always None in current impl, reserved for future)
-        token: The token/lexeme that caused the error (e.g., "@@" for unknown operator)
-        lexeme: Alias for token for consistency
+    Attributes:
+        message (str): The error message describing what went wrong
+        position (int | None): Character position in input (0-based code-point index)
+        column (int | None): Alias for position for compatibility (same as position)
+        line (None): Line number (not yet implemented, reserved for future)
+        token (str | None): The problematic token/lexeme (e.g., "@@" for unknown operator)
+        lexeme (str | None): Alias for token for consistency
+    
+    Position Policy:
+        - 0-based indexing counting from start of input
+        - Counts Unicode code points (not bytes)
+        - Includes newlines in the count
+        - Points to the exact character where error was detected
+        - EOF errors report position after last token
+    
+    Note: Line/column tracking within lines is not yet implemented.
+    The 'line' field is always None and 'column' is just an alias for 'position'.
     """
     
     def __init__(self, message: str, position: Optional[int] = None, token: Optional[str] = None):
@@ -204,6 +214,17 @@ class TokenStream:
             return self.tokens[self.pos].position
         return -1
     
+    def eof_position(self) -> int:
+        """Get position at end of input (after last token).
+        
+        Returns:
+            Position immediately after the last token, or 0 if no tokens.
+        """
+        if self.tokens:
+            last_token = self.tokens[-1]
+            return last_token.position + len(last_token.value)
+        return 0
+    
     def get_var_id(self, name: str) -> int:
         """Get or create variable ID for name."""
         if name == "_":
@@ -311,10 +332,9 @@ class PrattParser:
         
         if not token:
             # Position at end of input
-            pos = self.stream.tokens[-1].position + len(self.stream.tokens[-1].value) if self.stream.tokens else 0
             raise ReaderError(
                 "Unexpected end of input; expected a term",
-                position=pos
+                position=self.stream.eof_position()
             )
         
         # Check for prefix operator
@@ -376,10 +396,9 @@ class PrattParser:
         
         if not token:
             # Position at end of input
-            pos = self.stream.tokens[-1].position + len(self.stream.tokens[-1].value) if self.stream.tokens else 0
             raise ReaderError(
                 "Unexpected end of input; expected a term",
-                position=pos
+                position=self.stream.eof_position()
             )
         
         # Parenthesized expression
@@ -389,7 +408,7 @@ class PrattParser:
             next_token = self.stream.consume()
             if not next_token or next_token.type != 'RPAREN':
                 # Position at end of input or at the unexpected token
-                pos = self.stream.tokens[-1].position + len(self.stream.tokens[-1].value) if self.stream.at_end() else self.stream.get_position()
+                pos = self.stream.eof_position() if self.stream.at_end() else self.stream.get_position()
                 raise ReaderError(
                     "Expected closing parenthesis ')'",
                     position=pos,
@@ -433,7 +452,7 @@ class PrattParser:
                 args = self.parse_term_list()
                 closing = self.stream.consume()
                 if not closing or closing.type != 'RPAREN':
-                    pos = self.stream.tokens[-1].position + len(self.stream.tokens[-1].value) if self.stream.at_end() else self.stream.get_position()
+                    pos = self.stream.eof_position() if self.stream.at_end() else self.stream.get_position()
                     raise ReaderError(
                         f"Expected closing parenthesis ')' for structure '{name}'",
                         position=pos,
@@ -460,7 +479,7 @@ class PrattParser:
                 args = self.parse_term_list()
                 closing = self.stream.consume()
                 if not closing or closing.type != 'RPAREN':
-                    pos = self.stream.tokens[-1].position + len(self.stream.tokens[-1].value) if self.stream.at_end() else self.stream.get_position()
+                    pos = self.stream.eof_position() if self.stream.at_end() else self.stream.get_position()
                     raise ReaderError(
                         f"Expected closing parenthesis ')' for structure '{token.value}'",
                         position=pos,
@@ -504,10 +523,9 @@ class PrattParser:
             
             next_token = self.stream.peek()
             if not next_token:
-                pos = self.stream.tokens[-1].position + len(self.stream.tokens[-1].value) if self.stream.tokens else 0
                 raise ReaderError(
                     "Unexpected end of list; expected ']' or more elements",
-                    position=pos
+                    position=self.stream.eof_position()
                 )
             
             if next_token.type == 'COMMA':
@@ -518,7 +536,7 @@ class PrattParser:
                 tail = self.parse_term_arg()
                 next_token = self.stream.peek()
                 if not next_token or next_token.type != 'RBRACKET':
-                    pos = self.stream.tokens[-1].position + len(self.stream.tokens[-1].value) if self.stream.at_end() else self.stream.get_position()
+                    pos = self.stream.eof_position() if self.stream.at_end() else self.stream.get_position()
                     raise ReaderError(
                         "Expected closing bracket ']' after list tail",
                         position=pos,
