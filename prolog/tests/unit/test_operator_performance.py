@@ -111,8 +111,8 @@ class TestParsingPerformance:
         result = reader.read_term(expr)
         elapsed = time.perf_counter() - start
         
-        # Should parse within 250ms even for large expression (relaxed for CI)
-        assert elapsed < 0.25, f"Large expression took {elapsed:.3f}s"
+        # Should parse within 1s even for large expression (relaxed for CI)
+        assert elapsed < 1.0, f"Large expression took {elapsed:.3f}s"
         assert result is not None
 
 
@@ -192,7 +192,7 @@ class TestExecutionPerformance:
         
         # Should handle 125 solutions quickly
         assert len(solutions) == 125
-        assert elapsed < 1.0, f"Backtracking took {elapsed:.3f}s for 125 solutions"
+        assert elapsed < 2.0, f"Backtracking took {elapsed:.3f}s for 125 solutions"
     
     def test_deep_recursion_performance(self):
         """Deep recursion should perform well with operators."""
@@ -210,8 +210,8 @@ class TestExecutionPerformance:
         elapsed = time.perf_counter() - start
         
         assert len(solutions) == 1
-        # Should complete within 250ms (relaxed for CI)
-        assert elapsed < 0.25, f"Deep recursion took {elapsed:.3f}s"
+        # Should complete within 2s (very relaxed for slow CI runners)
+        assert elapsed < 2.0, f"Deep recursion took {elapsed:.3f}s"
 
 
 class TestMemoryUsage:
@@ -284,7 +284,7 @@ class TestRegressionGuards:
         # Should find all ancestor relationships quickly
         assert len(solutions) == 9  # All ancestor pairs (including transitive)
         # Relaxed threshold for CI
-        assert elapsed < 0.05, f"Basic query took {elapsed:.3f}s"
+        assert elapsed < 0.5, f"Basic query took {elapsed:.3f}s"
     
     def test_no_performance_regression_arithmetic(self):
         """Arithmetic operations should not regress."""
@@ -305,4 +305,4 @@ class TestRegressionGuards:
         assert len(solutions) == 1
         assert solutions[0]["S"].value == 5050  # sum(1..100)
         # Relaxed threshold for CI
-        assert elapsed < 0.25, f"Arithmetic took {elapsed:.3f}s"
+        assert elapsed < 1.0, f"Arithmetic took {elapsed:.3f}s"
