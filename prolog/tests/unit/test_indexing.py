@@ -13,7 +13,7 @@ Note on list representations:
 import pytest
 from prolog.ast.terms import Atom, Int, Var, Struct, List
 from prolog.unify.store import Store
-from prolog.engine.engine import Clause
+from prolog.ast.clauses import Clause
 from prolog.engine.indexing import (
     PredIndex,
     ClauseIndex,
@@ -90,7 +90,7 @@ class TestClauseIndex:
         # Create a test clause
         clause = Clause(
             head=Struct("foo", (Atom("a"),)),
-            body=[]
+            body=()
         )
         
         pred_key = ("foo", 1)
@@ -167,9 +167,9 @@ class TestIndexBuilding:
     def test_build_preserves_source_order(self):
         """Index building must preserve original clause order."""
         clauses = [
-            Clause(head=Struct("p", (Atom("a"),)), body=[]),
-            Clause(head=Struct("p", (Var(0, "X"),)), body=[]),
-            Clause(head=Struct("p", (Atom("b"),)), body=[]),
+            Clause(head=Struct("p", (Atom("a"),)), body=()),
+            Clause(head=Struct("p", (Var(0, "X"),)), body=()),
+            Clause(head=Struct("p", (Atom("b"),)), body=()),
         ]
         
         idx = build_from_clauses(clauses)
@@ -181,9 +181,9 @@ class TestIndexBuilding:
     def test_clauses_indexed_per_predicate(self):
         """Each predicate should have its own separate index."""
         clauses = [
-            Clause(head=Struct("p", (Atom("a"),)), body=[]),
-            Clause(head=Struct("q", (Atom("a"),)), body=[]),
-            Clause(head=Struct("p", (Atom("b"),)), body=[]),
+            Clause(head=Struct("p", (Atom("a"),)), body=()),
+            Clause(head=Struct("q", (Atom("a"),)), body=()),
+            Clause(head=Struct("p", (Atom("b"),)), body=()),
         ]
         
         idx = build_from_clauses(clauses)
@@ -196,8 +196,8 @@ class TestIndexBuilding:
     def test_each_predicate_has_separate_predindex(self):
         """Each predicate must have its own PredIndex instance."""
         clauses = [
-            Clause(head=Struct("p", (Atom("a"),)), body=[]),
-            Clause(head=Struct("q", (Atom("a"),)), body=[]),
+            Clause(head=Struct("p", (Atom("a"),)), body=()),
+            Clause(head=Struct("q", (Atom("a"),)), body=()),
         ]
         
         idx = build_from_clauses(clauses)
@@ -209,10 +209,10 @@ class TestIndexBuilding:
     def test_clause_ids_unique_per_predicate(self):
         """Clause IDs should be unique within each predicate."""
         clauses = [
-            Clause(head=Struct("p", (Atom("a"),)), body=[]),
-            Clause(head=Struct("p", (Atom("b"),)), body=[]),
-            Clause(head=Struct("q", (Atom("c"),)), body=[]),
-            Clause(head=Struct("p", (Atom("d"),)), body=[]),
+            Clause(head=Struct("p", (Atom("a"),)), body=()),
+            Clause(head=Struct("p", (Atom("b"),)), body=()),
+            Clause(head=Struct("q", (Atom("c"),)), body=()),
+            Clause(head=Struct("p", (Atom("d"),)), body=()),
         ]
         
         idx = build_from_clauses(clauses)
@@ -228,10 +228,10 @@ class TestIndexBuilding:
     def test_clause_ids_monotonic_in_source_order(self):
         """Clause IDs should be monotonic increasing in source order."""
         clauses = [
-            Clause(head=Struct("p", (Atom("a"),)), body=[]),
-            Clause(head=Struct("p", (Var(0, "X"),)), body=[]),
-            Clause(head=Struct("p", (Int(3),)), body=[]),
-            Clause(head=Struct("p", (Atom("b"),)), body=[]),
+            Clause(head=Struct("p", (Atom("a"),)), body=()),
+            Clause(head=Struct("p", (Var(0, "X"),)), body=()),
+            Clause(head=Struct("p", (Int(3),)), body=()),
+            Clause(head=Struct("p", (Atom("b"),)), body=()),
         ]
         
         idx = build_from_clauses(clauses)
@@ -245,9 +245,9 @@ class TestIndexBuilding:
     def test_build_from_clauses_deterministic(self):
         """build_from_clauses should be deterministic given same input."""
         clauses = [
-            Clause(head=Struct("p", (Atom("a"),)), body=[]),
-            Clause(head=Struct("p", (Var(0, "X"),)), body=[]),
-            Clause(head=Struct("p", (Int(3),)), body=[]),
+            Clause(head=Struct("p", (Atom("a"),)), body=()),
+            Clause(head=Struct("p", (Var(0, "X"),)), body=()),
+            Clause(head=Struct("p", (Int(3),)), body=()),
         ]
         
         idx1 = build_from_clauses(clauses)
@@ -266,12 +266,12 @@ class TestIndexBuilding:
     def test_bucket_assignment_for_different_types(self):
         """Clauses should be assigned to correct buckets by first arg type."""
         clauses = [
-            Clause(head=Struct("p", (Var(0, "X"),)), body=[]),  # var
-            Clause(head=Struct("p", (Atom("a"),)), body=[]),     # atom
-            Clause(head=Struct("p", (List((), Atom("[]")),)), body=[]), # []
-            Clause(head=Struct("p", (List((Atom("h"),), Var(1, "T")),)), body=[]), # [h|T]
-            Clause(head=Struct("p", (Int(42),)), body=[]),       # int
-            Clause(head=Struct("p", (Struct("f", (Atom("x"),)),)), body=[]),  # struct
+            Clause(head=Struct("p", (Var(0, "X"),)), body=()),  # var
+            Clause(head=Struct("p", (Atom("a"),)), body=()),     # atom
+            Clause(head=Struct("p", (List((), Atom("[]")),)), body=()), # []
+            Clause(head=Struct("p", (List((Atom("h"),), Var(1, "T")),)), body=()), # [h|T]
+            Clause(head=Struct("p", (Int(42),)), body=()),       # int
+            Clause(head=Struct("p", (Struct("f", (Atom("x"),)),)), body=()),  # struct
         ]
         
         idx = build_from_clauses(clauses)
@@ -291,7 +291,7 @@ class TestStaticProgramAssumption:
     def test_index_assumes_static_program(self):
         """Index should document that it assumes a static program."""
         clauses = [
-            Clause(head=Struct("p", (Atom("a"),)), body=[]),
+            Clause(head=Struct("p", (Atom("a"),)), body=()),
         ]
         
         idx = build_from_clauses(clauses)
@@ -302,13 +302,13 @@ class TestStaticProgramAssumption:
     def test_error_if_clauses_added_after_build(self):
         """Should error/assert if trying to add clauses after index built."""
         clauses = [
-            Clause(head=Struct("p", (Atom("a"),)), body=[]),
+            Clause(head=Struct("p", (Atom("a"),)), body=()),
         ]
         
         idx = build_from_clauses(clauses)
         
         # Attempting to add a clause after build should raise
-        new_clause = Clause(head=Struct("p", (Atom("b"),)), body=[])
+        new_clause = Clause(head=Struct("p", (Atom("b"),)), body=())
         with pytest.raises(AssertionError, match="static program"):
             idx.add_clause(new_clause)
 
@@ -338,8 +338,8 @@ class TestPredicateIsolation:
     def test_predicates_never_share_buckets(self):
         """Different predicates must never share index buckets."""
         clauses = [
-            Clause(head=Struct("p", (Atom("shared"),)), body=[]),
-            Clause(head=Struct("q", (Atom("shared"),)), body=[]),
+            Clause(head=Struct("p", (Atom("shared"),)), body=()),
+            Clause(head=Struct("q", (Atom("shared"),)), body=()),
         ]
         
         idx = build_from_clauses(clauses)
@@ -356,8 +356,8 @@ class TestPredicateIsolation:
     def test_empty_list_goes_to_special_bucket(self):
         """Empty list [] must go to empty_list_ids, not struct_functor."""
         clauses = [
-            Clause(head=Struct("p", (List((), Atom("[]")),)), body=[]),  # []
-            Clause(head=Struct("p", (Atom("[]"),)), body=[]),      # The atom '[]'
+            Clause(head=Struct("p", (List((), Atom("[]")),)), body=()),  # []
+            Clause(head=Struct("p", (Atom("[]"),)), body=()),      # The atom '[]'
         ]
         
         idx = build_from_clauses(clauses)
@@ -374,9 +374,9 @@ class TestPredicateIsolation:
     def test_negative_integers_use_same_bucket(self):
         """Both positive and negative integers should use int_ids bucket."""
         clauses = [
-            Clause(head=Struct("p", (Int(3),)), body=[]),
-            Clause(head=Struct("p", (Int(-3),)), body=[]),
-            Clause(head=Struct("p", (Int(0),)), body=[]),
+            Clause(head=Struct("p", (Int(3),)), body=()),
+            Clause(head=Struct("p", (Int(-3),)), body=()),
+            Clause(head=Struct("p", (Int(0),)), body=()),
         ]
         
         idx = build_from_clauses(clauses)
@@ -394,8 +394,8 @@ class TestAdditionalInvariants:
     def test_predicate_key_includes_arity(self):
         """Predicate keys must distinguish by arity (p/0 vs p/1)."""
         clauses = [
-            Clause(head=Atom("p"), body=[]),                                 # p/0
-            Clause(head=Struct("p", (Atom("a"),)), body=[]),                 # p/1
+            Clause(head=Atom("p"), body=()),                                 # p/0
+            Clause(head=Struct("p", (Atom("a"),)), body=()),                 # p/1
         ]
         idx = build_from_clauses(clauses)
         assert ("p", 0) in idx.preds
@@ -406,9 +406,9 @@ class TestAdditionalInvariants:
     def test_struct_bucket_accumulates_multiple_ids(self):
         """Struct buckets should hold all IDs with identical principal functor."""
         clauses = [
-            Clause(head=Struct("p", (Struct("f", (Atom("x"),)),)), body=[]),  # id 0
-            Clause(head=Struct("p", (Struct("f", (Atom("y"),)),)), body=[]),  # id 1
-            Clause(head=Struct("p", (Var(0,"X"),)), body=[]),                 # id 2 (var)
+            Clause(head=Struct("p", (Struct("f", (Atom("x"),)),)), body=()),  # id 0
+            Clause(head=Struct("p", (Struct("f", (Atom("y"),)),)), body=()),  # id 1
+            Clause(head=Struct("p", (Var(0,"X"),)), body=()),                 # id 2 (var)
         ]
         idx = build_from_clauses(clauses)
         p = idx.preds[("p", 1)]
@@ -418,7 +418,7 @@ class TestAdditionalInvariants:
     def test_canonical_dot_struct_counts_as_list_nonempty(self):
         """Canonical '.'/2 structure should be treated as non-empty list."""
         clauses = [
-            Clause(head=Struct("p", (Struct(".", (Atom("h"), Atom("[]"))),)), body=[]),  # [h]
+            Clause(head=Struct("p", (Struct(".", (Atom("h"), Atom("[]"))),)), body=()),  # [h]
         ]
         idx = build_from_clauses(clauses)
         p = idx.preds[("p", 1)]
@@ -428,9 +428,9 @@ class TestAdditionalInvariants:
     def test_clause_mapping_populated_for_all_ids(self):
         """idx.clauses should contain entries for all (pred_key, id) pairs."""
         clauses = [
-            Clause(head=Struct("p", (Atom("a"),)), body=[]),
-            Clause(head=Struct("p", (Var(0,"X"),)), body=[]),
-            Clause(head=Struct("q", (Int(1),)), body=[]),
+            Clause(head=Struct("p", (Atom("a"),)), body=()),
+            Clause(head=Struct("p", (Var(0,"X"),)), body=()),
+            Clause(head=Struct("q", (Int(1),)), body=()),
         ]
         idx = build_from_clauses(clauses)
         for pred_key, pred_idx in idx.preds.items():
@@ -441,10 +441,10 @@ class TestAdditionalInvariants:
     def test_interleaved_predicates_have_independent_id_sequences(self):
         """Interleaved predicates must have independent clause ID sequences."""
         clauses = [
-            Clause(head=Struct("p", (Atom("a"),)), body=[]),  # p id 0
-            Clause(head=Struct("q", (Atom("a"),)), body=[]),  # q id 0
-            Clause(head=Struct("p", (Atom("b"),)), body=[]),  # p id 1
-            Clause(head=Struct("q", (Atom("b"),)), body=[]),  # q id 1
+            Clause(head=Struct("p", (Atom("a"),)), body=()),  # p id 0
+            Clause(head=Struct("q", (Atom("a"),)), body=()),  # q id 0
+            Clause(head=Struct("p", (Atom("b"),)), body=()),  # p id 1
+            Clause(head=Struct("q", (Atom("b"),)), body=()),  # q id 1
         ]
         idx = build_from_clauses(clauses)
         assert idx.preds[("p", 1)].order == [0, 1]
