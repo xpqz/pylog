@@ -7,11 +7,17 @@ Quoting rules:
 - Atoms starting with lowercase letter followed by alphanumeric/underscore: unquoted
 - Reserved tokens ([], :-, ,, |, etc.): quoted
 - Everything else (spaces, punctuation, uppercase start, numeric): quoted
+
+Operator mode:
+- When operator_mode=True, recognized operator structures print as operators
+- Parenthesization follows precedence and associativity rules
+- When operator_mode=False (default), canonical form is used
 """
 
 from typing import Dict, Optional, List, Tuple, Union
 from prolog.ast.terms import Term, Atom, Int, Var, Struct, List as PrologList
 from prolog.ast.clauses import Clause
+from prolog.parser.operators import get_operator_info
 
 # Reserved tokens that always need quotes (except special cases)
 _RESERVED = {
@@ -88,12 +94,81 @@ def pretty_atom(name: str) -> str:
     return name
 
 
-def pretty(term: Term, var_names: Optional[Dict[int, str]] = None) -> str:
+def _is_operator_struct(term: Struct) -> Optional[Tuple[str, int, str, str]]:
+    """Check if a Struct represents an operator in canonical form.
+    
+    Args:
+        term: The Struct to check
+        
+    Returns:
+        Tuple of (position, precedence, type, canonical) if operator, None otherwise
+    """
+    # Check unary operators (arity 1)
+    if len(term.args) == 1:
+        info = get_operator_info(term.functor, 'prefix')
+        if info:
+            return ('prefix', info[0], info[1], info[2])
+            
+    # Check binary operators (arity 2)
+    elif len(term.args) == 2:
+        info = get_operator_info(term.functor, 'infix')
+        if info:
+            return ('infix', info[0], info[1], info[2])
+            
+    return None
+
+
+def _needs_parens(parent_op: Optional[Tuple[str, int, str, str]], 
+                  child_op: Optional[Tuple[str, int, str, str]],
+                  child_position: str) -> bool:
+    """Determine if parentheses are needed around a child expression.
+    
+    Args:
+        parent_op: Parent operator info (position, precedence, type, canonical) or None
+        child_op: Child operator info or None
+        child_position: 'left' or 'right' - position of child in parent
+        
+    Returns:
+        True if parentheses are needed
+    """
+    if not parent_op or not child_op:
+        return False
+        
+    parent_pos, parent_prec, parent_type, _ = parent_op
+    child_pos, child_prec, child_type, _ = child_op
+    
+    # Lower precedence always needs parens
+    if child_prec > parent_prec:  # Higher number = lower precedence in Prolog
+        return True
+        
+    # Same precedence - check associativity
+    if child_prec == parent_prec:
+        # For xfx operators, any nesting needs parens
+        if 'xfx' in parent_type:
+            return True
+            
+        # Check associativity conflicts
+        if parent_pos == 'infix' and child_pos == 'infix':
+            # Left-associative (yfx): right child needs parens
+            if 'yfx' in parent_type and child_position == 'right':
+                return True
+            # Right-associative (xfy): left child needs parens  
+            if 'xfy' in parent_type and child_position == 'left':
+                return True
+                
+    return False
+
+
+def pretty(term: Term, var_names: Optional[Dict[int, str]] = None, 
+          operator_mode: bool = False,
+          parent_op: Optional[Tuple[str, int, str, str]] = None) -> str:
     """Convert a term to its string representation.
 
     Args:
         term: The term to pretty print
         var_names: Optional mapping of variable IDs to names
+        operator_mode: If True, print operators in operator syntax
+        parent_op: Parent operator info for parenthesization (internal use)
 
     Returns:
         String representation of the term
@@ -128,11 +203,92 @@ def pretty(term: Term, var_names: Optional[Dict[int, str]] = None) -> str:
         if len(term.args) == 0:
             # Zero-arity structure prints as atom (no parentheses)
             return pretty_atom(term.functor)
-        else:
-            # Format with arguments
-            functor_str = pretty_atom(term.functor)
-            args_str = ", ".join(pretty(arg, var_names) for arg in term.args)
-            return f"{functor_str}({args_str})"
+            
+        # Check if this is an operator and we're in operator mode
+        if operator_mode:
+            op_info = _is_operator_struct(term)
+            if op_info:
+                position, precedence, op_type, _ = op_info
+                
+                if position == 'prefix' and len(term.args) == 1:
+                    # Unary operator
+                    arg_str = pretty(term.args[0], var_names, operator_mode, op_info)
+                    
+                    # Check if arg needs parens
+                    arg_op = None
+                    if isinstance(term.args[0], Struct):
+                        arg_op = _is_operator_struct(term.args[0])
+                    
+                    # Special case: unary operators need parens around binary operators
+                    needs_parens = False
+                    if arg_op:
+                        arg_pos = arg_op[0]
+                        arg_prec = arg_op[1]
+                        my_prec = op_info[1]
+                        # Always need parens around infix operators for clarity
+                        # e.g., -(X + Y) not -X + Y
+                        if arg_pos == 'infix':
+                            needs_parens = True
+                        # For other prefix operators, need parens if same or higher precedence
+                        elif arg_prec <= my_prec:
+                            needs_parens = True
+                    
+                    if needs_parens:
+                        arg_str = f"({arg_str})"
+                        
+                    # Special handling for negation operator spacing
+                    if term.functor == '\\+':
+                        return f"\\+{arg_str}"
+                    else:
+                        return f"{term.functor}{arg_str}"
+                        
+                elif position == 'infix' and len(term.args) == 2:
+                    # Binary operator
+                    left_str = pretty(term.args[0], var_names, operator_mode, op_info)
+                    right_str = pretty(term.args[1], var_names, operator_mode, op_info)
+                    
+                    # Check if children need parens
+                    left_op = None
+                    right_op = None
+                    if isinstance(term.args[0], Struct):
+                        left_op = _is_operator_struct(term.args[0])
+                    if isinstance(term.args[1], Struct):
+                        right_op = _is_operator_struct(term.args[1])
+                        
+                    if _needs_parens(op_info, left_op, 'left'):
+                        left_str = f"({left_str})"
+                    if _needs_parens(op_info, right_op, 'right'):
+                        right_str = f"({right_str})"
+                        
+                    # Special case: if-then-else pattern (A -> B ; C) always needs outer parens
+                    result = None
+                    if term.functor == ';' and isinstance(term.args[0], Struct):
+                        left_struct = term.args[0]
+                        if left_struct.functor == '->' and len(left_struct.args) == 2:
+                            # This is if-then-else, needs parens
+                            if term.functor.isalpha():
+                                result = f"({left_str} {term.functor} {right_str})"
+                            else:
+                                result = f"({left_str} {term.functor} {right_str})"
+                    
+                    if result:
+                        return result
+                        
+                    # Handle spacing for different operators
+                    if term.functor == ',':
+                        # Comma has no spaces
+                        return f"{left_str}, {right_str}"
+                    elif term.functor.isalpha():
+                        # Word operators like 'mod' need spaces
+                        return f"{left_str} {term.functor} {right_str}"
+                    else:
+                        # Other operators have spaces
+                        return f"{left_str} {term.functor} {right_str}"
+        
+        # Fall back to canonical form
+        functor_str = pretty_atom(term.functor)
+        args_str = ", ".join(pretty(arg, var_names, operator_mode) for arg in term.args)
+        return f"{functor_str}({args_str})"
 
     elif isinstance(term, PrologList):
         if not term.items and isinstance(term.tail, Atom) and term.tail.name == "[]":
@@ -143,15 +299,15 @@ def pretty(term: Term, var_names: Optional[Dict[int, str]] = None) -> str:
         ):
             # List with non-empty tail [H|T]
             if term.items:
-                items_str = ", ".join(pretty(item, var_names) for item in term.items)
-                tail_str = pretty(term.tail, var_names)
+                items_str = ", ".join(pretty(item, var_names, operator_mode) for item in term.items)
+                tail_str = pretty(term.tail, var_names, operator_mode)
                 return f"[{items_str}|{tail_str}]"
             else:
                 # Shouldn't happen but handle it
-                return f"[|{pretty(term.tail, var_names)}]"
+                return f"[|{pretty(term.tail, var_names, operator_mode)}]"
         else:
             # Normal list [1, 2, 3]
-            items_str = ", ".join(pretty(item, var_names) for item in term.items)
+            items_str = ", ".join(pretty(item, var_names, operator_mode) for item in term.items)
             return f"[{items_str}]"
 
     else:
