@@ -448,12 +448,12 @@ class TestWhitespaceAndComments:
         assert grammar_term.parse("foo % comment")
         assert grammar_term.parse("% comment\nfoo")
 
-    @pytest.mark.xfail(reason="Block comments may not be implemented yet")
     def test_block_comments(self, grammar_term):
         """Block comments /* ... */."""
         assert grammar_term.parse("/* comment */ foo")
         assert grammar_term.parse("foo /* comment */")
-        assert grammar_term.parse("foo /* multi\nline\ncomment */ bar")
+        # This would be inside a functor call - two separate terms is invalid
+        assert grammar_term.parse("foo(/* multi\nline\ncomment */ bar)")
 
 
 class TestMultiClausePrograms:

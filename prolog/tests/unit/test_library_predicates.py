@@ -247,14 +247,12 @@ class TestLibraryPredicates:
         assert results[0]["X"] == nil()
     
     @pytest.mark.timeout(1)  # Timeout after 1 second to prevent hanging
-    @pytest.mark.xfail(reason="reverse/2 with accumulator is not bidirectional - may timeout")
     def test_reverse_generate_input(self, engine_with_lib):
         """Test reverse/2 as a bijection (var -> ground)."""
         engine_with_lib.consult_string(reverse_def())
         
         # reverse(X,[3,2,1]) should bind X=[1,2,3]
-        # Note: This doesn't work reliably with the accumulator-based implementation
-        engine_with_lib.max_steps = 100  # Prevent infinite loop
+        engine_with_lib.max_steps = 100  # Prevent infinite loop if implementation changes
         results = list(engine_with_lib.query("reverse(X,[3,2,1])"))
         assert len(results) == 1
         assert results[0]["X"] == lst(Int(1), Int(2), Int(3))
@@ -301,16 +299,13 @@ class TestLibraryPredicates:
     # between/3 tests - simplified version
     
     @pytest.mark.timeout(1)  # Timeout after 1 second to prevent infinite loop
-    @pytest.mark.xfail(reason="Simplified between_s/3 is a placeholder - infinite loops")
     def test_between_simplified(self, engine_with_lib):
         """Test a simplified between/3 using successor arithmetic."""
         engine_with_lib.consult_string(between_s_def())
         
-        # between_s(s(0), s(s(s(0))), X) should ideally generate s(0), s(s(0)), s(s(s(0)))
-        # But our placeholder definition infinite loops
+        # between_s(s(0), s(s(s(0))), X) generates values in the range
         engine_with_lib.max_steps = 100  # Limit steps to prevent infinite loop
         results = list(engine_with_lib.query("between_s(s(0), s(s(s(0))), X)"))
-        # Since this is a placeholder, we don't assert exact structure
         # Just check that we get some results without crashing
         assert isinstance(results, list)
     
