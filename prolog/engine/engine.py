@@ -55,10 +55,6 @@ class Engine:
         self.use_indexing = use_indexing
         self.debug = debug
         self.occurs_check = occurs_check
-        
-        # Debug instrumentation
-        if debug:
-            self._candidates_considered = 0
 
         # Core state - using new runtime types
         self.store = Store()
@@ -101,8 +97,8 @@ class Engine:
         # Variable renaming for clause isolation
         self._renamer = VarRenamer(self.store)
         
-        # Initialize debug counters if needed
-        if self.debug and not hasattr(self, '_candidates_considered'):
+        # Initialize debug counter if debug mode is enabled
+        if self.debug:
             self._candidates_considered = 0
 
     def reset(self):
@@ -526,7 +522,13 @@ class Engine:
                 
                 # Log detailed info if trace is enabled too
                 if self.trace:
-                    total_clauses = len(self.program.clauses_for(functor, arity))
+                    # Optimize total clause count for IndexedProgram
+                    if isinstance(self.program, IndexedProgram):
+                        pred_idx = self.program._index.preds.get((functor, arity))
+                        total_clauses = len(pred_idx.order) if pred_idx else 0
+                    else:
+                        total_clauses = len(self.program.clauses_for(functor, arity))
+                    
                     if total_clauses > 0:
                         self._trace_log.append(
                             f"pred {functor}/{arity}: considered {len(matches)} of {total_clauses} clauses"

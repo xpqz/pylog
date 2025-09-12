@@ -6,6 +6,10 @@ expected Program interface, enabling transparent indexing integration.
 """
 
 from typing import List, Iterator, Optional, Tuple
+
+# Type aliases for readability
+PredKey = Tuple[str, int]  # (predicate_name, arity)
+ClauseIdx = int  # Index into the clauses tuple
 from prolog.ast.terms import Term, Struct, Atom
 from prolog.ast.clauses import Clause, Program
 from prolog.engine.indexing import ClauseIndex, build_from_clauses
@@ -30,6 +34,8 @@ class IndexedProgram:
         """
         self.clauses = tuple(clauses) if not isinstance(clauses, tuple) else clauses
         self._index = index if index is not None else build_from_clauses(list(clauses))
+        # Build clause-to-index map once to avoid O(N) rebuilding on every select
+        self._clause_to_idx = {clause: i for i, clause in enumerate(self.clauses)}
     
     @classmethod
     def from_clauses(cls, clauses: List[Clause]) -> "IndexedProgram":
@@ -57,7 +63,7 @@ class IndexedProgram:
         """
         return cls(program.clauses)
     
-    def clauses_for(self, functor: str, arity: int) -> List[int]:
+    def clauses_for(self, functor: str, arity: int) -> List[ClauseIdx]:
         """
         Return indices of clauses matching functor/arity.
         
@@ -88,12 +94,15 @@ class IndexedProgram:
         
         return result
     
-    def select(self, pred_key: Tuple[str, int], goal: Term, store: Store) -> Iterator[int]:
+    def select(self, pred_key: PredKey, goal: Term, store: Store) -> Iterator[ClauseIdx]:
         """
         Select clause indices using indexing.
         
         This method uses the ClauseIndex to efficiently select matching
         clauses and returns their indices in source order.
+        
+        Note: Returns CANDIDATE indices based on type/value buckets.
+        The engine performs the actual unification filtering.
         
         Args:
             pred_key: (predicate_name, arity) tuple
@@ -101,15 +110,13 @@ class IndexedProgram:
             store: Store for dereferencing variables
             
         Yields:
-            Clause indices that match the goal
+            Candidate clause indices that may match the goal
         """
-        # Use the index to get matching clauses
+        # Use the index to get matching clause candidates
         matching_clauses = self._index.select(pred_key, goal, store)
         
-        # We need to convert clauses back to indices
-        # Build a clause-to-index map for efficiency
-        clause_to_idx = {clause: i for i, clause in enumerate(self.clauses)}
-        
+        # Convert clauses to indices using cached map
         for clause in matching_clauses:
-            if clause in clause_to_idx:
-                yield clause_to_idx[clause]
+            idx = self._clause_to_idx.get(clause)
+            if idx is not None:
+                yield idx
