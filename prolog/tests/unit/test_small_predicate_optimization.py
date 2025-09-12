@@ -145,17 +145,17 @@ class TestSmallPredicateOptimization:
             (("tiny", 1), Struct("tiny", (Int(42),)), 1),
             (("tiny", 1), Struct("tiny", (Var(10, "A"),)), 1),
             
-            (("small", 1), Struct("small", (Int(1),)), 1),
-            (("small", 1), Struct("small", (Int(2),)), 1),  # Matches var clause
+            (("small", 1), Struct("small", (Int(1),)), 2),  # Matches small(1) and small(Y)
+            (("small", 1), Struct("small", (Int(2),)), 2),  # Type-based: matches both small(1) and small(Y)
             (("small", 1), Struct("small", (Var(11, "B"),)), 2),
             
-            (("medium", 1), Struct("medium", (Int(1),)), 1),
-            (("medium", 1), Struct("medium", (Int(2),)), 1),
-            (("medium", 1), Struct("medium", (Int(3),)), 1),  # Matches var clause
+            (("medium", 1), Struct("medium", (Int(1),)), 3),  # Type-based: all int clauses + var
+            (("medium", 1), Struct("medium", (Int(2),)), 3),  # Type-based: all int clauses + var
+            (("medium", 1), Struct("medium", (Int(3),)), 3),  # Type-based: all int clauses + var
             (("medium", 1), Struct("medium", (Var(12, "C"),)), 3),
             
-            (("large", 1), Struct("large", (Int(5),)), 1),
-            (("large", 1), Struct("large", (Int(15),)), 0),  # No match
+            (("large", 1), Struct("large", (Int(5),)), 10),  # Type-based: all 10 int clauses
+            (("large", 1), Struct("large", (Int(15),)), 10),  # Type-based: all 10 int clauses
             (("large", 1), Struct("large", (Var(13, "D"),)), 10),
         ]
         

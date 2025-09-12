@@ -120,13 +120,21 @@ class ClauseIndex:
         
         # Dereference if it's a variable
         if isinstance(first_arg, Var):
-            deref_result = store.deref(first_arg.id)
-            if deref_result[0] == "BOUND":
-                # Use the bound term
-                first_arg = deref_result[2]
+            # Check if variable exists in store
+            if first_arg.id < len(store.cells):
+                deref_result = store.deref(first_arg.id)
+                if deref_result[0] == "BOUND":
+                    # Use the bound term
+                    first_arg = deref_result[2]
+                else:
+                    # Fast-path: Unbound variable matches everything
+                    # Stream all clauses in source order without building a set
+                    for clause_id in pred_idx.order:
+                        yield self.clauses[(pred_key, clause_id)]
+                    return
             else:
+                # Variable not in store - treat as unbound
                 # Fast-path: Unbound variable matches everything
-                # Stream all clauses in source order without building a set
                 for clause_id in pred_idx.order:
                     yield self.clauses[(pred_key, clause_id)]
                 return

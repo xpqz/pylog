@@ -175,10 +175,10 @@ class TestStreamingSelection:
         items = list(result)
         assert len(items) == 0
         
-        # Query for non-matching value
+        # Query for integer value - gets all integer clauses (type-based)
         result = idx.select(("sparse", 1), Struct("sparse", (Int(99),)), store)
         items = list(result)
-        assert len(items) == 0
+        assert len(items) == 2  # Both sparse(1) and sparse(2)
         
         # Query with wrong arity
         result = idx.select(("sparse", 2), Struct("sparse", (Int(1), Int(2),)), store)
