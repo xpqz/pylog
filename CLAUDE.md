@@ -9,7 +9,7 @@ This is PyLog, a tree-walking Prolog interpreter in Python with an eventual CLP(
 ## Project Structure
 
 ```
-prolog/
+prolog/              <-- ALL CODE UNDER prolog/
   parser/                # Lark grammar and reader for operators
     grammar.lark
     reader.py
@@ -43,9 +43,11 @@ prolog/
     snapshot.py          # Store/trail/choicepoints dump
     graphviz.py          # export_constraint_graph()
   tests/
-    unit/                # Small orthogonal tests
-    scenarios/           # Multi-file programs
+    unit/                <-- UNIT TESTS GO HERE (prolog/tests/unit/)
+    scenarios/           <-- SCENARIO TESTS GO HERE (prolog/tests/scenarios/)
 ```
+
+**NEVER use tests/ at root level - all tests MUST go under prolog/tests/**
 
 ## Development Commands
 
@@ -53,19 +55,26 @@ prolog/
 - **Package management**: `uv` (fast Python package manager)
 - **Code formatting**: `black` (run before committing)
 
+### Test File Locations
+**IMPORTANT**: All unit tests MUST go in `prolog/tests/unit/` not `tests/unit/`
+- Test files should be named `test_*.py`
+- Unit tests go in: `prolog/tests/unit/`
+- Integration/scenario tests go in: `prolog/tests/scenarios/`
+- NEVER create a `tests/` directory at the repository root
+
 ### Running Tests
 ```bash
 # Run all tests
 uv run pytest
 
-# Run specific test file
-uv run pytest tests/unit/test_unify.py
+# Run specific test file (note the prolog/ prefix)
+uv run pytest prolog/tests/unit/test_unify.py
 
 # Run with verbose output
 uv run pytest -v
 
 # Run specific test function
-uv run pytest tests/unit/test_unify.py::test_occurs_check
+uv run pytest prolog/tests/unit/test_unify.py::test_occurs_check
 ```
 
 ### Code Formatting
