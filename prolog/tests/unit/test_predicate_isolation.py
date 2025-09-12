@@ -147,14 +147,13 @@ class TestPredicateIsolation:
             ('list_nonempty_ids', p_idx.list_nonempty_ids, q_idx.list_nonempty_ids),
         ]
         
-        for bucket_name, p_bucket, q_bucket in buckets_to_check:
-            # Buckets may contain same IDs but they're namespaced by predicate
-            # What matters is that selection doesn't cross predicates
-            pass  # IDs overlap is OK as long as they're stored with composite keys
-        
-        # Check struct_functor buckets - same logic, IDs may overlap
-        # The important thing is clauses are stored with composite (pred_key, clause_id) keys
-        pass
+        # Buckets may contain same IDs but they're namespaced by predicate
+        # Prove selection doesn't cross predicates even if bucket ID sets overlap
+        store = Store()
+        res_p = list(idx.select(("p", 1), Struct("p", (Var(0, "X"),)), store))
+        res_q = list(idx.select(("q", 1), Struct("q", (Var(1, "Y"),)), store))
+        assert all(isinstance(c.head, Struct) and c.head.functor == "p" for c in res_p)
+        assert all(isinstance(c.head, Struct) and c.head.functor == "q" for c in res_q)
     
     def test_selection_never_crosses_predicates(self):
         """Selection for p/1 never returns q/1 clauses."""

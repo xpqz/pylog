@@ -121,6 +121,7 @@ class ClauseIndex:
         # Dereference if it's a variable
         if isinstance(first_arg, Var):
             # Check if variable exists in store
+            # TODO: Consider Store.has_var(varid) API to avoid knowing about cells
             if first_arg.id < len(store.cells):
                 deref_result = store.deref(first_arg.id)
                 if deref_result[0] == "BOUND":
