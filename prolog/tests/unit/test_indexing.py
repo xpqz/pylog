@@ -1097,8 +1097,8 @@ class TestStreamingSemantics:
         assert iter1 is not iter2
 
 
-class TestPhase3TypeDetection:
-    """Phase 3: Enhanced type detection tests for all term types."""
+class TestComprehensiveTypeDetection:
+    """Comprehensive type detection tests for all term types."""
     
     def test_detect_atom_type_comprehensive(self):
         """Comprehensive atom type detection."""
@@ -1156,8 +1156,8 @@ class TestPhase3TypeDetection:
         assert analyze_first_arg(head, store) == "int"
 
 
-class TestPhase3ListSeparation:
-    """Phase 3: Enhanced tests for empty vs non-empty list separation."""
+class TestListTypeBucketSeparation:
+    """Tests for empty vs non-empty list bucket separation."""
     
     def test_empty_list_forms_all_go_to_same_bucket(self):
         """All empty list representations go to the same bucket."""
@@ -1223,8 +1223,8 @@ class TestPhase3ListSeparation:
         assert bodies == ["var1", "nonempty", "var2"]  # Both vars and nonempty
 
 
-class TestPhase3FunctorDiscrimination:
-    """Phase 3: Enhanced functor/arity discrimination tests."""
+class TestFunctorArityBuckets:
+    """Tests for functor/arity discrimination in bucket assignment."""
     
     def test_functor_arity_combinations(self):
         """Test all combinations of functor/arity discrimination."""
@@ -1277,8 +1277,8 @@ class TestPhase3FunctorDiscrimination:
         assert results[0].body.name == "bar1"
 
 
-class TestPhase3PredicateIsolation:
-    """Phase 3: Enhanced predicate isolation tests."""
+class TestEnhancedPredicateIsolation:
+    """Enhanced tests for complete predicate isolation guarantees."""
     
     def test_interleaved_predicates_maintain_isolation(self):
         """Interleaved predicate definitions maintain complete isolation."""
@@ -1328,8 +1328,8 @@ class TestPhase3PredicateIsolation:
         assert results[0].body.name == "test2"
 
 
-class TestPhase3TypeSwitching:
-    """Phase 3: Comprehensive type switching tests."""
+class TestTypeSwitchingFiltering:
+    """Tests for type-based clause filtering and selection."""
     
     def test_type_switching_completeness(self):
         """Test that type switching correctly filters all type combinations."""
