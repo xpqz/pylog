@@ -85,3 +85,8 @@ title = "PyLog Coverage Report"
 
 [tool.coverage.xml]
 output = "coverage.xml"
+
+[dependency-groups]
+dev = [
+    "hypothesis>=6.138.15",
+]
