@@ -930,6 +930,54 @@ class TestDereferencingBeforeSelection:
         assert selected2[1] is idx.clauses[(("test", 1), 2)]
 
 
+class TestGoalVariableHandling:
+    """Tests for handling goal variables in various edge cases."""
+    
+    def test_goal_var_not_in_store(self):
+        """Goal variable not in store is treated as unbound."""
+        clauses = [
+            Clause(head=Struct("p", (Atom("a"),)), body=()),
+            Clause(head=Struct("p", (Int(1),)), body=()),
+            Clause(head=Struct("p", (Var(0, "X"),)), body=()),
+        ]
+        idx = build_from_clauses(clauses)
+        store = Store()  # Empty store
+        
+        # Query with variable ID that doesn't exist in store
+        goal = Struct("p", (Var(999, "NonExistent"),))
+        selected = list(idx.select(("p", 1), goal, store))
+        
+        # Should select all clauses (treated as unbound)
+        assert len(selected) == 3
+        for i in range(3):
+            assert selected[i] is idx.clauses[(("p", 1), i)]
+    
+    def test_canonical_list_goal_both_representations(self):
+        """Both List and canonical '.'/2 goal representations work equivalently."""
+        clauses = [
+            Clause(head=Struct("p", (Atom("[]"),)), body=()),                        # 0: empty
+            Clause(head=Struct("p", (List((Atom("a"),), None),)), body=()),          # 1: [a]
+            Clause(head=Struct("p", (Struct(".", (Atom("b"), Atom("[]"))),)), body=()),  # 2: .(b,[])
+            Clause(head=Struct("p", (Var(0, "X"),)), body=()),                       # 3: var
+        ]
+        idx = build_from_clauses(clauses)
+        store = Store()
+        
+        # Query with List representation
+        goal1 = Struct("p", (List((Atom("c"),), None),))
+        selected1 = list(idx.select(("p", 1), goal1, store))
+        
+        # Query with canonical '.'/2 representation  
+        goal2 = Struct("p", (Struct(".", (Atom("c"), Atom("[]"))),))
+        selected2 = list(idx.select(("p", 1), goal2, store))
+        
+        # Both should select the same clauses: 1, 2, and 3 (non-empty lists and var)
+        assert len(selected1) == len(selected2) == 3
+        assert selected1[0] is selected2[0] is idx.clauses[(("p", 1), 1)]
+        assert selected1[1] is selected2[1] is idx.clauses[(("p", 1), 2)]
+        assert selected1[2] is selected2[2] is idx.clauses[(("p", 1), 3)]
+
+
 class TestStreamingSemantics:
     """Tests for streaming/generator behavior of select()."""
 
@@ -1221,6 +1269,32 @@ class TestListTypeBucketSeparation:
         results = list(idx.select(("p", 1), goal, store))
         bodies = [r.body.name for r in results]
         assert bodies == ["var1", "nonempty", "var2"]  # Both vars and nonempty
+    
+    def test_improper_list_head_treated_as_nonempty(self):
+        """Improper lists (cons with non-list tail) are treated as non-empty lists."""
+        clauses = [
+            # [1|42] - tail is not a list
+            Clause(Struct("p", (Struct(".", (Int(1), Int(42))),)), Atom("improper")),
+            Clause(Struct("p", (Atom("[]"),)), Atom("empty")),
+            Clause(Struct("p", (List((Int(2),), None),)), Atom("proper")),
+        ]
+        
+        idx = build_from_clauses(clauses)
+        pred_idx = idx.preds[("p", 1)]
+        
+        # Improper list should be in list_nonempty_ids
+        assert 0 in pred_idx.list_nonempty_ids
+        
+        # Should NOT be in struct_functor (even though it's '.'/2)
+        assert (".", 2) not in pred_idx.struct_functor
+        
+        # Verify selection works correctly
+        store = Store()
+        goal = Struct("p", (Struct(".", (Int(3), Atom("x"))),))  # Another improper list
+        results = list(idx.select(("p", 1), goal, store))
+        bodies = [r.body.name for r in results]
+        # Should match improper and proper (both non-empty lists)
+        assert bodies == ["improper", "proper"]
 
 
 class TestFunctorArityBuckets:
@@ -1275,6 +1349,43 @@ class TestFunctorArityBuckets:
         results = list(idx.select(("p", 1), goal, store))
         assert len(results) == 1
         assert results[0].body.name == "bar1"
+    
+    def test_atom_vs_zero_arity_struct_disambiguation(self):
+        """Atom f and zero-arity struct f() should ideally be distinct but currently share bucket."""
+        clauses = [
+            Clause(Struct("p", (Atom("f"),)), Atom("atom_f")),
+            Clause(Struct("p", (Struct("f", ()),)), Atom("struct_f0")),
+            Clause(Struct("p", (Atom("g"),)), Atom("atom_g")),
+        ]
+        
+        idx = build_from_clauses(clauses)
+        pred_idx = idx.preds[("p", 1)]
+        
+        # Both atom 'f' and struct f() currently share the same bucket key ("f", 0)
+        # This is a known limitation - they should ideally be distinct
+        assert 0 in pred_idx.struct_functor[("f", 0)]
+        assert 1 in pred_idx.struct_functor[("f", 0)]
+        assert pred_idx.struct_functor[("f", 0)] == {0, 1}
+        
+        store = Store()
+        
+        # CURRENT BEHAVIOR: Both match each other (not ideal)
+        # Query with zero-arity struct matches both
+        goal = Struct("p", (Struct("f", ()),))
+        results = list(idx.select(("p", 1), goal, store))
+        assert len(results) == 2
+        assert [r.body.name for r in results] == ["atom_f", "struct_f0"]
+        
+        # Query with atom also matches both
+        goal = Struct("p", (Atom("f"),))
+        results = list(idx.select(("p", 1), goal, store))
+        assert len(results) == 2
+        assert [r.body.name for r in results] == ["atom_f", "struct_f0"]
+        
+        # TODO: In proper Prolog, f and f() should be distinct:
+        # - Atom("f") should only match Atom("f")
+        # - Struct("f", ()) should only match Struct("f", ())
+        # This test documents current behavior for future fix
 
 
 class TestEnhancedPredicateIsolation:
