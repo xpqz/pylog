@@ -34,7 +34,7 @@ class PredIndex:
         'order',              # List[int]: clause IDs in source order
         'var_ids',            # Set[int]: clauses with variable first arg
         'empty_list_ids',     # Set[int]: clauses with [] first arg
-        'int_ids',            # Set[int]: clauses with integer first arg
+        'int_ids',            # Set[int]: clauses with integer first arg (type-based)
         'list_nonempty_ids',  # Set[int]: clauses with [H|T] first arg
         'struct_functor',     # Dict[FunctorKey, Set[ClauseID]]: (functor, arity) -> clause IDs
         'float_ids',          # Set[int]: placeholder for future float support
@@ -45,7 +45,7 @@ class PredIndex:
         self.order: List[int] = []
         self.var_ids: Set[int] = set()
         self.empty_list_ids: Set[int] = set()
-        self.int_ids: Set[int] = set()
+        self.int_ids: Set[int] = set()  # Type-based indexing for integers
         self.list_nonempty_ids: Set[int] = set()
         self.struct_functor: Dict[FunctorKey, Set[ClauseID]] = {}
         self.float_ids: Set[int] = set()  # Future extension
@@ -145,7 +145,7 @@ class ClauseIndex:
         candidates: Set[ClauseID] = set()
         
         if isinstance(first_arg, Int):
-            # Integer matches integer clauses and variable clauses
+            # Integer matches all integer clauses and variable clauses (type-based)
             candidates |= pred_idx.int_ids
             candidates |= pred_idx.var_ids
         elif isinstance(first_arg, PrologList):
@@ -194,7 +194,7 @@ def analyze_first_arg(head: Term, store: Store) -> Union[str, Tuple[str, str, in
         - "var" for variable first arguments
         - "empty_list" for the empty list []
         - "list_nonempty" for non-empty lists [H|T]
-        - "int" for integer first arguments
+        - "int" for integer first arguments (type-based)
         - ("atom", name, 0) for atoms (treated as 0-arity structures)
         - ("struct", functor, arity) for compound structures
     """
@@ -214,7 +214,7 @@ def analyze_first_arg(head: Term, store: Store) -> Union[str, Tuple[str, str, in
     if isinstance(first_arg, Var):
         return "var"
     
-    # Check integer (positive or negative)
+    # Check integer (positive or negative) - type-based indexing
     if isinstance(first_arg, Int):
         return "int"
     
