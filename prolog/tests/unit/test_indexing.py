@@ -1095,3 +1095,297 @@ class TestStreamingSemantics:
         iter1 = idx.select(("p", 1), goal, store)
         iter2 = idx.select(("p", 1), goal, store)
         assert iter1 is not iter2
+
+
+class TestPhase3TypeDetection:
+    """Phase 3: Enhanced type detection tests for all term types."""
+    
+    def test_detect_atom_type_comprehensive(self):
+        """Comprehensive atom type detection."""
+        store = Store()
+        
+        # Regular atoms
+        head = Struct("p", (Atom("hello"),))
+        assert analyze_first_arg(head, store) == ("atom", "hello", 0)
+        
+        head = Struct("q", (Atom("world"),))
+        assert analyze_first_arg(head, store) == ("atom", "world", 0)
+        
+        # Atom with special characters
+        head = Struct("r", (Atom("foo_bar"),))
+        assert analyze_first_arg(head, store) == ("atom", "foo_bar", 0)
+    
+    def test_detect_struct_type_comprehensive(self):
+        """Comprehensive struct type detection."""
+        store = Store()
+        
+        # Simple struct
+        head = Struct("p", (Struct("f", (Int(1),)),))
+        assert analyze_first_arg(head, store) == ("struct", "f", 1)
+        
+        # Struct with multiple arguments
+        head = Struct("p", (Struct("g", (Int(1), Atom("a"), Int(2))),))
+        assert analyze_first_arg(head, store) == ("struct", "g", 3)
+        
+        # Zero-arity struct (different from atom)
+        head = Struct("p", (Struct("h", ()),))
+        assert analyze_first_arg(head, store) == ("struct", "h", 0)
+    
+    def test_detect_all_integer_variants(self):
+        """Test detection of positive, negative, and zero integers."""
+        store = Store()
+        
+        # Positive
+        head = Struct("p", (Int(42),))
+        assert analyze_first_arg(head, store) == "int"
+        
+        # Negative
+        head = Struct("p", (Int(-17),))
+        assert analyze_first_arg(head, store) == "int"
+        
+        # Zero
+        head = Struct("p", (Int(0),))
+        assert analyze_first_arg(head, store) == "int"
+        
+        # Large positive
+        head = Struct("p", (Int(1000000),))
+        assert analyze_first_arg(head, store) == "int"
+        
+        # Large negative  
+        head = Struct("p", (Int(-1000000),))
+        assert analyze_first_arg(head, store) == "int"
+
+
+class TestPhase3ListSeparation:
+    """Phase 3: Enhanced tests for empty vs non-empty list separation."""
+    
+    def test_empty_list_forms_all_go_to_same_bucket(self):
+        """All empty list representations go to the same bucket."""
+        clauses = [
+            Clause(Struct("p", (Atom("[]"),)), Atom("empty1")),           # Atom form
+            Clause(Struct("p", (List((), None),)), Atom("empty2")),       # PrologList form
+            Clause(Struct("p", (List((), Atom("[]")),)), Atom("empty3")), # PrologList with [] tail
+        ]
+        
+        idx = build_from_clauses(clauses)
+        pred_idx = idx.preds[("p", 1)]
+        
+        # All should be in empty_list_ids
+        assert 0 in pred_idx.empty_list_ids
+        assert 1 in pred_idx.empty_list_ids
+        assert 2 in pred_idx.empty_list_ids
+        
+        # None should be in other buckets
+        assert len(pred_idx.list_nonempty_ids) == 0
+        assert len(pred_idx.struct_functor) == 0
+    
+    def test_canonical_dot_form_is_nonempty_list(self):
+        """Canonical '.'/2 structure is recognized as non-empty list."""
+        clauses = [
+            Clause(Struct("p", (Struct(".", (Int(1), Atom("[]"))),)), Atom("dot1")),
+            Clause(Struct("p", (Struct(".", (Atom("a"), Struct(".", (Atom("b"), Atom("[]"))))),)), Atom("dot2")),
+            Clause(Struct("p", (List((Int(1),), None),)), Atom("list1")),
+        ]
+        
+        idx = build_from_clauses(clauses)
+        pred_idx = idx.preds[("p", 1)]
+        
+        # All should be in list_nonempty_ids
+        assert 0 in pred_idx.list_nonempty_ids
+        assert 1 in pred_idx.list_nonempty_ids
+        assert 2 in pred_idx.list_nonempty_ids
+        
+        # '.'/2 should NOT be in struct_functor
+        assert (".", 2) not in pred_idx.struct_functor
+    
+    def test_list_separation_with_variables(self):
+        """Variable clauses match both empty and non-empty lists."""
+        clauses = [
+            Clause(Struct("p", (Var(0, "X"),)), Atom("var1")),
+            Clause(Struct("p", (Atom("[]"),)), Atom("empty")),
+            Clause(Struct("p", (List((Int(1),), None),)), Atom("nonempty")),
+            Clause(Struct("p", (Var(1, "Y"),)), Atom("var2")),
+        ]
+        
+        idx = build_from_clauses(clauses)
+        store = Store()
+        
+        # Query with empty list
+        goal = Struct("p", (Atom("[]"),))
+        results = list(idx.select(("p", 1), goal, store))
+        bodies = [r.body.name for r in results]
+        assert bodies == ["var1", "empty", "var2"]  # Both vars and empty
+        
+        # Query with non-empty list
+        goal = Struct("p", (List((Int(1),), None),))
+        results = list(idx.select(("p", 1), goal, store))
+        bodies = [r.body.name for r in results]
+        assert bodies == ["var1", "nonempty", "var2"]  # Both vars and nonempty
+
+
+class TestPhase3FunctorDiscrimination:
+    """Phase 3: Enhanced functor/arity discrimination tests."""
+    
+    def test_functor_arity_combinations(self):
+        """Test all combinations of functor/arity discrimination."""
+        clauses = [
+            Clause(Struct("p", (Struct("f", ()),)), Atom("f0")),
+            Clause(Struct("p", (Struct("f", (Int(1),)),)), Atom("f1")),
+            Clause(Struct("p", (Struct("f", (Int(1), Int(2))),)), Atom("f2")),
+            Clause(Struct("p", (Struct("g", ()),)), Atom("g0")),
+            Clause(Struct("p", (Struct("g", (Int(1),)),)), Atom("g1")),
+        ]
+        
+        idx = build_from_clauses(clauses)
+        pred_idx = idx.preds[("p", 1)]
+        
+        # Check correct bucket assignment
+        assert 0 in pred_idx.struct_functor[("f", 0)]
+        assert 1 in pred_idx.struct_functor[("f", 1)]
+        assert 2 in pred_idx.struct_functor[("f", 2)]
+        assert 3 in pred_idx.struct_functor[("g", 0)]
+        assert 4 in pred_idx.struct_functor[("g", 1)]
+        
+        # Verify each functor/arity has exactly its clauses
+        assert pred_idx.struct_functor[("f", 0)] == {0}
+        assert pred_idx.struct_functor[("f", 1)] == {1}
+        assert pred_idx.struct_functor[("f", 2)] == {2}
+        assert pred_idx.struct_functor[("g", 0)] == {3}
+        assert pred_idx.struct_functor[("g", 1)] == {4}
+    
+    def test_functors_never_cross_match(self):
+        """Different functors never match even with same arity."""
+        clauses = [
+            Clause(Struct("p", (Struct("foo", (Int(1),)),)), Atom("foo1")),
+            Clause(Struct("p", (Struct("bar", (Int(1),)),)), Atom("bar1")),
+            Clause(Struct("p", (Struct("baz", (Int(1),)),)), Atom("baz1")),
+        ]
+        
+        idx = build_from_clauses(clauses)
+        store = Store()
+        
+        # Query for foo/1 should only match foo/1
+        goal = Struct("p", (Struct("foo", (Int(2),)),))
+        results = list(idx.select(("p", 1), goal, store))
+        assert len(results) == 1
+        assert results[0].body.name == "foo1"
+        
+        # Query for bar/1 should only match bar/1
+        goal = Struct("p", (Struct("bar", (Int(2),)),))
+        results = list(idx.select(("p", 1), goal, store))
+        assert len(results) == 1
+        assert results[0].body.name == "bar1"
+
+
+class TestPhase3PredicateIsolation:
+    """Phase 3: Enhanced predicate isolation tests."""
+    
+    def test_interleaved_predicates_maintain_isolation(self):
+        """Interleaved predicate definitions maintain complete isolation."""
+        clauses = [
+            Clause(Struct("p", (Int(1),)), Atom("p1")),
+            Clause(Struct("q", (Int(1),)), Atom("q1")),
+            Clause(Struct("r", (Int(1),)), Atom("r1")),
+            Clause(Struct("p", (Int(2),)), Atom("p2")),
+            Clause(Struct("q", (Int(2),)), Atom("q2")),
+            Clause(Struct("r", (Int(2),)), Atom("r2")),
+        ]
+        
+        idx = build_from_clauses(clauses)
+        
+        # Each predicate should have exactly 2 clauses
+        assert len(idx.preds[("p", 1)].order) == 2
+        assert len(idx.preds[("q", 1)].order) == 2
+        assert len(idx.preds[("r", 1)].order) == 2
+        
+        # Clause IDs should be independent per predicate
+        assert idx.preds[("p", 1)].order == [0, 1]
+        assert idx.preds[("q", 1)].order == [0, 1]
+        assert idx.preds[("r", 1)].order == [0, 1]
+    
+    def test_same_name_different_arity_complete_isolation(self):
+        """Same predicate name with different arities are completely isolated."""
+        clauses = [
+            Clause(Atom("test"), Atom("test0")),                                    # test/0
+            Clause(Struct("test", (Int(1),)), Atom("test1")),                      # test/1  
+            Clause(Struct("test", (Int(1), Int(2))), Atom("test2")),              # test/2
+            Clause(Struct("test", (Int(1), Int(2), Int(3))), Atom("test3")),      # test/3
+        ]
+        
+        idx = build_from_clauses(clauses)
+        store = Store()
+        
+        # Query test/1 should only get test/1 clause
+        goal = Struct("test", (Int(5),))
+        results = list(idx.select(("test", 1), goal, store))
+        assert len(results) == 1
+        assert results[0].body.name == "test1"
+        
+        # Query test/2 should only get test/2 clause
+        goal = Struct("test", (Int(5), Int(6)))
+        results = list(idx.select(("test", 2), goal, store))
+        assert len(results) == 1
+        assert results[0].body.name == "test2"
+
+
+class TestPhase3TypeSwitching:
+    """Phase 3: Comprehensive type switching tests."""
+    
+    def test_type_switching_completeness(self):
+        """Test that type switching correctly filters all type combinations."""
+        clauses = [
+            Clause(Struct("p", (Var(0, "X"),)), Atom("var")),
+            Clause(Struct("p", (Int(42),)), Atom("int")),
+            Clause(Struct("p", (Atom("hello"),)), Atom("atom")),
+            Clause(Struct("p", (Atom("[]"),)), Atom("empty_list")),
+            Clause(Struct("p", (List((Int(1),), None),)), Atom("nonempty_list")),
+            Clause(Struct("p", (Struct("f", (Int(1),)),)), Atom("struct")),
+        ]
+        
+        idx = build_from_clauses(clauses)
+        store = Store()
+        
+        # Type-specific queries and their expected matches
+        test_cases = [
+            (Int(100), ["var", "int"]),                            # Integer query
+            (Atom("hello"), ["var", "atom"]),                      # Exact atom match
+            (Atom("world"), ["var"]),                              # Non-matching atom
+            (Atom("[]"), ["var", "empty_list"]),                   # Empty list
+            (List((Int(2),), None), ["var", "nonempty_list"]),    # Non-empty list
+            (Struct("f", (Int(2),)), ["var", "struct"]),          # Matching functor
+            (Struct("g", (Int(1),)), ["var"]),                    # Non-matching functor
+        ]
+        
+        for query_arg, expected_bodies in test_cases:
+            goal = Struct("p", (query_arg,))
+            results = list(idx.select(("p", 1), goal, store))
+            bodies = [r.body.name for r in results]
+            assert bodies == expected_bodies, f"For {query_arg}, expected {expected_bodies}, got {bodies}"
+    
+    def test_mixed_type_source_order(self):
+        """Mixed types preserve exact source order."""
+        clauses = [
+            Clause(Struct("p", (Int(1),)), Atom("int1")),
+            Clause(Struct("p", (Atom("a"),)), Atom("atom1")),
+            Clause(Struct("p", (Var(0, "X"),)), Atom("var1")),
+            Clause(Struct("p", (List((), Atom("[]")),)), Atom("empty1")),
+            Clause(Struct("p", (Int(2),)), Atom("int2")),
+            Clause(Struct("p", (Struct("f", (Int(1),)),)), Atom("struct1")),
+            Clause(Struct("p", (Var(1, "Y"),)), Atom("var2")),
+        ]
+        
+        idx = build_from_clauses(clauses)
+        store = Store()
+        
+        # Query with integer - should match integers and variables in source order
+        goal = Struct("p", (Int(3),))
+        results = list(idx.select(("p", 1), goal, store))
+        bodies = [r.body.name for r in results]
+        assert bodies == ["int1", "var1", "int2", "var2"]
+        
+        # Query with unbound variable - should match all in source order
+        vid = store.new_var("Z")
+        goal = Struct("p", (Var(vid, "Z"),))
+        results = list(idx.select(("p", 1), goal, store))
+        bodies = [r.body.name for r in results]
+        assert bodies == ["int1", "atom1", "var1", "empty1", "int2", "struct1", "var2"]
