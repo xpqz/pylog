@@ -31,6 +31,8 @@ class Engine:
         max_solutions: Optional[int] = None,
         trace: bool = False,
         max_steps: Optional[int] = None,
+        use_indexing: bool = False,
+        debug: bool = False,
     ):
         """Initialize engine with a program.
 
@@ -40,9 +42,23 @@ class Engine:
             max_solutions: Maximum number of solutions to find.
             trace: Whether to enable tracing.
             max_steps: Maximum number of steps to execute (for debugging infinite loops).
+            use_indexing: Whether to use first-argument indexing for clause selection.
+            debug: Whether to enable debug instrumentation (e.g., candidate counting).
         """
-        self.program = program
+        # Convert to IndexedProgram if indexing is enabled
+        if use_indexing:
+            from prolog.engine.indexed_program import IndexedProgram
+            self.program = IndexedProgram.from_program(program) if not isinstance(program, IndexedProgram) else program
+        else:
+            self.program = program
+        
+        self.use_indexing = use_indexing
+        self.debug = debug
         self.occurs_check = occurs_check
+        
+        # Debug instrumentation
+        if debug:
+            self._candidates_considered = 0
 
         # Core state - using new runtime types
         self.store = Store()
@@ -84,6 +100,10 @@ class Engine:
 
         # Variable renaming for clause isolation
         self._renamer = VarRenamer(self.store)
+        
+        # Initialize debug counters if needed
+        if self.debug and not hasattr(self, '_candidates_considered'):
+            self._candidates_considered = 0
 
     def reset(self):
         """Reset engine state for reuse."""
@@ -104,6 +124,9 @@ class Engine:
         self._steps_taken = 0
         self._next_frame_id = 0
         self._cut_barrier = None
+        # Reset debug counters if in debug mode
+        if self.debug:
+            self._candidates_considered = 0
         # Exception handling is done via try/except PrologThrow
         # Don't reset ports - they accumulate across runs
 
@@ -137,6 +160,22 @@ class Engine:
         self._builtins[("throw", 1)] = lambda eng, args: eng._builtin_throw(args)
         self._builtins[("catch", 3)] = lambda eng, args: eng._builtin_catch(args)
 
+    def solve(self, goal: Term, max_solutions: Optional[int] = None) -> List[Dict[str, Any]]:
+        """Solve a single goal (convenience method for tests).
+        
+        Args:
+            goal: Single goal term to solve.
+            max_solutions: Maximum number of solutions to find.
+            
+        Returns:
+            List of solution dictionaries mapping variable names to values.
+        """
+        # Reset debug counter at start of each solve
+        if self.debug:
+            self._candidates_considered = 0
+        
+        return self.run([goal], max_solutions)
+    
     def run(
         self, goals: List[Term], max_solutions: Optional[int] = None
     ) -> List[Dict[str, Any]]:
@@ -474,8 +513,32 @@ class Engine:
         # Emit CALL port before processing
         self._port("CALL", f"{functor}/{arity}")
 
-        # Get matching clauses
-        matches = self.program.clauses_for(functor, arity)
+        # Get matching clauses - use indexing if available
+        if self.use_indexing and hasattr(self.program, 'select'):
+            from prolog.engine.indexed_program import IndexedProgram
+            # Use indexed selection
+            pred_key = (functor, arity)
+            matches = list(self.program.select(pred_key, goal.term, self.store))
+            
+            # Track candidates in debug mode
+            if self.debug:
+                self._candidates_considered += len(matches)
+                
+                # Log detailed info if trace is enabled too
+                if self.trace:
+                    total_clauses = len(self.program.clauses_for(functor, arity))
+                    if total_clauses > 0:
+                        self._trace_log.append(
+                            f"pred {functor}/{arity}: considered {len(matches)} of {total_clauses} clauses"
+                        )
+        else:
+            # Fall back to standard clause selection
+            matches = self.program.clauses_for(functor, arity)
+            
+            # Track all candidates in debug mode (no filtering)
+            if self.debug:
+                self._candidates_considered += len(matches)
+        
         cursor = ClauseCursor(matches=matches, functor=functor, arity=arity)
 
         if not cursor.has_more():
