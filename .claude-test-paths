@@ -1,0 +1,17 @@
+# Test Path Configuration for Claude Code
+# This file helps Claude remember where tests should be placed
+
+UNIT_TEST_PATH=prolog/tests/unit
+SCENARIO_TEST_PATH=prolog/tests/scenarios
+
+# IMPORTANT RULES:
+# - All unit tests MUST go in prolog/tests/unit/
+# - All scenario tests MUST go in prolog/tests/scenarios/
+# - NEVER create tests/ at the repository root
+# - Always use the full path starting with prolog/
+# - Test files should be named test_*.py
+
+# Examples:
+# CORRECT: prolog/tests/unit/test_indexing.py
+# WRONG:   tests/unit/test_indexing.py
+# WRONG:   test_indexing.py

@@ -2,6 +2,13 @@
 
 **KEY RULE**: NEVER CLAIM THAT SOMETHING IS COMPLETE IF THERE ARE REGRESSIONS. RUN THE FULL TEST SUITE BEFORE AND AFTER EACH WORK UNIT. 
 
+## Test Locations
+- **CRITICAL**: Unit tests MUST be placed in `prolog/tests/unit/` (NOT in `tests/unit/`)
+- Always use the full path starting with `prolog/`
+- Test files should be named `test_*.py`
+- Scenario tests go in `prolog/tests/scenarios/`
+- NEVER create a `tests/` directory at the repository root
+
 ## Developing in Python 
 
 - Never do "fallback" programming in terms of requirements: if you expect module A, fail immediately if it's not present.
