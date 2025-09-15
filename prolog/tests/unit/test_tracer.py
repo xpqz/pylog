@@ -184,6 +184,79 @@ class TestTraceEvent:
         # Also check that the class has __slots__
         assert hasattr(type(event), '__slots__')
 
+    def test_trace_event_port_validation(self):
+        """TraceEvent validates port values."""
+        # Valid ports should work
+        for port in ["call", "exit", "redo", "fail"]:
+            event = TraceEvent(
+                version=1,
+                run_id="test",
+                step_id=1,
+                port=port,
+                goal=Atom("true"),
+                goal_pretty="true",
+                goal_canonical="true",
+                frame_depth=0,
+                cp_depth=0,
+                goal_height=1,
+                write_stamp=1,
+                pred_id="true/0"
+            )
+            assert event.port == port
+
+        # Invalid port should raise
+        with pytest.raises(ValueError, match="invalid port"):
+            TraceEvent(
+                version=1,
+                run_id="test",
+                step_id=1,
+                port="invalid",
+                goal=Atom("true"),
+                goal_pretty="true",
+                goal_canonical="true",
+                frame_depth=0,
+                cp_depth=0,
+                goal_height=1,
+                write_stamp=1,
+                pred_id="true/0"
+            )
+
+    def test_trace_event_negative_validation(self):
+        """TraceEvent validates non-negative fields."""
+        # Negative step_id should raise
+        with pytest.raises(ValueError, match="step_id must be >= 0"):
+            TraceEvent(
+                version=1,
+                run_id="test",
+                step_id=-1,
+                port="call",
+                goal=Atom("true"),
+                goal_pretty="true",
+                goal_canonical="true",
+                frame_depth=0,
+                cp_depth=0,
+                goal_height=1,
+                write_stamp=1,
+                pred_id="true/0"
+            )
+
+        # Negative depths should raise
+        with pytest.raises(ValueError, match="depths/heights/write_stamp must be non-negative"):
+            TraceEvent(
+                version=1,
+                run_id="test",
+                step_id=1,
+                port="call",
+                goal=Atom("true"),
+                goal_pretty="true",
+                goal_canonical="true",
+                frame_depth=-1,
+                cp_depth=0,
+                goal_height=1,
+                write_stamp=1,
+                pred_id="true/0"
+            )
+
 
 class TestPortsTracer:
     """Tests for PortsTracer class."""

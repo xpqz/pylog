@@ -240,6 +240,10 @@ class Engine:
         # Reset step counter for new query
         self._steps_taken = 0
 
+        # Reset tracer for new query run
+        if self.tracer:
+            self.tracer._reset_for_new_run()
+
         # Push initial goals (in reverse for left-to-right execution)
         for goal in reversed(renamed_goals):
             g = Goal.from_term(goal)
@@ -274,6 +278,10 @@ class Engine:
                 # Trace if enabled
                 if self.trace:
                     self._trace_log.append(f"Goal: {goal.term}")
+
+                # Emit CALL port for tracer
+                if self.tracer and goal.term:
+                    self.tracer.emit_event("call", goal.term)
 
                 # Dispatch based on goal type
                 if goal.type == GoalType.PREDICATE:
@@ -526,6 +534,10 @@ class Engine:
 
         # Emit CALL port before processing
         self._port("CALL", f"{functor}/{arity}")
+
+        # Also emit to tracer if enabled
+        if self.tracer and goal.term:
+            self.tracer.emit_event("call", goal.term)
 
         # Get matching clauses - use indexing if available
         if self.use_indexing and hasattr(self.program, 'select'):

@@ -6,10 +6,10 @@ when disabled and deterministic output for reproducibility.
 """
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
-from prolog.ast.terms import Term, Atom, Struct
+from prolog.ast.terms import Term, Atom, Struct, Var
 
 if TYPE_CHECKING:
     from prolog.engine.engine import Engine
@@ -37,6 +37,16 @@ class TraceEvent:
     pred_id: str  # Interned "name/arity"
     bindings: Optional[Dict[str, Any]] = None  # Variable bindings (optional)
     monotonic_ns: Optional[int] = None  # For timing (optional)
+
+    def __post_init__(self):
+        """Validate event fields."""
+        allowed_ports = {"call", "exit", "redo", "fail"}
+        if self.port not in allowed_ports:
+            raise ValueError(f"invalid port: {self.port!r}")
+        if self.step_id < 0:
+            raise ValueError("step_id must be >= 0")
+        if self.frame_depth < 0 or self.cp_depth < 0 or self.goal_height < 0 or self.write_stamp < 0:
+            raise ValueError("depths/heights/write_stamp must be non-negative")
 
 
 class PortsTracer:
@@ -99,15 +109,19 @@ class PortsTracer:
         elif isinstance(goal, Struct):
             pred_name = goal.functor
             pred_arity = len(goal.args)
+        elif isinstance(goal, Var):
+            # Variables get a cleaner pred_id
+            pred_name = "var"
+            pred_arity = 0
         else:
-            # Variable or other term type
+            # Other term types
             pred_name = str(goal)
             pred_arity = 0
 
         pred_id = self._intern_pred_id(pred_name, pred_arity)
 
         # Get pretty and canonical forms
-        # For now, use str() - will be enhanced with proper pretty printer
+        # Phase 1: Use str() for both; canonical form will be enhanced in Phase 4+
         goal_pretty = str(goal)
         goal_canonical = str(goal)
 
@@ -161,9 +175,13 @@ class PortsTracer:
         self.step_counter += 1
 
         # Update event with actual step_id
-        from dataclasses import replace
         event = replace(event, step_id=self.step_counter)
 
         # Send to all sinks
         for sink in self.sinks:
             sink.write_event(event)
+
+    def add_sink(self, sink):
+        """Add a sink to the tracer (convenience method)."""
+        self.sinks.append(sink)
+        return sink
