@@ -204,6 +204,16 @@ class TestEngineMetrics:
         with pytest.raises(ValueError):
             metrics.record_candidates(5, -1)
 
+        # Test validation for predicate unification
+        with pytest.raises(ValueError, match="Negative attempted"):
+            metrics.record_predicate_unification("test/1", -1, 0)
+
+        with pytest.raises(ValueError, match="Negative succeeded"):
+            metrics.record_predicate_unification("test/1", 5, -1)
+
+        with pytest.raises(ValueError, match="succeeded .* > attempted"):
+            metrics.record_predicate_unification("test/1", 5, 10)
+
     def test_engine_metrics_per_predicate_tracking(self):
         """Per-predicate metrics are tracked correctly."""
         metrics = EngineMetrics()

@@ -153,6 +153,13 @@ class EngineMetrics:
 
     def record_predicate_unification(self, pred_id: str, attempted: int, succeeded: int = 0):
         """Record unifications for a specific predicate."""
+        if attempted < 0:
+            raise ValueError(f"Negative attempted unifications: {attempted}")
+        if succeeded < 0:
+            raise ValueError(f"Negative succeeded unifications: {succeeded}")
+        if succeeded > attempted:
+            raise ValueError(f"succeeded ({succeeded}) > attempted ({attempted})")
+
         self._ensure_predicate(pred_id)
         # Store attempted count (not succeeded for per-predicate)
         self._pred_metrics[pred_id]["unifications"] += attempted
