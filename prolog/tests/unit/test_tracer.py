@@ -258,7 +258,7 @@ class TestPortsTracer:
         # Intern a predicate ID
         pred_id = tracer._intern_pred_id("append", 3)
         assert pred_id == "append/3"
-        assert "append/3" in tracer._pred_id_cache
+        assert ("append", 3) in tracer._pred_id_cache
 
         # Same predicate should return cached value (same string)
         pred_id2 = tracer._intern_pred_id("append", 3)

@@ -51,7 +51,7 @@ class Engine:
             self.program = IndexedProgram.from_program(program) if not isinstance(program, IndexedProgram) else program
         else:
             self.program = program
-        
+
         self.use_indexing = use_indexing
         self.debug = debug
         self.occurs_check = occurs_check
@@ -62,6 +62,9 @@ class Engine:
         self.goal_stack = GoalStack()
         self.frame_stack: List[Frame] = []
         self.cp_stack: List[Choicepoint] = []
+
+        # Add choicepoints alias for tracer compatibility
+        self.choicepoints = self.cp_stack
 
         # Query tracking with fast lookups
         self._query_vars: List[Tuple[int, str]] = []  # [(varid, name), ...] for order
@@ -79,6 +82,9 @@ class Engine:
         self.max_steps = max_steps  # Step budget for infinite loop detection
         self._steps_taken = 0  # Counter for steps executed
 
+        # Add write_stamp for tracer
+        self.write_stamp = 0
+
         # Builtin registry: maps (name, arity) -> callable
         self._builtins = {}
         self._register_builtins()
@@ -88,7 +94,7 @@ class Engine:
         self._debug_trail_writes = 0
         self._next_frame_id = 0  # Monotonic frame ID counter
         self._cut_barrier = None  # Legacy field for tests
-        
+
         # Exception handling is done via try/except PrologThrow
 
         # Debug ports for tracing
@@ -96,10 +102,17 @@ class Engine:
 
         # Variable renaming for clause isolation
         self._renamer = VarRenamer(self.store)
-        
+
         # Initialize debug counter if debug mode is enabled
         if self.debug:
             self._candidates_considered = 0
+
+        # Initialize tracer if trace=True
+        if trace:
+            from prolog.debug.tracer import PortsTracer
+            self.tracer = PortsTracer(self)
+        else:
+            self.tracer = None
 
     def reset(self):
         """Reset engine state for reuse."""
@@ -125,6 +138,11 @@ class Engine:
             self._candidates_considered = 0
         # Exception handling is done via try/except PrologThrow
         # Don't reset ports - they accumulate across runs
+
+    def _trace_port(self, port: str, goal: Term):
+        """Emit a trace event if tracing is enabled."""
+        if self.tracer:
+            self.tracer.emit_event(port, goal)
 
     def _register_builtins(self):
         """Register all builtin predicates.
