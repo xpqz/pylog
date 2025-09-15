@@ -1,851 +1,452 @@
-diff --git a/prolog/engine/engine.py b/prolog/engine/engine.py
-index 7b4bced..e595e17 100644
---- a/prolog/engine/engine.py
-+++ b/prolog/engine/engine.py
-@@ -31,6 +31,8 @@ def __init__(
-         max_solutions: Optional[int] = None,
-         trace: bool = False,
-         max_steps: Optional[int] = None,
-+        use_indexing: bool = False,
-+        debug: bool = False,
-     ):
-         """Initialize engine with a program.
- 
-@@ -40,9 +42,23 @@ def __init__(
-             max_solutions: Maximum number of solutions to find.
-             trace: Whether to enable tracing.
-             max_steps: Maximum number of steps to execute (for debugging infinite loops).
-+            use_indexing: Whether to use first-argument indexing for clause selection.
-+            debug: Whether to enable debug instrumentation (e.g., candidate counting).
-         """
--        self.program = program
-+        # Convert to IndexedProgram if indexing is enabled
-+        if use_indexing:
-+            from prolog.engine.indexed_program import IndexedProgram
-+            self.program = IndexedProgram.from_program(program) if not isinstance(program, IndexedProgram) else program
-+        else:
-+            self.program = program
-+        
-+        self.use_indexing = use_indexing
-+        self.debug = debug
-         self.occurs_check = occurs_check
-+        
-+        # Debug instrumentation
-+        if debug:
-+            self._candidates_considered = 0
- 
-         # Core state - using new runtime types
-         self.store = Store()
-@@ -84,6 +100,10 @@ def __init__(
- 
-         # Variable renaming for clause isolation
-         self._renamer = VarRenamer(self.store)
-+        
-+        # Initialize debug counters if needed
-+        if self.debug and not hasattr(self, '_candidates_considered'):
-+            self._candidates_considered = 0
- 
-     def reset(self):
-         """Reset engine state for reuse."""
-@@ -104,6 +124,9 @@ def reset(self):
-         self._steps_taken = 0
-         self._next_frame_id = 0
-         self._cut_barrier = None
-+        # Reset debug counters if in debug mode
-+        if self.debug:
-+            self._candidates_considered = 0
-         # Exception handling is done via try/except PrologThrow
-         # Don't reset ports - they accumulate across runs
- 
-@@ -137,6 +160,22 @@ def _register_builtins(self):
-         self._builtins[("throw", 1)] = lambda eng, args: eng._builtin_throw(args)
-         self._builtins[("catch", 3)] = lambda eng, args: eng._builtin_catch(args)
- 
-+    def solve(self, goal: Term, max_solutions: Optional[int] = None) -> List[Dict[str, Any]]:
-+        """Solve a single goal (convenience method for tests).
-+        
-+        Args:
-+            goal: Single goal term to solve.
-+            max_solutions: Maximum number of solutions to find.
-+            
-+        Returns:
-+            List of solution dictionaries mapping variable names to values.
-+        """
-+        # Reset debug counter at start of each solve
-+        if self.debug:
-+            self._candidates_considered = 0
-+        
-+        return self.run([goal], max_solutions)
-+    
-     def run(
-         self, goals: List[Term], max_solutions: Optional[int] = None
-     ) -> List[Dict[str, Any]]:
-@@ -474,8 +513,32 @@ def _dispatch_predicate(self, goal: Goal) -> bool:
-         # Emit CALL port before processing
-         self._port("CALL", f"{functor}/{arity}")
- 
--        # Get matching clauses
--        matches = self.program.clauses_for(functor, arity)
-+        # Get matching clauses - use indexing if available
-+        if self.use_indexing and hasattr(self.program, 'select'):
-+            from prolog.engine.indexed_program import IndexedProgram
-+            # Use indexed selection
-+            pred_key = (functor, arity)
-+            matches = list(self.program.select(pred_key, goal.term, self.store))
-+            
-+            # Track candidates in debug mode
-+            if self.debug:
-+                self._candidates_considered += len(matches)
-+                
-+                # Log detailed info if trace is enabled too
-+                if self.trace:
-+                    total_clauses = len(self.program.clauses_for(functor, arity))
-+                    if total_clauses > 0:
-+                        self._trace_log.append(
-+                            f"pred {functor}/{arity}: considered {len(matches)} of {total_clauses} clauses"
-+                        )
-+        else:
-+            # Fall back to standard clause selection
-+            matches = self.program.clauses_for(functor, arity)
-+            
-+            # Track all candidates in debug mode (no filtering)
-+            if self.debug:
-+                self._candidates_considered += len(matches)
-+        
-         cursor = ClauseCursor(matches=matches, functor=functor, arity=arity)
- 
-         if not cursor.has_more():
-diff --git a/prolog/engine/indexed_program.py b/prolog/engine/indexed_program.py
+diff --git a/prolog/tests/benchmarks/__init__.py b/prolog/tests/benchmarks/__init__.py
 new file mode 100644
-index 0000000..ab8b9d8
+index 0000000..b47c2c6
 --- /dev/null
-+++ b/prolog/engine/indexed_program.py
-@@ -0,0 +1,115 @@
-+"""
-+IndexedProgram wrapper for Engine integration with indexing.
-+
-+This module provides a bridge between ClauseIndex and the Engine's
-+expected Program interface, enabling transparent indexing integration.
-+"""
-+
-+from typing import List, Iterator, Optional, Tuple
-+from prolog.ast.terms import Term, Struct, Atom
-+from prolog.ast.clauses import Clause, Program
-+from prolog.engine.indexing import ClauseIndex, build_from_clauses
-+from prolog.unify.store import Store
-+
-+
-+class IndexedProgram:
-+    """
-+    Wrapper that provides Program-like interface over an indexed clause set.
-+    
-+    This allows the Engine to use indexing transparently by replacing
-+    the Program with an IndexedProgram when use_indexing=True.
-+    """
-+    
-+    def __init__(self, clauses, index: Optional[ClauseIndex] = None):
-+        """
-+        Initialize IndexedProgram with clauses and optional pre-built index.
-+        
-+        Args:
-+            clauses: List or tuple of clauses
-+            index: Optional pre-built ClauseIndex, will build if not provided
-+        """
-+        self.clauses = tuple(clauses) if not isinstance(clauses, tuple) else clauses
-+        self._index = index if index is not None else build_from_clauses(list(clauses))
-+    
-+    @classmethod
-+    def from_clauses(cls, clauses: List[Clause]) -> "IndexedProgram":
-+        """
-+        Create IndexedProgram from a list of clauses.
-+        
-+        Args:
-+            clauses: List of clauses to index
-+            
-+        Returns:
-+            New IndexedProgram with built index
-+        """
-+        return cls(tuple(clauses))
-+    
-+    @classmethod
-+    def from_program(cls, program: Program) -> "IndexedProgram":
-+        """
-+        Convert an existing Program to IndexedProgram.
-+        
-+        Args:
-+            program: Program to convert
-+            
-+        Returns:
-+            New IndexedProgram with same clauses
-+        """
-+        return cls(program.clauses)
-+    
-+    def clauses_for(self, functor: str, arity: int) -> List[int]:
-+        """
-+        Return indices of clauses matching functor/arity.
-+        
-+        This method maintains compatibility with Program.clauses_for()
-+        by returning clause indices in source order.
-+        
-+        Args:
-+            functor: The predicate name
-+            arity: The number of arguments
-+            
-+        Returns:
-+            List of clause indices in source order
-+        """
-+        # Build list of matching clause indices
-+        pred_key = (functor, arity)
-+        
-+        # For compatibility, we need to return global clause indices
-+        # We'll iterate through all clauses and collect matching indices
-+        result = []
-+        for i, clause in enumerate(self.clauses):
-+            head = clause.head
-+            if isinstance(head, Atom):
-+                if head.name == functor and arity == 0:
-+                    result.append(i)
-+            elif isinstance(head, Struct):
-+                if head.functor == functor and len(head.args) == arity:
-+                    result.append(i)
-+        
-+        return result
-+    
-+    def select(self, pred_key: Tuple[str, int], goal: Term, store: Store) -> Iterator[int]:
-+        """
-+        Select clause indices using indexing.
-+        
-+        This method uses the ClauseIndex to efficiently select matching
-+        clauses and returns their indices in source order.
-+        
-+        Args:
-+            pred_key: (predicate_name, arity) tuple
-+            goal: The goal term to match
-+            store: Store for dereferencing variables
-+            
-+        Yields:
-+            Clause indices that match the goal
-+        """
-+        # Use the index to get matching clauses
-+        matching_clauses = self._index.select(pred_key, goal, store)
-+        
-+        # We need to convert clauses back to indices
-+        # Build a clause-to-index map for efficiency
-+        clause_to_idx = {clause: i for i, clause in enumerate(self.clauses)}
-+        
-+        for clause in matching_clauses:
-+            if clause in clause_to_idx:
-+                yield clause_to_idx[clause]
++++ b/prolog/tests/benchmarks/__init__.py
+@@ -0,0 +1 @@
++"""Performance benchmarks for PyLog Stage 2 indexing."""
 \ No newline at end of file
-diff --git a/prolog/engine/indexing.py b/prolog/engine/indexing.py
-index 81c046b..10d2265 100644
---- a/prolog/engine/indexing.py
-+++ b/prolog/engine/indexing.py
-@@ -34,7 +34,7 @@ class PredIndex:
-         'order',              # List[int]: clause IDs in source order
-         'var_ids',            # Set[int]: clauses with variable first arg
-         'empty_list_ids',     # Set[int]: clauses with [] first arg
--        'int_ids',            # Set[int]: clauses with integer first arg
-+        'int_ids',            # Set[int]: clauses with integer first arg (type-based)
-         'list_nonempty_ids',  # Set[int]: clauses with [H|T] first arg
-         'struct_functor',     # Dict[FunctorKey, Set[ClauseID]]: (functor, arity) -> clause IDs
-         'float_ids',          # Set[int]: placeholder for future float support
-@@ -45,7 +45,7 @@ def __init__(self):
-         self.order: List[int] = []
-         self.var_ids: Set[int] = set()
-         self.empty_list_ids: Set[int] = set()
--        self.int_ids: Set[int] = set()
-+        self.int_ids: Set[int] = set()  # Type-based indexing for integers
-         self.list_nonempty_ids: Set[int] = set()
-         self.struct_functor: Dict[FunctorKey, Set[ClauseID]] = {}
-         self.float_ids: Set[int] = set()  # Future extension
-@@ -145,7 +145,7 @@ def select(self, pred_key: PredKey, goal: Term, store: Store) -> Iterator[Clause
-         candidates: Set[ClauseID] = set()
-         
-         if isinstance(first_arg, Int):
--            # Integer matches integer clauses and variable clauses
-+            # Integer matches all integer clauses and variable clauses (type-based)
-             candidates |= pred_idx.int_ids
-             candidates |= pred_idx.var_ids
-         elif isinstance(first_arg, PrologList):
-@@ -194,7 +194,7 @@ def analyze_first_arg(head: Term, store: Store) -> Union[str, Tuple[str, str, in
-         - "var" for variable first arguments
-         - "empty_list" for the empty list []
-         - "list_nonempty" for non-empty lists [H|T]
--        - "int" for integer first arguments
-+        - "int" for integer first arguments (type-based)
-         - ("atom", name, 0) for atoms (treated as 0-arity structures)
-         - ("struct", functor, arity) for compound structures
-     """
-@@ -214,7 +214,7 @@ def analyze_first_arg(head: Term, store: Store) -> Union[str, Tuple[str, str, in
-     if isinstance(first_arg, Var):
-         return "var"
-     
--    # Check integer (positive or negative)
-+    # Check integer (positive or negative) - type-based indexing
-     if isinstance(first_arg, Int):
-         return "int"
-     
-diff --git a/prolog/tests/unit/test_engine_indexing_integration.py b/prolog/tests/unit/test_engine_indexing_integration.py
+diff --git a/prolog/tests/benchmarks/test_indexing_performance.py b/prolog/tests/benchmarks/test_indexing_performance.py
 new file mode 100644
-index 0000000..6d6d853
+index 0000000..2bed8b0
 --- /dev/null
-+++ b/prolog/tests/unit/test_engine_indexing_integration.py
-@@ -0,0 +1,556 @@
++++ b/prolog/tests/benchmarks/test_indexing_performance.py
+@@ -0,0 +1,437 @@
 +"""
-+Tests for Engine Integration with Indexing (Stage 2, Phase 4).
-+
-+This test suite validates:
-+1. IndexedProgram wrapper functionality
-+2. Engine integration with indexing
-+3. Backward compatibility
-+4. Semantic preservation
-+5. Debug instrumentation
-+
-+NOTE: These tests follow TDD - they define the expected behavior.
-+The IndexedProgram class and Engine modifications need to be implemented.
++Performance benchmarks for Stage 2 indexing.
++Tests verify expected speedups from indexing.
 +"""
 +
 +import pytest
-+from typing import List, Dict, Any, Optional, Iterator
-+from prolog.ast.terms import Atom, Int, Var, Struct, List as PrologList
++import time
++import sys
++from typing import List, Tuple, Dict, Any
++from statistics import median
++
++from prolog.ast.terms import Atom, Int, Struct
 +from prolog.ast.clauses import Clause, Program
 +from prolog.engine.engine import Engine
-+from prolog.engine.indexing import ClauseIndex, build_from_clauses
-+from prolog.unify.store import Store
++from prolog.parser.reader import Reader
 +
 +
-+# All tests are now implemented - no decorator needed
-+
-+
-+class TestIndexedProgramWrapper:
-+    """Test IndexedProgram wrapper class that bridges ClauseIndex with Engine."""
++@pytest.mark.benchmark
++@pytest.mark.perf
++class TestIndexingPerformance:
++    """Performance benchmarks for indexing speedup validation."""
 +    
-+    def test_indexed_program_wraps_clause_index(self):
-+        """IndexedProgram should wrap a ClauseIndex and provide Program interface."""
-+        from prolog.engine.indexed_program import IndexedProgram
++    def time_query(self, engine: Engine, query: str, warmup: int = 3, runs: int = 5) -> float:
++        """
++        Time a query execution with warmup and multiple runs.
 +        
-+        clauses = [
-+            Clause(Struct("p", (Int(1),)), ()),
-+            Clause(Struct("p", (Int(2),)), ()),
-+            Clause(Struct("q", (Atom("a"),)), ()),
-+        ]
++        Args:
++            engine: Engine to run query on
++            query: Query string to execute
++            warmup: Number of warmup runs
++            runs: Number of timed runs
++            
++        Returns:
++            Median execution time in seconds
++        """
++        # Warmup runs
++        for _ in range(warmup):
++            list(engine.query(query))
 +        
-+        # Build index from clauses
-+        index = build_from_clauses(clauses)
++        # Timed runs
++        times = []
++        for _ in range(runs):
++            start = time.perf_counter()
++            results = list(engine.query(query))
++            end = time.perf_counter()
++            times.append(end - start)
 +        
-+        # Create wrapper that provides Program interface
-+        indexed_prog = IndexedProgram(clauses, index)
-+        
-+        # Should have both clauses and index
-+        assert indexed_prog.clauses == tuple(clauses)
-+        assert indexed_prog._index is index
-+        
-+        # Should provide clauses_for() like Program
-+        assert indexed_prog.clauses_for("p", 1) == [0, 1]
-+        assert indexed_prog.clauses_for("q", 1) == [2]
++        return median(times)
 +    
-+    def test_indexed_program_select_method(self):
-+        """IndexedProgram should provide select() for indexed clause retrieval."""
-+        from prolog.engine.indexed_program import IndexedProgram
-+        
-+        clauses = [
-+            Clause(Struct("p", (Int(1),)), ()),
-+            Clause(Struct("p", (Var(0, "X"),)), ()),
-+            Clause(Struct("p", (Int(2),)), ()),
-+        ]
-+        
-+        indexed_prog = IndexedProgram.from_clauses(clauses)
-+        store = Store()
-+        
-+        # select() returns CANDIDATES (not guaranteed matches) using type-based indexing
-+        goal = Struct("p", (Int(3),))
-+        matches = list(indexed_prog.select(("p", 1), goal, store))
-+        
-+        # Type-based indexing: all integer clauses + var clause are candidates
-+        assert len(matches) == 3
-+        assert matches == [0, 1, 2]  # All clauses in source order
-+        
-+        # Test with goal that matches an existing value
-+        goal2 = Struct("p", (Int(1),))
-+        matches2 = list(indexed_prog.select(("p", 1), goal2, store))
-+        
-+        # Still returns all candidates (type-based, not value-based)
-+        assert len(matches2) == 3
-+        assert matches2 == [0, 1, 2]  # All clauses are candidates
++    def calculate_speedup(self, time_without: float, time_with: float) -> float:
++        """Calculate speedup factor from indexing."""
++        if time_with == 0:
++            return float('inf')
++        return time_without / time_with
 +    
-+    def test_indexed_program_from_program(self):
-+        """Should be able to create IndexedProgram from existing Program."""
-+        from prolog.engine.indexed_program import IndexedProgram
++    def test_large_fact_base_speedup(self):
++        """Test 30x-300x speedup for large fact bases with mid-table queries."""
++        reader = Reader()
 +        
-+        clauses = [
-+            Clause(Struct("fact", (Int(i),)), ())
-+            for i in range(10)
-+        ]
-+        program = Program(tuple(clauses))
++        # Generate large fact base (1000+ facts)
++        num_facts = 2000
++        clauses = []
 +        
-+        # Convert Program to IndexedProgram
-+        indexed_prog = IndexedProgram.from_program(program)
-+        
-+        assert indexed_prog.clauses == program.clauses
-+        assert indexed_prog._index is not None
-+        
-+        # Should still work like a Program
-+        assert indexed_prog.clauses_for("fact", 1) == list(range(10))
-+
-+
-+class TestEngineIndexingIntegration:
-+    """Test Engine's integration with indexing."""
-+    
-+    def test_engine_accepts_use_indexing_parameter(self):
-+        """Engine should accept use_indexing parameter."""
-+        clauses = [
-+            Clause(Struct("p", (Int(1),)), ()),
-+        ]
-+        program = Program(tuple(clauses))
-+        
-+        # Should accept use_indexing=True
-+        engine_indexed = Engine(program, use_indexing=True)
-+        assert hasattr(engine_indexed, 'use_indexing')
-+        assert engine_indexed.use_indexing is True
-+        
-+        # Should accept use_indexing=False (default)
-+        engine_normal = Engine(program, use_indexing=False)
-+        assert engine_normal.use_indexing is False
-+        
-+        # Should default to False when not specified
-+        engine_default = Engine(program)
-+        assert getattr(engine_default, 'use_indexing', False) is False
-+    
-+    def test_engine_creates_indexed_program_when_enabled(self):
-+        """Engine should create IndexedProgram when indexing enabled."""
-+        from prolog.engine.indexed_program import IndexedProgram
-+        
-+        clauses = [
-+            Clause(Struct("p", (Int(1),)), ()),
-+            Clause(Struct("p", (Int(2),)), ()),
-+        ]
-+        program = Program(tuple(clauses))
-+        
-+        engine = Engine(program, use_indexing=True)
-+        
-+        # Engine's program should be IndexedProgram
-+        assert isinstance(engine.program, IndexedProgram)
-+        assert len(engine.program.clauses) == 2
-+    
-+    def test_engine_uses_indexing_for_clause_selection(self):
-+        """Engine should use indexing when selecting clauses if enabled."""
-+        from prolog.engine.indexed_program import IndexedProgram
-+        
-+        # Create a program with many clauses
-+        clauses = [
-+            Clause(Struct("fact", (Int(i),)), ())
-+            for i in range(100)
-+        ]
-+        clauses.append(Clause(Struct("fact", (Var(0, "X"),)), ()))  # Variable clause
++        # Create facts with different first arguments
++        for i in range(num_facts):
++            # Mix of atoms, integers, and structures
++            if i % 3 == 0:
++                head = Struct("fact", (Atom(f"atom_{i}"), Int(i)))
++            elif i % 3 == 1:
++                head = Struct("fact", (Int(i), Atom(f"value_{i}")))
++            else:
++                head = Struct("fact", (Struct("f", (Int(i),)), Atom(f"data_{i}")))
++            clauses.append(Clause(head, ()))
 +        
 +        program = Program(tuple(clauses))
 +        
-+        # With indexing
-+        engine_indexed = Engine(program, use_indexing=True, debug=True)
-+        solutions_indexed = list(engine_indexed.solve(Struct("fact", (Int(50),))))
++        # Test mid-table query (looking for fact in middle of database)
++        mid_query = f"fact(atom_{num_facts // 2}, X)"
 +        
-+        # Without indexing
-+        engine_normal = Engine(program, use_indexing=False)
-+        solutions_normal = list(engine_normal.solve(Struct("fact", (Int(50),))))
++        # Time without indexing
++        engine_no_idx = Engine(program, use_indexing=False)
++        time_no_idx = self.time_query(engine_no_idx, mid_query)
 +        
-+        # Should get same result (fact(50) matches both fact(50) and fact(X))
-+        assert len(solutions_indexed) == len(solutions_normal) == 2
-+        
-+        # With indexing, should have considered fewer candidates than without
-+        # Type-based indexing: all 100 integer clauses + 1 var clause = 101 candidates
-+        if hasattr(engine_indexed, '_candidates_considered'):
-+            # Should look at all integer-typed clauses + var clause
-+            assert engine_indexed._candidates_considered == 101
-+            # Without indexing would check all 101 sequentially
-+    
-+    def test_engine_no_double_wrapping(self):
-+        """Engine should not double-wrap an already indexed program."""
-+        from prolog.engine.indexed_program import IndexedProgram
-+        
-+        clauses = [
-+            Clause(Struct("p", (Int(1),)), ()),
-+        ]
-+        
-+        # Create an IndexedProgram
-+        indexed_prog = IndexedProgram.from_clauses(clauses)
-+        
-+        # Pass it to Engine with use_indexing=True
-+        engine = Engine(indexed_prog, use_indexing=True)
-+        
-+        # Should use the same IndexedProgram, not wrap it again
-+        assert engine.program is indexed_prog
-+
-+
-+class TestBackwardCompatibility:
-+    """Test that indexing doesn't break existing functionality."""
-+    
-+    def test_engine_works_without_indexing_by_default(self):
-+        """Engine should work without any indexing changes (backward compatible)."""
-+        clauses = [
-+            Clause(Struct("fact", (Int(1),)), ()),
-+            Clause(Struct("fact", (Int(2),)), ()),
-+            Clause(Struct("fact", (Int(3),)), ()),
-+        ]
-+        program = Program(tuple(clauses))
-+        
-+        # Default engine (no use_indexing parameter)
-+        engine = Engine(program)
-+        
-+        # Should work normally
-+        solutions = list(engine.solve(Struct("fact", (Var(0, "X"),))))
-+        assert len(solutions) == 3
-+        
-+        # Check solution values
-+        assert solutions[0]["X"] == Int(1)
-+        assert solutions[1]["X"] == Int(2)
-+        assert solutions[2]["X"] == Int(3)
-+    
-+    def test_existing_tests_still_pass(self):
-+        """All existing Stage 1 and 1.5 tests should pass unchanged."""
-+        # Test basic unification
-+        clauses = [
-+            Clause(Struct("unify", (Var(0, "X"), Var(0, "X"))), ()),
-+        ]
-+        program = Program(tuple(clauses))
-+        engine = Engine(program)  # No indexing parameter
-+        
-+        goal = Struct("unify", (Int(5), Int(5)))
-+        solutions = list(engine.solve(goal))
-+        assert len(solutions) == 1
-+        
-+        # Test backtracking
-+        clauses = [
-+            Clause(Struct("choice", (Int(1),)), ()),
-+            Clause(Struct("choice", (Int(2),)), ()),
-+            Clause(Struct("choice", (Int(3),)), ()),
-+        ]
-+        program = Program(tuple(clauses))
-+        engine = Engine(program)
-+        
-+        solutions = list(engine.solve(Struct("choice", (Var(0, "X"),))))
-+        assert len(solutions) == 3
-+        assert [s["X"] for s in solutions] == [Int(1), Int(2), Int(3)]
-+    
-+    def test_cut_works_without_indexing(self):
-+        """Cut should work correctly without indexing parameter."""
-+        clauses = [
-+            Clause(Struct("test", (Int(1),)), (Atom("!"), Atom("fail"))),
-+            Clause(Struct("test", (Int(1),)), ()),
-+            Clause(Struct("test", (Int(2),)), ()),
-+        ]
-+        program = Program(tuple(clauses))
-+        engine = Engine(program)
-+        
-+        # Cut should prevent backtracking to second clause
-+        solutions = list(engine.solve(Struct("test", (Int(1),))))
-+        assert len(solutions) == 0  # First clause cuts then fails
-+        
-+        # But test(2) should still work
-+        solutions = list(engine.solve(Struct("test", (Int(2),))))
-+        assert len(solutions) == 1
-+
-+
-+class TestSemanticPreservation:
-+    """Test that indexing preserves Prolog semantics when enabled."""
-+    
-+    def test_solution_order_preserved_with_indexing(self):
-+        """Solution order must be identical with and without indexing."""
-+        clauses = [
-+            Clause(Struct("ord", (Int(3),)), ()),
-+            Clause(Struct("ord", (Int(1),)), ()),
-+            Clause(Struct("ord", (Int(4),)), ()),
-+            Clause(Struct("ord", (Int(2),)), ()),
-+        ]
-+        program = Program(tuple(clauses))
-+        
-+        # Get solutions with indexing
-+        engine_indexed = Engine(program, use_indexing=True)
-+        sols_indexed = list(engine_indexed.solve(Struct("ord", (Var(0, "X"),))))
-+        
-+        # Get solutions without indexing
-+        engine_normal = Engine(program, use_indexing=False)
-+        sols_normal = list(engine_normal.solve(Struct("ord", (Var(0, "X"),))))
-+        
-+        # Order must be identical (source order: 3,1,4,2)
-+        assert [s["X"] for s in sols_indexed] == [Int(3), Int(1), Int(4), Int(2)]
-+        assert [s["X"] for s in sols_normal] == [Int(3), Int(1), Int(4), Int(2)]
-+    
-+    def test_backtracking_preserved_with_indexing(self):
-+        """Backtracking behavior must be identical with indexing."""
-+        clauses = [
-+            Clause(
-+                Struct("path", (Atom("a"), Atom("b"))), 
-+                ()
-+            ),
-+            Clause(
-+                Struct("path", (Atom("b"), Atom("c"))), 
-+                ()
-+            ),
-+            Clause(
-+                Struct("path", (Var(0, "X"), Var(1, "Z"))),
-+                (
-+                    Struct("path", (Var(0, "X"), Var(2, "Y"))),
-+                    Struct("path", (Var(2, "Y"), Var(1, "Z"))),
-+                )
-+            ),
-+        ]
-+        program = Program(tuple(clauses))
-+        
-+        # Find all paths from a to c with indexing
-+        # Use max_steps to prevent infinite recursion
-+        engine_indexed = Engine(program, use_indexing=True, max_steps=1000)
-+        paths_indexed = list(engine_indexed.solve(
-+            Struct("path", (Atom("a"), Atom("c")))
-+        ))
-+        
-+        # Find all paths without indexing
-+        engine_normal = Engine(program, use_indexing=False, max_steps=1000)
-+        paths_normal = list(engine_normal.solve(
-+            Struct("path", (Atom("a"), Atom("c")))
-+        ))
-+        
-+        # Should find the transitive path
-+        assert len(paths_indexed) == len(paths_normal) == 1
-+    
-+    def test_cut_semantics_preserved_with_indexing(self):
-+        """Cut must work identically with indexing enabled."""
-+        clauses = [
-+            Clause(Struct("det", (Int(1),)), (Atom("!"),)),
-+            Clause(Struct("det", (Int(1),)), ()),
-+            Clause(Struct("det", (Int(2),)), ()),
-+        ]
-+        program = Program(tuple(clauses))
-+        
-+        # Test with indexing
-+        engine_indexed = Engine(program, use_indexing=True)
-+        sols_indexed = list(engine_indexed.solve(Struct("det", (Var(0, "X"),))))
-+        
-+        # Test without indexing
-+        engine_normal = Engine(program, use_indexing=False)
-+        sols_normal = list(engine_normal.solve(Struct("det", (Var(0, "X"),))))
-+        
-+        # Both should get same results
-+        # ISO cut semantics: det(X) unifies with first clause (X=1), 
-+        # cut prunes all other det/1 alternatives, so only one solution
-+        assert len(sols_indexed) == len(sols_normal) == 1
-+        assert sols_indexed[0]["X"] == Int(1)
-+        assert sols_normal[0]["X"] == Int(1)
-+        
-+        # Verify det(2) is still reachable with a direct query
-+        sols_det2 = list(engine_indexed.solve(Struct("det", (Int(2),))))
-+        assert len(sols_det2) == 1  # det(2) succeeds when queried directly
-+
-+
-+class TestDebugInstrumentation:
-+    """Test debug/trace features for indexing."""
-+    
-+    def test_debug_flag_enables_instrumentation(self):
-+        """Debug flag should enable candidate counting."""
-+        clauses = [
-+            Clause(Struct("p", (Int(i),)), ())
-+            for i in range(10)
-+        ]
-+        program = Program(tuple(clauses))
-+        
-+        # Engine with debug enabled
-+        engine = Engine(program, use_indexing=True, debug=True)
-+        list(engine.solve(Struct("p", (Int(5),))))
-+        
-+        # Should track candidates considered
-+        assert hasattr(engine, '_candidates_considered')
-+        # Type-based indexing: all 10 integer clauses are candidates
-+        assert engine._candidates_considered == 10
-+    
-+    def test_debug_counter_resets_between_queries(self):
-+        """Debug counter should reset for each solve() call."""
-+        clauses = [
-+            Clause(Struct("p", (Int(1),)), ()),
-+            Clause(Struct("p", (Int(2),)), ()),
-+        ]
-+        program = Program(tuple(clauses))
-+        
-+        engine = Engine(program, use_indexing=True, debug=True)
-+        
-+        # First query
-+        list(engine.solve(Struct("p", (Int(1),))))
-+        first_count = engine._candidates_considered
-+        
-+        # Second query - counter should reset
-+        list(engine.solve(Struct("p", (Int(2),))))
-+        second_count = engine._candidates_considered
-+        
-+        # Type-based indexing: both integer clauses are candidates
-+        assert first_count == 2
-+        assert second_count == 2
-+    
-+    def test_trace_output_shows_candidate_filtering(self):
-+        """Trace should show how many candidates were filtered."""
-+        clauses = [
-+            Clause(Struct("fact", (Int(i),)), ())
-+            for i in range(100)
-+        ]
-+        program = Program(tuple(clauses))
-+        
-+        engine = Engine(program, use_indexing=True, trace=True, debug=True)
-+        list(engine.solve(Struct("fact", (Int(50),))))
-+        
-+        # Check that trace mentions candidate filtering (if trace_log is populated)
-+        if hasattr(engine, '_trace_log') and engine._trace_log:
-+            # Should have a line like "pred fact/1: considered X of 100 clauses"
-+            assert any("considered" in line.lower() and "100" in line 
-+                      for line in engine._trace_log)
-+        else:
-+            # If trace_log not populated, at least check candidates were counted
-+            assert hasattr(engine, '_candidates_considered')
-+            # Type-based indexing: all 100 facts are candidates
-+            assert engine._candidates_considered == 100
-+
-+
-+class TestDereferenceBeforeSelection:
-+    """Test that dereferencing happens before clause selection."""
-+    
-+    def test_deref_before_selection_integration(self):
-+        """First argument should be dereferenced before selection."""
-+        clauses = [
-+            Clause(Struct("p", (Int(1),)), ()),
-+            Clause(Struct("p", (Int(2),)), ()),
-+            Clause(
-+                Struct("t", (Var(0, "X"),)),
-+                (
-+                    # X = 2, then p(X) which should select only p(2) after deref
-+                    Struct("=", (Var(0, "X"), Int(2))),
-+                    Struct("p", (Var(0, "X"),)),
-+                )
-+            ),
-+        ]
-+        program = Program(tuple(clauses))
-+        
-+        # Test with indexing
-+        engine_indexed = Engine(program, use_indexing=True)
-+        sols_indexed = list(engine_indexed.solve(Struct("t", (Var(0, "X"),))))
-+        
-+        # Test without indexing
-+        engine_normal = Engine(program, use_indexing=False)
-+        sols_normal = list(engine_normal.solve(Struct("t", (Var(0, "X"),))))
-+        
-+        # Both should return only X=2
-+        assert len(sols_indexed) == len(sols_normal) == 1
-+        assert sols_indexed[0]["X"] == Int(2)
-+        assert sols_normal[0]["X"] == Int(2)
-+
-+
-+class TestIndexingEdgeCases:
-+    """Test edge cases and special scenarios."""
-+    
-+    def test_empty_program_with_indexing(self):
-+        """Empty program should work with indexing."""
-+        program = Program(())
-+        engine = Engine(program, use_indexing=True)
-+        
-+        solutions = list(engine.solve(Struct("anything", ())))
-+        assert len(solutions) == 0
-+    
-+    def test_single_clause_with_indexing(self):
-+        """Single clause should work with indexing."""
-+        clauses = [
-+            Clause(Struct("single", (Var(0, "X"),)), ()),
-+        ]
-+        program = Program(tuple(clauses))
-+        engine = Engine(program, use_indexing=True)
-+        
-+        solutions = list(engine.solve(Struct("single", (Int(42),))))
-+        assert len(solutions) == 1
-+        # No query variables, so solution is empty dict (success marker)
-+        assert solutions[0] == {}
-+    
-+    def test_variable_only_clauses_with_indexing(self):
-+        """Programs with only variable clauses should work."""
-+        # Note: This test assumes proper variable renaming in clause heads
-+        # which may not be fully working in the current implementation.
-+        # The indexing itself works correctly for variable clauses.
-+        clauses = [
-+            Clause(Struct("var", (Var(0, "X"),)), ()),
-+            Clause(Struct("var", (Var(1, "Y"),)), ()),
-+        ]
-+        program = Program(tuple(clauses))
-+        
-+        # Test with indexing
++        # Time with indexing
 +        engine_idx = Engine(program, use_indexing=True)
-+        solutions_idx = list(engine_idx.solve(Struct("var", (Int(5),))))
++        time_idx = self.time_query(engine_idx, mid_query)
 +        
-+        # Test without indexing for comparison
-+        engine_normal = Engine(program, use_indexing=False)
-+        solutions_normal = list(engine_normal.solve(Struct("var", (Int(5),))))
++        speedup = self.calculate_speedup(time_no_idx, time_idx)
 +        
-+        # Both should behave identically (whether 0 or 2 solutions)
-+        assert len(solutions_idx) == len(solutions_normal)
++        # Should achieve at least 30x speedup for mid-table queries
++        assert speedup >= 30, f"Expected ≥30x speedup, got {speedup:.1f}x"
++        
++        # Document the actual speedup
++        print(f"Large fact base speedup: {speedup:.1f}x")
 +    
-+    def test_zero_arity_with_indexing(self):
-+        """Zero-arity predicates should stream in order with/without indexing."""
-+        clauses = [
-+            Clause(Atom("fact"), ()),
-+            Clause(Atom("fact"), ()),
-+            Clause(Atom("fact"), ()),
-+        ]
++    def test_type_dispatch_speedup(self):
++        """Test 3-5x speedup for type dispatch scenarios."""
++        reader = Reader()
++        
++        # Create predicates with different type signatures
++        clauses = []
++        
++        # 100 clauses with different first argument types
++        for i in range(100):
++            # Atoms
++            clauses.append(Clause(Struct("dispatch", (Atom(f"a{i}"), Int(i*10))), ()))
++            # Integers
++            clauses.append(Clause(Struct("dispatch", (Int(i), Int(i*20))), ()))
++            # Structures
++            clauses.append(Clause(Struct("dispatch", (Struct("s", (Int(i),)), Int(i*30))), ()))
++            # Lists (empty and non-empty)
++            if i % 2 == 0:
++                clauses.append(Clause(Struct("dispatch", (Atom("[]"), Int(i*40))), ()))
++            else:
++                clauses.append(Clause(Struct("dispatch", (
++                    Struct(".", (Int(i), Atom("[]"))), Int(i*50)
++                )), ()))
++        
 +        program = Program(tuple(clauses))
 +        
-+        # With indexing
-+        engine_indexed = Engine(program, use_indexing=True)
-+        sols_indexed = list(engine_indexed.solve(Atom("fact")))
++        # Query that benefits from type switching
++        type_query = "dispatch(42, X)"
 +        
-+        # Without indexing
-+        engine_normal = Engine(program, use_indexing=False)
-+        sols_normal = list(engine_normal.solve(Atom("fact")))
++        # Time without indexing
++        engine_no_idx = Engine(program, use_indexing=False)
++        time_no_idx = self.time_query(engine_no_idx, type_query)
 +        
-+        # Should get 3 solutions in order
-+        assert len(sols_indexed) == len(sols_normal) == 3
-+        # All solutions are empty dicts (no variables)
-+        assert all(s == {} for s in sols_indexed)
-+        assert all(s == {} for s in sols_normal)
++        # Time with indexing
++        engine_idx = Engine(program, use_indexing=True)
++        time_idx = self.time_query(engine_idx, type_query)
++        
++        speedup = self.calculate_speedup(time_no_idx, time_idx)
++        
++        # Should achieve 3-5x speedup
++        assert speedup >= 3, f"Expected ≥3x speedup, got {speedup:.1f}x"
++        
++        print(f"Type dispatch speedup: {speedup:.1f}x")
 +    
-+    def test_canonical_list_goal(self):
-+        """Canonical '.'/2 goals should select same candidates as [H|T] sugar."""
-+        clauses = [
-+            Clause(Struct(".", (Int(1), Atom("[]"))), ()),  # [1] as '.'/2
-+            # Can't use PrologList as clause head - must use Struct
-+            Clause(Struct(".", (Int(2), Atom("[]"))), ()),  # [2] as '.'/2
-+            Clause(Struct(".", (Var(0, "H"), Var(1, "T"))), ()),  # [H|T] as '.'/2
-+        ]
-+        program = Program(tuple(clauses))
++    def test_recursive_predicate_speedup(self):
++        """Test 2-3x speedup for typical recursive predicates."""
++        reader = Reader()
 +        
-+        # Query with canonical form
++        # Create a recursive list membership predicate with many facts
++        program_text = """
++        % Base cases - many list facts
++        list_data([1,2,3,4,5]).
++        list_data([6,7,8,9,10]).
++        list_data([11,12,13,14,15]).
++        list_data([16,17,18,19,20]).
++        list_data([21,22,23,24,25]).
++        
++        % Member predicate
++        member(X, [X|_]).
++        member(X, [_|T]) :- member(X, T).
++        
++        % Query predicate that uses member
++        find_in_data(X) :- list_data(L), member(X, L).
++        """
++        
++        # Add more list_data facts
++        for i in range(26, 101, 5):
++            program_text += f"\n        list_data([{i},{i+1},{i+2},{i+3},{i+4}])."
++        
++        clauses = reader.read_program(program_text)
++        fixed_clauses = [Clause(c.head, tuple(c.body)) for c in clauses]
++        program = Program(tuple(fixed_clauses))
++        
++        # Query that exercises recursion
++        recursive_query = "find_in_data(42)"
++        
++        # Time without indexing
++        engine_no_idx = Engine(program, use_indexing=False)
++        time_no_idx = self.time_query(engine_no_idx, recursive_query)
++        
++        # Time with indexing
++        engine_idx = Engine(program, use_indexing=True)
++        time_idx = self.time_query(engine_idx, recursive_query)
++        
++        speedup = self.calculate_speedup(time_no_idx, time_idx)
++        
++        # Should achieve 2-3x speedup
++        assert speedup >= 2, f"Expected ≥2x speedup, got {speedup:.1f}x"
++        
++        print(f"Recursive predicate speedup: {speedup:.1f}x")
++    
++    def test_small_predicate_no_regression(self):
++        """Test no significant regression for small predicates (≤3 clauses)."""
++        reader = Reader()
++        
++        # Small predicates
++        program_text = """
++        small1(a).
++        small1(b).
++        
++        small2(1, x).
++        small2(2, y).
++        small2(3, z).
++        
++        tiny(single).
++        """
++        
++        clauses = reader.read_program(program_text)
++        fixed_clauses = [Clause(c.head, tuple(c.body)) for c in clauses]
++        program = Program(tuple(fixed_clauses))
++        
++        # Query small predicates
++        queries = ["small1(X)", "small2(2, Y)", "tiny(X)"]
++        
++        for query in queries:
++            # Time without indexing
++            engine_no_idx = Engine(program, use_indexing=False)
++            time_no_idx = self.time_query(engine_no_idx, query)
++            
++            # Time with indexing
++            engine_idx = Engine(program, use_indexing=True)
++            time_idx = self.time_query(engine_idx, query)
++            
++            # Calculate overhead
++            if time_no_idx > 0:
++                overhead = (time_idx - time_no_idx) / time_no_idx
++                # Should not have more than 20% overhead
++                assert overhead <= 0.20, f"Query {query}: overhead {overhead:.1%} exceeds 20%"
++                print(f"Small predicate {query}: overhead {overhead:+.1%}")
++    
++    def test_mixed_workload_performance(self):
++        """Test performance with mixed workload of different query types."""
++        reader = Reader()
++        
++        # Create a mixed program
++        program_text = """
++        % Facts
++        person(alice).
++        person(bob).
++        person(charlie).
++        
++        age(alice, 30).
++        age(bob, 25).
++        age(charlie, 35).
++        
++        % Rules
++        adult(X) :- person(X), age(X, A), A >= 18.
++        
++        % More facts for variety
++        color(red).
++        color(green).
++        color(blue).
++        
++        item(1, red).
++        item(2, green).
++        item(3, blue).
++        """
++        
++        # Add more facts
++        for i in range(4, 100):
++            color_idx = i % 3
++            color = ["red", "green", "blue"][color_idx]
++            program_text += f"\n        item({i}, {color})."
++        
++        clauses = reader.read_program(program_text)
++        fixed_clauses = [Clause(c.head, tuple(c.body)) for c in clauses]
++        program = Program(tuple(fixed_clauses))
++        
++        # Mix of query types
++        queries = [
++            "person(X)",        # Simple enumeration
++            "age(bob, A)",      # Specific lookup
++            "adult(X)",         # Rule with conjunction
++            "item(50, C)",      # Mid-table fact lookup
++            "item(X, green)",   # Partial instantiation
++        ]
++        
++        total_speedup = 0
++        count = 0
++        
++        for query in queries:
++            # Time without indexing
++            engine_no_idx = Engine(program, use_indexing=False)
++            time_no_idx = self.time_query(engine_no_idx, query)
++            
++            # Time with indexing
++            engine_idx = Engine(program, use_indexing=True)
++            time_idx = self.time_query(engine_idx, query)
++            
++            if time_no_idx > 0:
++                speedup = self.calculate_speedup(time_no_idx, time_idx)
++                total_speedup += speedup
++                count += 1
++                print(f"Mixed workload {query}: speedup {speedup:.1f}x")
++        
++        # Average speedup should be meaningful
++        avg_speedup = total_speedup / count if count > 0 else 0
++        assert avg_speedup >= 1.5, f"Expected average speedup ≥1.5x, got {avg_speedup:.1f}x"
++
++
++@pytest.mark.benchmark
++@pytest.mark.perf
++class TestMemoryOverhead:
++    """Test memory overhead of indexing."""
++    
++    def test_memory_overhead_comparison(self):
++        """Compare memory usage with and without indexing."""
++        reader = Reader()
++        
++        # Create a large program
++        num_clauses = 1000
++        clauses = []
++        
++        for i in range(num_clauses):
++            # Mix of different clause types
++            if i % 2 == 0:
++                head = Struct("pred", (Int(i), Atom(f"val_{i}")))
++            else:
++                head = Struct("pred", (Atom(f"key_{i}"), Int(i)))
++            clauses.append(Clause(head, ()))
++        
++        # Measure program without indexing
++        program_no_idx = Program(tuple(clauses))
++        engine_no_idx = Engine(program_no_idx, use_indexing=False)
++        size_no_idx = sys.getsizeof(program_no_idx)
++        
++        # Measure program with indexing
++        program_idx = Program(tuple(clauses))
++        engine_idx = Engine(program_idx, use_indexing=True)
++        # Get the indexed program from the engine
++        if hasattr(engine_idx, 'program'):
++            size_idx = sys.getsizeof(engine_idx.program)
++        else:
++            size_idx = sys.getsizeof(program_idx)
++        
++        # Calculate overhead
++        overhead_bytes = size_idx - size_no_idx
++        overhead_percent = (overhead_bytes / size_no_idx) * 100 if size_no_idx > 0 else 0
++        
++        print(f"Memory overhead: {overhead_bytes} bytes ({overhead_percent:.1f}%)")
++        
++        # Memory overhead should be reasonable (not more than 2x)
++        assert overhead_percent <= 100, f"Memory overhead {overhead_percent:.1f}% exceeds 100%"
++    
++    def test_memory_overhead_10k_clauses(self):
++        """Test memory overhead with 10k clause program."""
++        reader = Reader()
++        
++        # Create a very large program
++        num_clauses = 10000
++        clauses = []
++        
++        for i in range(num_clauses):
++            # Create diverse clause types
++            predicate = f"p{i % 100}"  # 100 different predicates
++            
++            if i % 4 == 0:
++                head = Struct(predicate, (Int(i),))
++            elif i % 4 == 1:
++                head = Struct(predicate, (Atom(f"a{i}"),))
++            elif i % 4 == 2:
++                head = Struct(predicate, (Struct("f", (Int(i),)),))
++            else:
++                # List
++                head = Struct(predicate, (Struct(".", (Int(i), Atom("[]"))),))
++            
++            clauses.append(Clause(head, ()))
++        
++        # Create programs
++        program_no_idx = Program(tuple(clauses))
++        program_idx = Program(tuple(clauses))
++        
++        # Create engines
++        engine_no_idx = Engine(program_no_idx, use_indexing=False)
++        engine_idx = Engine(program_idx, use_indexing=True)
++        
++        # Measure memory (using a more comprehensive approach)
++        import gc
++        gc.collect()
++        
++        # For indexed program, measure the actual indexed structure
++        if hasattr(engine_idx, 'program'):
++            indexed_program = engine_idx.program
++            # Try to estimate total memory including index structures
++            base_size = sys.getsizeof(program_no_idx)
++            indexed_size = sys.getsizeof(indexed_program)
++            
++            # Calculate overhead
++            overhead_bytes = indexed_size - base_size
++            overhead_percent = (overhead_bytes / base_size) * 100 if base_size > 0 else 0
++            
++            print(f"10k clauses memory overhead: {overhead_bytes} bytes ({overhead_percent:.1f}%)")
++            
++            # Even with 10k clauses, overhead should be manageable
++            assert overhead_percent <= 150, f"Memory overhead {overhead_percent:.1f}% exceeds 150%"
++
++
++@pytest.mark.benchmark
++@pytest.mark.perf
++class TestPerformanceStability:
++    """Test performance measurement stability and reproducibility."""
++    
++    def test_timing_stability(self):
++        """Verify that timing measurements are stable."""
++        reader = Reader()
++        
++        # Create a medium-sized program
++        clauses = []
++        for i in range(500):
++            head = Struct("stable", (Int(i), Atom(f"v{i}")))
++            clauses.append(Clause(head, ()))
++        
++        program = Program(tuple(clauses))
 +        engine = Engine(program, use_indexing=True)
-+        goal_canonical = Struct(".", (Int(3), Atom("[]")))  # [3] as '.'/2
-+        sols = list(engine.solve(goal_canonical))
 +        
-+        # Should match the variable clause
-+        assert len(sols) == 1
-+        assert sols[0] == {}  # No query variables
-+    
-+    def test_mixed_predicates_isolated(self):
-+        """Different predicates should be isolated with indexing."""
-+        clauses = [
-+            Clause(Struct("p", (Int(1),)), ()),
-+            Clause(Struct("q", (Int(1),)), ()),
-+            Clause(Struct("p", (Int(2),)), ()),
-+            Clause(Struct("q", (Int(2),)), ()),
-+        ]
-+        program = Program(tuple(clauses))
-+        engine = Engine(program, use_indexing=True)
++        # Take multiple timing samples
++        times = []
++        for _ in range(10):
++            start = time.perf_counter()
++            list(engine.query("stable(250, X)"))
++            end = time.perf_counter()
++            times.append(end - start)
 +        
-+        # Query p should only match p clauses
-+        p_sols = list(engine.solve(Struct("p", (Var(0, "X"),))))
-+        assert len(p_sols) == 2
-+        assert [s["X"] for s in p_sols] == [Int(1), Int(2)]
++        # Calculate coefficient of variation
++        mean_time = sum(times) / len(times)
++        variance = sum((t - mean_time) ** 2 for t in times) / len(times)
++        std_dev = variance ** 0.5
++        cv = std_dev / mean_time if mean_time > 0 else 0
 +        
-+        # Query q should only match q clauses
-+        q_sols = list(engine.solve(Struct("q", (Var(0, "Y"),))))
-+        assert len(q_sols) == 2
-+        assert [s["Y"] for s in q_sols] == [Int(1), Int(2)]
++        print(f"Timing stability CV: {cv:.2%}")
++        
++        # Coefficient of variation should be reasonably low
++        assert cv <= 0.20, f"Timing variability too high: CV={cv:.2%}"
++
++
++def pytest_configure(config):
++    """Configure pytest markers."""
++    config.addinivalue_line(
++        "markers", "benchmark: mark test as a performance benchmark"
++    )
++    config.addinivalue_line(
++        "markers", "perf: mark test as a performance test"
++    )
 \ No newline at end of file

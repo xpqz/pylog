@@ -38,6 +38,14 @@ def pytest_configure(config):
         "markers", 
         "swi_baseline: mark test as requiring SWI-Prolog for baseline comparison"
     )
+    config.addinivalue_line(
+        "markers",
+        "benchmark: mark test as a performance benchmark"
+    )
+    config.addinivalue_line(
+        "markers",
+        "perf: mark test as a performance test"
+    )
 
 
 # Auto-skip SWI baseline tests if SWI-Prolog is not available
