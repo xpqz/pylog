@@ -7,9 +7,12 @@ capabilities for understanding and reproducing Prolog execution behavior.
 
 from .tracer import TraceEvent, PortsTracer
 from .sinks import PrettyTraceSink
+from .metrics import PredMetrics, EngineMetrics
 
 __all__ = [
     "TraceEvent",
     "PortsTracer",
     "PrettyTraceSink",
+    "PredMetrics",
+    "EngineMetrics",
 ]

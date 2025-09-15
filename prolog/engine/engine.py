@@ -114,6 +114,13 @@ class Engine:
         else:
             self.tracer = None
 
+        # Initialize metrics if debug=True
+        if debug:
+            from prolog.debug.metrics import EngineMetrics
+            self.metrics = EngineMetrics()
+        else:
+            self.metrics = None
+
     def reset(self):
         """Reset engine state for reuse."""
         self.store = Store()
@@ -136,6 +143,9 @@ class Engine:
         # Reset debug counters if in debug mode
         if self.debug:
             self._candidates_considered = 0
+            # Also reset metrics when debug=True
+            if self.metrics:
+                self.metrics.reset()
         # Exception handling is done via try/except PrologThrow
         # Don't reset ports - they accumulate across runs
 
@@ -317,6 +327,9 @@ class Engine:
                 # Handle thrown exception
                 handled = self._handle_throw(exc.ball)
                 if handled:
+                    # Exception was caught
+                    if self.metrics:
+                        self.metrics.record_exception_caught()
                     continue
                 # No handler found - clean up and re-raise
                 self.trail.unwind_to(0, self.store)
@@ -352,16 +365,24 @@ class Engine:
 
     def _unify(self, a: Term, b: Term) -> bool:
         """Helper for unification with current engine settings.
-        
+
         Args:
             a: First term to unify
             b: Second term to unify
-            
+
         Returns:
             True if unification succeeds, False otherwise
         """
+        if self.metrics:
+            self.metrics.record_unification_attempt()
+
         trail_adapter = TrailAdapter(self.trail, engine=self, store=self.store)
-        return unify(a, b, self.store, trail_adapter, occurs_check=self.occurs_check)
+        result = unify(a, b, self.store, trail_adapter, occurs_check=self.occurs_check)
+
+        if self.metrics and result:
+            self.metrics.record_unification_success()
+
+        return result
     
     def _handle_throw(self, ball: Term) -> bool:
         """Handle a thrown exception by searching for a matching catch.
@@ -539,6 +560,11 @@ class Engine:
         if self.tracer and goal.term:
             self.tracer.emit_event("call", goal.term)
 
+        # Record metrics for CALL
+        pred_id = f"{functor}/{arity}"
+        if self.metrics:
+            self.metrics.record_call(pred_id)
+
         # Get matching clauses - use indexing if available
         if self.use_indexing and hasattr(self.program, 'select'):
             from prolog.engine.indexed_program import IndexedProgram
@@ -549,6 +575,10 @@ class Engine:
             # Track candidates in debug mode
             if self.debug:
                 self._candidates_considered += len(matches)
+                if self.metrics:
+                    # Count how many are actually yielded (have potential to match)
+                    yielded = len([m for m in matches if m is not None])
+                    self.metrics.record_candidates(len(matches), yielded)
                 
                 # Log detailed info if trace is enabled too
                 if self.trace:
@@ -576,6 +606,8 @@ class Engine:
         if not cursor.has_more():
             # No matching clauses - emit FAIL port
             self._port("FAIL", f"{functor}/{arity}")
+            if self.metrics:
+                self.metrics.record_fail(pred_id)
             return False
 
         # Take first clause
@@ -627,14 +659,7 @@ class Engine:
         renamed_clause = self._renamer.rename_clause(clause)
 
         # Try to unify with clause head
-        trail_adapter = TrailAdapter(self.trail, engine=self, store=self.store)
-        if unify(
-            renamed_clause.head,
-            goal.term,
-            self.store,
-            trail_adapter,  # type: ignore
-            occurs_check=self.occurs_check,
-        ):
+        if self._unify(renamed_clause.head, goal.term):
             # Unification succeeded - now push frame for body execution
             # Use the cut_barrier saved before creating choicepoint
             frame_id = self._next_frame_id
@@ -810,9 +835,18 @@ class Engine:
             current_frame = self.frame_stack[-1]
             cut_barrier = current_frame.cut_barrier
 
+            # Count alternatives being pruned
+            alternatives_pruned = 0
+
             # Remove all choicepoints above the barrier
             while len(self.cp_stack) > cut_barrier:
                 self.cp_stack.pop()
+                alternatives_pruned += 1
+
+            # Record metrics
+            if self.metrics and alternatives_pruned > 0:
+                self.metrics.record_cut()
+                self.metrics.record_alternatives_pruned(alternatives_pruned)
         else:
             # Top-level cut: prune everything (commit to current solution path)
             # This commits to the current solution and prevents backtracking.
@@ -853,6 +887,8 @@ class Engine:
                 self._debug_frame_pops += 1
                 # Emit EXIT port when frame is popped
                 self._port("EXIT", frame.pred or "unknown")
+                if self.metrics and frame.pred:
+                    self.metrics.record_exit(frame.pred)
             # else: Leave frame in place for backtracking
         # If frame ID doesn't match, it's likely a stale POP_FRAME from backtracking
         # Just ignore it - the frame was already popped or never created
@@ -893,6 +929,9 @@ class Engine:
         Returns:
             True if backtracking succeeded, False if no more choicepoints.
         """
+        if self.metrics:
+            self.metrics.record_backtrack()
+
         while self.cp_stack:
             cp = self.cp_stack.pop()
             
@@ -952,10 +991,14 @@ class Engine:
                 if cp.payload.get("terminal", False):
                     # Terminal CP - just emit FAIL and continue backtracking
                     self._port("FAIL", cp.payload["pred_ref"])
+                    if self.metrics:
+                        self.metrics.record_fail(cp.payload["pred_ref"])
                     continue
 
                 # Emit REDO port before resuming normal predicate
                 self._port("REDO", cp.payload["pred_ref"])
+                if self.metrics:
+                    self.metrics.record_redo(cp.payload["pred_ref"])
 
                 # Try next clause
                 goal = cp.payload["goal"]
@@ -1040,16 +1083,7 @@ class Engine:
                     renamed_clause = self._renamer.rename_clause(clause)
 
                     # Try to unify with clause head
-                    trail_adapter = TrailAdapter(
-                        self.trail, engine=self, store=self.store
-                    )
-                    unify_result = unify(
-                        renamed_clause.head,
-                        goal.term,
-                        self.store,
-                        trail_adapter,  # type: ignore
-                        occurs_check=self.occurs_check,
-                    )
+                    unify_result = self._unify(renamed_clause.head, goal.term)
                     
                     if self.trace:
                         self._trace_log.append(f"PREDICATE CP: Unify result = {unify_result}")
@@ -1092,6 +1126,8 @@ class Engine:
                 else:
                     # No more clauses to try - emit FAIL port
                     self._port("FAIL", cp.payload["pred_ref"])
+                    if self.metrics:
+                        self.metrics.record_fail(cp.payload["pred_ref"])
                     # Continue backtracking to find earlier choicepoints
                     continue
 
@@ -1410,6 +1446,10 @@ class Engine:
         if len(args) != 2:
             return False
         left, right = args
+
+        if self.metrics:
+            self.metrics.record_unification_attempt()
+
         trail_adapter = TrailAdapter(self.trail, engine=self, store=self.store)
         result = unify(
             left,
@@ -1418,6 +1458,10 @@ class Engine:
             trail_adapter,  # type: ignore
             occurs_check=self.occurs_check,
         )
+
+        if self.metrics and result:
+            self.metrics.record_unification_success()
+
         return result
 
     def _builtin_not_unify(self, args: tuple) -> bool:
@@ -2048,7 +2092,11 @@ class Engine:
         # This ensures that variable bindings are preserved in the thrown term
         reified_ball = self._reify_term(ball)
         
-        # Raise PrologThrow directly  
+        # Record metrics for exception thrown
+        if self.metrics:
+            self.metrics.record_exception_thrown()
+
+        # Raise PrologThrow directly
         raise PrologThrow(reified_ball)
     
     def _builtin_catch(self, args: tuple) -> bool:
