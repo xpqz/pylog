@@ -596,10 +596,13 @@ class Engine:
         else:
             # Fall back to standard clause selection
             matches = self.program.clauses_for(functor, arity)
-            
+
             # Track all candidates in debug mode (no filtering)
             if self.debug:
                 self._candidates_considered += len(matches)
+                if self.metrics:
+                    # All clauses are yielded (no filtering without indexing)
+                    self.metrics.record_candidates(len(matches), len(matches))
         
         cursor = ClauseCursor(matches=matches, functor=functor, arity=arity)
 

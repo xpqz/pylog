@@ -467,6 +467,57 @@ class TestMetricsEngineIntegration:
         parsed = json.loads(json_str)
         assert parsed == metrics_dict
 
+    def test_metrics_track_clause_filtering(self):
+        """Metrics track clause candidate filtering by indexing."""
+        # Create a program with multiple clauses that indexing can filter
+        prog = program(
+            mk_fact("test", Atom("a"), Int(1)),
+            mk_fact("test", Atom("b"), Int(2)),
+            mk_fact("test", Atom("c"), Int(3)),
+            mk_fact("test", Var(0, "X"), Int(4)),  # Variable in first arg
+            mk_fact("test", Atom("d"), Int(5)),
+        )
+        # Enable indexing to test filtering
+        engine = Engine(program=prog, debug=True, use_indexing=True)
+
+        # Query with a specific first argument
+        results = engine.query("test(b, Y)")
+
+        # With indexing: should have considered fewer clauses (filtered)
+        # The indexing should select only clauses matching 'b' or having a variable
+        assert engine.metrics.candidates_considered > 0
+        assert engine.metrics.candidates_yielded > 0
+        assert engine.metrics.candidates_yielded <= engine.metrics.candidates_considered
+
+        # Verify we got the right answers
+        # Both test(b, 2) and test(X, 4) match the query
+        assert len(results) == 2
+        assert results[0]["Y"] == Int(2)
+        assert results[1]["Y"] == Int(4)
+
+    def test_metrics_no_filtering_without_indexing(self):
+        """Without indexing, all clauses are considered and yielded."""
+        prog = program(
+            mk_fact("test", Atom("a"), Int(1)),
+            mk_fact("test", Atom("b"), Int(2)),
+            mk_fact("test", Atom("c"), Int(3)),
+            mk_fact("test", Var(0, "X"), Int(4)),
+            mk_fact("test", Atom("d"), Int(5)),
+        )
+        # No indexing - all clauses should be yielded
+        engine = Engine(program=prog, debug=True, use_indexing=False)
+
+        results = engine.query("test(b, Y)")
+
+        # Without indexing: all 5 clauses considered and yielded
+        assert engine.metrics.candidates_considered == 5
+        assert engine.metrics.candidates_yielded == 5
+
+        # Still get the right answers
+        assert len(results) == 2
+        assert results[0]["Y"] == Int(2)
+        assert results[1]["Y"] == Int(4)
+
     @pytest.mark.xfail(reason="throw/catch integration not yet wired in engine")
     def test_metrics_track_exceptions_integration(self):
         """Metrics track exceptions thrown and caught."""
