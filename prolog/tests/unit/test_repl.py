@@ -583,7 +583,6 @@ class TestREPLErrorHandling:
         
         assert result is False
     
-    @pytest.mark.skip(reason="Timeout mechanism not working properly - test hangs")
     def test_query_timeout_protection(self):
         """Test protection against infinite loops."""
         from prolog.repl import PrologREPL
@@ -595,5 +594,7 @@ class TestREPLErrorHandling:
         # For now, just test that it doesn't hang forever
         result = repl.execute_query_with_timeout("loop", timeout_ms=100)
         assert result["success"] is False
-        assert "timeout" in result.get("error", "").lower() or "limit" in result.get("error", "").lower()
+        # Check for either timeout or limit in error message
+        error_msg = result.get("error", "").lower()
+        assert "timeout" in error_msg or "limit" in error_msg
         assert_engine_clean(repl.engine)
