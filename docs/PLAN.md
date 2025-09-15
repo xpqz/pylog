@@ -82,16 +82,53 @@
 
 ## Stage 3 — **Debug & Observability**
 
-**Aim:** See the machine at work.
+Aim: See the machine at work and make failures reproducible.
+
+**Sub-stages**
+	- 3.0 Ports Tracer (human & machine formats)
+	- 3.1 Snapshots & diffs
+	- 3.2 Counters & metrics
+	- 3.3 Exporters (constraint graph / call graph)
+	- 3.4 Sinks & tooling
+	- 3.5 Trace-based tests & replay
 
 **Deliverables**
-- Ports tracer (`call/exit/redo/fail`) with depth and bindings.
-- `debug.snapshot()` with store size, trail length, cp depth.
-- `export_constraint_graph()` (DOT) for constraint networks (empty until Stage 5).
+	- Ports tracer: Emits call/exit/redo/fail events with:
+	- step_id (monotonic), depth, frame_id, cp_depth, goal_height, write_stamp.
+	- pred_id (interned name/arity) and short pretty form of the current goal.
+	- Optional projected bindings (configurable: none | names | names+values, with depth/length caps).
+	- Filters: by predicate, depth, ports, step range; and optional sampling (e.g., 1/N).
+	- Two encodings:
+	  - Pretty stream (human): single-line compact text.
+	  - JSONL (machine): one event per line; schema documented in docs/TRACE_FORMAT.md.
+	- Engine hooks & APIs:
+	  - Global monotonically increasing step_id.
+    - Engine(trace=..., debug=...) flags; programmatic trace_on()/trace_off().
+	  - spy/1 and unspy/1 (non-interactive analogues) to include/exclude predicates.
+	- Snapshots:
+	  - debug.snapshot() returns structured data: store_size, trail_len, goal_height, frame_height, cp_depth, write_stamp, choices, frames, candidates_considered, and optional memory hints.
+	  - debug.diff(a, b) produces human+JSON deltas for quick regression triage.
+	- Metrics & counters (reset per run/solve):
+	  - Unifications attempted/succeeded, backtracks taken, cuts executed and alternatives pruned, exceptions thrown/caught.
+	- Indexing: candidates considered vs yielded (from Stage 2).
+	- Exporters:
+	  - export_constraint_graph(program_or_engine) -> .dot (placeholder nodes until Stage 5; respects variable identity).
+	  - export_call_graph(program) -> .dot by static analysis of clause heads/bodies.
+	- Sinks & tooling:
+	  File sinks with rotation: --trace-json out.jsonl, --trace-pretty out.log.
+	  - REPL commands: trace(on|off), spy Name/Arity, untrace, unspy.
+	  - CI helper: attach last N MB of traces and latest snapshot on failure.
+	- Safety & ergonomics:
+	  - Pretty-printer depth/length caps and redaction for large terms; no Python object ids leak.
+	  - Deterministic variable naming; timestamps optional and monotonic per run.
+	  - Tracer is non-recursive and uses bounded buffers.
 
 **Acceptance criteria**
-- Traces of standard predicates match hand reasoning.
-- Snapshots show sane, non-growing state across backtracking cycles.
+	- With tracing off: ≤ 5% runtime overhead on Stage-1 scenario suite.
+	- With pretty trace on: ≤ 20% overhead; with JSONL: ≤ 30% overhead.
+	- Traces are deterministic for the same program/query and seed; replay scripts in tools/replay_trace.py reconstruct the last 200 steps.
+	- Snapshot/diff across pure backtracking cycles shows no monotonic growth (store/trail/cp/frames/goal heights stable).
+	- export_call_graph/constraint_graph produce valid DOT viewable by Graphviz.
 
 ---
 

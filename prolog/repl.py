@@ -318,11 +318,10 @@ class PrologREPL:
             self._cleanup_query_state()
     
     def execute_query_with_timeout(self, query_text: str, timeout_ms: int) -> dict[str, Any]:
-        """Execute a query with a timeout.
+        """Execute a query with a timeout using step limits.
         
-        Cross-platform implementation:
-        - POSIX: Uses signal.alarm() with SIGALRM handler
-        - Windows/fallback: Uses threading.Timer with abort flag
+        Uses the engine's built-in max_steps parameter to prevent infinite loops.
+        Estimates steps based on timeout: ~10000 steps per 100ms.
         
         Args:
             query_text: The Prolog query to execute
@@ -331,99 +330,42 @@ class PrologREPL:
         Returns:
             Dictionary with 'success' and optional 'bindings' or 'error'
         """
-        import sys
-        import threading
+        # Save current max_steps setting
+        old_max_steps = self.engine.max_steps
         
-        # Try signal-based timeout first (POSIX only)
-        if sys.platform != 'win32':
-            try:
-                import signal
-                if hasattr(signal, 'SIGALRM'):
-                    return self._execute_with_signal_timeout(query_text, timeout_ms)
-            except ImportError:
-                pass
+        # Set temporary step limit based on timeout
+        # Rough estimate: 10000 steps per 100ms
+        self.engine.max_steps = (timeout_ms * 100)
+        self.engine._steps_taken = 0  # Reset step counter
         
-        # Fallback to thread-based timeout
-        return self._execute_with_thread_timeout(query_text, timeout_ms)
-    
-    def _execute_with_signal_timeout(self, query_text: str, timeout_ms: int) -> dict[str, Any]:
-        """Execute query with POSIX signal-based timeout."""
-        import signal
-        
-        def timeout_handler(signum, frame):
-            raise TimeoutError("Query timeout")
-        
-        old_handler = None
         try:
             self._cleanup_query_state()
+            solutions = list(self.engine.query(query_text))
             
-            # Set up timeout
-            old_handler = signal.signal(signal.SIGALRM, timeout_handler)
-            signal.alarm(max(1, timeout_ms // 1000))  # Convert to seconds
-            
-            try:
-                solutions = list(self.engine.query(query_text))
-                if solutions:
-                    return {
-                        'success': True,
-                        'bindings': solutions[0]
-                    }
-                else:
-                    return {'success': False}
-            except TimeoutError:
+            # Check if we hit the step limit (>= because counter increments before check)
+            if self.engine._steps_taken >= self.engine.max_steps:
                 return {
                     'success': False,
-                    'error': 'Query timeout: exceeded time limit'
+                    'error': 'Query timeout: exceeded step limit'
                 }
+            
+            if solutions:
+                return {
+                    'success': True,
+                    'bindings': solutions[0]
+                }
+            else:
+                return {'success': False}
         except Exception as e:
             return {
                 'success': False,
                 'error': str(e)
             }
         finally:
-            # Always cancel alarm and restore handler
-            if old_handler is not None:
-                signal.alarm(0)
-                signal.signal(signal.SIGALRM, old_handler)
+            # Restore original max_steps setting
+            self.engine.max_steps = old_max_steps
             self._cleanup_query_state()
     
-    def _execute_with_thread_timeout(self, query_text: str, timeout_ms: int) -> dict[str, Any]:
-        """Execute query with thread-based timeout (Windows/fallback)."""
-        import threading
-        
-        result = {'success': False, 'error': 'Query timeout: exceeded time limit'}
-        finished = threading.Event()
-        
-        def run_query():
-            try:
-                self._cleanup_query_state()
-                solutions = list(self.engine.query(query_text))
-                if solutions:
-                    result['success'] = True
-                    result['bindings'] = solutions[0]
-                    del result['error']
-                else:
-                    del result['error']
-            except Exception as e:
-                result['error'] = str(e)
-            finally:
-                finished.set()
-        
-        # Run query in thread
-        query_thread = threading.Thread(target=run_query)
-        query_thread.daemon = True
-        query_thread.start()
-        
-        # Wait for completion or timeout
-        if finished.wait(timeout_ms / 1000.0):
-            # Query completed
-            pass
-        else:
-            # Timeout - thread may still be running but we return timeout
-            pass
-        
-        self._cleanup_query_state()
-        return result
     
     def query_generator(self, query_text: str) -> Generator[dict[str, Any], None, None]:
         """Create a generator for interactive query results.
