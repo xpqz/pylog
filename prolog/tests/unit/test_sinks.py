@@ -10,11 +10,10 @@ import json
 import os
 import tempfile
 import re
-from unittest.mock import patch, MagicMock
 from collections import deque
 from io import StringIO
-from pytest import approx
 
+from prolog.ast.terms import Atom
 from prolog.debug.tracer import TraceEvent
 from prolog.debug.sinks import (
     TraceSink, PrettyTraceSink, JSONLTraceSink,
@@ -27,7 +26,7 @@ class TestTraceSinkBase:
 
     def test_ring_buffer_capacity(self):
         """Ring buffer respects maxlen capacity."""
-        sink = TestMemoryTraceSink(maxlen=3)
+        sink = TestMemoryTraceSink(maxlen=3, batch_size=1)  # Immediate flush
 
         # Add 5 events to a buffer with capacity 3
         for i in range(5):
@@ -42,7 +41,7 @@ class TestTraceSinkBase:
 
     def test_events_dropped_counter(self):
         """Dropped events are tracked correctly."""
-        sink = TestMemoryTraceSink(maxlen=2)
+        sink = TestMemoryTraceSink(maxlen=2, batch_size=1)
 
         # Fill buffer
         for i in range(5):
@@ -80,13 +79,19 @@ class TestTraceSinkBase:
 
     def _make_event(self, step_id=1, port="call", **kwargs):
         """Create a test TraceEvent."""
+        goal = kwargs.pop('goal', Atom('test'))
+        goal_pretty = kwargs.pop('goal_pretty', 'test(X)')
+        goal_canonical = kwargs.pop('goal_canonical', 'test(X)')
+
         defaults = {
             'version': 1,
             'run_id': "test_run",
             'step_id': step_id,
             'port': port,
             'pred_id': "test/1",
-            'goal': "test(X)",
+            'goal': goal,
+            'goal_pretty': goal_pretty,
+            'goal_canonical': goal_canonical,
             'frame_depth': 0,
             'cp_depth': 0,
             'goal_height': 1,
@@ -188,13 +193,18 @@ class TestPrettyTraceSink:
     def _make_event(self, step_id=1, port="call", pred_id="test/1",
                     goal_pretty="test(X)", frame_depth=0, **kwargs):
         """Create a test TraceEvent."""
+        goal = kwargs.pop('goal', Atom('test'))
+        goal_canonical = kwargs.pop('goal_canonical', goal_pretty)
+
         defaults = {
             'version': 1,
             'run_id': "test_run",
             'step_id': step_id,
             'port': port,
             'pred_id': pred_id,
-            'goal': goal_pretty,
+            'goal': goal,
+            'goal_pretty': goal_pretty,
+            'goal_canonical': goal_canonical,
             'frame_depth': frame_depth,
             'cp_depth': 0,
             'goal_height': 1,
@@ -276,7 +286,7 @@ class TestJSONLTraceSink:
 
         event = self._make_event()
         # These should be None
-        assert event.timestamp is None
+        assert event.monotonic_ns is None
         assert event.bindings is None
 
         sink.write_event(event)
@@ -294,13 +304,13 @@ class TestJSONLTraceSink:
         output = StringIO()
         sink = JSONLTraceSink(output=output)
 
-        event = self._make_event(timestamp=1234567890.123)
+        event = self._make_event(monotonic_ns=1234567890123000000)
         sink.write_event(event)
         sink.flush()
 
         obj = json.loads(output.getvalue().strip())
         assert 'ts' in obj
-        assert obj['ts'] == approx(1234567890.123, rel=0, abs=1e-6)
+        assert obj['ts'] == 1234567890123000000
 
     def test_jsonl_includes_version(self):
         """JSONL includes schema version."""
@@ -328,13 +338,19 @@ class TestJSONLTraceSink:
 
     def _make_event(self, step_id=1, port="call", **kwargs):
         """Create a test TraceEvent."""
+        goal = kwargs.pop('goal', Atom('test'))
+        goal_pretty = kwargs.pop('goal_pretty', 'test(X)')
+        goal_canonical = kwargs.pop('goal_canonical', 'test(X)')
+
         defaults = {
             'version': 1,
             'run_id': "test_run",
             'step_id': step_id,
             'port': port,
             'pred_id': "test/1",
-            'goal': "test(X)",
+            'goal': goal,
+            'goal_pretty': goal_pretty,
+            'goal_canonical': goal_canonical,
             'frame_depth': 0,
             'cp_depth': 0,
             'goal_height': 1,
@@ -411,31 +427,34 @@ class TestFileTraceSink:
         with tempfile.TemporaryDirectory() as tmpdir:
             filepath = os.path.join(tmpdir, "trace.jsonl")
 
-            with patch('builtins.open', MagicMock()) as mock_open:
-                mock_file = MagicMock()
-                mock_open.return_value.__enter__.return_value = mock_file
+            sink = FileTraceSink(
+                filepath,
+                format="jsonl",
+                batch_size=10
+            )
 
-                sink = FileTraceSink(
-                    filepath,
-                    format="jsonl",
-                    batch_size=10
-                )
+            # Write less than batch size
+            for i in range(5):
+                event = self._make_event(step_id=i)
+                sink.write_event(event)
 
-                # Write less than batch size
-                for i in range(5):
-                    event = self._make_event(step_id=i)
-                    sink.write_event(event)
+            # File should still be empty (not flushed)
+            with open(filepath, 'r') as f:
+                content = f.read()
+                assert len(content) == 0
 
-                # Should not have written yet
-                assert mock_file.write.call_count == 0
+            # Write more to reach batch size
+            for i in range(5, 10):
+                event = self._make_event(step_id=i)
+                sink.write_event(event)
 
-                # Write more to reach batch size
-                for i in range(5, 10):
-                    event = self._make_event(step_id=i)
-                    sink.write_event(event)
+            # Now should have written to file
+            with open(filepath, 'r') as f:
+                content = f.read()
+                lines = content.strip().split('\n')
+                assert len(lines) == 10  # All events written
 
-                # Now should have written exactly once (batch of 10)
-                assert mock_file.write.call_count == 1
+            sink.close()
 
     def test_close_flushes_pending(self):
         """Close flushes pending events."""
@@ -499,13 +518,19 @@ class TestFileTraceSink:
 
     def _make_event(self, step_id=1, port="call", **kwargs):
         """Create a test TraceEvent."""
+        goal = kwargs.pop('goal', Atom('test'))
+        goal_pretty = kwargs.pop('goal_pretty', 'test(X)')
+        goal_canonical = kwargs.pop('goal_canonical', 'test(X)')
+
         defaults = {
             'version': 1,
             'run_id': "test_run",
             'step_id': step_id,
             'port': port,
             'pred_id': "test/1",
-            'goal': "test(X)",
+            'goal': goal,
+            'goal_pretty': goal_pretty,
+            'goal_canonical': goal_canonical,
             'frame_depth': 0,
             'cp_depth': 0,
             'goal_height': 1,
@@ -520,7 +545,7 @@ class TestBackpressure:
 
     def test_drops_when_buffer_full(self):
         """Events dropped when buffer is full."""
-        sink = TestMemoryTraceSink(maxlen=2, drop_on_full=True)
+        sink = TestMemoryTraceSink(maxlen=2, batch_size=1, drop_on_full=True)
 
         # Fill buffer completely
         for i in range(10):
@@ -579,7 +604,7 @@ class TestBackpressure:
 
     def test_drop_reason_is_buffer_full_when_capacity_reached(self):
         """Track reason for drops when buffer full."""
-        sink = TestMemoryTraceSink(maxlen=2)
+        sink = TestMemoryTraceSink(maxlen=2, batch_size=1)  # Immediate flush
 
         # Fill buffer
         for i in range(5):
@@ -592,13 +617,19 @@ class TestBackpressure:
 
     def _make_event(self, step_id=1, port="call", **kwargs):
         """Create a test TraceEvent."""
+        goal = kwargs.pop('goal', Atom('test'))
+        goal_pretty = kwargs.pop('goal_pretty', 'test(X)')
+        goal_canonical = kwargs.pop('goal_canonical', 'test(X)')
+
         defaults = {
             'version': 1,
             'run_id': "test_run",
             'step_id': step_id,
             'port': port,
             'pred_id': "test/1",
-            'goal': "test(X)",
+            'goal': goal,
+            'goal_pretty': goal_pretty,
+            'goal_canonical': goal_canonical,
             'frame_depth': 0,
             'cp_depth': 0,
             'goal_height': 1,
@@ -652,13 +683,19 @@ class TestMemoryBounds:
 
     def _make_event(self, step_id=1, port="call", **kwargs):
         """Create a test TraceEvent."""
+        goal = kwargs.pop('goal', Atom('test'))
+        goal_pretty = kwargs.pop('goal_pretty', 'test(X)')
+        goal_canonical = kwargs.pop('goal_canonical', 'test(X)')
+
         defaults = {
             'version': 1,
             'run_id': "test_run",
             'step_id': step_id,
             'port': port,
             'pred_id': "test/1",
-            'goal': "test(X)",
+            'goal': goal,
+            'goal_pretty': goal_pretty,
+            'goal_canonical': goal_canonical,
             'frame_depth': 0,
             'cp_depth': 0,
             'goal_height': 1,
@@ -683,14 +720,22 @@ class TestMemoryTraceSink(TraceSink):
     def _write_batch(self, events):
         """Write a batch of events to memory."""
         for event in events:
+            # Check if adding would exceed capacity
             if self.buffer.maxlen and len(self.buffer) >= self.buffer.maxlen:
+                # Ring buffer behavior: oldest item is automatically removed by deque
                 self.events_dropped_total += 1
                 self.drop_reason = 'buffer_full'
-                if self.drop_on_full:
-                    return False
             self.buffer.append(event)
         self.flush_count += 1
         return True
+
+    def write_event(self, event):
+        """Override to handle drop_on_full correctly."""
+        if self.drop_on_full and self.buffer.maxlen and len(self.buffer) >= self.buffer.maxlen:
+            self.events_dropped_total += 1
+            self.drop_reason = 'buffer_full'
+            return False
+        return super().write_event(event)
 
     def close(self):
         """Close the sink."""
