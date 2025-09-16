@@ -4,8 +4,13 @@ Trace output filters with composable rules and spypoint management.
 Provides selective tracing through port, predicate, depth, and sampling filters.
 """
 
-from typing import Optional, Set, Dict, Any
+import random
+from typing import Optional, Set, Dict, Any, Union
 from dataclasses import dataclass, field
+
+from prolog.ast.terms import Atom, Int, Var, Struct, List
+from prolog.unify.store import Store
+from prolog.unify.unify_helpers import deref_term
 
 
 @dataclass
@@ -26,8 +31,12 @@ class TraceFilters:
     max_term_depth: int = 10
     max_items_per_list: int = 10
 
+    # Internal fields
+    _rng: Optional[random.Random] = field(default=None, init=False, repr=False)
+    _sample_counter: int = field(default=0, init=False, repr=False)
+
     def __post_init__(self):
-        """Validate configuration."""
+        """Validate configuration and initialize RNG."""
         # Validate sampling rate
         if self.sampling_rate < 1:
             raise ValueError(f"sampling_rate must be >= 1, got {self.sampling_rate}")
@@ -52,6 +61,10 @@ class TraceFilters:
         if self.bindings_policy not in valid_policies:
             raise ValueError(f"Invalid bindings_policy: {self.bindings_policy}")
 
+        # Initialize RNG if seed provided
+        if self.sampling_seed is not None:
+            self._rng = random.Random(self.sampling_seed)
+
     def add_spypoint(self, pred_id: str):
         """Add a spypoint."""
         self.spypoints.add(pred_id)
@@ -63,6 +76,93 @@ class TraceFilters:
     def clear_spypoints(self):
         """Clear all spypoints."""
         self.spypoints.clear()
+
+    def _truncate_term(self, term: Any, depth: int, max_depth: int,
+                      max_items: int, store: Optional[Store] = None) -> str:
+        """
+        Convert term to string with truncation.
+
+        Args:
+            term: Term to convert
+            depth: Current nesting depth
+            max_depth: Maximum depth to show
+            max_items: Maximum list items to show
+            store: Store for dereferencing variables
+
+        Returns:
+            String representation with truncation
+        """
+        if depth >= max_depth:
+            return "..."
+
+        # Dereference if we have a store
+        if store:
+            _, term = deref_term(term, store)
+
+        # Handle different term types
+        if isinstance(term, Atom):
+            return term.name if hasattr(term, 'name') else str(term)
+        elif isinstance(term, Int):
+            return str(term.value if hasattr(term, 'value') else term)
+        elif isinstance(term, Var):
+            # Unbound variable
+            return f"_{term.hint}" if term.hint else f"_G{term.id}"
+        elif isinstance(term, Struct):
+            if depth + 1 >= max_depth:
+                # Would exceed depth on next level
+                return f"{term.functor}(...)"
+
+            # Recursively format arguments
+            formatted_args = []
+            for arg in term.args:
+                formatted = self._truncate_term(arg, depth + 1, max_depth, max_items, store)
+                formatted_args.append(formatted)
+
+            args_str = ", ".join(formatted_args)
+            return f"{term.functor}({args_str})"
+        elif isinstance(term, List):
+            if depth + 1 >= max_depth:
+                return "[...]"
+
+            # Format list items with truncation
+            formatted_items = []
+            count = 0
+
+            # Handle proper list
+            current = term
+            while count < max_items:
+                if hasattr(current, 'items'):
+                    # Python list representation
+                    for item in current.items[:max_items]:
+                        formatted = self._truncate_term(item, depth + 1, max_depth, max_items, store)
+                        formatted_items.append(formatted)
+                        count += 1
+                    if len(current.items) > max_items:
+                        formatted_items.append("...")
+                    break
+                elif hasattr(current, 'head'):
+                    # Prolog list representation [H|T]
+                    formatted = self._truncate_term(current.head, depth + 1, max_depth, max_items, store)
+                    formatted_items.append(formatted)
+                    count += 1
+                    current = current.tail
+                    if isinstance(current, Atom) and current.name == "[]":
+                        break  # End of proper list
+                    if not isinstance(current, List):
+                        # Improper list
+                        formatted_items.append("|")
+                        formatted_items.append(self._truncate_term(current, depth + 1, max_depth, max_items, store))
+                        break
+                else:
+                    break
+
+            if count >= max_items and not (isinstance(current, Atom) and current.name == "[]"):
+                formatted_items.append("...")
+
+            return "[" + ", ".join(formatted_items) + "]"
+        else:
+            # Fallback
+            return str(term)
 
     def process_bindings(self, event: Any, bindings: Dict[str, Any],
                         fresh_var_map: Optional[Dict[int, str]] = None) -> Dict[str, Any]:
@@ -77,17 +177,29 @@ class TraceFilters:
             # Include names but not values
             result['bindings'] = {k: None for k in bindings.keys()}
         elif self.bindings_policy == 'names_values':
-            # Include names and values
-            # TODO: Implement truncation based on max_term_depth and max_items_per_list
+            # Include names and values with truncation
             result['bindings'] = {}
-            for k, v in bindings.items():
-                # Simple stub - real implementation would handle truncation
-                if hasattr(v, 'value'):
-                    result['bindings'][k] = v.value
-                elif hasattr(v, 'name'):
-                    result['bindings'][k] = v.name
+
+            for name, value in bindings.items():
+                # Apply truncation
+                truncated = self._truncate_term(
+                    value, 0, self.max_term_depth, self.max_items_per_list
+                )
+
+                # Convert to appropriate representation
+                if isinstance(value, Atom):
+                    result['bindings'][name] = value.name if hasattr(value, 'name') else str(value)
+                elif isinstance(value, Int):
+                    result['bindings'][name] = value.value if hasattr(value, 'value') else value
+                elif isinstance(value, Var):
+                    # Unbound variable
+                    if fresh_var_map and value.id in fresh_var_map:
+                        result['bindings'][name] = fresh_var_map[value.id]
+                    else:
+                        result['bindings'][name] = value.hint if value.hint else f"_G{value.id}"
                 else:
-                    result['bindings'][k] = str(v)
+                    # Complex term - use truncated string
+                    result['bindings'][name] = truncated
 
         return result
 
@@ -105,15 +217,27 @@ def should_emit_event(event: Any, filters: TraceFilters) -> bool:
             return False
 
     # Check predicate filter (second)
+    # Logic:
+    # - If predicates is None and no spypoints: allow all
+    # - If predicates is None but spypoints exist: only allow spypoints
+    # - If predicates is empty set: block all except spypoints
+    # - If predicates has values: allow union of predicates and spypoints
     if filters.predicates is not None or filters.spypoints:
-        # If predicates is None and no spypoints, allow all
-        # If predicates is None but spypoints exist, only allow spypoints
-        # If predicates exists, allow union of predicates and spypoints
         if filters.predicates is None:
-            if filters.spypoints and event.pred_id not in filters.spypoints:
+            # No predicate filter set
+            if filters.spypoints:
+                # Only allow spypoints
+                if event.pred_id not in filters.spypoints:
+                    return False
+            # else: allow all (no predicate filter, no spypoints)
+        elif filters.predicates == set():
+            # Empty predicate set blocks all except spypoints
+            if event.pred_id not in filters.spypoints:
                 return False
-        elif event.pred_id not in filters.predicates and event.pred_id not in filters.spypoints:
-            return False
+        else:
+            # Predicates filter is set with values
+            if event.pred_id not in filters.predicates and event.pred_id not in filters.spypoints:
+                return False
 
     # Check depth filter (third)
     if filters.min_depth > 0 and event.frame_depth < filters.min_depth:
@@ -123,14 +247,14 @@ def should_emit_event(event: Any, filters: TraceFilters) -> bool:
 
     # Check sampling filter (last)
     if filters.sampling_rate > 1:
-        # Simple deterministic sampling based on step_id
-        if filters.sampling_seed is not None:
-            # Use seed for deterministic sampling
-            import random
-            rng = random.Random(filters.sampling_seed)
-            # Generate deterministic sequence based on step_id
-            for _ in range(event.step_id + 1):
-                val = rng.random()
+        if filters._rng is not None:
+            # Deterministic sampling with RNG
+            # Each event gets its own random value based on step_id
+            # We need to advance the RNG to the right position
+            temp_rng = random.Random(filters.sampling_seed)
+            for _ in range(event.step_id):
+                temp_rng.random()
+            val = temp_rng.random()
             return val < (1.0 / filters.sampling_rate)
         else:
             # Simple modulo sampling without seed
