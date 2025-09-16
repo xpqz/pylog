@@ -156,6 +156,20 @@ class TestPrettyTraceSink:
         assert m, f"line not in expected format: {line!r}"
         assert len(m.group(1)) == 6  # 3 depth * 2 spaces
 
+    def test_pretty_no_indent_at_depth_zero(self):
+        """No indentation at depth zero."""
+        output = StringIO()
+        sink = PrettyTraceSink(output=output)
+
+        # Event with frame_depth=0
+        event = self._make_event(frame_depth=0)
+        sink.write_event(event)
+        sink.flush()
+
+        first = output.getvalue().splitlines()[0]
+        # Should start with bracket, no leading spaces
+        assert re.match(r'^\[\d+\]\s', first)  # no leading spaces
+
     def test_pretty_caps_applied(self):
         """Term depth and list length caps are applied."""
         output = StringIO()
@@ -396,9 +410,11 @@ class TestFileTraceSink:
             sink.close()
 
             # Should have created rotated files
+            import re
             files = os.listdir(tmpdir)
             assert len(files) > 1  # Original + rotated
-            assert any('.1' in f for f in files)  # Rotated file
+            assert os.path.basename(filepath) in files  # Base file exists
+            assert any(re.match(r"trace\.jsonl\.\d+$", f) for f in files)  # Rotated file exists
 
     def test_max_rotated_files(self):
         """Keeps only max_files rotated files."""
@@ -547,19 +563,14 @@ class TestBackpressure:
         """Events dropped when buffer is full."""
         sink = TestMemoryTraceSink(maxlen=2, batch_size=1, drop_on_full=True)
 
-        # Fill buffer completely
-        for i in range(10):
-            event = self._make_event(step_id=i)
-            result = sink.write_event(event)
+        # Write more events than capacity
+        results = [sink.write_event(self._make_event(step_id=i)) for i in range(5)]
 
-            if i < 2:
-                assert result is True  # Accepted
-            else:
-                # Later events dropped when full
-                pass  # Depends on implementation
-
-        # Should track drops
-        assert sink.events_dropped_total > 0
+        # First maxlen writes should succeed
+        assert results[:2] == [True, True]          # capacity accepts first two
+        assert results[2:] == [False, False, False] # subsequent writes dropped
+        assert sink.events_dropped_total == 3
+        assert sink.drop_reason == 'buffer_full'
 
     def test_step_id_is_monotonic_under_drops(self):
         """step_id is monotonic despite drops."""
@@ -678,8 +689,8 @@ class TestMemoryBounds:
             event = self._make_event(step_id=i)
             sink.write_event(event)
 
-        # Should have flushed multiple times
-        assert flush_count >= 9  # At least 900/100 flushes
+        # Should have flushed exactly every 100 events
+        assert flush_count == 10  # Exactly 10 flushes (1000/100)
 
     def _make_event(self, step_id=1, port="call", **kwargs):
         """Create a test TraceEvent."""

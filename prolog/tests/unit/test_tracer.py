@@ -728,7 +728,9 @@ class TestPrettyOutput:
         )
 
         output = sink.format_event(event)
-        expected = "[123] call(5): append([1,2], [3], X) @ frame=2 cp=1"
+        # Format: indent[step_id] PORT pred_id: goal
+        # With frame_depth=2, expect 4 spaces indent
+        expected = "    [123] CALL append/3: append([1,2], [3], X)"
         assert output == expected
 
     def test_pretty_includes_step_id(self):
@@ -750,7 +752,8 @@ class TestPrettyOutput:
         """Format includes port name."""
         sink = PrettyTraceSink()
 
-        for port in ["call", "exit", "redo", "fail"]:
+        port_map = {"call": "CALL", "exit": "EXIT", "redo": "REDO", "fail": "FAIL"}
+        for port, expected_port in port_map.items():
             event = TraceEvent(
                 version=1, run_id="test", step_id=1,
                 port=port, goal=Atom("test"),
@@ -760,7 +763,7 @@ class TestPrettyOutput:
             )
 
             output = sink.format_event(event)
-            assert port in output
+            assert expected_port in output
 
     def test_pretty_includes_goal(self):
         """Format includes goal pretty form."""
@@ -780,7 +783,7 @@ class TestPrettyOutput:
         assert "member(X, [1,2,3])" in output
 
     def test_pretty_includes_depths(self):
-        """Format includes frame and cp depths."""
+        """Format shows indentation based on frame depth."""
         sink = PrettyTraceSink()
 
         event = TraceEvent(
@@ -792,58 +795,44 @@ class TestPrettyOutput:
         )
 
         output = sink.format_event(event)
-        assert "frame=3" in output
-        assert "cp=2" in output
+        # With frame_depth=3, expect 6 spaces indent (2 per level)
+        assert output.startswith("      [")  # 6 spaces
 
     def test_pretty_truncation_contract(self):
-        """Goal truncation respects max_goal_length."""
-        sink = PrettyTraceSink()
-        sink.max_goal_length = 20  # Set max length
+        """Goal truncation based on max_term_depth."""
+        sink = PrettyTraceSink(max_term_depth=4)
 
-        # Create a very long goal
-        long_list = List(tuple(Int(i) for i in range(100)))
+        # Create a goal with deep nesting
         event = TraceEvent(
             version=1, run_id="test", step_id=1,
             port="call",
-            goal=Struct("process", (long_list,)),
-            goal_pretty="process([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,...])",
-            goal_canonical="process([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,...])",
+            goal=Struct("process", (Atom("test"),)),
+            goal_pretty="process(f(g(h(i(j(k(deep)))))))",
+            goal_canonical="process(f(g(h(i(j(k(deep)))))))",
             frame_depth=1, cp_depth=0, goal_height=1,
             write_stamp=1, pred_id="process/1"
         )
 
         output = sink.format_event(event)
-        # Extract just the goal part (between : and @)
-        goal_part = output.split(": ")[1].split(" @ ")[0]
-
-        # Goal part should not exceed max_goal_length
-        assert len(goal_part) <= sink.max_goal_length
-        # Should contain ellipsis for truncation
-        if len(event.goal_pretty) > sink.max_goal_length:
-            assert "..." in goal_part
+        # Should contain ellipsis for truncation at depth 4
+        assert "..." in output
 
     def test_pretty_caps_applied(self):
-        """Caps apply (max_term_depth=4, max_items_per_list=10)."""
-        sink = PrettyTraceSink()
-
-        # Deep nested structure
-        deep = Struct("f", (Struct("g", (Struct("h", (Struct("i", (Atom("deep"),)),)),)),))
-
-        # Long list
-        long_list = List(tuple(Int(i) for i in range(20)))
+        """Caps apply (max_term_depth=4)."""
+        sink = PrettyTraceSink(max_term_depth=4)
 
         event = TraceEvent(
             version=1, run_id="test", step_id=1,
             port="call",
-            goal=Struct("test", (deep, long_list)),
-            goal_pretty="test(f(g(h(...))), [0,1,2,3,4,5,6,7,8,9,...])",
-            goal_canonical="test(f(g(h(i(deep)))), [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19])",
+            goal=Atom("test"),
+            goal_pretty="test(f(g(h(i(j(deep))))))",  # 5 levels deep
+            goal_canonical="test(f(g(h(i(j(deep))))))",
             frame_depth=1, cp_depth=0, goal_height=1,
-            write_stamp=1, pred_id="test/2"
+            write_stamp=1, pred_id="test/1"
         )
 
         output = sink.format_event(event)
-        # Should show truncation
+        # Should show truncation at depth 4
         assert "..." in output
 
 

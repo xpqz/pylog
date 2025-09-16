@@ -127,7 +127,7 @@ class PrettyTraceSink(TraceSink):
     def _write_batch(self, events: List[TraceEvent]) -> bool:
         """Write events in human-readable format."""
         for event in events:
-            line = self._format_event(event)
+            line = self.format_event(event)
             self.output.write(line + '\n')
 
         # Flush output stream
@@ -136,7 +136,7 @@ class PrettyTraceSink(TraceSink):
 
         return True
 
-    def _format_event(self, event: TraceEvent) -> str:
+    def format_event(self, event: TraceEvent) -> str:
         """Format a single event for display."""
         # Port formatting
         port_map = {
