@@ -250,6 +250,6 @@ def should_emit_event(event: Any, filters: TraceFilters) -> bool:
             return filters._rng.random() < (1.0 / filters.sampling_rate)
         else:
             # Simple modulo sampling based on considered events
-            return (filters._sample_counter % filters.sampling_rate) == 1
+            return (filters._sample_counter % filters.sampling_rate) == 0
 
     return True
