@@ -5,7 +5,7 @@ Provides selective tracing through port, predicate, depth, and sampling filters.
 """
 
 import random
-from typing import Optional, Set, Dict, Any, Union
+from typing import Optional, Set, Dict, Any
 from dataclasses import dataclass, field
 
 from prolog.ast.terms import Atom, Int, Var, Struct, List
@@ -124,42 +124,37 @@ class TraceFilters:
             if depth + 1 >= max_depth:
                 return "[...]"
 
-            # Format list items with truncation
-            formatted_items = []
-            count = 0
+            # Prefer Python list-like representation if available
+            if hasattr(term, 'items'):
+                limited = term.items[:max_items]
+                parts = [self._truncate_term(x, depth + 1, max_depth, max_items, store) for x in limited]
+                if len(term.items) > max_items:
+                    parts.append("...")
+                return "[" + ", ".join(parts) + "]"
 
-            # Handle proper list
-            current = term
-            while count < max_items:
-                if hasattr(current, 'items'):
-                    # Python list representation
-                    for item in current.items[:max_items]:
-                        formatted = self._truncate_term(item, depth + 1, max_depth, max_items, store)
-                        formatted_items.append(formatted)
-                        count += 1
-                    if len(current.items) > max_items:
-                        formatted_items.append("...")
-                    break
-                elif hasattr(current, 'head'):
-                    # Prolog list representation [H|T]
-                    formatted = self._truncate_term(current.head, depth + 1, max_depth, max_items, store)
-                    formatted_items.append(formatted)
+            # Prolog [H|T] representation
+            parts, count, current = [], 0, term
+            while count < max_items and isinstance(current, List):
+                if hasattr(current, 'head'):
+                    parts.append(self._truncate_term(current.head, depth + 1, max_depth, max_items, store))
                     count += 1
                     current = current.tail
-                    if isinstance(current, Atom) and current.name == "[]":
-                        break  # End of proper list
-                    if not isinstance(current, List):
-                        # Improper list
-                        formatted_items.append("|")
-                        formatted_items.append(self._truncate_term(current, depth + 1, max_depth, max_items, store))
-                        break
+                    if isinstance(current, Atom) and getattr(current, 'name', None) == "[]":
+                        # Proper list ending
+                        return "[" + ", ".join(parts) + "]"
                 else:
                     break
 
-            if count >= max_items and not (isinstance(current, Atom) and current.name == "[]"):
-                formatted_items.append("...")
+            # Reached cap or improper list
+            if isinstance(current, List):
+                # Hit max_items limit with more list to go
+                parts.append("...")
+            elif not (isinstance(current, Atom) and getattr(current, 'name', None) == "[]"):
+                # Improper list [H|T] where T is not []
+                parts.append("|")
+                parts.append(self._truncate_term(current, depth + 1, max_depth, max_items, store))
 
-            return "[" + ", ".join(formatted_items) + "]"
+            return "[" + ", ".join(parts) + "]"
         else:
             # Fallback
             return str(term)
@@ -247,17 +242,14 @@ def should_emit_event(event: Any, filters: TraceFilters) -> bool:
 
     # Check sampling filter (last)
     if filters.sampling_rate > 1:
+        # Increment counter for events that reach sampling check
+        filters._sample_counter += 1
+
         if filters._rng is not None:
-            # Deterministic sampling with RNG
-            # Each event gets its own random value based on step_id
-            # We need to advance the RNG to the right position
-            temp_rng = random.Random(filters.sampling_seed)
-            for _ in range(event.step_id):
-                temp_rng.random()
-            val = temp_rng.random()
-            return val < (1.0 / filters.sampling_rate)
+            # Deterministic sampling with RNG - consume only when needed
+            return filters._rng.random() < (1.0 / filters.sampling_rate)
         else:
-            # Simple modulo sampling without seed
-            return event.step_id % filters.sampling_rate == 0
+            # Simple modulo sampling based on considered events
+            return (filters._sample_counter % filters.sampling_rate) == 1
 
     return True
