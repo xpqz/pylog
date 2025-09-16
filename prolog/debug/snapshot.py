@@ -17,6 +17,7 @@ class CPSnapshot:
     Snapshot of a single choicepoint.
 
     Immutable dataclass with slots for memory efficiency.
+    Note: cp_id may be snapshot-relative if engine doesn't provide stable IDs.
     """
     cp_id: int
     kind: str  # "clause" or "call"
@@ -43,6 +44,7 @@ class FrameSnapshot:
     Snapshot of a single frame.
 
     Immutable dataclass with slots for memory efficiency.
+    Note: frame_id may be snapshot-relative if engine doesn't provide stable IDs.
     """
     frame_id: int
     pred_id: str
@@ -104,6 +106,8 @@ class SnapshotDiff:
     Differences between two engine snapshots.
 
     Positive deltas indicate growth, negative indicate reduction.
+    Note: add/remove counts are cardinality deltas (length differences),
+    not identity-based tracking of individual items.
     """
     store_size_delta: int
     trail_length_delta: int
@@ -191,6 +195,11 @@ class SnapshotManager:
         """
         Measure memory usage of the engine.
 
+        This is a best-effort probe that may inspect private fields when present.
+        Uses sys.getsizeof for a shallow size estimate. Note that this
+        is a heuristic - actual memory usage varies by Python implementation
+        and container types.
+
         Args:
             engine: The engine to measure
 
@@ -198,10 +207,11 @@ class SnapshotManager:
             Memory usage in bytes or None if not available
         """
         try:
-            # Use sys.getsizeof as primary method since it's simpler
-            # and gives a reasonable estimate of object size
+            # Base size of engine object
             size = sys.getsizeof(engine)
-            # Also account for the major data structures
+
+            # Add sizes from internal structures if available
+            # This is best-effort and may access internals
             if hasattr(engine, 'store') and hasattr(engine.store, 'cells'):
                 size += sys.getsizeof(engine.store.cells)
             if hasattr(engine, 'trail'):
@@ -212,6 +222,7 @@ class SnapshotManager:
                 size += sys.getsizeof(engine.frame_stack)
             if hasattr(engine, 'cp_stack'):
                 size += sys.getsizeof(engine.cp_stack)
+
             return size if size > 0 else None
         except Exception:
             return None
@@ -238,14 +249,19 @@ class SnapshotManager:
         frame_top = engine.frame_top_value() if hasattr(engine, 'frame_top_value') else 0
         cp_height = engine.choicepoint_height() if hasattr(engine, 'choicepoint_height') else 0
         cp_top = engine.choicepoint_top() if hasattr(engine, 'choicepoint_top') else 0
-        write_stamp = engine.get_write_stamp() if hasattr(engine, 'get_write_stamp') else 0
+        write_stamp = engine.write_stamp_value() if hasattr(engine, 'write_stamp_value') else 0
 
         # Capture choicepoints using public API
         choicepoints = []
-        if hasattr(engine, 'get_choicepoints'):
-            for i, cp in enumerate(engine.get_choicepoints()):
+        if hasattr(engine, 'choicepoints'):
+            for i, cp in enumerate(engine.choicepoints()):
+                # Prefer stable ID if available, otherwise use enumeration
+                cp_id = getattr(cp, 'id', None)
+                if cp_id is None:
+                    cp_id = i  # Snapshot-relative ID
+
                 cp_snapshot = CPSnapshot(
-                    cp_id=i,
+                    cp_id=cp_id,
                     kind=cp.kind if hasattr(cp, 'kind') else "clause",
                     pred_id=cp.pred_id if hasattr(cp, 'pred_id') else "unknown",
                     trail_top=cp.trail_top if hasattr(cp, 'trail_top') else 0,
@@ -256,10 +272,15 @@ class SnapshotManager:
 
         # Capture frames using public API
         frames = []
-        if hasattr(engine, 'get_frames'):
-            for i, frame in enumerate(engine.get_frames()):
+        if hasattr(engine, 'frames'):
+            for i, frame in enumerate(engine.frames()):
+                # Prefer stable ID if available, otherwise use enumeration
+                frame_id = getattr(frame, 'id', None)
+                if frame_id is None:
+                    frame_id = i  # Snapshot-relative ID
+
                 frame_snapshot = FrameSnapshot(
-                    frame_id=i,
+                    frame_id=frame_id,
                     pred_id=frame.pred_id if hasattr(frame, 'pred_id') else "unknown",
                     parent_frame=frame.parent_frame if hasattr(frame, 'parent_frame') else None
                 )

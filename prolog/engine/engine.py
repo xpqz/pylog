@@ -63,8 +63,7 @@ class Engine:
         self.frame_stack: List[Frame] = []
         self.cp_stack: List[Choicepoint] = []
 
-        # Add choicepoints alias for tracer compatibility
-        self.choicepoints = self.cp_stack
+        # Note: cp_stack is accessed via choicepoints() method for snapshot module
 
         # Query tracking with fast lookups
         self._query_vars: List[Tuple[int, str]] = []  # [(varid, name), ...] for order
@@ -158,15 +157,15 @@ class Engine:
         """Get the current choicepoint top (same as height for list-based stack)."""
         return len(self.cp_stack) if hasattr(self, 'cp_stack') else 0
 
-    def get_write_stamp(self) -> int:
+    def write_stamp_value(self) -> int:
         """Get the current write stamp."""
         return self.write_stamp if hasattr(self, 'write_stamp') else 0
 
-    def get_choicepoints(self) -> list:
+    def choicepoints(self) -> list:
         """Get list of current choicepoints (for snapshot)."""
         return self.cp_stack if hasattr(self, 'cp_stack') else []
 
-    def get_frames(self) -> list:
+    def frames(self) -> list:
         """Get list of current frames (for snapshot)."""
         return self.frame_stack if hasattr(self, 'frame_stack') else []
 

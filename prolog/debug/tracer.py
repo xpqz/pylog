@@ -127,7 +127,7 @@ class PortsTracer:
 
         # Extract stack depths from engine
         frame_depth = len(self.engine.frame_stack)
-        cp_depth = len(getattr(self.engine, 'choicepoints', []))
+        cp_depth = len(getattr(self.engine, 'cp_stack', []))
         goal_height = len(getattr(self.engine, 'goal_stack', []))
         write_stamp = getattr(self.engine, 'write_stamp', 0)
 
