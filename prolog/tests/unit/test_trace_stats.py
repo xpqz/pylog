@@ -1,8 +1,6 @@
 """Tests for trace statistics computation module."""
 
 import json
-import tempfile
-from pathlib import Path
 import pytest
 
 from prolog.debug.trace_stats import (
@@ -66,8 +64,8 @@ class TestTraceStatisticsComputation:
 
         stats = compute_trace_statistics(trace_file)
 
-        assert "duration_ms" not in stats or stats["duration_ms"] is None
-        assert "events_per_second" not in stats or stats["events_per_second"] is None
+        assert "duration_ms" not in stats
+        assert "events_per_second" not in stats
 
     def test_predicate_call_graph_statistics(self, tmp_path):
         """Test computation of predicate call graph metrics."""
@@ -182,12 +180,12 @@ class TestPerformanceAnalysis:
         """Test analysis of performance metrics from trace."""
         trace_file = tmp_path / "trace.jsonl"
         events = [
-            {"sid": 1, "p": 0, "pid": "slow/0", "ts": 1000.0},
-            {"sid": 2, "p": 1, "pid": "slow/0", "ts": 1100.0},  # 100ms
-            {"sid": 3, "p": 0, "pid": "fast/0", "ts": 1100.0},
-            {"sid": 4, "p": 1, "pid": "fast/0", "ts": 1101.0},  # 1ms
-            {"sid": 5, "p": 0, "pid": "slow/0", "ts": 1101.0},
-            {"sid": 6, "p": 1, "pid": "slow/0", "ts": 1201.0},  # 100ms
+            {"sid": 1, "p": 0, "pid": "slow/0", "ts": 1000.000},
+            {"sid": 2, "p": 1, "pid": "slow/0", "ts": 1000.100},  # 100 ms
+            {"sid": 3, "p": 0, "pid": "fast/0", "ts": 1000.200},
+            {"sid": 4, "p": 1, "pid": "fast/0", "ts": 1000.201},  # 1 ms
+            {"sid": 5, "p": 0, "pid": "slow/0", "ts": 1000.300},
+            {"sid": 6, "p": 1, "pid": "slow/0", "ts": 1000.400},  # 100 ms
         ]
         with trace_file.open("w") as f:
             for event in events:
@@ -205,14 +203,14 @@ class TestPerformanceAnalysis:
         """Test detection of performance anomalies."""
         trace_file = tmp_path / "trace.jsonl"
         events = [
-            # Normal execution
-            {"sid": 1, "p": 0, "pid": "normal/0", "ts": 1000.0},
-            {"sid": 2, "p": 1, "pid": "normal/0", "ts": 1010.0},  # 10ms
-            {"sid": 3, "p": 0, "pid": "normal/0", "ts": 1010.0},
-            {"sid": 4, "p": 1, "pid": "normal/0", "ts": 1020.0},  # 10ms
-            # Anomaly
-            {"sid": 5, "p": 0, "pid": "normal/0", "ts": 1020.0},
-            {"sid": 6, "p": 1, "pid": "normal/0", "ts": 1520.0},  # 500ms - anomaly!
+            # Normal ~10 ms
+            {"sid": 1, "p": 0, "pid": "normal/0", "ts": 1000.000},
+            {"sid": 2, "p": 1, "pid": "normal/0", "ts": 1000.010},  # 10 ms
+            {"sid": 3, "p": 0, "pid": "normal/0", "ts": 1000.020},
+            {"sid": 4, "p": 1, "pid": "normal/0", "ts": 1000.030},  # 10 ms
+            # Anomalous ~500 ms
+            {"sid": 5, "p": 0, "pid": "normal/0", "ts": 1000.040},
+            {"sid": 6, "p": 1, "pid": "normal/0", "ts": 1000.540},  # 500 ms
         ]
         with trace_file.open("w") as f:
             for event in events:
@@ -220,8 +218,8 @@ class TestPerformanceAnalysis:
 
         anomalies = detect_performance_anomalies(trace_file, threshold_stddev=2.0)
 
-        assert len(anomalies) > 0
-        assert any(a["pid"] == "normal/0" and a["duration_ms"] > 100 for a in anomalies)
+        assert anomalies  # not empty
+        assert any(a["pid"] == "normal/0" and a["duration_ms"] >= 500 for a in anomalies)
 
     def test_performance_metrics_without_timestamps(self, tmp_path):
         """Test performance analysis handles missing timestamps."""
@@ -259,6 +257,86 @@ class TestPerformanceAnalysis:
         assert metrics["memory_usage"]["max_store_size"] == 20
         assert metrics["memory_usage"]["max_trail_size"] == 10
         assert metrics["memory_usage"]["avg_store_size"] == pytest.approx(16.25, rel=0.01)
+
+
+class TestAdditionalStatistics:
+    """Additional test coverage for statistics computation."""
+
+    def test_port_distribution_sums_to_total(self, tmp_path):
+        """Test that port distribution sums to total events."""
+        trace_file = tmp_path / "trace.jsonl"
+        with trace_file.open("w") as f:
+            for i in range(20):
+                f.write(json.dumps({"sid": i+1, "p": i % 4}) + "\n")
+
+        stats = compute_trace_statistics(trace_file)
+        pdist = stats["port_distribution"]
+        assert sum(pdist.values()) == stats["total_events"]
+
+    def test_duration_uses_min_max_ts(self, tmp_path):
+        """Test duration uses min/max timestamps, not event order."""
+        trace_file = tmp_path / "trace.jsonl"
+        events = [
+            {"sid": 2, "p": 0, "ts": 1010.0},
+            {"sid": 1, "p": 0, "ts": 1000.0},
+            {"sid": 3, "p": 0, "ts": 1020.0},
+        ]
+        with trace_file.open("w") as f:
+            for e in events:
+                f.write(json.dumps(e) + "\n")
+
+        stats = compute_trace_statistics(trace_file)
+        assert stats["duration_ms"] == pytest.approx(20000.0, rel=0.01)
+
+    def test_call_graph_edge_weights_and_parents(self, tmp_path):
+        """Test call graph edge weights and parent tracking."""
+        trace_file = tmp_path / "trace.jsonl"
+        events = [
+            {"sid": 1, "p": 0, "pid": "a/0", "fd": 0},
+            {"sid": 2, "p": 0, "pid": "b/0", "fd": 1},  # a->b
+            {"sid": 3, "p": 1, "pid": "b/0", "fd": 1},
+            {"sid": 4, "p": 0, "pid": "b/0", "fd": 1},  # a->b again
+            {"sid": 5, "p": 1, "pid": "b/0", "fd": 1},
+            {"sid": 6, "p": 1, "pid": "a/0", "fd": 0},
+        ]
+        with trace_file.open("w") as f:
+            for e in events:
+                f.write(json.dumps(e) + "\n")
+
+        stats = compute_trace_statistics(trace_file)
+        graph = stats["call_graph"]
+        assert ("a/0", "b/0") in graph["edges"]
+        if "weights" in graph:
+            assert graph["weights"][("a/0", "b/0")] == 2
+
+    def test_performance_metrics_ignore_partial_pairs(self, tmp_path):
+        """Test that performance metrics ignore incomplete CALL/EXIT pairs."""
+        trace_file = tmp_path / "trace.jsonl"
+        events = [
+            {"sid": 1, "p": 0, "pid": "p/0", "ts": 1.0},
+            {"sid": 2, "p": 0, "pid": "p/0", "ts": 2.0},  # another CALL without EXIT
+        ]
+        with trace_file.open("w") as f:
+            for e in events:
+                f.write(json.dumps(e) + "\n")
+
+        metrics = analyze_performance_metrics(trace_file)
+        assert "predicate_timings" not in metrics or "p/0" not in metrics.get("predicate_timings", {})
+
+    def test_memory_usage_maxes_and_average(self, tmp_path):
+        """Test memory usage tracking for max and average values."""
+        trace_file = tmp_path / "trace.jsonl"
+        vals = [(10, 5), (20, 10), (5, 4), (15, 8)]
+        with trace_file.open("w") as f:
+            for i, (s, t) in enumerate(vals, 1):
+                f.write(json.dumps({"sid": i, "p": 0, "store_size": s, "trail_size": t}) + "\n")
+
+        metrics = analyze_performance_metrics(trace_file)
+        assert metrics["memory_usage"]["max_store_size"] == 20
+        assert metrics["memory_usage"]["max_trail_size"] == 10
+        assert metrics["memory_usage"]["avg_store_size"] == pytest.approx(
+            sum(s for s, _ in vals) / len(vals), rel=0.01
+        )
 
 
 class TestReportFormatting:

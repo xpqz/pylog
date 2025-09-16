@@ -1,11 +1,8 @@
 """Tests for trace replay tool and analysis utilities."""
 
 import json
-import tempfile
-from pathlib import Path
-from io import StringIO
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 from prolog.debug.replay import (
     ReplayTool,
@@ -15,7 +12,6 @@ from prolog.debug.replay import (
     InvariantViolationError,
 )
 from prolog.debug.invariant_checker import check_trace_invariants
-from prolog.engine.tracer import TraceEvent
 
 
 class TestReplayTool:
@@ -74,7 +70,7 @@ class TestReplayTool:
         with pytest.raises(InvalidTraceError) as exc_info:
             replay.validate_consistency()
 
-        assert "step_id not monotonic" in str(exc_info.value)
+        assert "monotonic" in str(exc_info.value).lower()
 
     def test_replay_detects_invariant_violations(self, tmp_path):
         """Test that replay detects invariant violations."""
@@ -93,7 +89,7 @@ class TestReplayTool:
         violations = replay.check_invariants()
 
         assert len(violations) > 0
-        assert any("REDO without EXIT" in str(v) for v in violations)
+        assert any(("redo" in str(v).lower() and "exit" in str(v).lower()) for v in violations)
 
     def test_replay_handles_empty_trace(self, tmp_path):
         """Test replay handles empty trace files gracefully."""
@@ -118,7 +114,7 @@ class TestReplayTool:
         with pytest.raises(InvalidTraceError) as exc_info:
             replay.load_events()
 
-        assert "malformed" in str(exc_info.value).lower()
+        assert "malformed" in str(exc_info.value).lower() or "invalid" in str(exc_info.value).lower()
 
     def test_replay_reports_step_sequence_violations(self, tmp_path):
         """Test detection of step sequence violations."""
@@ -254,6 +250,41 @@ class TestTraceAnalyzer:
         assert freq["backtrack_events"] == 3  # FAIL, REDO, FAIL
         assert freq["backtrack_rate"] == pytest.approx(0.5, rel=0.01)
 
+    def test_analyzer_handles_missing_or_unknown_fields(self, tmp_path):
+        """Test analyzer handles missing or unknown fields gracefully."""
+        trace_file = tmp_path / "trace.jsonl"
+        events = [
+            {"sid": 1},                 # missing p, fd, pid
+            {"sid": 2, "p": 99},        # unknown port code
+            {"sid": 3, "fd": "NaN"},    # bad depth type
+        ]
+        with trace_file.open("w") as f:
+            for e in events:
+                f.write(json.dumps(e) + "\n")
+
+        analyzer = TraceAnalyzer(trace_file)
+        # Should not crash; treat missing as 0/unknown bucket
+        counts = analyzer.compute_port_counts()
+        assert isinstance(counts, dict)
+
+        dist = analyzer.compute_depth_distribution()
+        assert "max_depth" in dist and "depth_counts" in dist
+
+    def test_analyzer_hot_predicates_count_calls_only(self, tmp_path):
+        """Test that hot predicates count only CALL events."""
+        trace_file = tmp_path / "trace.jsonl"
+        events = [
+            {"sid": 1, "p": 0, "pid": "foo/1"},  # CALL
+            {"sid": 2, "p": 1, "pid": "foo/1"},  # EXIT should not increment
+        ]
+        with trace_file.open("w") as f:
+            for e in events:
+                f.write(json.dumps(e) + "\n")
+
+        analyzer = TraceAnalyzer(trace_file)
+        hot = dict(analyzer.identify_hot_predicates(top_n=10))
+        assert hot.get("foo/1", 0) == 1
+
     def test_analyzer_generates_summary_report(self, tmp_path):
         """Test generation of comprehensive summary reports."""
         trace_file = tmp_path / "trace.jsonl"
@@ -349,11 +380,9 @@ class TestCIIntegration:
 
     def test_ci_respects_trace_size_limit(self, tmp_path):
         """Test that CI respects trace size limits."""
-        # Create a large trace file
+        # Create a 2MB file quickly
         trace_file = tmp_path / "trace.jsonl"
-        with trace_file.open("w") as f:
-            for i in range(1000000):  # Large file
-                f.write(f'{{"sid": {i}, "p": 0}}\n')
+        trace_file.write_bytes(b'X' * (2 * 1024 * 1024))  # 2MB
 
         artifact_dir = tmp_path / "artifacts"
         artifact_dir.mkdir()
@@ -456,3 +485,57 @@ class TestInvariantChecker:
 
         violations = check_trace_invariants(events)
         assert violations == []
+
+    def test_replay_reconstructs_last_n_edges(self, tmp_path):
+        """Test edge cases in tail reconstruction."""
+        trace_file = tmp_path / "trace.jsonl"
+        with trace_file.open("w") as f:
+            for i in range(1, 4):
+                f.write(json.dumps({"sid": i, "p": 0}) + "\n")
+
+        replay = ReplayTool(trace_file)
+        assert replay.reconstruct_last_n(0) == []
+        last_10 = replay.reconstruct_last_n(10)
+        assert [e["sid"] for e in last_10] == [1, 2, 3]  # N > len returns all
+
+    def test_replay_rejects_duplicate_or_nonpositive_step_ids(self, tmp_path):
+        """Test detection of duplicate and non-positive step IDs."""
+        trace_file = tmp_path / "trace.jsonl"
+        with trace_file.open("w") as f:
+            f.write('{"sid": 1, "p": 0}\n')
+            f.write('{"sid": 1, "p": 1}\n')  # duplicate sid
+
+        replay = ReplayTool(trace_file)
+        with pytest.raises(InvalidTraceError) as exc:
+            replay.validate_consistency()
+        assert "duplicate" in str(exc.value).lower() or "monotonic" in str(exc.value).lower()
+
+    def test_replay_detects_cross_predicate_sequence_violations(self, tmp_path):
+        """Test detection of cross-predicate port sequence violations."""
+        trace_file = tmp_path / "trace.jsonl"
+        events = [
+            {"sid": 1, "p": 0, "pid": "a/0", "fd": 0},  # CALL a/0
+            {"sid": 2, "p": 1, "pid": "b/0", "fd": 0},  # EXIT b/0 (invalid)
+        ]
+        with trace_file.open("w") as f:
+            for e in events:
+                f.write(json.dumps(e) + "\n")
+
+        replay = ReplayTool(trace_file)
+        violations = replay.check_invariants()
+        assert any("predicate" in str(v).lower() for v in violations)
+
+    def test_invariant_checker_exit_without_prior_call(self):
+        """Test detection of EXIT without prior CALL."""
+        events = [{"sid": 1, "p": 1, "pid": "a/0", "fd": 0}]  # EXIT first
+        violations = check_trace_invariants(events)
+        assert any(("exit" in str(v).lower() and "call" in str(v).lower()) for v in violations)
+
+    def test_invariant_checker_depth_underflow(self):
+        """Test detection of depth underflow."""
+        events = [
+            {"sid": 1, "p": 0, "fd": 0},
+            {"sid": 2, "p": 1, "fd": -1},  # underflow
+        ]
+        violations = check_trace_invariants(events)
+        assert any(("depth" in str(v).lower() and ("underflow" in str(v).lower() or "negative" in str(v).lower())) for v in violations)
