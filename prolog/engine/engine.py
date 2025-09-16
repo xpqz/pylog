@@ -63,8 +63,7 @@ class Engine:
         self.frame_stack: List[Frame] = []
         self.cp_stack: List[Choicepoint] = []
 
-        # Add choicepoints alias for tracer compatibility
-        self.choicepoints = self.cp_stack
+        # Note: cp_stack is accessed via choicepoints() method for snapshot module
 
         # Query tracking with fast lookups
         self._query_vars: List[Tuple[int, str]] = []  # [(varid, name), ...] for order
@@ -120,6 +119,55 @@ class Engine:
             self.metrics = EngineMetrics()
         else:
             self.metrics = None
+
+    # Public accessor methods for snapshot module
+    def store_size(self) -> int:
+        """Get the current store size."""
+        return len(self.store.cells)
+
+    def trail_length(self) -> int:
+        """Get the current trail length."""
+        return len(self.trail)
+
+    def trail_top_value(self) -> int:
+        """Get the current trail position."""
+        return self.trail.position() if hasattr(self.trail, 'position') else len(self.trail)
+
+    def goal_height(self) -> int:
+        """Get the current goal stack height."""
+        return len(self.goal_stack) if hasattr(self, 'goal_stack') else 0
+
+    def goal_top_value(self) -> int:
+        """Get the current goal top (same as height for list-based stack)."""
+        return len(self.goal_stack) if hasattr(self, 'goal_stack') else 0
+
+    def frame_height(self) -> int:
+        """Get the current frame stack height."""
+        return len(self.frame_stack) if hasattr(self, 'frame_stack') else 0
+
+    def frame_top_value(self) -> int:
+        """Get the current frame top (same as height for list-based stack)."""
+        return len(self.frame_stack) if hasattr(self, 'frame_stack') else 0
+
+    def choicepoint_height(self) -> int:
+        """Get the current choicepoint stack height."""
+        return len(self.cp_stack) if hasattr(self, 'cp_stack') else 0
+
+    def choicepoint_top(self) -> int:
+        """Get the current choicepoint top (same as height for list-based stack)."""
+        return len(self.cp_stack) if hasattr(self, 'cp_stack') else 0
+
+    def write_stamp_value(self) -> int:
+        """Get the current write stamp."""
+        return self.write_stamp if hasattr(self, 'write_stamp') else 0
+
+    def choicepoints(self) -> list:
+        """Get list of current choicepoints (for snapshot)."""
+        return self.cp_stack if hasattr(self, 'cp_stack') else []
+
+    def frames(self) -> list:
+        """Get list of current frames (for snapshot)."""
+        return self.frame_stack if hasattr(self, 'frame_stack') else []
 
     def reset(self):
         """Reset engine state for reuse."""

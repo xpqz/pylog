@@ -524,7 +524,7 @@ class TestStackDepthTracking:
         engine = Engine(program=[], trace=True)
 
         # Mock choicepoint stack
-        engine.choicepoints = [None, None]  # 2 choicepoints
+        engine.cp_stack = [None, None]  # 2 choicepoints
 
         event = engine.tracer._create_event("call", Atom("true"))
         assert event.cp_depth == 2
@@ -561,12 +561,12 @@ class TestStackDepthTracking:
 
         # Simulate execution with changing stack depths
         engine.frame_stack = [None]
-        engine.choicepoints = []
+        engine.cp_stack = []
         engine.goal_stack = [None]
         engine._trace_port("call", Atom("first"))
 
         engine.frame_stack = [None, None]
-        engine.choicepoints = [None]
+        engine.cp_stack = [None]
         engine.goal_stack = [None, None]
         engine._trace_port("call", Atom("second"))
 
@@ -586,13 +586,13 @@ class TestStackDepthTracking:
 
         # Before backtrack
         engine.frame_stack = [None, None]
-        engine.choicepoints = [None]
+        engine.cp_stack = [None]
         engine.goal_stack = [None, None, None]
         engine._trace_port("exit", Atom("before"))
 
         # After backtrack (stacks reduced)
         engine.frame_stack = [None]
-        engine.choicepoints = []
+        engine.cp_stack = []
         engine.goal_stack = [None]
         engine._trace_port("redo", Atom("after"))
 
@@ -611,7 +611,7 @@ class TestStackDepthTracking:
             # Depths must equal actual stack sizes
             if event.frame_depth != len(engine.frame_stack):
                 return False
-            if event.cp_depth != len(engine.choicepoints):
+            if event.cp_depth != len(engine.cp_stack):
                 return False
             if event.goal_height != len(engine.goal_stack):
                 return False
@@ -628,7 +628,7 @@ class TestStackDepthTracking:
 
         engine = Engine(program=[], trace=True)
         engine.frame_stack = [None, None]
-        engine.choicepoints = [None]
+        engine.cp_stack = [None]
         engine.goal_stack = [None, None, None]
         engine.write_stamp = 10
 

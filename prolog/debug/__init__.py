@@ -8,6 +8,10 @@ capabilities for understanding and reproducing Prolog execution behavior.
 from .tracer import TraceEvent, PortsTracer
 from .sinks import PrettyTraceSink
 from .metrics import PredMetrics, EngineMetrics
+from .snapshot import (
+    EngineSnapshot, CPSnapshot, FrameSnapshot,
+    SnapshotManager, SnapshotDiff
+)
 
 __all__ = [
     "TraceEvent",
@@ -15,4 +19,9 @@ __all__ = [
     "PrettyTraceSink",
     "PredMetrics",
     "EngineMetrics",
+    "EngineSnapshot",
+    "CPSnapshot",
+    "FrameSnapshot",
+    "SnapshotManager",
+    "SnapshotDiff",
 ]
