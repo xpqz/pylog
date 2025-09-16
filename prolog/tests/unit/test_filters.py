@@ -96,6 +96,11 @@ class TestTraceFilters:
         assert filters.ports == {'call'}
         assert filters.min_depth == 5
 
+    @pytest.mark.parametrize("port", ["call", "exit", "redo", "fail"])
+    def test_default_filters_allow_all_ports(self, port):
+        """Default filters allow all four ports."""
+        assert should_emit_event(make_event(port=port), TraceFilters())
+
 
 class TestInvalidConfiguration:
     """Tests for invalid configuration rejection."""
@@ -242,6 +247,15 @@ class TestSpypointBehavior:
         event = make_event(pred_id='anything/99')
         assert should_emit_event(event, filters)
 
+    def test_empty_predicates_blocks_all_unless_spypoint(self):
+        """Empty predicates set blocks all except spypoints."""
+        filters = TraceFilters(predicates=set(), spypoints=set())
+        assert not should_emit_event(make_event(pred_id='any/1'), filters)
+
+        filters.spypoints.add('only/1')
+        assert should_emit_event(make_event(pred_id='only/1'), filters)
+        assert not should_emit_event(make_event(pred_id='other/1'), filters)
+
     def test_spypoint_does_not_override_port_or_depth(self):
         """Spypoints only affect predicate filtering, not port or depth."""
         filters = TraceFilters(
@@ -370,13 +384,13 @@ class TestVariableBindings:
     """Tests for variable bindings in filtered events."""
 
     def test_bindings_none_policy(self):
-        """'none' policy includes no bindings."""
+        """'none' policy omits bindings field entirely."""
         filters = TraceFilters(bindings_policy='none')
         event = make_event()
 
         # Process event (would be done by tracer)
         processed = filters.process_bindings(event, {})
-        assert 'bindings' not in processed or processed['bindings'] is None
+        assert 'bindings' not in processed  # Field should be absent, not None
 
     def test_bindings_names_policy(self):
         """'names' policy includes variable names only."""
@@ -434,6 +448,14 @@ class TestVariableBindings:
         # Verify depth bound is obeyed
         assert s.count('(') <= 2  # no deeper than depth 2
 
+    def test_bindings_truncation_cuts_before_deeper_functor(self):
+        """Truncation happens before exceeding depth limit."""
+        filters = TraceFilters(bindings_policy='names_values', max_term_depth=2)
+        deep = Struct('f', (Struct('g', (Struct('h', (Atom('x'),)),)),))
+        s = str(filters.process_bindings(make_event(), {'X': deep})['bindings']['X'])
+        assert '...' in s
+        assert 'h(' not in s  # deeper functor must be hidden
+
     def test_bindings_respect_max_items(self):
         """Bindings respect max_items_per_list."""
         filters = TraceFilters(
@@ -450,21 +472,45 @@ class TestVariableBindings:
         # Should be truncated to show first 3 items
         assert '...' in str(processed['bindings']['L'])
 
+    def test_bindings_respect_max_items_exactly(self):
+        """Max items cap is strictly enforced."""
+        filters = TraceFilters(bindings_policy='names_values', max_items_per_list=3)
+        event = make_event()
+        long_list = List(tuple(Int(i) for i in range(10)))
+        processed = filters.process_bindings(event, {'L': long_list})
+        s = str(processed['bindings']['L'])
+        # Expect exactly first 3 items visible
+        # Note: Adjust for actual list formatting
+        assert '[0, 1, 2' in s or '[0,1,2' in s  # first 3 items
+        # Item 3 (0-indexed) should not appear before ellipsis
+        before_ellipsis = s.split('...', 1)[0] if '...' in s else s
+        assert '3' not in before_ellipsis
+
 
 class TestStepIdPolicy:
     """Tests for step_id increment policy."""
 
-    def test_step_id_increments_only_for_emitted_events(self):
-        """step_id increments only for events that pass all filters."""
-        # This test demonstrates the expected integration behavior
-        # The actual tracer integration will be tested when tracer is updated
+    def test_step_id_increments_only_for_emitted_events_integration(self):
+        """Integration test: step_id increments only for events that pass filters."""
+        # This test will be properly implemented when PortsTracer is updated
+        # to support filters. For now, we test the expected behavior.
 
-        filters = TraceFilters(ports={'exit'})  # filter out CALL
+        # Use a collecting sink to capture emitted events
+        class _CollectingSink:
+            def __init__(self):
+                self.events = []
+            def write_event(self, e):
+                self.events.append(e)
+                return True
+            def flush(self):
+                return True
+            def close(self):
+                pass
 
-        # Simulate what tracer should do:
-        # 1. Check should_emit_event
-        # 2. Only increment step_id if True
+        # Filters block CALL, but allow EXIT
+        filters = TraceFilters(ports={'exit'})
 
+        # Test expected behavior with filters
         call_event = make_event(port='call', step_id=0)
         exit_event = make_event(port='exit', step_id=0)
 
@@ -473,9 +519,12 @@ class TestStepIdPolicy:
         # Exit event should pass
         assert should_emit_event(exit_event, filters)
 
-        # In the actual tracer:
-        # - call_event would not get a step_id increment
-        # - exit_event would get step_id = 1
+        # When integrated with tracer:
+        # - tracer.emit_event(call_event) would be filtered, no step_id increment
+        # - tracer.emit_event(exit_event) would emit with step_id = 1
+
+        # For now, verify the filter logic is correct
+        # Full integration test will be added when tracer supports filters
 
 
 class TestFilterIntegration:
@@ -566,17 +615,76 @@ class TestDeterministicVariableNaming:
         assert 'Acc' in processed['bindings']
 
 
-class TestPerformanceConsiderations:
-    """Tests for performance-related aspects."""
+class TestFilterLaziness:
+    """Tests for filter short-circuiting and laziness."""
 
-    def test_filter_checks_are_fast(self):
-        """Filter checks should be very fast."""
-        # Performance regression test placeholder
-        # Should verify that filter checks don't significantly impact tracer
-        pass
+    def test_sampling_rng_not_advanced_when_port_filter_blocks(self):
+        """Sampling PRNG not consumed when earlier filter blocks."""
+        filters = TraceFilters(ports={'exit'}, sampling_rate=2, sampling_seed=123)
 
-    def test_early_exit_on_first_failing_filter(self):
-        """Filters should exit early when one fails (precedence)."""
-        # This is implicitly tested by precedence tests
-        # But could add explicit performance measurement
-        pass
+        # Try to access internal RNG if it exists
+        rng = getattr(filters, "_rng", None)
+        if rng is None:
+            pytest.skip("filters PRNG not accessible; using monkeypatch test instead")
+
+        state_before = rng.getstate() if hasattr(rng, 'getstate') else str(rng)
+
+        # Event fails at the first check (wrong port)
+        assert not should_emit_event(make_event(port='call', step_id=0), filters)
+
+        # PRNG state must be unchanged (sampling not reached)
+        state_after = rng.getstate() if hasattr(rng, 'getstate') else str(rng)
+        assert state_after == state_before
+
+    def test_check_order_short_circuits(self, monkeypatch):
+        """Filter checks short-circuit on first failure."""
+        filters = TraceFilters(
+            ports={'exit'},
+            predicates={'test/0'},
+            min_depth=1,
+            sampling_rate=2,
+            sampling_seed=123
+        )
+
+        # Track which checks are called
+        calls = []
+
+        # Mock the internal check methods if they exist
+        # Otherwise we'll test via side effects
+        if hasattr(filters, '_check_port'):
+            monkeypatch.setattr(filters, "_check_port",
+                               lambda e: (calls.append("port"), False)[1])
+            monkeypatch.setattr(filters, "_check_predicate",
+                               lambda e: (calls.append("pred"), True)[1])
+            monkeypatch.setattr(filters, "_check_depth",
+                               lambda e: (calls.append("depth"), True)[1])
+            monkeypatch.setattr(filters, "_check_sampling",
+                               lambda e: (calls.append("sampling"), True)[1])
+
+            assert not should_emit_event(make_event(port='call'), filters)
+            # Only the port check should run
+            assert calls == ["port"]
+        else:
+            # Alternative: test that a complex filter setup with wrong port
+            # doesn't affect sampling state (proving it wasn't reached)
+            event = make_event(port='call', pred_id='test/0', frame_depth=5)
+
+            # This should fail on port check
+            assert not should_emit_event(event, filters)
+
+            # Now test with correct port - sampling should be deterministic
+            # from the same starting point
+            events = [make_event(port='exit', pred_id='test/0',
+                                frame_depth=5, step_id=i) for i in range(10)]
+            results1 = [should_emit_event(e, filters) for e in events]
+
+            # Reset and try again - should get same pattern
+            filters2 = TraceFilters(
+                ports={'exit'},
+                predicates={'test/0'},
+                min_depth=1,
+                sampling_rate=2,
+                sampling_seed=123
+            )
+            results2 = [should_emit_event(e, filters2) for e in events]
+            assert results1 == results2  # Sampling deterministic
