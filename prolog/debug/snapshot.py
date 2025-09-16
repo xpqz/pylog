@@ -187,6 +187,35 @@ class SnapshotManager:
         """
         self.track_memory = track_memory
 
+    def _measure_memory(self, engine: Any) -> Optional[int]:
+        """
+        Measure memory usage of the engine.
+
+        Args:
+            engine: The engine to measure
+
+        Returns:
+            Memory usage in bytes or None if not available
+        """
+        try:
+            # Use sys.getsizeof as primary method since it's simpler
+            # and gives a reasonable estimate of object size
+            size = sys.getsizeof(engine)
+            # Also account for the major data structures
+            if hasattr(engine, 'store') and hasattr(engine.store, 'cells'):
+                size += sys.getsizeof(engine.store.cells)
+            if hasattr(engine, 'trail'):
+                size += sys.getsizeof(engine.trail)
+            if hasattr(engine, 'goal_stack'):
+                size += sys.getsizeof(engine.goal_stack)
+            if hasattr(engine, 'frame_stack'):
+                size += sys.getsizeof(engine.frame_stack)
+            if hasattr(engine, 'cp_stack'):
+                size += sys.getsizeof(engine.cp_stack)
+            return size if size > 0 else None
+        except Exception:
+            return None
+
     def snapshot(self, engine: Any) -> EngineSnapshot:
         """
         Capture complete engine state.
@@ -199,33 +228,22 @@ class SnapshotManager:
         Returns:
             Complete engine state snapshot
         """
-        # Access state through public APIs
-        # Using store.size() not store.cells
-        store_size = len(engine.store.cells) if hasattr(engine.store, 'cells') else 0
+        # Access state through public APIs only
+        store_size = engine.store_size() if hasattr(engine, 'store_size') else 0
+        trail_length = engine.trail_length() if hasattr(engine, 'trail_length') else 0
+        trail_top = engine.trail_top_value() if hasattr(engine, 'trail_top_value') else 0
+        goal_height = engine.goal_height() if hasattr(engine, 'goal_height') else 0
+        goal_top = engine.goal_top_value() if hasattr(engine, 'goal_top_value') else 0
+        frame_height = engine.frame_height() if hasattr(engine, 'frame_height') else 0
+        frame_top = engine.frame_top_value() if hasattr(engine, 'frame_top_value') else 0
+        cp_height = engine.choicepoint_height() if hasattr(engine, 'choicepoint_height') else 0
+        cp_top = engine.choicepoint_top() if hasattr(engine, 'choicepoint_top') else 0
+        write_stamp = engine.get_write_stamp() if hasattr(engine, 'get_write_stamp') else 0
 
-        # Trail state
-        trail_length = len(engine.trail) if hasattr(engine, 'trail') else 0
-        trail_top = engine.trail_top if hasattr(engine, 'trail_top') else 0
-
-        # Stack heights
-        goal_height = len(engine.goal_stack) if hasattr(engine, 'goal_stack') else 0
-        goal_top = engine.goal_top if hasattr(engine, 'goal_top') else 0
-
-        frame_height = len(engine.frame_stack) if hasattr(engine, 'frame_stack') else 0
-        frame_top = engine.frame_top if hasattr(engine, 'frame_top') else 0
-
-        cp_height = len(engine.cp_stack) if hasattr(engine, 'cp_stack') else 0
-        cp_top = engine.cp_top if hasattr(engine, 'cp_top') else 0
-
-        # Write stamp
-        write_stamp = engine.write_stamp if hasattr(engine, 'write_stamp') else 0
-
-        # Capture choicepoints
+        # Capture choicepoints using public API
         choicepoints = []
-        if hasattr(engine, 'cp_stack') and hasattr(engine, 'cp_top'):
-            for i in range(engine.cp_top):
-                cp = engine.cp_stack[i]
-                # Extract choicepoint details
+        if hasattr(engine, 'get_choicepoints'):
+            for i, cp in enumerate(engine.get_choicepoints()):
                 cp_snapshot = CPSnapshot(
                     cp_id=i,
                     kind=cp.kind if hasattr(cp, 'kind') else "clause",
@@ -236,12 +254,10 @@ class SnapshotManager:
                 )
                 choicepoints.append(cp_snapshot)
 
-        # Capture frames
+        # Capture frames using public API
         frames = []
-        if hasattr(engine, 'frame_stack') and hasattr(engine, 'frame_top'):
-            for i in range(engine.frame_top):
-                frame = engine.frame_stack[i]
-                # Extract frame details
+        if hasattr(engine, 'get_frames'):
+            for i, frame in enumerate(engine.get_frames()):
                 frame_snapshot = FrameSnapshot(
                     frame_id=i,
                     pred_id=frame.pred_id if hasattr(frame, 'pred_id') else "unknown",
@@ -250,15 +266,9 @@ class SnapshotManager:
                 frames.append(frame_snapshot)
 
         # Optional memory tracking
-        memory_bytes = None
-        if self.track_memory:
-            # Simple memory estimate using sys.getsizeof
-            # In production, could use more sophisticated memory profiling
-            try:
-                memory_bytes = sys.getsizeof(engine)
-            except:
-                memory_bytes = None
+        memory_bytes = self._measure_memory(engine) if self.track_memory else None
 
+        # Convert lists to tuples for deep immutability
         return EngineSnapshot(
             store_size=store_size,
             trail_length=trail_length,
@@ -270,8 +280,8 @@ class SnapshotManager:
             cp_height=cp_height,
             cp_top=cp_top,
             write_stamp=write_stamp,
-            choicepoints=tuple(choicepoints),  # Convert to tuple for immutability
-            frames=tuple(frames),  # Convert to tuple for immutability
+            choicepoints=tuple(choicepoints),  # Ensure tuple for immutability
+            frames=tuple(frames),  # Ensure tuple for immutability
             memory_bytes=memory_bytes
         )
 
