@@ -332,17 +332,14 @@ class TestStaticProgramAssumption:
         # Should have a policy attribute or method
         assert hasattr(idx, "supports_rebuild") or hasattr(idx, "can_rebuild")
 
-    @pytest.mark.xfail(reason="Float support deferred to future stage")
     def test_float_bucket_placeholder(self):
-        """Float bucket should exist but be marked as future work."""
+        """Float bucket placeholder exists for future float support."""
         idx = PredIndex()
         assert hasattr(idx, "float_ids")
-        # For now, floats would raise ValueError as unknown type
-        store = Store()
-        # Float type doesn't exist yet, so we can't test this directly
-        # When implemented: head = Struct("p", (Float(3.14),))
-        # with pytest.raises(ValueError):
-        #     analyze_first_arg(head, store)
+        # The float_ids bucket exists as a placeholder but floats
+        # themselves are not yet implemented in the AST.
+        # When Float type is added to AST, it should be handled
+        # in analyze_first_arg to populate this bucket.
 
 
 class TestPredicateIsolation:

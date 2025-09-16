@@ -26,7 +26,7 @@ class TestTraceSinkBase:
 
     def test_ring_buffer_capacity(self):
         """Ring buffer respects maxlen capacity."""
-        sink = TestMemoryTraceSink(maxlen=3, batch_size=1)  # Immediate flush
+        sink = MemoryTraceSink(maxlen=3, batch_size=1)  # Immediate flush
 
         # Add 5 events to a buffer with capacity 3
         for i in range(5):
@@ -41,7 +41,7 @@ class TestTraceSinkBase:
 
     def test_events_dropped_counter(self):
         """Dropped events are tracked correctly."""
-        sink = TestMemoryTraceSink(maxlen=2, batch_size=1)
+        sink = MemoryTraceSink(maxlen=2, batch_size=1)
 
         # Fill buffer
         for i in range(5):
@@ -53,7 +53,7 @@ class TestTraceSinkBase:
 
     def test_flush_called(self):
         """Flush is called when needed."""
-        sink = TestMemoryTraceSink(batch_size=3)
+        sink = MemoryTraceSink(batch_size=3)
 
         # Add events up to batch size
         for i in range(3):
@@ -65,7 +65,7 @@ class TestTraceSinkBase:
 
     def test_close_flushes_pending(self):
         """Close flushes any pending events."""
-        sink = TestMemoryTraceSink(batch_size=10)
+        sink = MemoryTraceSink(batch_size=10)
 
         # Add fewer events than batch size
         for i in range(3):
@@ -561,7 +561,7 @@ class TestBackpressure:
 
     def test_drops_when_buffer_full(self):
         """Events dropped when buffer is full."""
-        sink = TestMemoryTraceSink(maxlen=2, batch_size=1, drop_on_full=True)
+        sink = MemoryTraceSink(maxlen=2, batch_size=1, drop_on_full=True)
 
         # Write more events than capacity
         results = [sink.write_event(self._make_event(step_id=i)) for i in range(5)]
@@ -574,7 +574,7 @@ class TestBackpressure:
 
     def test_step_id_is_monotonic_under_drops(self):
         """step_id is monotonic despite drops."""
-        sink = TestMemoryTraceSink(maxlen=3, drop_on_full=True)
+        sink = MemoryTraceSink(maxlen=3, drop_on_full=True)
 
         for i in range(10):
             sink.write_event(self._make_event(step_id=i))
@@ -602,7 +602,7 @@ class TestBackpressure:
         """Engine results unaffected by sink drops."""
         # This would be tested at integration level
         # Here we just verify the interface
-        sink = TestMemoryTraceSink(maxlen=1, drop_on_full=True)
+        sink = MemoryTraceSink(maxlen=1, drop_on_full=True)
 
         # Write returns success/failure but doesn't raise
         event = self._make_event()
@@ -615,7 +615,7 @@ class TestBackpressure:
 
     def test_drop_reason_is_buffer_full_when_capacity_reached(self):
         """Track reason for drops when buffer full."""
-        sink = TestMemoryTraceSink(maxlen=2, batch_size=1)  # Immediate flush
+        sink = MemoryTraceSink(maxlen=2, batch_size=1)  # Immediate flush
 
         # Fill buffer
         for i in range(5):
@@ -655,7 +655,7 @@ class TestMemoryBounds:
 
     def test_memory_bounded_with_large_traces(self):
         """Memory usage bounded even with large traces."""
-        sink = TestMemoryTraceSink(maxlen=1000)
+        sink = MemoryTraceSink(maxlen=1000)
 
         # Write many more events than buffer size
         for i in range(10000):
@@ -717,7 +717,7 @@ class TestMemoryBounds:
 
 
 # Helper implementation for testing - will be replaced by real implementation
-class TestMemoryTraceSink(TraceSink):
+class MemoryTraceSink(TraceSink):
     """In-memory sink for testing."""
 
     def __init__(self, maxlen=1000, batch_size=100, drop_on_full=False):
