@@ -43,6 +43,9 @@ class TestTraceFilters:
         assert filters.sampling_rate == 1  # Every event
         assert filters.sampling_seed is None  # Non-deterministic
         assert filters.bindings_policy == 'none'
+        # If these are part of the public contract:
+        # assert filters.max_term_depth == 10  # or whatever default
+        # assert filters.max_items_per_list == 10  # or whatever default
 
     def test_filters_port_configuration(self):
         """Can configure port filters."""
@@ -205,7 +208,7 @@ class TestFilterPrecedence:
         assert results == results2
 
 
-class TestSpypointBehavior:
+class TestSpypointBehaviour:
     """Tests for spypoint functionality."""
 
     def test_spypoint_overrides_predicate_filter(self):
@@ -332,7 +335,7 @@ class TestDepthFiltering:
         assert not should_emit_event(make_event(frame_depth=6), filters)
 
 
-class TestSamplingBehavior:
+class TestSamplingBehaviour:
     """Tests for deterministic sampling."""
 
     def test_sampling_rate_1_allows_all(self):
@@ -422,12 +425,16 @@ class TestVariableBindings:
         bindings = {
             'X': Atom('foo'),
             'Y': Int(42),
+            'Z': Var(99, 'Z'),  # Unbound variable
         }
 
         processed = filters.process_bindings(event, bindings)
         assert 'bindings' in processed
         assert processed['bindings']['X'] == 'foo'
         assert processed['bindings']['Y'] == 42
+        # Unbound var should have a sensible representation
+        assert 'Z' in processed['bindings']  # Present
+        # Value could be None, '_', or var representation
 
     def test_bindings_respect_max_depth(self):
         """Bindings respect max_term_depth."""
@@ -483,17 +490,22 @@ class TestVariableBindings:
         # Note: Adjust for actual list formatting
         assert '[0, 1, 2' in s or '[0,1,2' in s  # first 3 items
         # Item 3 (0-indexed) should not appear before ellipsis
-        before_ellipsis = s.split('...', 1)[0] if '...' in s else s
+        # Handle both ASCII and Unicode ellipsis
+        ellipsis = '...' if '...' in s else '…' if '…' in s else None
+        if ellipsis:
+            before_ellipsis = s.split(ellipsis, 1)[0]
+        else:
+            before_ellipsis = s
         assert '3' not in before_ellipsis
 
 
 class TestStepIdPolicy:
     """Tests for step_id increment policy."""
 
+    @pytest.mark.xfail(reason="PortsTracer not yet filter-aware; enable when integrated")
     def test_step_id_increments_only_for_emitted_events_integration(self):
         """Integration test: step_id increments only for events that pass filters."""
-        # This test will be properly implemented when PortsTracer is updated
-        # to support filters. For now, we test the expected behavior.
+        from prolog.debug.tracer import PortsTracer
 
         # Use a collecting sink to capture emitted events
         class _CollectingSink:
@@ -509,26 +521,20 @@ class TestStepIdPolicy:
 
         # Filters block CALL, but allow EXIT
         filters = TraceFilters(ports={'exit'})
+        tracer = PortsTracer(engine=None, filters=filters)
+        sink = _CollectingSink()
+        tracer.sinks = [sink]
 
-        # Test expected behavior with filters
-        call_event = make_event(port='call', step_id=0)
-        exit_event = make_event(port='exit', step_id=0)
+        # Use tracer's own path so step_id is assigned post-filter
+        tracer.emit_event(make_event(port='call', step_id=0))  # filtered out
+        tracer.emit_event(make_event(port='exit', step_id=0))  # emitted
 
-        # Call event should be filtered
-        assert not should_emit_event(call_event, filters)
-        # Exit event should pass
-        assert should_emit_event(exit_event, filters)
-
-        # When integrated with tracer:
-        # - tracer.emit_event(call_event) would be filtered, no step_id increment
-        # - tracer.emit_event(exit_event) would emit with step_id = 1
-
-        # For now, verify the filter logic is correct
-        # Full integration test will be added when tracer supports filters
+        # Only exit event should be in sink with step_id = 1
+        assert [e.step_id for e in sink.events] == [1]
 
 
-class TestFilterIntegration:
-    """Tests for filter integration with tracer."""
+class TestFilterComposition:
+    """Tests for filter composition and combination."""
 
     def test_multiple_filters_combine_correctly(self):
         """Multiple filters combine with AND logic."""
@@ -652,14 +658,26 @@ class TestFilterLaziness:
         # Mock the internal check methods if they exist
         # Otherwise we'll test via side effects
         if hasattr(filters, '_check_port'):
-            monkeypatch.setattr(filters, "_check_port",
-                               lambda e: (calls.append("port"), False)[1])
-            monkeypatch.setattr(filters, "_check_predicate",
-                               lambda e: (calls.append("pred"), True)[1])
-            monkeypatch.setattr(filters, "_check_depth",
-                               lambda e: (calls.append("depth"), True)[1])
-            monkeypatch.setattr(filters, "_check_sampling",
-                               lambda e: (calls.append("sampling"), True)[1])
+            def mock_check_port(e):
+                calls.append("port")
+                return False  # Fail port check
+
+            def mock_check_predicate(e):
+                calls.append("pred")
+                return True
+
+            def mock_check_depth(e):
+                calls.append("depth")
+                return True
+
+            def mock_check_sampling(e):
+                calls.append("sampling")
+                return True
+
+            monkeypatch.setattr(filters, "_check_port", mock_check_port)
+            monkeypatch.setattr(filters, "_check_predicate", mock_check_predicate)
+            monkeypatch.setattr(filters, "_check_depth", mock_check_depth)
+            monkeypatch.setattr(filters, "_check_sampling", mock_check_sampling)
 
             assert not should_emit_event(make_event(port='call'), filters)
             # Only the port check should run
