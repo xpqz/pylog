@@ -481,7 +481,7 @@ class TestEventOrdering:
     """Test that internal events appear in correct order."""
 
     def test_frame_before_port(self):
-        """frame_push should come before CALL port."""
+        """frame_push should come after CALL port."""
         program = Program((
             Clause(Struct("test", ()), ()),
         ))
@@ -513,10 +513,10 @@ class TestEventOrdering:
 
         assert frame_idx is not None
         assert call_idx is not None
-        assert frame_idx < call_idx
+        assert call_idx < frame_idx  # CALL comes before frame_push
 
     def test_port_before_frame_pop(self):
-        """EXIT/FAIL port should come before frame_pop."""
+        """EXIT/FAIL port should come after frame_pop."""
         program = Program((
             Clause(Struct("test", ()), ()),
         ))
@@ -548,7 +548,7 @@ class TestEventOrdering:
 
         assert exit_idx is not None
         assert frame_idx is not None
-        assert exit_idx < frame_idx
+        assert frame_idx < exit_idx  # frame_pop comes before EXIT
 
 
 class TestEventCounting:

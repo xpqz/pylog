@@ -337,10 +337,6 @@ class Engine:
                 if self.trace:
                     self._trace_log.append(f"Goal: {goal.term}")
 
-                # Emit CALL port for tracer
-                if self.tracer and goal.term:
-                    self.tracer.emit_event("call", goal.term)
-
                 # Dispatch based on goal type
                 if goal.type == GoalType.PREDICATE:
                     # Check if it's actually a builtin (PREDICATE goals always have terms)
@@ -928,7 +924,19 @@ class Engine:
             # Remove all choicepoints above the barrier
             while len(self.cp_stack) > cut_barrier:
                 removed_cp = self.cp_stack.pop()
-                alternatives_pruned += 1
+
+                # Count actual alternatives pruned
+                if removed_cp.kind == ChoicepointKind.PREDICATE:
+                    # For predicate CPs, count remaining clauses
+                    cursor = removed_cp.payload.get("cursor")
+                    if cursor and hasattr(cursor, 'matches') and hasattr(cursor, 'pos'):
+                        # Count remaining alternatives in cursor
+                        alternatives_pruned += len(cursor.matches) - cursor.pos
+                    else:
+                        alternatives_pruned += 1
+                else:
+                    # For other CP types, count as 1 alternative
+                    alternatives_pruned += 1
 
                 # Emit internal event for CP pop due to cut
                 if self.tracer:
@@ -937,8 +945,8 @@ class Engine:
                         "pred_id": pred_id
                     })
 
-            # Emit cut_commit event after all CP pops
-            if self.tracer and alternatives_pruned > 0:
+            # Emit cut_commit event after all CP pops (even if no alternatives pruned)
+            if self.tracer:
                 self.tracer.emit_internal_event("cut_commit", {
                     "alternatives_pruned": alternatives_pruned,
                     "barrier": cut_barrier
@@ -996,6 +1004,11 @@ class Engine:
 
                 # Emit EXIT port when frame is popped
                 self._port("EXIT", frame.pred or "unknown")
+                if self.tracer and frame.pred:
+                    # Need to get the original goal from somewhere - for now use the pred string
+                    # This is a limitation - we don't have the original goal term here
+                    from prolog.ast.terms import Atom
+                    self.tracer.emit_event("exit", Atom(frame.pred.split('/')[0]))
                 if self.metrics and frame.pred:
                     self.metrics.record_exit(frame.pred)
             # else: Leave frame in place for backtracking
@@ -1184,6 +1197,14 @@ class Engine:
                             },
                         )
                         self.cp_stack.append(new_cp)
+
+                        # Emit internal event for CP push during backtracking
+                        if self.tracer:
+                            alternatives = len(cursor.matches) - cursor.pos if cursor else 0
+                            self.tracer.emit_internal_event("cp_push", {
+                                "pred_id": cp.payload["pred_ref"],
+                                "trail_top": new_cp.trail_top
+                            })
                     else:
                         # No more clauses - push a terminal CP that will emit FAIL
                         continuation = cp.payload.get("continuation", ())
@@ -1201,6 +1222,13 @@ class Engine:
                             },
                         )
                         self.cp_stack.append(terminal_cp)
+
+                        # Emit internal event for terminal CP push
+                        if self.tracer:
+                            self.tracer.emit_internal_event("cp_push", {
+                                "pred_id": cp.payload["pred_ref"],
+                                "trail_top": terminal_cp.trail_top
+                            })
 
                     # Rename clause with fresh variables
                     renamed_clause = self._renamer.rename_clause(clause)
