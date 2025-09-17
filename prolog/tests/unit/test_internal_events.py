@@ -607,3 +607,61 @@ class TestEventCounting:
 
         # Query should still work without tracer
         list(engine.query("?- test."))
+
+class TestSinkCompatibility:
+    """Test that all sinks can handle internal events."""
+
+    def test_pretty_sink_with_internal_events(self):
+        """PrettyTraceSink should format internal events without crashing."""
+        import io
+        from prolog.debug.sinks import PrettyTraceSink
+        
+        program = Program((
+            Clause(Struct("test", ()), ()),
+        ))
+
+        output = io.StringIO()
+        engine = Engine(program, trace=True)
+        sink = PrettyTraceSink(output=output, batch_size=1)
+        engine.tracer.add_sink(sink)
+        engine.tracer.enable_internal_events = True
+
+        # Should not raise AttributeError
+        list(engine.query("?- test."))
+        
+        result = output.getvalue()
+        assert "CALL test/0" in result
+        assert "INTERNAL frame_push" in result
+        assert "INTERNAL frame_pop" in result
+        assert "EXIT test/0" in result
+
+    def test_jsonl_sink_with_internal_events(self):
+        """JSONLTraceSink should serialize internal events without crashing."""
+        import io
+        import json
+        from prolog.debug.sinks import JSONLTraceSink
+        
+        program = Program((
+            Clause(Struct("test", ()), ()),
+        ))
+
+        output = io.StringIO()
+        engine = Engine(program, trace=True)
+        sink = JSONLTraceSink(output=output, batch_size=1)
+        engine.tracer.add_sink(sink)
+        engine.tracer.enable_internal_events = True
+
+        # Should not raise AttributeError
+        list(engine.query("?- test."))
+        sink.flush()  # Make sure everything is written
+
+        # Parse each line as JSON to verify format
+        lines = output.getvalue().strip().split('\n')
+        for line in lines:
+            obj = json.loads(line)
+            assert 'v' in obj
+            assert 'type' in obj
+            assert obj['type'] in ['trace', 'internal']
+            if obj['type'] == 'internal':
+                assert 'kind' in obj
+                assert 'details' in obj

@@ -71,7 +71,7 @@ class TraceSink(ABC):
         return success
 
     @abstractmethod
-    def _write_batch(self, events: List[TraceEvent]) -> bool:
+    def _write_batch(self, events: List[Union[TraceEvent, InternalEvent]]) -> bool:
         """
         Write a batch of events to the actual output.
 
@@ -124,7 +124,7 @@ class PrettyTraceSink(TraceSink):
         self.max_term_depth = max_term_depth
         self.max_items_per_list = max_items_per_list
 
-    def _write_batch(self, events: List[TraceEvent]) -> bool:
+    def _write_batch(self, events: List[Union[TraceEvent, InternalEvent]]) -> bool:
         """Write events in human-readable format."""
         for event in events:
             line = self.format_event(event)
@@ -136,8 +136,16 @@ class PrettyTraceSink(TraceSink):
 
         return True
 
-    def format_event(self, event: TraceEvent) -> str:
+    def format_event(self, event: Union[TraceEvent, InternalEvent]) -> str:
         """Format a single event for display."""
+        # Check if it's an InternalEvent
+        if isinstance(event, InternalEvent):
+            # Format internal events differently
+            # Use a simple format: [step_id] INTERNAL kind: details
+            details_str = ', '.join(f"{k}={v}" for k, v in event.details.items())
+            return f"[{event.step_id}] INTERNAL {event.kind}: {{{details_str}}}"
+
+        # Otherwise it's a TraceEvent
         # Port formatting
         port_map = {
             'call': 'CALL',
@@ -217,7 +225,7 @@ class JSONLTraceSink(TraceSink):
         super().__init__(**kwargs)
         self.output = output or sys.stdout
 
-    def _write_batch(self, events: List[TraceEvent]) -> bool:
+    def _write_batch(self, events: List[Union[TraceEvent, InternalEvent]]) -> bool:
         """Write events in JSONL format."""
         for event in events:
             obj = self._event_to_json(event)
@@ -230,12 +238,24 @@ class JSONLTraceSink(TraceSink):
 
         return True
 
-    def _event_to_json(self, event: TraceEvent) -> Dict[str, Any]:
+    def _event_to_json(self, event: Union[TraceEvent, InternalEvent]) -> Dict[str, Any]:
         """
         Convert event to compact JSON representation.
 
         Uses schema v1 with compact keys.
         """
+        # Check if it's an InternalEvent
+        if isinstance(event, InternalEvent):
+            # Use a different schema for internal events
+            return {
+                'v': 1,  # Schema version
+                'type': 'internal',
+                'sid': event.step_id,
+                'kind': event.kind,
+                'details': event.details
+            }
+
+        # Otherwise it's a TraceEvent
         # Port encoding
         port_map = {
             'call': 0,
@@ -247,6 +267,7 @@ class JSONLTraceSink(TraceSink):
         # Required fields with compact keys
         obj = {
             'v': 1,  # Schema version
+            'type': 'trace',
             'rid': event.run_id,
             'sid': event.step_id,
             'p': port_map.get(event.port, -1),
@@ -343,7 +364,7 @@ class FileTraceSink(TraceSink):
         # Open new file
         self._open_file()
 
-    def _write_batch(self, events: List[TraceEvent]) -> bool:
+    def _write_batch(self, events: List[Union[TraceEvent, InternalEvent]]) -> bool:
         """Write batch via underlying sink, handling rotation."""
         if self.closed:
             return False
