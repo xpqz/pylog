@@ -429,7 +429,19 @@ class TestCIIntegration:
         with patch.dict("os.environ", {"PYLOG_TRACE": "1"}):
             assert is_tracing_enabled() is True
 
+        with patch.dict("os.environ", {"PYLOG_TRACE": "true"}):
+            assert is_tracing_enabled() is True
+
+        with patch.dict("os.environ", {"PYLOG_TRACE": "yes"}):
+            assert is_tracing_enabled() is True
+
+        with patch.dict("os.environ", {"PYLOG_TRACE": "on"}):
+            assert is_tracing_enabled() is True
+
         with patch.dict("os.environ", {"PYLOG_TRACE": "0"}):
+            assert is_tracing_enabled() is False
+
+        with patch.dict("os.environ", {"PYLOG_TRACE": "false"}):
             assert is_tracing_enabled() is False
 
         with patch.dict("os.environ", {}, clear=True):

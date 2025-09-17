@@ -8,7 +8,8 @@ from typing import Optional
 
 def is_tracing_enabled() -> bool:
     """Check if tracing is enabled via environment variable."""
-    return os.environ.get("PYLOG_TRACE", "0") == "1"
+    val = os.environ.get("PYLOG_TRACE", "0").strip().lower()
+    return val in {"1", "true", "yes", "on"}
 
 
 def capture_failure_artifacts(
@@ -50,6 +51,13 @@ def capture_failure_artifacts(
                 with output_trace.open("wb") as dst:
                     # Copy rest of file
                     shutil.copyfileobj(src, dst)
+                    # Ensure trailing newline
+                    dst.seek(0, os.SEEK_END)
+                    if dst.tell() > 0:
+                        dst.seek(-1, os.SEEK_END)
+                        last_byte = dst.read(1)
+                        if last_byte != b'\n':
+                            dst.write(b'\n')
 
     # Capture snapshot if provided
     if snapshot_file and snapshot_file.exists():
