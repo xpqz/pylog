@@ -10,11 +10,11 @@ import os
 import sys
 from abc import ABC, abstractmethod
 from collections import deque
-from typing import Optional, List, Any, TextIO, Dict
+from typing import Optional, List, Any, TextIO, Dict, Union
 from pathlib import Path
 import shutil
 
-from prolog.debug.tracer import TraceEvent
+from prolog.debug.tracer import TraceEvent, InternalEvent
 
 
 class TraceSink(ABC):
@@ -405,3 +405,36 @@ class FileTraceSink(TraceSink):
             if hasattr(self, 'file'):
                 self.file.close()
             self.closed = True
+
+
+class CollectorSink:
+    """
+    Simple sink that collects events in a list for testing.
+
+    Does not inherit from TraceSink as it doesn't need buffering.
+    """
+
+    def __init__(self):
+        """Initialize collector with empty event list."""
+        self.events: List[Union[TraceEvent, InternalEvent]] = []
+
+    def write_event(self, event: Union[TraceEvent, InternalEvent]) -> bool:
+        """
+        Collect an event.
+
+        Args:
+            event: The event to collect
+
+        Returns:
+            Always True
+        """
+        self.events.append(event)
+        return True
+
+    def flush(self) -> bool:
+        """No-op for collector."""
+        return True
+
+    def close(self):
+        """No-op for collector."""
+        pass

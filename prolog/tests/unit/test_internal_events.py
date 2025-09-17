@@ -48,11 +48,18 @@ class TestInternalEventStructure:
     def test_internal_event_extends_base(self):
         """InternalEvent should be distinguishable from TraceEvent."""
         trace_event = TraceEvent(
+            version=1,
+            run_id="test-run",
             step_id=1,
             port="call",
-            pred_id="test/0",
             goal=Atom("test"),
-            frame_depth=0
+            goal_pretty="test",
+            goal_canonical="test",
+            frame_depth=0,
+            cp_depth=0,
+            goal_height=0,
+            write_stamp=0,
+            pred_id="test/0"
         )
 
         internal_event = InternalEvent(
@@ -86,7 +93,7 @@ class TestInternalEventGeneration:
             Clause(Struct("test", ()), ()),
         ))
 
-        engine = Engine(program, debug=True)
+        engine = Engine(program, trace=True)
         sink = CollectorSink()
         engine.tracer.add_sink(sink)
 
@@ -105,7 +112,7 @@ class TestInternalEventGeneration:
             Clause(Struct("test", ()), ()),
         ))
 
-        engine = Engine(program, debug=True)
+        engine = Engine(program, trace=True)
         sink = CollectorSink()
         engine.tracer.add_sink(sink)
 
@@ -144,14 +151,14 @@ class TestInternalEventGeneration:
             )),
         ))
 
-        engine1 = Engine(program, debug=True)
+        engine1 = Engine(program, trace=True)
         sink1 = CollectorSink()
         engine1.tracer.add_sink(sink1)
 
         # Run without internal events
         list(engine1.query("?- test(X)."))
 
-        engine2 = Engine(program, debug=True)
+        engine2 = Engine(program, trace=True)
         sink2 = CollectorSink()
         engine2.tracer.add_sink(sink2)
         engine2.tracer.enable_internal_events = True
@@ -159,15 +166,15 @@ class TestInternalEventGeneration:
         # Run with internal events
         list(engine2.query("?- test(X)."))
 
-        # Extract only 4-port events from both
-        ports1 = [(e.step_id, e.port, e.pred_id)
+        # Extract only 4-port events from both (ignoring step_id)
+        ports1 = [(e.port, e.pred_id)
                   for e in sink1.events
                   if isinstance(e, TraceEvent)]
-        ports2 = [(e.step_id, e.port, e.pred_id)
+        ports2 = [(e.port, e.pred_id)
                   for e in sink2.events
                   if isinstance(e, TraceEvent) and not isinstance(e, InternalEvent)]
 
-        # 4-port sequence should be identical
+        # 4-port sequence should be identical (ignoring step_ids which will differ)
         assert ports1 == ports2
 
 
@@ -183,7 +190,7 @@ class TestChoicepointEvents:
             Clause(Struct("multi", (Int(3),)), ()),
         ))
 
-        engine = Engine(program, debug=True)
+        engine = Engine(program, trace=True)
         sink = CollectorSink()
         engine.tracer.add_sink(sink)
         engine.tracer.enable_internal_events = True
@@ -211,7 +218,7 @@ class TestChoicepointEvents:
             Clause(Struct("multi", (Int(2),)), ()),
         ))
 
-        engine = Engine(program, debug=True)
+        engine = Engine(program, trace=True)
         sink = CollectorSink()
         engine.tracer.add_sink(sink)
         engine.tracer.enable_internal_events = True
@@ -240,7 +247,7 @@ class TestChoicepointEvents:
             Clause(Struct("multi", (Atom("c"),)), ()),
         ))
 
-        engine = Engine(program, debug=True)
+        engine = Engine(program, trace=True)
         sink = CollectorSink()
         engine.tracer.add_sink(sink)
         engine.tracer.enable_internal_events = True
@@ -271,7 +278,7 @@ class TestFrameEvents:
             Clause(Struct("child", ()), ()),
         ))
 
-        engine = Engine(program, debug=True)
+        engine = Engine(program, trace=True)
         sink = CollectorSink()
         engine.tracer.add_sink(sink)
         engine.tracer.enable_internal_events = True
@@ -299,7 +306,7 @@ class TestFrameEvents:
             Clause(Struct("test", ()), ()),
         ))
 
-        engine = Engine(program, debug=True)
+        engine = Engine(program, trace=True)
         sink = CollectorSink()
         engine.tracer.add_sink(sink)
         engine.tracer.enable_internal_events = True
@@ -324,7 +331,7 @@ class TestFrameEvents:
             Clause(Struct("c", ()), ()),
         ))
 
-        engine = Engine(program, debug=True)
+        engine = Engine(program, trace=True)
         sink = CollectorSink()
         engine.tracer.add_sink(sink)
         engine.tracer.enable_internal_events = True
@@ -360,7 +367,7 @@ class TestCutEvents:
             Clause(Struct("multi", (Int(3),)), ()),
         ))
 
-        engine = Engine(program, debug=True)
+        engine = Engine(program, trace=True)
         sink = CollectorSink()
         engine.tracer.add_sink(sink)
         engine.tracer.enable_internal_events = True
@@ -389,7 +396,7 @@ class TestCutEvents:
             )),
         ))
 
-        engine = Engine(program, debug=True)
+        engine = Engine(program, trace=True)
         sink = CollectorSink()
         engine.tracer.add_sink(sink)
         engine.tracer.enable_internal_events = True
@@ -425,7 +432,7 @@ class TestCatchEvents:
             )),
         ))
 
-        engine = Engine(program, debug=True)
+        engine = Engine(program, trace=True)
         sink = CollectorSink()
         engine.tracer.add_sink(sink)
         engine.tracer.enable_internal_events = True
@@ -456,7 +463,7 @@ class TestCatchEvents:
             )),
         ))
 
-        engine = Engine(program, debug=True)
+        engine = Engine(program, trace=True)
         sink = CollectorSink()
         engine.tracer.add_sink(sink)
         engine.tracer.enable_internal_events = True
@@ -479,7 +486,7 @@ class TestEventOrdering:
             Clause(Struct("test", ()), ()),
         ))
 
-        engine = Engine(program, debug=True)
+        engine = Engine(program, trace=True)
         sink = CollectorSink()
         engine.tracer.add_sink(sink)
         engine.tracer.enable_internal_events = True
@@ -514,7 +521,7 @@ class TestEventOrdering:
             Clause(Struct("test", ()), ()),
         ))
 
-        engine = Engine(program, debug=True)
+        engine = Engine(program, trace=True)
         sink = CollectorSink()
         engine.tracer.add_sink(sink)
         engine.tracer.enable_internal_events = True
@@ -559,14 +566,14 @@ class TestEventCounting:
         ))
 
         # Run without internal events
-        engine1 = Engine(program, debug=True)
+        engine1 = Engine(program, trace=True)
         sink1 = CollectorSink()
         engine1.tracer.add_sink(sink1)
         engine1.tracer.enable_internal_events = False
         list(engine1.query("?- test."))
 
         # Run with internal events
-        engine2 = Engine(program, debug=True)
+        engine2 = Engine(program, trace=True)
         sink2 = CollectorSink()
         engine2.tracer.add_sink(sink2)
         engine2.tracer.enable_internal_events = True
@@ -589,19 +596,14 @@ class TestEventCounting:
         assert internal_count <= trace_count * 3
 
     def test_no_internal_events_when_debug_false(self):
-        """No events at all when debug=False."""
+        """No events at all when trace=False."""
         program = Program((
             Clause(Struct("test", ()), ()),
         ))
 
-        engine = Engine(program, debug=False)
-        # Even if we tried to enable internal events, debug=False should prevent all events
-        if hasattr(engine, 'tracer'):
-            sink = CollectorSink()
-            engine.tracer.add_sink(sink)
-            engine.tracer.enable_internal_events = True
-            list(engine.query("?- test."))
-            assert len(sink.events) == 0
-        else:
-            # No tracer at all when debug=False
-            assert not hasattr(engine, 'tracer') or engine.tracer is None
+        engine = Engine(program, trace=False)
+        # No tracer at all when trace=False
+        assert engine.tracer is None
+
+        # Query should still work without tracer
+        list(engine.query("?- test."))

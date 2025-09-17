@@ -489,6 +489,13 @@ class Engine:
             assert len(self.cp_stack) == cp_height
             assert len(self.frame_stack) >= cp.frame_stack_height
             
+            # Emit catch_switch event when we catch an exception
+            if self.tracer:
+                self.tracer.emit_internal_event("catch_switch", {
+                    "exception": str(ball),
+                    "handler": str(cp.payload.get("recovery"))
+                })
+
             # Push only the recovery goal - DO NOT re-install the CATCH choicepoint
             # If recovery fails, we backtrack transparently to outer choicepoints
             self.goal_stack.push(Goal.from_term(cp.payload.get("recovery")))
@@ -706,6 +713,14 @@ class Engine:
             )
             self.cp_stack.append(cp)
 
+            # Emit internal event for CP push
+            if self.tracer:
+                alternatives = len(cursor.matches) - cursor.pos if cursor else 0
+                self.tracer.emit_internal_event("cp_push", {
+                    "pred_id": f"{functor}/{arity}",
+                    "trail_top": cp.trail_top
+                })
+
         # Rename clause with fresh variables
         renamed_clause = self._renamer.rename_clause(clause)
 
@@ -722,6 +737,13 @@ class Engine:
                 pred=f"{functor}/{arity}",
             )
             self.frame_stack.append(frame)
+
+            # Emit internal event for frame push
+            if self.tracer:
+                self.tracer.emit_internal_event("frame_push", {
+                    "pred_id": f"{functor}/{arity}",
+                    "frame_id": frame_id
+                })
 
             # Don't call next_stamp() here - only when creating CPs
 
@@ -817,6 +839,13 @@ class Engine:
             )
             self.cp_stack.append(cp)
 
+            # Emit internal event for CP push
+            if self.tracer:
+                self.tracer.emit_internal_event("cp_push", {
+                    "pred_id": "disjunction",
+                    "trail_top": cp.trail_top
+                })
+
             # Try left first
             left_goal = Goal.from_term(left)
             self.goal_stack.push(left_goal)
@@ -861,6 +890,13 @@ class Engine:
             )
         )
 
+        # Emit internal event for CP push
+        if self.tracer:
+            self.tracer.emit_internal_event("cp_push", {
+                "pred_id": "if_then_else",
+                "trail_top": cp.trail_top
+            })
+
         # Push control goal that will commit and run Then on first success
         self.goal_stack.push(
             Goal(
@@ -891,8 +927,22 @@ class Engine:
 
             # Remove all choicepoints above the barrier
             while len(self.cp_stack) > cut_barrier:
-                self.cp_stack.pop()
+                removed_cp = self.cp_stack.pop()
                 alternatives_pruned += 1
+
+                # Emit internal event for CP pop due to cut
+                if self.tracer:
+                    pred_id = removed_cp.payload.get("pred_ref", removed_cp.kind.name.lower()) if removed_cp.kind == ChoicepointKind.PREDICATE else removed_cp.kind.name.lower()
+                    self.tracer.emit_internal_event("cp_pop", {
+                        "pred_id": pred_id
+                    })
+
+            # Emit cut_commit event after all CP pops
+            if self.tracer and alternatives_pruned > 0:
+                self.tracer.emit_internal_event("cut_commit", {
+                    "alternatives_pruned": alternatives_pruned,
+                    "barrier": cut_barrier
+                })
 
             # Record metrics
             if self.metrics and alternatives_pruned > 0:
@@ -936,6 +986,14 @@ class Engine:
                 # Safe to pop the frame - no CPs reference it
                 frame = self.frame_stack.pop()
                 self._debug_frame_pops += 1
+
+                # Emit internal event for frame pop
+                if self.tracer:
+                    self.tracer.emit_internal_event("frame_pop", {
+                        "pred_id": frame.pred,
+                        "frame_id": frame.frame_id
+                    })
+
                 # Emit EXIT port when frame is popped
                 self._port("EXIT", frame.pred or "unknown")
                 if self.metrics and frame.pred:
@@ -985,7 +1043,14 @@ class Engine:
 
         while self.cp_stack:
             cp = self.cp_stack.pop()
-            
+
+            # Emit internal event for CP pop
+            if self.tracer:
+                pred_id = cp.payload.get("pred_ref", cp.kind.name.lower()) if cp.kind == ChoicepointKind.PREDICATE else cp.kind.name.lower()
+                self.tracer.emit_internal_event("cp_pop", {
+                    "pred_id": pred_id
+                })
+
             if self.trace:
                 self._trace_log.append(f"[BACKTRACK] Popped CP: {cp.kind.name}, phase={cp.payload.get('phase', 'N/A')}")
 
@@ -1028,8 +1093,15 @@ class Engine:
             # PREDICATE CPs don't manage frames (they use frame_stack_height=0 as a sentinel)
             if cp.kind != ChoicepointKind.PREDICATE:
                 while len(self.frame_stack) > cp.frame_stack_height:
-                    self.frame_stack.pop()
+                    frame = self.frame_stack.pop()
                     self._debug_frame_pops += 1
+
+                    # Emit internal event for frame pop
+                    if self.tracer:
+                        self.tracer.emit_internal_event("frame_pop", {
+                            "pred_id": frame.pred,
+                            "frame_id": frame.frame_id
+                        })
 
                 # Debug assertion: verify frame restoration
                 assert (

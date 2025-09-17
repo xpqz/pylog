@@ -49,6 +49,19 @@ class TraceEvent:
             raise ValueError("depths/heights/write_stamp must be non-negative")
 
 
+@dataclass(frozen=True, slots=True)
+class InternalEvent:
+    """
+    Internal debug event for detailed execution tracking.
+
+    These events track internal engine operations beyond the standard 4-port model.
+    They are OFF by default and add extra events when enabled.
+    """
+    step_id: int  # Global monotonic counter (shared with TraceEvent)
+    kind: str  # Event type: 'cp_push'|'cp_pop'|'frame_push'|'frame_pop'|'cut_commit'|'catch_switch'
+    details: Dict[str, Any]  # Event-specific details
+
+
 class PortsTracer:
     """
     Main tracer managing events and output.
@@ -176,6 +189,31 @@ class PortsTracer:
 
         # Update event with actual step_id
         event = replace(event, step_id=self.step_counter)
+
+        # Send to all sinks
+        for sink in self.sinks:
+            sink.write_event(event)
+
+    def emit_internal_event(self, kind: str, details: Dict[str, Any]):
+        """
+        Emit an internal debug event if enabled.
+
+        Args:
+            kind: Event type ('cp_push'|'cp_pop'|'frame_push'|'frame_pop'|'cut_commit'|'catch_switch')
+            details: Event-specific details
+        """
+        if not self.enable_internal_events:
+            return
+
+        # Increment step counter for internal events
+        self.step_counter += 1
+
+        # Create internal event
+        event = InternalEvent(
+            step_id=self.step_counter,
+            kind=kind,
+            details=details
+        )
 
         # Send to all sinks
         for sink in self.sinks:
