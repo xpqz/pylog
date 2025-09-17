@@ -400,6 +400,40 @@ class TestCallGraphExporter:
         for pred in ["a/0", "b/0", "c/0", "d/0"]:
             assert f'"p/0" -> "{pred}"' in dot
 
+    def test_meta_predicates_not_expanded(self):
+        """Meta-predicates like call/1, once/1 are not expanded (current behavior)."""
+        # p :- call(q), once(r), findall(X, s(X), L).
+        clauses = [
+            Clause(
+                Struct("p", ()),
+                (
+                    Struct("call", (Struct("q", ()),)),
+                    Struct("once", (Struct("r", ()),)),
+                    Struct("findall", (
+                        Var(0, "X"),
+                        Struct("s", (Var(0, "X"),)),
+                        Var(1, "L")
+                    ))
+                )
+            )
+        ]
+        program = Program(tuple(clauses))
+        dot = export_call_graph(program)
+
+        # Meta-predicates appear as nodes
+        assert '"p/0" -> "call/1"' in dot
+        assert '"p/0" -> "once/1"' in dot
+        assert '"p/0" -> "findall/3"' in dot
+
+        # Goals inside meta-predicates are NOT extracted (current limitation)
+        assert '"q/0"' not in dot
+        assert '"r/0"' not in dot
+        assert '"s/1"' not in dot
+
+        # This is intentional for now - meta-predicate expansion
+        # would require special handling and knowledge of which
+        # arguments are goals vs data
+
 
 class TestConstraintGraphExporter:
     """Test constraint graph generation (placeholder for CLP(FD))."""

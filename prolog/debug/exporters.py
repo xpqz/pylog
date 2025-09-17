@@ -118,6 +118,10 @@ def _collect_calls_from_goal(goal, out: Set[Tuple[str, int]]):
         out.add((f, ar))
         # IMPORTANT: Do NOT recurse into args for normal predicates
         # to avoid treating expression functors (e.g., +/2) as predicate calls
+        #
+        # NOTE: Meta-predicates like call/1, once/1, findall/3 are treated
+        # as regular predicates for now. Their goal arguments are not expanded.
+        # Future enhancement could special-case these to extract nested goals.
 
 
 def extract_predicate_relationships(program: Program) -> Dict[Tuple[str, int], Set[Tuple[str, int]]]:
