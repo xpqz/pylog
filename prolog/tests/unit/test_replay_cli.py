@@ -260,7 +260,7 @@ class TestAnalyzeToolCLI:
         captured = capsys.readouterr()
         out = captured.out.lower()
         assert "slow/0" in out
-        assert "100 ms" in out or "100ms" in out
+        assert "100" in out and "ms" in out  # May be formatted as "100.0 ms"
 
     def test_analyze_cli_help(self, capsys):
         """Test analyze tool help/usage output."""

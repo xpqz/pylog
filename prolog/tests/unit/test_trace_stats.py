@@ -375,4 +375,4 @@ class TestReportFormatting:
 
         assert "<html>" in report or "<!DOCTYPE" in report
         assert "Total Events" in report
-        assert "<table>" in report or "<div>" in report
+        assert "<table" in report or "<div>" in report  # table may have attributes
