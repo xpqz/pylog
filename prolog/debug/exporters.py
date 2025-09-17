@@ -68,11 +68,64 @@ def export_call_graph(program: Program) -> str:
     return "\n".join(lines)
 
 
+def _collect_calls_from_goal(goal, out: Set[Tuple[str, int]]):
+    """
+    Recursively collect all predicate calls from a goal.
+
+    Descends into control structures (,/2, ;/2, ->/2, \\+/1) to find
+    nested predicates, but does not expand arithmetic expressions.
+    """
+    # Handle cut
+    if isinstance(goal, Atom):
+        if goal.name == "!":
+            out.add(("!", 0))
+        else:
+            out.add((goal.name, 0))
+        return
+
+    if not isinstance(goal, Struct):
+        return
+
+    f = goal.functor
+    ar = len(goal.args)
+
+    # Control constructs: recurse into their branches
+    if f == "," and ar == 2:  # Conjunction
+        _collect_calls_from_goal(goal.args[0], out)
+        _collect_calls_from_goal(goal.args[1], out)
+        # Optionally include the control construct itself
+        # out.add((",", 2))
+
+    elif f == ";" and ar == 2:  # Disjunction (includes if-then-else)
+        _collect_calls_from_goal(goal.args[0], out)
+        _collect_calls_from_goal(goal.args[1], out)
+        # Optionally include the control construct itself
+        # out.add((";", 2))
+
+    elif f == "->" and ar == 2:  # If-then
+        _collect_calls_from_goal(goal.args[0], out)  # condition
+        _collect_calls_from_goal(goal.args[1], out)  # then branch
+        # Optionally include the control construct itself
+        # out.add(("->", 2))
+
+    elif f == "\\+" and ar == 1:  # Negation
+        _collect_calls_from_goal(goal.args[0], out)
+        # Optionally include the control construct itself
+        # out.add(("\\+", 1))
+
+    else:
+        # Normal callable: record it as a call
+        out.add((f, ar))
+        # IMPORTANT: Do NOT recurse into args for normal predicates
+        # to avoid treating expression functors (e.g., +/2) as predicate calls
+
+
 def extract_predicate_relationships(program: Program) -> Dict[Tuple[str, int], Set[Tuple[str, int]]]:
     """
     Extract predicate call relationships from a program.
 
     Returns a dict mapping (predicate_name, arity) to set of called (predicate_name, arity).
+    Properly handles control structures by descending into their branches.
     """
     relationships: Dict[Tuple[str, int], Set[Tuple[str, int]]] = {}
 
@@ -89,14 +142,11 @@ def extract_predicate_relationships(program: Program) -> Dict[Tuple[str, int], S
 
         head_pred = (head_name, head_arity)
 
-        # Extract body predicates
+        # Extract body predicates (including those nested in control structures)
         if clause.body:
             called_preds = set()
             for goal in clause.body:
-                if isinstance(goal, Struct):
-                    called_preds.add((goal.functor, len(goal.args)))
-                elif isinstance(goal, Atom):
-                    called_preds.add((goal.name, 0))
+                _collect_calls_from_goal(goal, called_preds)
 
             if called_preds:
                 if head_pred not in relationships:

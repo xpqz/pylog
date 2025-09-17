@@ -295,6 +295,111 @@ class TestCallGraphExporter:
         assert '"eq_test/2" -> "=/2"' in dot
         assert '"cut_test/0" -> "!/0"' in dot
 
+    def test_disjunction_descends(self):
+        """Disjunction (;/2) should descend to find nested predicates."""
+        clauses = [
+            Clause(
+                Struct("p", ()),
+                (Struct(";", (Struct("q", ()), Struct("r", ()))),)
+            )
+        ]
+        program = Program(tuple(clauses))
+        dot = export_call_graph(program)
+
+        # Should have edges to both branches
+        assert '"p/0" -> "q/0"' in dot
+        assert '"p/0" -> "r/0"' in dot
+
+    def test_negation_descends(self):
+        """Negation (\\+/1) should descend to find nested predicates."""
+        clauses = [
+            Clause(
+                Struct("p", ()),
+                (Struct("\\+", (Struct("q", ()),)),)
+            )
+        ]
+        program = Program(tuple(clauses))
+        dot = export_call_graph(program)
+
+        # Should have edge to negated predicate
+        assert '"p/0" -> "q/0"' in dot
+
+    def test_if_then_else_descends(self):
+        """If-then-else should descend into all branches."""
+        # Canonical form: ;(->(Cond, Then), Else)
+        ite = Struct(";", (
+            Struct("->", (Struct("q", ()), Struct("r", ()))),
+            Struct("s", ())
+        ))
+        clauses = [Clause(Struct("p", ()), (ite,))]
+        program = Program(tuple(clauses))
+        dot = export_call_graph(program)
+
+        # Should have edges to all three predicates
+        assert '"p/0" -> "q/0"' in dot  # condition
+        assert '"p/0" -> "r/0"' in dot  # then branch
+        assert '"p/0" -> "s/0"' in dot  # else branch
+
+    def test_conjunction_descends(self):
+        """Conjunction (,/2) should descend to find nested predicates."""
+        conj = Struct(",", (Struct("a", ()), Struct("b", ())))
+        clauses = [Clause(Struct("p", ()), (conj,))]
+        program = Program(tuple(clauses))
+        dot = export_call_graph(program)
+
+        # Should have edges to both conjuncts
+        assert '"p/0" -> "a/0"' in dot
+        assert '"p/0" -> "b/0"' in dot
+
+    def test_nested_control_dedup(self):
+        """Nested control structures should not duplicate edges."""
+        # p :- (q ; (q, r)).
+        nested = Struct(";", (
+            Struct("q", ()),
+            Struct(",", (Struct("q", ()), Struct("r", ())))
+        ))
+        clauses = [Clause(Struct("p", ()), (nested,))]
+        program = Program(tuple(clauses))
+        dot = export_call_graph(program)
+
+        # Each edge should appear exactly once
+        assert dot.count('"p/0" -> "q/0"') == 1
+        assert dot.count('"p/0" -> "r/0"') == 1
+
+    def test_is_does_not_expand_expression(self):
+        """Arithmetic expressions should not be expanded."""
+        clauses = [
+            Clause(
+                Struct("p", (Var(0, "X"),)),
+                (Struct("is", (Var(0, "X"), Struct("+", (Int(1), Int(2))))),)
+            )
+        ]
+        program = Program(tuple(clauses))
+        dot = export_call_graph(program)
+
+        # Should have edge to is/2
+        assert '"p/1" -> "is/2"' in dot
+        # Should NOT treat +/2 as a predicate call
+        assert '"+/2"' not in dot
+
+    def test_deeply_nested_control(self):
+        """Deeply nested control structures should be handled."""
+        # p :- (a ; (b , (c ; d))).
+        deep = Struct(";", (
+            Struct("a", ()),
+            Struct(",", (
+                Struct("b", ()),
+                Struct(";", (Struct("c", ()), Struct("d", ())))
+            ))
+        ))
+        clauses = [Clause(Struct("p", ()), (deep,))]
+        program = Program(tuple(clauses))
+        dot = export_call_graph(program)
+
+        # All nested predicates should be reachable
+        for pred in ["a/0", "b/0", "c/0", "d/0"]:
+            assert f'"p/0" -> "{pred}"' in dot
+
 
 class TestConstraintGraphExporter:
     """Test constraint graph generation (placeholder for CLP(FD))."""
