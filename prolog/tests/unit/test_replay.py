@@ -551,3 +551,29 @@ class TestInvariantChecker:
         ]
         violations = check_trace_invariants(events)
         assert any(("depth" in str(v).lower() and ("underflow" in str(v).lower() or "negative" in str(v).lower())) for v in violations)
+
+    def test_invariant_checker_exit_depth_mismatch(self):
+        """Test detection of EXIT depth mismatch."""
+        events = [
+            {"sid": 1, "p": 0, "pid": "a/0", "fd": 0},  # CALL at depth 0
+            {"sid": 2, "p": 1, "pid": "a/0", "fd": 1},  # EXIT at wrong depth
+        ]
+        violations = check_trace_invariants(events)
+        assert any("depth mismatch" in str(v).lower() for v in violations)
+
+    def test_invariant_checker_exit_empty_stack(self):
+        """Test detection of EXIT with empty call stack."""
+        events = [
+            {"sid": 1, "p": 1, "pid": "a/0", "fd": 0},  # EXIT without CALL
+        ]
+        violations = check_trace_invariants(events)
+        assert any("exit without" in str(v).lower() for v in violations)
+
+    def test_invariant_checker_unknown_port(self):
+        """Test detection of unknown port codes."""
+        events = [
+            {"sid": 1, "p": 0, "pid": "a/0", "fd": 0},  # CALL
+            {"sid": 2, "p": 99, "pid": "a/0", "fd": 0},  # Unknown port
+        ]
+        violations = check_trace_invariants(events)
+        assert any("unknown port" in str(v).lower() for v in violations)

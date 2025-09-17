@@ -7,12 +7,15 @@ def check_trace_invariants(events: List[Dict[str, Any]]) -> List[str]:
     """
     Check trace invariants and return list of violations.
 
+    Port codes: {0: CALL, 1: EXIT, 2: REDO, 3: FAIL}
+
     Invariants checked:
     - Step IDs must be strictly monotonic
     - Port sequences must be valid (CALL->EXIT/FAIL, REDO after EXIT)
     - Frame depths must change by at most 1
     - No negative depths
     - EXIT must follow CALL for same predicate
+    - Unknown port codes are flagged
     """
     violations = []
 
@@ -83,5 +86,9 @@ def check_trace_invariants(events: List[Dict[str, Any]]) -> List[str]:
         elif port == 3:  # FAIL
             # FAIL is valid after CALL or REDO
             pass
+
+        elif port is not None:
+            # Unknown port code
+            violations.append(f"Unknown port code at position {i}: {port}")
 
     return violations

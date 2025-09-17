@@ -7,7 +7,11 @@ from typing import Dict, Any, List, Optional, Tuple
 
 
 def compute_trace_statistics(trace_file: Path) -> Dict[str, Any]:
-    """Compute comprehensive statistics from a trace file."""
+    """
+    Compute comprehensive statistics from a trace file.
+
+    Port codes: {0: CALL, 1: EXIT, 2: REDO, 3: FAIL}
+    """
     events = []
     with trace_file.open() as f:
         for line in f:
