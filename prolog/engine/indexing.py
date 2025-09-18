@@ -178,6 +178,13 @@ class ClauseIndex:
 
         # Yield clauses in source order (Order ∩ Candidates pattern)
         # Check membership on-the-fly without building union set
+
+        # Hoist lookups outside loop to avoid repeated dict/attribute access
+        var_ids = pred_idx.var_ids
+        struct_set = None
+        if use_struct_bucket and functor_key in pred_idx.struct_functor:
+            struct_set = pred_idx.struct_functor[functor_key]
+
         for clause_id in pred_idx.order:
             # Check if clause matches: either in typed bucket, struct bucket, or var bucket
             match = False
@@ -186,12 +193,11 @@ class ClauseIndex:
             if typed_bucket is not None and clause_id in typed_bucket:
                 match = True
             # Check struct functor bucket
-            elif use_struct_bucket and functor_key in pred_idx.struct_functor:
-                if clause_id in pred_idx.struct_functor[functor_key]:
-                    match = True
+            elif struct_set and clause_id in struct_set:
+                match = True
 
             # Always check variable bucket (clauses with var first arg match everything)
-            if not match and clause_id in pred_idx.var_ids:
+            if not match and clause_id in var_ids:
                 match = True
 
             if match:

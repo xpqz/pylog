@@ -3,10 +3,12 @@ Tests for indexing correctness edge cases and cut semantics.
 Ensures that indexing preserves exact Prolog semantics.
 """
 
-from prolog.ast.terms import Atom, Int, Struct
+from prolog.ast.terms import Atom, Int, Struct, Var
 from prolog.ast.clauses import Clause, Program
 from prolog.engine.engine import Engine
+from prolog.engine.indexed_program import IndexedProgram
 from prolog.parser.reader import Reader
+from prolog.unify.store import Store
 
 
 class TestIndexingEdgeCases:
@@ -703,3 +705,95 @@ class TestIntegrationWithExistingTests:
         s = lambda t: Struct('s', (t,))
         zero = Int(0)
         assert results[0]['X'] == s(s(s(zero)))
+
+
+class TestIndexingOptimizations:
+    """Tests for indexing performance optimizations and edge cases."""
+
+    def test_negative_integer_indexing(self):
+        """Test that negative integers are indexed the same as positive integers (type-based)."""
+        clauses = [
+            Clause(head=Struct("test", (Int(-5), Atom("negative"))), body=()),
+            Clause(head=Struct("test", (Int(5), Atom("positive"))), body=()),
+            Clause(head=Struct("test", (Int(0), Atom("zero"))), body=()),
+            Clause(head=Struct("test", (Var(0, "X"), Atom("var"))), body=()),
+            Clause(head=Struct("test", (Atom("atom"), Atom("atom_clause"))), body=()),
+        ]
+
+        program = IndexedProgram(tuple(clauses))
+        store = Store()
+
+        # Query with negative integer - should match all integer clauses + var clause
+        goal_neg = Struct("test", (Int(-5), Var(1, "Result")))
+        results_neg = list(program.select(("test", 2), goal_neg, store))
+
+        # Query with positive integer - should also match all integer clauses + var clause
+        goal_pos = Struct("test", (Int(5), Var(1, "Result")))
+        results_pos = list(program.select(("test", 2), goal_pos, store))
+
+        # Query with zero - should also match all integer clauses + var clause
+        goal_zero = Struct("test", (Int(0), Var(1, "Result")))
+        results_zero = list(program.select(("test", 2), goal_zero, store))
+
+        # All integer queries should match all 3 integer clauses + 1 var clause
+        assert len(results_neg) == 4, f"Negative int query returned {len(results_neg)} results"
+        assert len(results_pos) == 4, f"Positive int query returned {len(results_pos)} results"
+        assert len(results_zero) == 4, f"Zero query returned {len(results_zero)} results"
+
+        # Check that results include the expected clauses (results are indices)
+        neg_clauses = [clauses[idx] for idx in results_neg]
+        neg_heads = [clause.head for clause in neg_clauses]
+        # Check we get the right mix of clauses
+        int_count = sum(1 for head in neg_heads if isinstance(head.args[0], Int))
+        var_count = sum(1 for head in neg_heads if isinstance(head.args[0], Var))
+        assert int_count == 3, "Should match 3 integer clauses"
+        assert var_count == 1, "Should match 1 variable clause"
+
+    def test_on_the_fly_membership_preserves_order(self):
+        """Test that the optimized on-the-fly membership checking preserves source order."""
+        clauses = [
+            Clause(head=Struct("test", (Int(1), Atom("first"))), body=()),
+            Clause(head=Struct("test", (Var(0, "X"), Atom("second"))), body=()),
+            Clause(head=Struct("test", (Int(2), Atom("third"))), body=()),
+            Clause(head=Struct("test", (Var(1, "Y"), Atom("fourth"))), body=()),
+            Clause(head=Struct("test", (Int(3), Atom("fifth"))), body=()),
+        ]
+
+        program = IndexedProgram(tuple(clauses))
+        store = Store()
+
+        # Query with integer - should get integer clauses and var clauses in source order
+        goal = Struct("test", (Int(99), Var(2, "Result")))
+        results = list(program.select(("test", 2), goal, store))
+
+        # Extract the second argument to check order (results are indices)
+        result_clauses = [clauses[idx] for idx in results]
+        result_values = [clause.head.args[1].name for clause in result_clauses]
+
+        # Should be: first (int), second (var), third (int), fourth (var), fifth (int)
+        assert result_values == ["first", "second", "third", "fourth", "fifth"]
+
+    def test_struct_bucket_lookup_optimization(self):
+        """Test that struct bucket lookups work correctly with hoisted lookup."""
+        clauses = [
+            Clause(head=Struct("test", (Struct("f", (Int(1),)), Atom("f1"))), body=()),
+            Clause(head=Struct("test", (Struct("g", (Int(2),)), Atom("g2"))), body=()),
+            Clause(head=Struct("test", (Struct("f", (Int(3),)), Atom("f3"))), body=()),
+            Clause(head=Struct("test", (Var(0, "X"), Atom("var"))), body=()),
+        ]
+
+        program = IndexedProgram(tuple(clauses))
+        store = Store()
+
+        # Query with f/1 structure
+        goal = Struct("test", (Struct("f", (Var(1, "N"),)), Var(2, "Result")))
+        results = list(program.select(("test", 2), goal, store))
+
+        # Should match two f/1 clauses and the var clause
+        assert len(results) == 3
+        result_clauses = [clauses[idx] for idx in results]
+        result_values = [clause.head.args[1].name for clause in result_clauses]
+        assert "f1" in result_values
+        assert "f3" in result_values
+        assert "var" in result_values
+        assert "g2" not in result_values  # Should not match g/1
