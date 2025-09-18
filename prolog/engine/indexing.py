@@ -140,48 +140,61 @@ class ClauseIndex:
                     yield self.clauses[(pred_key, clause_id)]
                 return
         
-        # Build candidate set based on first argument type
-        # Note: We already handled unbound Var above with fast-path
-        candidates: Set[ClauseID] = set()
-        
+        # Optimize: Instead of building a union set, check membership on-the-fly
+        # This avoids O(N) memory allocation for large buckets
+
+        # Determine which buckets match based on first argument type
+        typed_bucket = None  # Primary type-specific bucket
+        use_struct_bucket = False  # Whether to check struct_functor
+        functor_key = None  # Key for struct_functor lookup
+
         if isinstance(first_arg, Int):
-            # Integer matches all integer clauses and variable clauses (type-based)
-            candidates |= pred_idx.int_ids
-            candidates |= pred_idx.var_ids
+            # Integer matches all integer clauses (type-based)
+            typed_bucket = pred_idx.int_ids
         elif isinstance(first_arg, PrologList):
             if len(first_arg.items) == 0:
                 # Empty list
-                candidates |= pred_idx.empty_list_ids
-                candidates |= pred_idx.var_ids
+                typed_bucket = pred_idx.empty_list_ids
             else:
                 # Non-empty list
-                candidates |= pred_idx.list_nonempty_ids
-                candidates |= pred_idx.var_ids
+                typed_bucket = pred_idx.list_nonempty_ids
         elif isinstance(first_arg, Atom):
             if first_arg.name == "[]":
                 # Empty list atom
-                candidates |= pred_idx.empty_list_ids
-                candidates |= pred_idx.var_ids
+                typed_bucket = pred_idx.empty_list_ids
             else:
                 # Regular atom
                 functor_key = (first_arg.name, 0)
-                candidates |= pred_idx.struct_functor.get(functor_key, set())
-                candidates |= pred_idx.var_ids
+                use_struct_bucket = True
         elif isinstance(first_arg, Struct):
             # Check for canonical list representation
             if first_arg.functor == "." and len(first_arg.args) == 2:
                 # Non-empty list in canonical form
-                candidates |= pred_idx.list_nonempty_ids
-                candidates |= pred_idx.var_ids
+                typed_bucket = pred_idx.list_nonempty_ids
             else:
                 # Regular structure
                 functor_key = (first_arg.functor, len(first_arg.args))
-                candidates |= pred_idx.struct_functor.get(functor_key, set())
-                candidates |= pred_idx.var_ids
-        
+                use_struct_bucket = True
+
         # Yield clauses in source order (Order ∩ Candidates pattern)
+        # Check membership on-the-fly without building union set
         for clause_id in pred_idx.order:
-            if clause_id in candidates:
+            # Check if clause matches: either in typed bucket, struct bucket, or var bucket
+            match = False
+
+            # Check primary typed bucket
+            if typed_bucket is not None and clause_id in typed_bucket:
+                match = True
+            # Check struct functor bucket
+            elif use_struct_bucket and functor_key in pred_idx.struct_functor:
+                if clause_id in pred_idx.struct_functor[functor_key]:
+                    match = True
+
+            # Always check variable bucket (clauses with var first arg match everything)
+            if not match and clause_id in pred_idx.var_ids:
+                match = True
+
+            if match:
                 yield self.clauses[(pred_key, clause_id)]
 
 

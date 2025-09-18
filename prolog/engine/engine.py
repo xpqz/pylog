@@ -621,6 +621,9 @@ class Engine:
             from prolog.engine.indexed_program import IndexedProgram
             # Use indexed selection
             pred_key = (functor, arity)
+            # TODO: Future optimization - avoid list materialization for true streaming
+            # Could use a buffered iterator or make ClauseCursor lazily evaluate
+            # while still supporting has_more() checks for choicepoint creation
             matches = list(self.program.select(pred_key, goal.term, self.store))
             
             # Track candidates in debug mode
