@@ -181,9 +181,7 @@ class ClauseIndex:
 
         # Hoist lookups outside loop to avoid repeated dict/attribute access
         var_ids = pred_idx.var_ids
-        struct_set = None
-        if use_struct_bucket and functor_key in pred_idx.struct_functor:
-            struct_set = pred_idx.struct_functor[functor_key]
+        struct_set = pred_idx.struct_functor.get(functor_key) if use_struct_bucket else None
 
         for clause_id in pred_idx.order:
             # Check if clause matches: either in typed bucket, struct bucket, or var bucket

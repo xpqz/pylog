@@ -689,7 +689,7 @@ class PrologREPL:
             self.program = self.engine.program
 
         # Create new engine with trace settings
-        self.engine = Engine(self.program, trace=self.trace_enabled, debug=self.metrics_enabled)
+        self.engine = Engine(self.program, trace=self.trace_enabled, metrics=self.metrics_enabled)
 
         if self.trace_enabled and self.engine.tracer:
             # Configure tracer based on settings
