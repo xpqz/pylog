@@ -748,7 +748,13 @@ class Engine:
 
             # Emit internal event for CP push
             if self.tracer:
-                alternatives = len(cursor.matches) - cursor.pos if cursor else 0
+                # Compute alternatives count based on cursor type
+                alternatives = 0
+                if cursor:
+                    if hasattr(cursor, 'matches') and hasattr(cursor, 'pos'):
+                        alternatives = len(cursor.matches) - cursor.pos
+                    elif hasattr(cursor, 'has_more'):
+                        alternatives = 1 if cursor.has_more() else 0
                 self.tracer.emit_internal_event("cp_push", {
                     "pred_id": f"{functor}/{arity}",
                     "trail_top": cp.trail_top
@@ -934,18 +940,17 @@ class Engine:
 
         # Create choicepoint that runs Else if Cond fails exhaustively
         self.trail.next_stamp()
-        self.cp_stack.append(
-            Choicepoint(
-                kind=ChoicepointKind.IF_THEN_ELSE,
-                trail_top=self.trail.position(),
-                goal_stack_height=self.goal_stack.height(),
-                frame_stack_height=len(self.frame_stack),
-                payload={
-                    "else_goal": Goal.from_term(else_term),
-                    "tmp_barrier": tmp_barrier,
-                },
-            )
+        cp = Choicepoint(
+            kind=ChoicepointKind.IF_THEN_ELSE,
+            trail_top=self.trail.position(),
+            goal_stack_height=self.goal_stack.height(),
+            frame_stack_height=len(self.frame_stack),
+            payload={
+                "else_goal": Goal.from_term(else_term),
+                "tmp_barrier": tmp_barrier,
+            },
         )
+        self.cp_stack.append(cp)
 
         # Emit internal event for CP push
         if self.tracer:
@@ -991,8 +996,11 @@ class Engine:
                     # For predicate CPs, count remaining clauses
                     cursor = removed_cp.payload.get("cursor")
                     if cursor and hasattr(cursor, 'matches') and hasattr(cursor, 'pos'):
-                        # Count remaining alternatives in cursor
+                        # Count remaining alternatives in cursor (materialized)
                         alternatives_pruned += len(cursor.matches) - cursor.pos
+                    elif cursor and hasattr(cursor, 'has_more'):
+                        # For streaming cursors, just count as 1 (can't count ahead)
+                        alternatives_pruned += 1 if cursor.has_more() else 0
                     else:
                         alternatives_pruned += 1
                 else:
@@ -1289,7 +1297,13 @@ class Engine:
 
                         # Emit internal event for CP push during backtracking
                         if self.tracer:
-                            alternatives = len(cursor.matches) - cursor.pos if cursor else 0
+                            # Compute alternatives count based on cursor type
+                            alternatives = 0
+                            if cursor:
+                                if hasattr(cursor, 'matches') and hasattr(cursor, 'pos'):
+                                    alternatives = len(cursor.matches) - cursor.pos
+                                elif hasattr(cursor, 'has_more'):
+                                    alternatives = 1 if cursor.has_more() else 0
                             self.tracer.emit_internal_event("cp_push", {
                                 "pred_id": cp.payload["pred_ref"],
                                 "trail_top": new_cp.trail_top

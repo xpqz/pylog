@@ -95,9 +95,17 @@ Add targeted tests alongside existing ones.
 - Debug/metrics parity: keep list materialization when debug/metrics enabled until tests are migrated.
 - Trace ordering: preserve current Engine control flow so 4‑port sequencing remains unchanged.
 
+## Environment Variable
+
+The `PYLOG_STREAM_SELECTION` environment variable allows forcing streaming on or off:
+- `PYLOG_STREAM_SELECTION=1`: Force streaming enabled (even with debug/metrics/trace active)
+- `PYLOG_STREAM_SELECTION=0`: Force streaming disabled
+- Unset/other values: Use default gating behavior (streaming only when indexing=True and debug/metrics/trace=False)
+
+This is useful for troubleshooting and performance testing.
+
 ## Follow‑ups
 
-- Add an env flag (e.g., `PYLOG_STREAM_SELECTION=0/1`) to force streaming on/off for troubleshooting.
 - Expand benchmarks to measure Engine end‑to‑end improvements (time‑to‑first‑clause, peak memory) under realistic workloads.
 - Consider a tiny buffering strategy in the choicepoint path if profiling shows `has_more()` overhead is noticeable.
 

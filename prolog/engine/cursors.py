@@ -137,7 +137,11 @@ class StreamingClauseCursor:
         The clone will yield the same remaining sequence as this cursor.
         Consumed items are shared to support backtracking.
 
-        Warning: Clones should not be advanced concurrently.
+        Warning:
+        - Clones should not be advanced concurrently.
+        - itertools.tee may retain memory for unconsumed items between
+          the original and cloned iterators. This is usually not an issue
+          as clones are rare and short-lived in backtracking scenarios.
         """
         # Collect remaining items for the clone
         # We need to buffer the current item (if any) separately

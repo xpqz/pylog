@@ -243,7 +243,7 @@ class TestEngineStreamingTraceOrder:
         def extract_port_pred(events):
             result = []
             for ev in events:
-                if ev.port in ["CALL", "EXIT", "REDO", "FAIL"]:
+                if ev.port in ["call", "exit", "redo", "fail"]:
                     # Extract predicate identifier from goal
                     if isinstance(ev.goal, Struct):
                         pred_id = f"{ev.goal.functor}/{len(ev.goal.args)}"
