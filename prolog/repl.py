@@ -531,7 +531,10 @@ class PrologREPL:
         Returns:
             Dictionary with 'type' and relevant data
         """
-        input_text = input_text.strip().rstrip('.')
+        # Keep original to check for trailing period later
+        original_input = input_text.strip()
+        # Remove period for command checking
+        input_text = original_input.rstrip('.')
 
         if not input_text:
             return {'type': 'empty'}
@@ -580,19 +583,22 @@ class PrologREPL:
         # Check for debug commands
         if input_lower == 'snapshot':
             return {'type': 'debug', 'action': 'snapshot'}
-        elif input_lower == 'metrics':
-            return {'type': 'debug', 'action': 'metrics'}
+        elif input_lower == 'metrics on':
+            return {'type': 'debug', 'action': 'metrics_on'}
+        elif input_lower == 'metrics off':
+            return {'type': 'debug', 'action': 'metrics_off'}
         elif input_lower == 'metrics reset':
             return {'type': 'debug', 'action': 'metrics_reset'}
+        elif input_lower == 'metrics':
+            return {'type': 'debug', 'action': 'metrics'}
 
-        # Check for consult (add period back for original logic)
-        input_with_period = input_text + '.'
-        consult_match = re.match(r'consult\s*\(\s*[\'"]([^\'"]*)[\'"]\s*\)\s*\.?', input_with_period)
+        # Check for consult
+        consult_match = re.match(r'consult\s*\(\s*[\'"]([^\'"]*)[\'"]\s*\)\s*\.?', original_input)
         if consult_match:
             return {'type': 'consult', 'file': consult_match.group(1)}
 
         # Check for query (with or without ?- prefix)
-        query_text = input_with_period
+        query_text = original_input
         if query_text.startswith('?-'):
             query_text = query_text[2:].strip()
 
@@ -605,7 +611,7 @@ class PrologREPL:
         return {'type': 'query', 'content': query}
     
     def execute_trace_command(self, cmd: dict) -> bool:
-        """Execute a trace command (stub for TDD).
+        """Execute a trace command.
 
         Args:
             cmd: Parsed command with 'action' and optional parameters
@@ -618,30 +624,99 @@ class PrologREPL:
         if action == 'on':
             self.trace_enabled = True
             self.trace_mode = 'pretty'
+            self._recreate_engine()
+            print("Tracing enabled (pretty format to stdout)")
             return True
         elif action == 'off':
             self.trace_enabled = False
             self.trace_file = None  # Clear file reference when disabling
+            if hasattr(self, '_trace_file_handle'):
+                self._trace_file_handle.close()
+                del self._trace_file_handle
+            self._recreate_engine()
+            print("Tracing disabled")
             return True
         elif action == 'json':
-            self.trace_enabled = True
-            self.trace_mode = 'json'
-            self.trace_file = cmd.get('file')
-            return True
+            try:
+                file_path = cmd.get('file')
+                # Open file for JSON output
+                self._trace_file_handle = open(file_path, 'w')
+                self.trace_enabled = True
+                self.trace_mode = 'json'
+                self.trace_file = file_path
+                self._recreate_engine()
+                print(f"Tracing enabled (JSON format to {file_path})")
+                return True
+            except IOError as e:
+                print(f"Error opening trace file: {e}")
+                return False
         elif action == 'pretty':
-            self.trace_enabled = True
-            self.trace_mode = 'pretty'
-            self.trace_file = cmd.get('file')
-            return True
+            try:
+                file_path = cmd.get('file')
+                # Open file for pretty output
+                self._trace_file_handle = open(file_path, 'w')
+                self.trace_enabled = True
+                self.trace_mode = 'pretty'
+                self.trace_file = file_path
+                self._recreate_engine()
+                print(f"Tracing enabled (pretty format to {file_path})")
+                return True
+            except IOError as e:
+                print(f"Error opening trace file: {e}")
+                return False
         elif action == 'sample':
             self.trace_enabled = True
             self.trace_sample_rate = cmd.get('rate', 1)
+            self._recreate_engine()
+            print(f"Trace sampling enabled (1 in {self.trace_sample_rate} events)")
             return True
 
         return False
 
+    def _recreate_engine(self):
+        """Recreate the engine with current trace/debug settings."""
+        from prolog.debug.tracer import PortsTracer
+        from prolog.debug.sinks import PrettyTraceSink, JSONLTraceSink, CollectorSink
+
+        # Create new engine with trace settings
+        self.engine = Engine(self.program, trace=self.trace_enabled, debug=self.metrics_enabled)
+
+        if self.trace_enabled and self.engine.tracer:
+            # Configure tracer based on settings
+            if self.spypoints and hasattr(self.engine.tracer, 'set_filter'):
+                # Set up spypoint filtering if supported
+                self.engine.tracer.set_filter(lambda event:
+                    hasattr(event, 'pred_id') and event.pred_id in self.spypoints)
+
+            # Set up sampling if needed
+            if self.trace_sample_rate > 1 and hasattr(self.engine.tracer, 'set_filter'):
+                original_filter = self.engine.tracer._filter if hasattr(self.engine.tracer, '_filter') else None
+                counter = {'count': 0}
+                def sample_filter(event):
+                    counter['count'] += 1
+                    if counter['count'] % self.trace_sample_rate != 0:
+                        return False
+                    return original_filter(event) if original_filter else True
+                self.engine.tracer.set_filter(sample_filter)
+
+            # Add appropriate sink
+            if self.trace_mode == 'json' and hasattr(self, '_trace_file_handle'):
+                sink = JSONLTraceSink(output=self._trace_file_handle)
+                self.engine.tracer.add_sink(sink)
+            elif self.trace_mode == 'pretty' and self.trace_file and hasattr(self, '_trace_file_handle'):
+                sink = PrettyTraceSink(output=self._trace_file_handle)
+                self.engine.tracer.add_sink(sink)
+            elif self.trace_mode == 'pretty':
+                # Default to stdout
+                sink = PrettyTraceSink()
+                self.engine.tracer.add_sink(sink)
+            elif self.trace_mode == 'collector':
+                # For testing
+                self.collector_sink = CollectorSink()
+                self.engine.tracer.add_sink(self.collector_sink)
+
     def execute_spy_command(self, cmd: dict) -> bool:
-        """Execute a spy command (stub for TDD).
+        """Execute a spy command.
 
         Args:
             cmd: Parsed command with 'action' and optional parameters
@@ -655,13 +730,22 @@ class PrologREPL:
             pred = cmd.get('predicate')
             if pred and '/' in pred:
                 self.spypoints.add(pred)
+                if self.trace_enabled:
+                    self._recreate_engine()  # Update filtering
+                print(f"Spypoint added: {pred}")
                 return True
             else:
-                print(f"Error: Invalid predicate format '{pred}'")
+                print(f"Error: Invalid predicate format '{pred}'. Use name/arity format.")
                 return False
         elif action == 'remove':
             pred = cmd.get('predicate')
-            self.spypoints.discard(pred)
+            if pred in self.spypoints:
+                self.spypoints.discard(pred)
+                if self.trace_enabled:
+                    self._recreate_engine()  # Update filtering
+                print(f"Spypoint removed: {pred}")
+            else:
+                print(f"Spypoint not found: {pred}")
             return True
         elif action == 'list':
             if self.spypoints:
@@ -673,12 +757,15 @@ class PrologREPL:
             return True
         elif action == 'clear':
             self.spypoints.clear()
+            if self.trace_enabled:
+                self._recreate_engine()  # Update filtering
+            print("All spypoints cleared")
             return True
 
         return False
 
     def execute_debug_command(self, cmd: dict) -> bool:
-        """Execute a debug command (stub for TDD).
+        """Execute a debug command.
 
         Args:
             cmd: Parsed command with 'action' and optional parameters
@@ -690,30 +777,87 @@ class PrologREPL:
 
         if action == 'snapshot':
             print("Engine State Snapshot")
-            print(f"Store size: {self.engine.store.size() if hasattr(self.engine, 'store') else 0}")
+            print("-" * 40)
+            if hasattr(self.engine, 'store'):
+                print(f"Store size: {self.engine.store.size()}")
+                # Could add more detail here if needed
+                if hasattr(self.engine.store, 'cells'):
+                    # cells is a list, not a dict
+                    bound_count = sum(1 for cell in self.engine.store.cells if cell.term is not None)
+                    print(f"Bound variables: {bound_count}")
+            if hasattr(self.engine, 'trail'):
+                trail_size = self.engine.trail.size() if hasattr(self.engine.trail, 'size') else 0
+                print(f"Trail size: {trail_size}")
+            if hasattr(self.engine, 'goal_stack'):
+                print(f"Goal stack height: {self.engine.goal_stack.height()}")
+            if hasattr(self.engine, 'cp_stack'):
+                print(f"Choicepoint stack size: {len(self.engine.cp_stack)}")
+            print("-" * 40)
             return True
         elif action == 'metrics':
-            if self.metrics_enabled:
-                print("Metrics:")
-                print("  calls: 0")
+            if self.metrics_enabled and hasattr(self.engine, 'metrics') and self.engine.metrics:
+                print("Engine Metrics")
+                print("-" * 40)
+                metrics_dict = self.engine.metrics.to_dict()
+
+                # Display global metrics
+                if 'global' in metrics_dict:
+                    print("Global counters:")
+                    for name, value in metrics_dict['global'].items():
+                        print(f"  {name}: {value}")
+
+                # Display per-predicate metrics
+                if 'predicates' in metrics_dict and metrics_dict['predicates']:
+                    print("\nPer-predicate statistics:")
+                    for pred_id, stats in metrics_dict['predicates'].items():
+                        print(f"  {pred_id}:")
+                        for stat_name, value in stats.items():
+                            print(f"    {stat_name}: {value}")
+                print("-" * 40)
             else:
-                print("Metrics disabled")
+                print("Metrics not enabled. Use 'metrics on' to enable.")
             return True
         elif action == 'metrics_reset':
-            print("Metrics reset")
+            if hasattr(self.engine, 'metrics') and self.engine.metrics:
+                self.engine.metrics.reset()
+                print("Metrics reset")
+            else:
+                print("Metrics not available")
+            return True
+        elif action == 'metrics_on':
+            self.metrics_enabled = True
+            self._recreate_engine()
+            print("Metrics enabled")
+            return True
+        elif action == 'metrics_off':
+            self.metrics_enabled = False
+            self._recreate_engine()
+            print("Metrics disabled")
             return True
 
         return False
 
-    def execute_query(self, query_text: str):
-        """Execute a Prolog query (stub extension for TDD)."""
-        # This method likely exists but we extend it for testing
-        pass
-
     def load_string(self, program_text: str):
-        """Load a Prolog program from string (stub for TDD)."""
-        # This method likely exists or is similar to load_file
-        pass
+        """Load a Prolog program from string.
+
+        Args:
+            program_text: Prolog program text
+        """
+        from prolog.parser.parser import parse_program
+
+        try:
+            new_clauses = parse_program(program_text)
+
+            # Add to existing program - need to create new tuple
+            existing_clauses = list(self.program.clauses) if self.program.clauses else []
+            existing_clauses.extend(new_clauses)
+            self.program = Program(tuple(existing_clauses))
+
+            # Recreate engine with updated program
+            self._recreate_engine()
+
+        except Exception as e:
+            print(f"Error loading program: {e}")
 
     def get_help_text(self) -> str:
         """Get help text for the REPL."""
@@ -794,9 +938,18 @@ Examples:
                 elif cmd['type'] == 'consult':
                     self.load_file(cmd['file'])
                     
+                elif cmd['type'] == 'trace':
+                    self.execute_trace_command(cmd)
+
+                elif cmd['type'] == 'spy':
+                    self.execute_spy_command(cmd)
+
+                elif cmd['type'] == 'debug':
+                    self.execute_debug_command(cmd)
+
                 elif cmd['type'] == 'query':
                     self._handle_query(cmd['content'])
-                    
+
                 else:
                     print(f"Error: {cmd.get('message', 'Unknown command')}")
                     
