@@ -177,8 +177,8 @@ class TestLargeIntegerPredicates:
         print(f"  Memory peak: {peak / 1024:.2f} KB")
         print(f"  Matches: {len(results)}")
 
-        # Should match integer clause + variable clauses
-        assert len(results) == 1001  # 1 specific + 1000 variables
+        # Should match all integer clauses (type-based indexing) + variable clauses
+        assert len(results) == 10000  # 9000 integers + 1000 variables
 
 
 def test_negative_integer_indexing():
@@ -205,9 +205,9 @@ def test_negative_integer_indexing():
     print(f"  Negative query matches: {len(results_neg)}")
     print(f"  Positive query matches: {len(results_pos)}")
 
-    # Both should match their specific clause + variable clause
-    assert len(results_neg) == 2
-    assert len(results_pos) == 2
+    # All should match all integer clauses (type-based) + variable clause
+    assert len(results_neg) == 4  # 3 integers + 1 variable
+    assert len(results_pos) == 4  # 3 integers + 1 variable
 
 
 if __name__ == "__main__":
