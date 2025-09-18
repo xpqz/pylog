@@ -757,6 +757,7 @@ class Engine:
                         alternatives = 1 if cursor.has_more() else 0
                 self.tracer.emit_internal_event("cp_push", {
                     "pred_id": f"{functor}/{arity}",
+                    "alternatives": alternatives,
                     "trail_top": cp.trail_top
                 })
 
@@ -1306,6 +1307,7 @@ class Engine:
                                     alternatives = 1 if cursor.has_more() else 0
                             self.tracer.emit_internal_event("cp_push", {
                                 "pred_id": cp.payload["pred_ref"],
+                                "alternatives": alternatives,
                                 "trail_top": new_cp.trail_top
                             })
                     else:
