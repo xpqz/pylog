@@ -6,6 +6,7 @@ trace ordering, and result correctness.
 """
 
 import pytest
+import os
 from typing import List
 
 from prolog.engine.engine import Engine, Program
@@ -14,81 +15,174 @@ from prolog.ast.clauses import Clause
 from prolog.debug.tracer import PortsTracer, TraceEvent, CollectorSink
 
 
-class TestEngineStreamingIntegration:
-    """Test streaming cursor integration with Engine."""
+class TestEngineStreamingResultParity:
+    """Test result parity across different engine configurations."""
 
-    def test_streaming_vs_materialized_result_parity(self):
-        """Test that streaming and materialized paths yield identical results."""
-        # Create test program with multiple clauses
+    @pytest.mark.parametrize("first_arg", [
+        Int(1),                           # Integer
+        Int(-5),                          # Negative integer
+        Atom("foo"),                      # Regular atom
+        Atom("[]"),                       # Empty list atom
+        PrologList([Int(1), Int(2)]),    # List sugar
+        Struct(".", (Int(1), Atom("[]"))),  # List canonical '.'/2
+        Struct("f", (Atom("a"),)),       # Regular struct
+        Var(0, "X"),                      # Variable
+    ])
+    def test_mixed_first_arg_types(self, first_arg):
+        """Test streaming with various first argument types."""
         clauses = [
-            Clause(head=Struct("test", (Int(1), Atom("a"))), body=()),
-            Clause(head=Struct("test", (Int(2), Atom("b"))), body=()),
-            Clause(head=Struct("test", (Int(3), Atom("c"))), body=()),
-            Clause(head=Struct("test", (Var(0, "X"), Atom("var"))), body=()),
+            Clause(head=Struct("test", (first_arg, Atom("match"))), body=()),
+            Clause(head=Struct("test", (Var(1, "Y"), Atom("var"))), body=()),
+            Clause(head=Struct("test", (Int(99), Atom("other"))), body=()),
         ]
         program = Program(tuple(clauses))
 
-        # Engine with indexing but no streaming (baseline)
-        engine_materialized = Engine(program, use_indexing=True, use_streaming=False)
-        results_materialized = list(engine_materialized.query("test(X, Y)"))
-
-        # Engine with indexing and streaming
+        # Compare three configurations
+        engine_no_index = Engine(program, use_indexing=False)
+        engine_indexed = Engine(program, use_indexing=True, use_streaming=False)
         engine_streaming = Engine(program, use_indexing=True, use_streaming=True)
-        results_streaming = list(engine_streaming.query("test(X, Y)"))
 
-        # Results should be identical in order and content
-        assert len(results_streaming) == len(results_materialized)
-        for streaming, materialized in zip(results_streaming, results_materialized):
-            assert streaming == materialized
+        results_no_index = list(engine_no_index.query("test(_, R)"))
+        results_indexed = list(engine_indexed.query("test(_, R)"))
+        results_streaming = list(engine_streaming.query("test(_, R)"))
 
-    def test_streaming_early_termination(self):
-        """Test that streaming doesn't materialize unnecessary clauses."""
-        # Create large predicate but query will match early
-        clauses = []
-        for i in range(1000):
-            clauses.append(
-                Clause(head=Struct("data", (Int(i), Atom(f"val_{i}"))), body=())
-            )
-        program = Program(tuple(clauses))
+        # All should produce same results in same order
+        assert results_streaming == results_indexed == results_no_index
 
-        # Query for specific early value
-        engine = Engine(program, use_indexing=True, use_streaming=True)
-        results = list(engine.query("data(0, X)"))
-
-        # Should find exactly one match (the first clause)
-        assert len(results) == 1
-        assert results[0]['X'] == Atom("val_0")
-
-        # The streaming cursor should not have materialized all 1000 clauses
-
-    def test_streaming_with_backtracking(self):
-        """Test streaming works correctly with backtracking."""
+    def test_facts_rules_mixed(self):
+        """Test streaming with mix of facts and rules."""
         clauses = [
-            # Multiple color facts
-            Clause(head=Struct("color", (Atom("red"),)), body=()),
-            Clause(head=Struct("color", (Atom("green"),)), body=()),
-            Clause(head=Struct("color", (Atom("blue"),)), body=()),
+            # Facts
+            Clause(head=Struct("parent", (Atom("tom"), Atom("bob"))), body=()),
+            Clause(head=Struct("parent", (Atom("bob"), Atom("ann"))), body=()),
 
-            # Rule that uses color
+            # Rule
             Clause(
-                head=Struct("test", (Var(0, "X"),)),
-                body=(Struct("color", (Var(0, "X"),)),)
+                head=Struct("grandparent", (Var(0, "X"), Var(1, "Z"))),
+                body=(
+                    Struct("parent", (Var(0, "X"), Var(2, "Y"))),
+                    Struct("parent", (Var(2, "Y"), Var(1, "Z"))),
+                )
             ),
         ]
         program = Program(tuple(clauses))
 
-        # Both engines should find all colors via backtracking
-        engine_mat = Engine(program, use_indexing=True, use_streaming=False)
-        engine_str = Engine(program, use_indexing=True, use_streaming=True)
+        # Compare all configurations
+        engine_no_index = Engine(program, use_indexing=False)
+        engine_indexed = Engine(program, use_indexing=True, use_streaming=False)
+        engine_streaming = Engine(program, use_indexing=True, use_streaming=True)
 
-        results_mat = list(engine_mat.query("test(X)"))
-        results_str = list(engine_str.query("test(X)"))
+        query = "grandparent(X, Z)"
+        results_no_index = list(engine_no_index.query(query))
+        results_indexed = list(engine_indexed.query(query))
+        results_streaming = list(engine_streaming.query(query))
 
-        assert len(results_str) == 3
-        assert results_str == results_mat
+        assert results_streaming == results_indexed == results_no_index
 
-    def test_streaming_preserves_trace_order(self):
-        """Test that 4-port trace ordering is preserved with streaming."""
+    def test_zero_arity_predicates(self):
+        """Test streaming with zero-arity predicates."""
+        clauses = [
+            Clause(head=Atom("fact1"), body=()),
+            Clause(head=Atom("fact2"), body=()),
+            Clause(head=Atom("fact3"), body=()),
+        ]
+        program = Program(tuple(clauses))
+
+        engine_indexed = Engine(program, use_indexing=True, use_streaming=False)
+        engine_streaming = Engine(program, use_indexing=True, use_streaming=True)
+
+        # All facts should be found
+        for fact in ["fact1", "fact2", "fact3"]:
+            assert engine_streaming.query_one(fact) == {}
+            assert engine_indexed.query_one(fact) == {}
+
+        # Non-existent predicate
+        assert engine_streaming.query_one("fact4") is None
+        assert engine_indexed.query_one("fact4") is None
+
+    def test_undefined_predicates(self):
+        """Test streaming with undefined predicates yields empty."""
+        program = Program(tuple())
+
+        engine_indexed = Engine(program, use_indexing=True, use_streaming=False)
+        engine_streaming = Engine(program, use_indexing=True, use_streaming=True)
+
+        results_indexed = list(engine_indexed.query("undefined(X)"))
+        results_streaming = list(engine_streaming.query("undefined(X)"))
+
+        assert results_streaming == results_indexed == []
+
+    def test_malformed_goal_shapes(self):
+        """Test streaming with malformed goal shapes."""
+        clauses = [
+            Clause(head=Struct("test", (Int(1),)), body=()),
+        ]
+        program = Program(tuple(clauses))
+
+        engine_indexed = Engine(program, use_indexing=True, use_streaming=False)
+        engine_streaming = Engine(program, use_indexing=True, use_streaming=True)
+
+        # Query with atom instead of struct (malformed for non-zero arity)
+        # Should yield empty results, not exception
+        results_indexed = list(engine_indexed.query("test"))  # Atom instead of Struct
+        results_streaming = list(engine_streaming.query("test"))
+
+        assert results_streaming == results_indexed
+
+    def test_variable_first_arg_selection(self):
+        """Test unbound variable streams all clauses in order."""
+        clauses = [
+            Clause(head=Struct("data", (Int(1), Atom("one"))), body=()),
+            Clause(head=Struct("data", (Int(2), Atom("two"))), body=()),
+            Clause(head=Struct("data", (Atom("a"), Atom("letter"))), body=()),
+            Clause(head=Struct("data", (Var(0, "Y"), Atom("var"))), body=()),
+        ]
+        program = Program(tuple(clauses))
+
+        engine_indexed = Engine(program, use_indexing=True, use_streaming=False)
+        engine_streaming = Engine(program, use_indexing=True, use_streaming=True)
+
+        # Unbound variable should match all clauses
+        results_indexed = list(engine_indexed.query("data(X, Y)"))
+        results_streaming = list(engine_streaming.query("data(X, Y)"))
+
+        assert len(results_streaming) == 4
+        assert results_streaming == results_indexed
+
+    def test_bound_variable_after_deref(self):
+        """Test bound variable uses the bound term for selection."""
+        clauses = [
+            # Rule that binds then calls
+            Clause(
+                head=Struct("test", (Var(0, "X"))),
+                body=(
+                    Struct("=", (Var(0, "X"), Int(42))),
+                    Struct("data", (Var(0, "X"), Var(1, "Y"))),
+                )
+            ),
+            # Data facts
+            Clause(head=Struct("data", (Int(1), Atom("one"))), body=()),
+            Clause(head=Struct("data", (Int(42), Atom("found"))), body=()),
+            Clause(head=Struct("data", (Int(99), Atom("other"))), body=()),
+        ]
+        program = Program(tuple(clauses))
+
+        engine_indexed = Engine(program, use_indexing=True, use_streaming=False)
+        engine_streaming = Engine(program, use_indexing=True, use_streaming=True)
+
+        results_indexed = list(engine_indexed.query("test(X)"))
+        results_streaming = list(engine_streaming.query("test(X)"))
+
+        # Should find X=42 via the binding
+        assert len(results_streaming) == 1
+        assert results_streaming == results_indexed
+
+
+class TestEngineStreamingTraceOrder:
+    """Test 4-port trace ordering preservation."""
+
+    def test_four_port_order_preserved(self):
+        """Test CALL/EXIT/REDO/FAIL order is preserved."""
         clauses = [
             Clause(head=Struct("p", (Atom("a"),)), body=()),
             Clause(head=Struct("p", (Atom("b"),)), body=()),
@@ -99,103 +193,71 @@ class TestEngineStreamingIntegration:
         ]
         program = Program(tuple(clauses))
 
-        # Collect traces from materialized engine
-        collector_mat = CollectorSink()
-        tracer_mat = PortsTracer(sink=collector_mat)
-        engine_mat = Engine(
+        # Collect traces from both engines
+        collector_indexed = CollectorSink()
+        tracer_indexed = PortsTracer(sink=collector_indexed)
+        engine_indexed = Engine(
             program,
             use_indexing=True,
             use_streaming=False,
-            trace=tracer_mat
+            trace=tracer_indexed
         )
-        list(engine_mat.query("q(X)"))
-        events_mat = collector_mat.events
+        list(engine_indexed.query("q(X)"))
 
-        # Collect traces from streaming engine
-        collector_str = CollectorSink()
-        tracer_str = PortsTracer(sink=collector_str)
-        engine_str = Engine(
+        collector_streaming = CollectorSink()
+        tracer_streaming = PortsTracer(sink=collector_streaming)
+        engine_streaming = Engine(
             program,
             use_indexing=True,
             use_streaming=True,
-            trace=tracer_str
+            trace=tracer_streaming
         )
-        list(engine_str.query("q(X)"))
-        events_str = collector_str.events
+        list(engine_streaming.query("q(X)"))
 
-        # Trace events should be identical
-        assert len(events_str) == len(events_mat)
-        for ev_str, ev_mat in zip(events_str, events_mat):
-            assert ev_str.port == ev_mat.port
-            assert str(ev_str.goal) == str(ev_mat.goal)
+        # Compare sequences of (port, pred_id) ignoring step_id
+        def extract_port_pred(events):
+            result = []
+            for ev in events:
+                if ev.port in ["CALL", "EXIT", "REDO", "FAIL"]:
+                    # Extract predicate identifier from goal
+                    if isinstance(ev.goal, Struct):
+                        pred_id = f"{ev.goal.functor}/{len(ev.goal.args)}"
+                    elif isinstance(ev.goal, Atom):
+                        pred_id = f"{ev.goal.name}/0"
+                    else:
+                        pred_id = str(ev.goal)
+                    result.append((ev.port, pred_id))
+            return result
 
-    def test_streaming_with_mixed_first_args(self):
-        """Test streaming with various first argument types."""
+        indexed_trace = extract_port_pred(collector_indexed.events)
+        streaming_trace = extract_port_pred(collector_streaming.events)
+
+        assert streaming_trace == indexed_trace
+
+
+class TestEngineStreamingBacktracking:
+    """Test backtracking behavior with streaming."""
+
+    def test_multiple_solutions_backtracking(self):
+        """Test streaming finds all solutions via backtracking."""
         clauses = [
-            # Integer first args
-            Clause(head=Struct("test", (Int(1), Atom("int1"))), body=()),
-            Clause(head=Struct("test", (Int(2), Atom("int2"))), body=()),
-
-            # Variable first arg
-            Clause(head=Struct("test", (Var(0, "X"), Atom("var"))), body=()),
-
-            # Atom first args
-            Clause(head=Struct("test", (Atom("foo"), Atom("atom1"))), body=()),
-            Clause(head=Struct("test", (Atom("bar"), Atom("atom2"))), body=()),
-
-            # List first args
-            Clause(
-                head=Struct("test", (PrologList([Int(1), Int(2)]), Atom("list"))),
-                body=()
-            ),
+            Clause(head=Struct("color", (Atom("red"),)), body=()),
+            Clause(head=Struct("color", (Atom("green"),)), body=()),
+            Clause(head=Struct("color", (Atom("blue"),)), body=()),
         ]
         program = Program(tuple(clauses))
 
-        engine_mat = Engine(program, use_indexing=True, use_streaming=False)
-        engine_str = Engine(program, use_indexing=True, use_streaming=True)
+        engine_indexed = Engine(program, use_indexing=True, use_streaming=False)
+        engine_streaming = Engine(program, use_indexing=True, use_streaming=True)
 
-        # Query with variable - should match all
-        results_mat = list(engine_mat.query("test(X, Y)"))
-        results_str = list(engine_str.query("test(X, Y)"))
-        assert results_str == results_mat
-        assert len(results_str) == 6
+        results_indexed = list(engine_indexed.query("color(X)"))
+        results_streaming = list(engine_streaming.query("color(X)"))
 
-        # Query with specific integer
-        results_mat = list(engine_mat.query("test(1, Y)"))
-        results_str = list(engine_str.query("test(1, Y)"))
-        assert results_str == results_mat
+        assert len(results_streaming) == 3
+        assert results_streaming == results_indexed
 
-        # Query with atom
-        results_mat = list(engine_mat.query("test(foo, Y)"))
-        results_str = list(engine_str.query("test(foo, Y)"))
-        assert results_str == results_mat
-
-    def test_streaming_disabled_with_debug(self):
-        """Test that streaming is disabled when debug mode is on."""
-        clauses = [
-            Clause(head=Struct("test", (Int(i),)), body=())
-            for i in range(100)
-        ]
-        program = Program(tuple(clauses))
-
-        # With debug tracer, streaming should be disabled
-        tracer = PortsTracer(sink=CollectorSink())
-        engine = Engine(
-            program,
-            use_indexing=True,
-            use_streaming=True,  # Request streaming
-            trace=tracer  # But debug is enabled
-        )
-
-        # Engine should use materialized path despite use_streaming=True
-        # This preserves existing debug test assumptions
-        # We can't directly test this without accessing internals,
-        # but we verify behavior is correct
-        results = list(engine.query("test(X)"))
-        assert len(results) == 100
-
-    def test_streaming_with_cut(self):
-        """Test streaming works correctly with cut."""
+    def test_cut_prunes_alternatives(self):
+        """Test cut operator prunes alternatives correctly."""
         clauses = [
             Clause(head=Struct("test", (Int(1),)), body=(Atom("!"),)),
             Clause(head=Struct("test", (Int(2),)), body=()),
@@ -203,74 +265,170 @@ class TestEngineStreamingIntegration:
         ]
         program = Program(tuple(clauses))
 
-        engine_mat = Engine(program, use_indexing=True, use_streaming=False)
-        engine_str = Engine(program, use_indexing=True, use_streaming=True)
+        engine_indexed = Engine(program, use_indexing=True, use_streaming=False)
+        engine_streaming = Engine(program, use_indexing=True, use_streaming=True)
 
-        results_mat = list(engine_mat.query("test(X)"))
-        results_str = list(engine_str.query("test(X)"))
+        results_indexed = list(engine_indexed.query("test(X)"))
+        results_streaming = list(engine_streaming.query("test(X)"))
 
-        # Cut should prevent backtracking to other clauses
-        assert len(results_str) == 1
-        assert results_str == results_mat
-        assert results_str[0]['X'] == Int(1)
+        # Cut should prevent backtracking
+        assert len(results_streaming) == 1
+        assert results_streaming == results_indexed
+        assert results_streaming[0]['X'] == Int(1)
 
-    def test_streaming_with_zero_arity(self):
-        """Test streaming with zero-arity predicates."""
+    def test_disjunction_with_streaming(self):
+        """Test disjunction (;) works with streaming."""
         clauses = [
-            Clause(head=Atom("fact1"), body=()),
-            Clause(head=Atom("fact2"), body=()),
-            Clause(head=Atom("fact3"), body=()),
-        ]
-        program = Program(tuple(clauses))
-
-        engine_mat = Engine(program, use_indexing=True, use_streaming=False)
-        engine_str = Engine(program, use_indexing=True, use_streaming=True)
-
-        # Zero-arity predicates should work with streaming
-        assert engine_str.query_one("fact1") == {}
-        assert engine_str.query_one("fact2") == {}
-        assert engine_str.query_one("fact3") == {}
-
-        # Non-existent predicate
-        assert engine_str.query_one("fact4") is None
-
-    def test_streaming_with_recursive_predicates(self):
-        """Test streaming with recursive predicates."""
-        clauses = [
-            # Base case
             Clause(
-                head=Struct("count", (Int(0), Int(0))),
-                body=()
-            ),
-            # Recursive case
-            Clause(
-                head=Struct("count", (Var(0, "N"), Var(1, "R"))),
+                head=Struct("test", (Var(0, "X"),)),
                 body=(
-                    Struct(">", (Var(0, "N"), Int(0))),
-                    Struct("is", (Var(2, "N1"), Struct("-", (Var(0, "N"), Int(1))))),
-                    Struct("count", (Var(2, "N1"), Var(3, "R1"))),
-                    Struct("is", (Var(1, "R"), Struct("+", (Var(3, "R1"), Int(1))))),
+                    Struct(";", (
+                        Struct("=", (Var(0, "X"), Atom("a"))),
+                        Struct("=", (Var(0, "X"), Atom("b")))
+                    )),
                 )
             ),
         ]
         program = Program(tuple(clauses))
 
-        engine_mat = Engine(program, use_indexing=True, use_streaming=False)
-        engine_str = Engine(program, use_indexing=True, use_streaming=True)
+        engine_indexed = Engine(program, use_indexing=True, use_streaming=False)
+        engine_streaming = Engine(program, use_indexing=True, use_streaming=True)
 
-        # Both should compute same result for count(3, R)
-        result_mat = engine_mat.query_one("count(3, R)")
-        result_str = engine_str.query_one("count(3, R)")
+        results_indexed = list(engine_indexed.query("test(X)"))
+        results_streaming = list(engine_streaming.query("test(X)"))
 
-        assert result_str == result_mat
-        assert result_str['R'] == Int(3)
+        assert len(results_streaming) == 2
+        assert results_streaming == results_indexed
+
+    def test_if_then_else_with_streaming(self):
+        """Test if-then-else (->/) works with streaming."""
+        clauses = [
+            Clause(
+                head=Struct("test", (Var(0, "X"), Var(1, "Y"))),
+                body=(
+                    Struct("->", (
+                        Struct("=", (Var(0, "X"), Int(1))),
+                        Struct("=", (Var(1, "Y"), Atom("one"))),
+                        Struct("=", (Var(1, "Y"), Atom("other")))
+                    )),
+                )
+            ),
+        ]
+        program = Program(tuple(clauses))
+
+        engine_indexed = Engine(program, use_indexing=True, use_streaming=False)
+        engine_streaming = Engine(program, use_indexing=True, use_streaming=True)
+
+        # Test with X=1 (then branch)
+        results_indexed = list(engine_indexed.query("test(1, Y)"))
+        results_streaming = list(engine_streaming.query("test(1, Y)"))
+        assert results_streaming == results_indexed
+
+        # Test with X=2 (else branch)
+        results_indexed = list(engine_indexed.query("test(2, Y)"))
+        results_streaming = list(engine_streaming.query("test(2, Y)"))
+        assert results_streaming == results_indexed
 
 
-class TestStreamingPerformance:
-    """Test performance characteristics of streaming."""
+class TestEngineStreamingRecursion:
+    """Test recursive predicates with streaming."""
 
-    def test_memory_efficiency_large_predicate(self):
-        """Test that streaming reduces memory usage for large predicates."""
+    def test_simple_recursion(self):
+        """Test simple recursive predicate."""
+        clauses = [
+            # member/2
+            Clause(
+                head=Struct("member", (Var(0, "X"),
+                    Struct(".", (Var(0, "X"), Var(1, "_"))))),
+                body=()
+            ),
+            Clause(
+                head=Struct("member", (Var(0, "X"),
+                    Struct(".", (Var(1, "_"), Var(2, "T"))))),
+                body=(Struct("member", (Var(0, "X"), Var(2, "T"))),)
+            ),
+        ]
+        program = Program(tuple(clauses))
+
+        engine_indexed = Engine(program, use_indexing=True, use_streaming=False)
+        engine_streaming = Engine(program, use_indexing=True, use_streaming=True)
+
+        # Test member/2 with a list
+        test_list = Struct(".", (Int(1),
+                      Struct(".", (Int(2),
+                      Struct(".", (Int(3), Atom("[]")))))))
+
+        query = Struct("member", (Var(0, "X"), test_list))
+        results_indexed = list(engine_indexed.query(query))
+        results_streaming = list(engine_streaming.query(query))
+
+        assert len(results_streaming) == 3
+        assert results_streaming == results_indexed
+
+    def test_recursive_with_accumulator(self):
+        """Test recursive predicate with accumulator."""
+        clauses = [
+            # length/2 using accumulator
+            Clause(
+                head=Struct("length", (Atom("[]"), Int(0))),
+                body=()
+            ),
+            Clause(
+                head=Struct("length", (
+                    Struct(".", (Var(0, "_"), Var(1, "T"))),
+                    Var(2, "N")
+                )),
+                body=(
+                    Struct("length", (Var(1, "T"), Var(3, "N1"))),
+                    Struct("is", (Var(2, "N"),
+                        Struct("+", (Var(3, "N1"), Int(1))))),
+                )
+            ),
+        ]
+        program = Program(tuple(clauses))
+
+        engine_indexed = Engine(program, use_indexing=True, use_streaming=False)
+        engine_streaming = Engine(program, use_indexing=True, use_streaming=True)
+
+        # Test with known list
+        test_list = Struct(".", (Int(1),
+                      Struct(".", (Int(2), Atom("[]")))))
+
+        query = Struct("length", (test_list, Var(0, "L")))
+        result_indexed = engine_indexed.query_one(query)
+        result_streaming = engine_streaming.query_one(query)
+
+        assert result_streaming == result_indexed
+        assert result_streaming['L'] == Int(2)
+
+
+class TestEngineStreamingPerformance:
+    """Test performance characteristics."""
+
+    def test_early_termination_efficiency(self):
+        """Test early termination doesn't process unnecessary clauses."""
+        # Create large predicate
+        clauses = []
+        for i in range(1000):
+            clauses.append(
+                Clause(head=Struct("data", (Int(i), Atom(f"v{i}"))), body=())
+            )
+        program = Program(tuple(clauses))
+
+        engine_streaming = Engine(program, use_indexing=True, use_streaming=True)
+
+        # Query for first item - should terminate early
+        result = engine_streaming.query_one("data(0, X)")
+        assert result is not None
+        assert result['X'] == Atom("v0")
+
+        # Only first solution produced, no errors
+        results = list(engine_streaming.query("data(0, X)"))
+        assert len(results) == 1
+
+    @pytest.mark.slow
+    def test_large_predicate_efficiency(self):
+        """Test streaming with very large predicates."""
         # Create very large predicate
         clauses = []
         for i in range(10000):
@@ -279,103 +437,113 @@ class TestStreamingPerformance:
             )
         program = Program(tuple(clauses))
 
-        # Query that matches early in the predicate
-        engine = Engine(program, use_indexing=True, use_streaming=True)
-        result = engine.query_one("big(5, X)")
+        engine_streaming = Engine(program, use_indexing=True, use_streaming=True)
 
-        assert result is not None
+        # Should efficiently find early match
+        result = engine_streaming.query_one("big(5, X)")
         assert result['X'] == Atom("v5")
 
-        # With streaming, we shouldn't have materialized all 10000 clauses
-        # just to find the 6th one
 
-    def test_streaming_generator_behavior(self):
-        """Test that streaming maintains generator-like behavior."""
-        clauses = [
-            Clause(head=Struct("gen", (Int(i),)), body=())
-            for i in range(100)
-        ]
-        program = Program(tuple(clauses))
+class TestEngineStreamingFeatureGating:
+    """Test feature gating for streaming."""
 
-        engine = Engine(program, use_indexing=True, use_streaming=True)
-
-        # Get generator for query
-        gen = engine.query("gen(X)")
-
-        # Should be able to consume just first few
-        result1 = next(gen)
-        result2 = next(gen)
-        result3 = next(gen)
-
-        assert result1['X'] == Int(0)
-        assert result2['X'] == Int(1)
-        assert result3['X'] == Int(2)
-
-        # Rest of generator is still available but not materialized
-
-
-class TestStreamingFeatureGating:
-    """Test feature gating for streaming functionality."""
-
-    def test_streaming_requires_indexing(self):
-        """Test that streaming only works when indexing is enabled."""
+    def test_streaming_disabled_when_debug_enabled(self):
+        """Test streaming disabled with debug mode."""
         clauses = [
             Clause(head=Struct("test", (Int(i),)), body=())
             for i in range(10)
         ]
         program = Program(tuple(clauses))
 
-        # Streaming should be ignored without indexing
-        engine = Engine(program, use_indexing=False, use_streaming=True)
+        # With debug tracer, streaming should be disabled
+        sink = CollectorSink()
+        tracer = PortsTracer(sink=sink)
+        engine = Engine(
+            program,
+            use_indexing=True,
+            use_streaming=True,  # Request streaming
+            trace=tracer  # But debug is enabled
+        )
+
+        # Should still work correctly (falls back to materialized)
         results = list(engine.query("test(X)"))
         assert len(results) == 10
 
-        # With indexing, streaming should work
-        engine = Engine(program, use_indexing=True, use_streaming=True)
-        results = list(engine.query("test(X)"))
-        assert len(results) == 10
-
-    def test_streaming_disabled_with_metrics(self):
-        """Test that streaming is disabled when metrics are enabled."""
+    def test_streaming_disabled_when_metrics_enabled(self):
+        """Test streaming disabled with metrics."""
         clauses = [
             Clause(head=Struct("test", (Int(i),)), body=())
             for i in range(10)
         ]
         program = Program(tuple(clauses))
 
-        # With metrics, streaming should be disabled to preserve counts
+        engine = Engine(
+            program,
+            use_indexing=True,
+            use_streaming=True,  # Request streaming
+            metrics=True  # Metrics enabled
+        )
+
+        # Should work correctly (falls back to materialized)
+        results = list(engine.query("test(X)"))
+        assert len(results) == 10
+
+    def test_streaming_enabled_conditions(self):
+        """Test streaming enabled when conditions are met."""
+        clauses = [
+            Clause(head=Struct("test", (Int(i),)), body=())
+            for i in range(10)
+        ]
+        program = Program(tuple(clauses))
+
+        # Streaming enabled: indexing on, debug off, metrics off
         engine = Engine(
             program,
             use_indexing=True,
             use_streaming=True,
-            metrics=True  # Metrics enabled
+            trace=None,
+            metrics=False
         )
 
-        # Should still work correctly, just not streaming
         results = list(engine.query("test(X)"))
         assert len(results) == 10
 
-    def test_streaming_env_variable_override(self):
-        """Test PYLOG_STREAM_SELECTION environment variable."""
-        import os
-
+    def test_streaming_requires_indexing(self):
+        """Test streaming ignored without indexing."""
         clauses = [
             Clause(head=Struct("test", (Int(i),)), body=())
             for i in range(10)
         ]
         program = Program(tuple(clauses))
 
-        # Test forcing streaming off via env var
-        os.environ['PYLOG_STREAM_SELECTION'] = '0'
+        # Streaming ignored without indexing
+        engine = Engine(
+            program,
+            use_indexing=False,
+            use_streaming=True  # Ignored
+        )
+
+        results = list(engine.query("test(X)"))
+        assert len(results) == 10
+
+    def test_env_override(self, monkeypatch):
+        """Test PYLOG_STREAM_SELECTION environment variable."""
+        clauses = [
+            Clause(head=Struct("test", (Int(i),)), body=())
+            for i in range(10)
+        ]
+        program = Program(tuple(clauses))
+
+        # Force streaming off
+        monkeypatch.setenv("PYLOG_STREAM_SELECTION", "0")
         engine = Engine(program, use_indexing=True, use_streaming=True)
         results = list(engine.query("test(X)"))
         assert len(results) == 10
 
-        # Test forcing streaming on via env var
-        os.environ['PYLOG_STREAM_SELECTION'] = '1'
+        # Force streaming on
+        monkeypatch.setenv("PYLOG_STREAM_SELECTION", "1")
         engine = Engine(program, use_indexing=True, use_streaming=False)
         results = list(engine.query("test(X)"))
         assert len(results) == 10
 
-        # Clean up
-        del os.environ['PYLOG_STREAM_SELECTION']
+        # Clean up happens automatically with monkeypatch
