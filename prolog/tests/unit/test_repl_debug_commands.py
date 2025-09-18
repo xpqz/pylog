@@ -256,6 +256,41 @@ class TestREPLIntegration:
         assert "spy" in help_text or "Spy" in help_text
         assert "snapshot" in help_text or "metrics" in help_text
 
+    def test_consult_survives_engine_recreation(self):
+        """Test that consulted clauses survive engine recreation via trace/metrics toggles."""
+        repl = PrologREPL()
+
+        # Get initial clause count
+        initial_count = len(repl.engine.program.clauses)
+
+        # Consult some clauses directly via engine
+        repl.engine.consult_string('foo.\nbar.\nbaz(1).')
+
+        # Verify clauses were added
+        after_consult = len(repl.engine.program.clauses)
+        assert after_consult == initial_count + 3
+
+        # Toggle trace on (triggers _recreate_engine)
+        repl.execute_trace_command({'action': 'on'})
+
+        # Clauses should still be there
+        after_trace_on = len(repl.engine.program.clauses)
+        assert after_trace_on == after_consult, "Clauses lost after trace on"
+
+        # Toggle trace off
+        repl.execute_trace_command({'action': 'off'})
+
+        # Clauses should still be there
+        after_trace_off = len(repl.engine.program.clauses)
+        assert after_trace_off == after_consult, "Clauses lost after trace off"
+
+        # Toggle metrics
+        repl.execute_debug_command({'action': 'metrics_on'})
+
+        # Clauses should still be there
+        after_metrics = len(repl.engine.program.clauses)
+        assert after_metrics == after_consult, "Clauses lost after metrics on"
+
     def test_trace_state_persistence(self):
         """Test trace settings persist."""
         repl = PrologREPL()

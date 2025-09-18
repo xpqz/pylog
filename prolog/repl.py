@@ -227,8 +227,13 @@ class PrologREPL:
             
             # Append to program (not replace)
             self.engine.consult_string(content)
+
+            # CRITICAL: Sync self.program with the updated engine.program
+            # Otherwise _recreate_engine will use stale program
+            self.program = self.engine.program
+
             print(f"Loaded: {filepath}")
-            
+
             # Update completer with predicates from the file
             self._update_completer()
             return True
@@ -677,6 +682,11 @@ class PrologREPL:
         """Recreate the engine with current trace/debug settings."""
         from prolog.debug.tracer import PortsTracer
         from prolog.debug.sinks import PrettyTraceSink, JSONLTraceSink, CollectorSink
+
+        # Ensure self.program is in sync before recreating
+        # In case any direct engine.consult_string calls were made
+        if hasattr(self.engine, 'program'):
+            self.program = self.engine.program
 
         # Create new engine with trace settings
         self.engine = Engine(self.program, trace=self.trace_enabled, debug=self.metrics_enabled)
