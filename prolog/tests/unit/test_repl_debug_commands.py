@@ -306,9 +306,9 @@ class TestREPLIntegration:
         repl.execute_trace_command({'action': 'json', 'file': 'output.jsonl'})
         assert repl.trace_file == 'output.jsonl'
 
-        # Disable tracing - should clear file
+        # Disable tracing - should clear file reference
         repl.execute_trace_command({'action': 'off'})
-        # File state could be cleared or retained - define behavior in implementation
+        assert repl.trace_file is None  # File reference should be cleared
 
 
 class TestCommandParsing:

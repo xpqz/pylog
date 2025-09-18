@@ -621,6 +621,7 @@ class PrologREPL:
             return True
         elif action == 'off':
             self.trace_enabled = False
+            self.trace_file = None  # Clear file reference when disabling
             return True
         elif action == 'json':
             self.trace_enabled = True
