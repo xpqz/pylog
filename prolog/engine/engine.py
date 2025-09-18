@@ -773,9 +773,11 @@ class Engine:
         if isinstance(goal.term, Atom):
             key = (goal.term.name, 0)
             args = ()
+            pred_id = f"{goal.term.name}/0"
         elif isinstance(goal.term, Struct):
             key = (goal.term.functor, len(goal.term.args))
             args = goal.term.args
+            pred_id = f"{goal.term.functor}/{len(goal.term.args)}"
         else:
             return False
 
@@ -784,11 +786,33 @@ class Engine:
             # Not a recognized builtin
             return False
 
+        # Emit CALL port before executing builtin
+        self._port("CALL", pred_id)
+
+        # Also emit to tracer if enabled
+        if self.tracer and goal.term:
+            self.tracer.emit_event("call", goal.term)
+
         # Execute the builtin with uniform signature
         try:
-            return builtin_fn(self, args)
+            result = builtin_fn(self, args)
+
+            # Emit EXIT or FAIL port based on result
+            if result:
+                self._port("EXIT", pred_id)
+                if self.tracer and goal.term:
+                    self.tracer.emit_event("exit", goal.term)
+            else:
+                self._port("FAIL", pred_id)
+                if self.tracer and goal.term:
+                    self.tracer.emit_event("fail", goal.term)
+
+            return result
         except (ValueError, TypeError) as e:
             # Expected failures from arithmetic or type errors
+            self._port("FAIL", pred_id)
+            if self.tracer and goal.term:
+                self.tracer.emit_event("fail", goal.term)
             return False
 
     def _dispatch_conjunction(self, goal: Goal):

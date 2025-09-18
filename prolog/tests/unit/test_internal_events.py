@@ -644,6 +644,60 @@ class TestEventCounting:
         # Query should still work without tracer
         list(engine.query("?- test."))
 
+class TestBuiltinTracing:
+    """Test that builtins emit trace events correctly."""
+
+    def test_builtin_emits_call_exit(self):
+        """Test that builtins emit CALL and EXIT events."""
+        engine = Engine(Program(()), trace=True)
+        sink = CollectorSink()
+        engine.tracer.add_sink(sink)
+
+        # Execute a successful builtin
+        list(engine.query("?- is(1,1)."))
+
+        # Should have CALL and EXIT events
+        trace_events = [e for e in sink.events if isinstance(e, TraceEvent)]
+        assert len(trace_events) == 2
+        assert trace_events[0].port == "call"
+        assert trace_events[0].pred_id == "is/2"
+        assert trace_events[1].port == "exit"
+        assert trace_events[1].pred_id == "is/2"
+
+    def test_builtin_emits_call_fail(self):
+        """Test that failing builtins emit CALL and FAIL events."""
+        engine = Engine(Program(()), trace=True)
+        sink = CollectorSink()
+        engine.tracer.add_sink(sink)
+
+        # Execute a failing builtin
+        list(engine.query("?- is(1,2)."))
+
+        # Should have CALL and FAIL events
+        trace_events = [e for e in sink.events if isinstance(e, TraceEvent)]
+        assert len(trace_events) == 2
+        assert trace_events[0].port == "call"
+        assert trace_events[0].pred_id == "is/2"
+        assert trace_events[1].port == "fail"
+        assert trace_events[1].pred_id == "is/2"
+
+    def test_builtin_var_emits_events(self):
+        """Test that type-checking builtins emit events."""
+        engine = Engine(Program(()), trace=True)
+        sink = CollectorSink()
+        engine.tracer.add_sink(sink)
+
+        # Execute var/1 builtin (should fail on integer)
+        list(engine.query("?- var(5)."))
+
+        # Should have CALL and FAIL events
+        trace_events = [e for e in sink.events if isinstance(e, TraceEvent)]
+        assert len(trace_events) == 2
+        assert trace_events[0].port == "call"
+        assert trace_events[0].pred_id == "var/1"
+        assert trace_events[1].port == "fail"
+
+
 class TestSinkCompatibility:
     """Test that all sinks can handle internal events."""
 
