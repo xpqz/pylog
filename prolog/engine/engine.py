@@ -337,10 +337,6 @@ class Engine:
                 if self.trace:
                     self._trace_log.append(f"Goal: {goal.term}")
 
-                # Emit CALL port for tracer
-                if self.tracer and goal.term:
-                    self.tracer.emit_event("call", goal.term)
-
                 # Dispatch based on goal type
                 if goal.type == GoalType.PREDICATE:
                     # Check if it's actually a builtin (PREDICATE goals always have terms)
@@ -489,6 +485,13 @@ class Engine:
             assert len(self.cp_stack) == cp_height
             assert len(self.frame_stack) >= cp.frame_stack_height
             
+            # Emit catch_switch event when we catch an exception
+            if self.tracer:
+                self.tracer.emit_internal_event("catch_switch", {
+                    "exception": str(ball),
+                    "handler": str(cp.payload.get("recovery"))
+                })
+
             # Push only the recovery goal - DO NOT re-install the CATCH choicepoint
             # If recovery fails, we backtrack transparently to outer choicepoints
             self.goal_stack.push(Goal.from_term(cp.payload.get("recovery")))
@@ -706,6 +709,14 @@ class Engine:
             )
             self.cp_stack.append(cp)
 
+            # Emit internal event for CP push
+            if self.tracer:
+                alternatives = len(cursor.matches) - cursor.pos if cursor else 0
+                self.tracer.emit_internal_event("cp_push", {
+                    "pred_id": f"{functor}/{arity}",
+                    "trail_top": cp.trail_top
+                })
+
         # Rename clause with fresh variables
         renamed_clause = self._renamer.rename_clause(clause)
 
@@ -722,6 +733,13 @@ class Engine:
                 pred=f"{functor}/{arity}",
             )
             self.frame_stack.append(frame)
+
+            # Emit internal event for frame push
+            if self.tracer:
+                self.tracer.emit_internal_event("frame_push", {
+                    "pred_id": f"{functor}/{arity}",
+                    "frame_id": frame_id
+                })
 
             # Don't call next_stamp() here - only when creating CPs
 
@@ -755,9 +773,11 @@ class Engine:
         if isinstance(goal.term, Atom):
             key = (goal.term.name, 0)
             args = ()
+            pred_id = f"{goal.term.name}/0"
         elif isinstance(goal.term, Struct):
             key = (goal.term.functor, len(goal.term.args))
             args = goal.term.args
+            pred_id = f"{goal.term.functor}/{len(goal.term.args)}"
         else:
             return False
 
@@ -766,11 +786,33 @@ class Engine:
             # Not a recognized builtin
             return False
 
+        # Emit CALL port before executing builtin
+        self._port("CALL", pred_id)
+
+        # Also emit to tracer if enabled
+        if self.tracer and goal.term:
+            self.tracer.emit_event("call", goal.term)
+
         # Execute the builtin with uniform signature
         try:
-            return builtin_fn(self, args)
+            result = builtin_fn(self, args)
+
+            # Emit EXIT or FAIL port based on result
+            if result:
+                self._port("EXIT", pred_id)
+                if self.tracer and goal.term:
+                    self.tracer.emit_event("exit", goal.term)
+            else:
+                self._port("FAIL", pred_id)
+                if self.tracer and goal.term:
+                    self.tracer.emit_event("fail", goal.term)
+
+            return result
         except (ValueError, TypeError) as e:
             # Expected failures from arithmetic or type errors
+            self._port("FAIL", pred_id)
+            if self.tracer and goal.term:
+                self.tracer.emit_event("fail", goal.term)
             return False
 
     def _dispatch_conjunction(self, goal: Goal):
@@ -817,6 +859,13 @@ class Engine:
             )
             self.cp_stack.append(cp)
 
+            # Emit internal event for CP push
+            if self.tracer:
+                self.tracer.emit_internal_event("cp_push", {
+                    "pred_id": "disjunction",
+                    "trail_top": cp.trail_top
+                })
+
             # Try left first
             left_goal = Goal.from_term(left)
             self.goal_stack.push(left_goal)
@@ -861,6 +910,13 @@ class Engine:
             )
         )
 
+        # Emit internal event for CP push
+        if self.tracer:
+            self.tracer.emit_internal_event("cp_push", {
+                "pred_id": "if_then_else",
+                "trail_top": cp.trail_top
+            })
+
         # Push control goal that will commit and run Then on first success
         self.goal_stack.push(
             Goal(
@@ -891,8 +947,34 @@ class Engine:
 
             # Remove all choicepoints above the barrier
             while len(self.cp_stack) > cut_barrier:
-                self.cp_stack.pop()
-                alternatives_pruned += 1
+                removed_cp = self.cp_stack.pop()
+
+                # Count actual alternatives pruned
+                if removed_cp.kind == ChoicepointKind.PREDICATE:
+                    # For predicate CPs, count remaining clauses
+                    cursor = removed_cp.payload.get("cursor")
+                    if cursor and hasattr(cursor, 'matches') and hasattr(cursor, 'pos'):
+                        # Count remaining alternatives in cursor
+                        alternatives_pruned += len(cursor.matches) - cursor.pos
+                    else:
+                        alternatives_pruned += 1
+                else:
+                    # For other CP types, count as 1 alternative
+                    alternatives_pruned += 1
+
+                # Emit internal event for CP pop due to cut
+                if self.tracer:
+                    pred_id = removed_cp.payload.get("pred_ref", removed_cp.kind.name.lower()) if removed_cp.kind == ChoicepointKind.PREDICATE else removed_cp.kind.name.lower()
+                    self.tracer.emit_internal_event("cp_pop", {
+                        "pred_id": pred_id
+                    })
+
+            # Emit cut_commit event after all CP pops (even if no alternatives pruned)
+            if self.tracer:
+                self.tracer.emit_internal_event("cut_commit", {
+                    "alternatives_pruned": alternatives_pruned,
+                    "barrier": cut_barrier
+                })
 
             # Record metrics
             if self.metrics and alternatives_pruned > 0:
@@ -936,8 +1018,30 @@ class Engine:
                 # Safe to pop the frame - no CPs reference it
                 frame = self.frame_stack.pop()
                 self._debug_frame_pops += 1
+
+                # After popping frame, check if any CATCH CPs need their goal_stack_height adjusted
+                # This handles the case where catch/3 created a CP with a height that included
+                # the POP_FRAME sentinel we just consumed
+                current_goal_height = self.goal_stack.height()
+                for cp in self.cp_stack:
+                    if cp.kind == ChoicepointKind.CATCH and cp.goal_stack_height > current_goal_height:
+                        # This CATCH CP's stored height is stale - update it directly
+                        cp.goal_stack_height = current_goal_height
+
+                # Emit internal event for frame pop
+                if self.tracer:
+                    self.tracer.emit_internal_event("frame_pop", {
+                        "pred_id": frame.pred,
+                        "frame_id": frame.frame_id
+                    })
+
                 # Emit EXIT port when frame is popped
                 self._port("EXIT", frame.pred or "unknown")
+                if self.tracer and frame.pred:
+                    # Need to get the original goal from somewhere - for now use the pred string
+                    # This is a limitation - we don't have the original goal term here
+                    from prolog.ast.terms import Atom
+                    self.tracer.emit_event("exit", Atom(frame.pred.split('/')[0]))
                 if self.metrics and frame.pred:
                     self.metrics.record_exit(frame.pred)
             # else: Leave frame in place for backtracking
@@ -985,7 +1089,14 @@ class Engine:
 
         while self.cp_stack:
             cp = self.cp_stack.pop()
-            
+
+            # Emit internal event for CP pop
+            if self.tracer:
+                pred_id = cp.payload.get("pred_ref", cp.kind.name.lower()) if cp.kind == ChoicepointKind.PREDICATE else cp.kind.name.lower()
+                self.tracer.emit_internal_event("cp_pop", {
+                    "pred_id": pred_id
+                })
+
             if self.trace:
                 self._trace_log.append(f"[BACKTRACK] Popped CP: {cp.kind.name}, phase={cp.payload.get('phase', 'N/A')}")
 
@@ -1004,6 +1115,25 @@ class Engine:
                     self._trace_log.append(
                         f"Deferring goal stack restoration for {cp.kind} CP"
                     )
+            elif cp.kind == ChoicepointKind.CATCH and cp.payload.get("has_pop_frame"):
+                # Special handling for CATCH CPs that had a POP_FRAME sentinel
+                # The POP_FRAME might have been consumed, so we need to use the adjusted height
+                current_height = self.goal_stack.height()
+                target_height = cp.goal_stack_height
+
+                # If current height is less than expected, the POP_FRAME was consumed
+                if current_height < target_height:
+                    # Use the adjusted height (without the POP_FRAME)
+                    adjusted_height = cp.payload.get("adjusted_height", 0)
+                    self.goal_stack.shrink_to(adjusted_height)
+                    # Verify we got the right height
+                    assert self.goal_stack.height() == adjusted_height, \
+                        f"CATCH CP restoration failed: {self.goal_stack.height()} != {adjusted_height}"
+                else:
+                    # POP_FRAME hasn't been consumed yet, use normal height
+                    self.goal_stack.shrink_to(target_height)
+                    assert self.goal_stack.height() == target_height, \
+                        f"CATCH CP restoration failed: {self.goal_stack.height()} != {target_height}"
             else:
                 # Standard restoration for other CP kinds
                 if self.trace:
@@ -1028,8 +1158,15 @@ class Engine:
             # PREDICATE CPs don't manage frames (they use frame_stack_height=0 as a sentinel)
             if cp.kind != ChoicepointKind.PREDICATE:
                 while len(self.frame_stack) > cp.frame_stack_height:
-                    self.frame_stack.pop()
+                    frame = self.frame_stack.pop()
                     self._debug_frame_pops += 1
+
+                    # Emit internal event for frame pop
+                    if self.tracer:
+                        self.tracer.emit_internal_event("frame_pop", {
+                            "pred_id": frame.pred,
+                            "frame_id": frame.frame_id
+                        })
 
                 # Debug assertion: verify frame restoration
                 assert (
@@ -1112,6 +1249,14 @@ class Engine:
                             },
                         )
                         self.cp_stack.append(new_cp)
+
+                        # Emit internal event for CP push during backtracking
+                        if self.tracer:
+                            alternatives = len(cursor.matches) - cursor.pos if cursor else 0
+                            self.tracer.emit_internal_event("cp_push", {
+                                "pred_id": cp.payload["pred_ref"],
+                                "trail_top": new_cp.trail_top
+                            })
                     else:
                         # No more clauses - push a terminal CP that will emit FAIL
                         continuation = cp.payload.get("continuation", ())
@@ -1129,6 +1274,13 @@ class Engine:
                             },
                         )
                         self.cp_stack.append(terminal_cp)
+
+                        # Emit internal event for terminal CP push
+                        if self.tracer:
+                            self.tracer.emit_internal_event("cp_push", {
+                                "pred_id": cp.payload["pred_ref"],
+                                "trail_top": terminal_cp.trail_top
+                            })
 
                     # Rename clause with fresh variables
                     renamed_clause = self._renamer.rename_clause(clause)
@@ -2182,7 +2334,13 @@ class Engine:
         base_goal_height = self.goal_stack.height()
         base_frame_height = len(self.frame_stack)
         base_cp_height = len(self.cp_stack)
-        
+
+        # Check if there's a POP_FRAME sentinel on top of the goal stack
+        # If so, we need to track that it might be consumed before we backtrack
+        has_pop_frame_sentinel = (self.goal_stack.height() > 0 and
+                                  self.goal_stack._stack and
+                                  self.goal_stack._stack[-1].type == GoalType.POP_FRAME)
+
         # Create CATCH choicepoint (phase=GOAL)
         stamp = self.trail.next_stamp()
         catch_cp = Choicepoint(
@@ -2195,11 +2353,20 @@ class Engine:
                 "catcher": catcher_arg,
                 "recovery": recovery_arg,
                 "cp_height": base_cp_height,  # Store CP height for restoration
+                "has_pop_frame": has_pop_frame_sentinel,  # Track if we have a POP_FRAME that might be consumed
+                "adjusted_height": base_goal_height - 1 if has_pop_frame_sentinel else base_goal_height,
             },
             stamp=stamp,
         )
         self.cp_stack.append(catch_cp)
-        
+
+        # Emit internal event for CP push
+        if self.tracer:
+            self.tracer.emit_internal_event("cp_push", {
+                "pred_id": "catch",
+                "trail_top": base_trail_top
+            })
+
         # Push the user's Goal to execute
         self.goal_stack.push(Goal.from_term(goal))
         
