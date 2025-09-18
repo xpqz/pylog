@@ -44,9 +44,9 @@ def program_from_source(src: str) -> Program:
         return program()
 
 
-def engine_for(src: str, debug: bool = True) -> Engine:
+def engine_for(src: str, debug: bool = True, metrics: bool = True) -> Engine:
     """Create an Engine from Prolog source text."""
-    return Engine(program=program_from_source(src), debug=debug)
+    return Engine(program=program_from_source(src), debug=debug, metrics=metrics)
 
 
 class TestPredMetrics:
@@ -348,14 +348,14 @@ class TestMetricsEngineIntegration:
         assert engine2.debug is False
 
     def test_engine_creates_metrics_when_debug_true(self):
-        """Engine creates EngineMetrics when debug=True."""
-        engine = Engine(program=Program(()), debug=True)
+        """Engine creates EngineMetrics when metrics=True."""
+        engine = Engine(program=Program(()), metrics=True)
         assert hasattr(engine, 'metrics')
         assert isinstance(engine.metrics, EngineMetrics)
 
     def test_engine_no_metrics_when_debug_false(self):
-        """Engine doesn't create metrics when debug=False."""
-        engine = Engine(program=Program(()), debug=False)
+        """Engine doesn't create metrics when metrics=False."""
+        engine = Engine(program=Program(()), metrics=False)
         assert not hasattr(engine, 'metrics') or engine.metrics is None
 
     def test_metrics_track_unifications(self):
@@ -390,7 +390,7 @@ class TestMetricsEngineIntegration:
             mk_rule("test", (Var(0, "X"),),
                     Struct("=", (Var(0, "X"), Int(2))))
         )
-        engine = Engine(program=prog, debug=True)
+        engine = Engine(program=prog, debug=True, metrics=True)
 
         # Query that will execute a cut
         results = engine.query("test(X)")
@@ -440,7 +440,7 @@ class TestMetricsEngineIntegration:
 
     def test_metrics_zero_overhead_when_disabled(self):
         """No metrics overhead when debug=False."""
-        engine = engine_for("test(1). test(2).", debug=False)
+        engine = engine_for("test(1). test(2).", debug=False, metrics=False)
 
         # Should not have metrics attribute or it's None
         assert not hasattr(engine, 'metrics') or engine.metrics is None
@@ -478,7 +478,7 @@ class TestMetricsEngineIntegration:
             mk_fact("test", Atom("d"), Int(5)),
         )
         # Enable indexing to test filtering
-        engine = Engine(program=prog, debug=True, use_indexing=True)
+        engine = Engine(program=prog, debug=True, metrics=True, use_indexing=True)
 
         # Query with a specific first argument
         results = engine.query("test(b, Y)")
@@ -505,7 +505,7 @@ class TestMetricsEngineIntegration:
             mk_fact("test", Atom("d"), Int(5)),
         )
         # No indexing - all clauses should be yielded
-        engine = Engine(program=prog, debug=True, use_indexing=False)
+        engine = Engine(program=prog, debug=True, metrics=True, use_indexing=False)
 
         results = engine.query("test(b, Y)")
 

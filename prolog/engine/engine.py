@@ -1,11 +1,13 @@
 """Prolog Engine with Explicit Stacks (Stage 0) - Fixed Implementation."""
 
+import os
 from typing import Dict, List, Optional, Any, Tuple
 from prolog.ast.terms import Term, Atom, Int, Var, Struct, List as PrologList
 from prolog.ast.clauses import Program, ClauseCursor
 from prolog.engine.rename import VarRenamer
 from prolog.unify.store import Store, Cell
 from prolog.unify.unify import unify
+from prolog.engine.indexed_program import IndexedProgram
 
 # Import new runtime types
 from prolog.engine.runtime import (
@@ -19,6 +21,7 @@ from prolog.engine.runtime import (
 )
 from prolog.engine.trail_adapter import TrailAdapter
 from prolog.engine.errors import PrologThrow
+from prolog.engine.cursors import StreamingClauseCursor
 
 
 class Engine:
@@ -33,6 +36,8 @@ class Engine:
         max_steps: Optional[int] = None,
         use_indexing: bool = False,
         debug: bool = False,
+        use_streaming: bool = False,
+        metrics: bool = False,
     ):
         """Initialize engine with a program.
 
@@ -44,10 +49,11 @@ class Engine:
             max_steps: Maximum number of steps to execute (for debugging infinite loops).
             use_indexing: Whether to use first-argument indexing for clause selection.
             debug: Whether to enable debug instrumentation (e.g., candidate counting).
+            use_streaming: Whether to use streaming clause selection (requires indexing).
+            metrics: Whether to enable metrics collection.
         """
         # Convert to IndexedProgram if indexing is enabled
         if use_indexing:
-            from prolog.engine.indexed_program import IndexedProgram
             self.program = IndexedProgram.from_program(program) if not isinstance(program, IndexedProgram) else program
         else:
             self.program = program
@@ -55,6 +61,22 @@ class Engine:
         self.use_indexing = use_indexing
         self.debug = debug
         self.occurs_check = occurs_check
+
+        # Determine if streaming should be enabled
+        # Check environment variable override
+        env_streaming = os.environ.get('PYLOG_STREAM_SELECTION')
+        if env_streaming == '1':
+            # Force streaming on (if indexing enabled)
+            self.use_streaming = use_indexing
+        elif env_streaming == '0':
+            # Force streaming off
+            self.use_streaming = False
+        else:
+            # Use parameter, but only if conditions are met:
+            # - Indexing must be enabled
+            # - Debug/trace should be off (or we gate it later)
+            # - Metrics should be off
+            self.use_streaming = use_streaming and use_indexing
 
         # Core state - using new runtime types
         self.store = Store()
@@ -113,8 +135,8 @@ class Engine:
         else:
             self.tracer = None
 
-        # Initialize metrics if debug=True
-        if debug:
+        # Initialize metrics if metrics=True
+        if metrics:
             from prolog.debug.metrics import EngineMetrics
             self.metrics = EngineMetrics()
         else:
@@ -618,38 +640,52 @@ class Engine:
 
         # Get matching clauses - use indexing if available
         if self.use_indexing and hasattr(self.program, 'select'):
-            from prolog.engine.indexed_program import IndexedProgram
             # Use indexed selection
             pred_key = (functor, arity)
-            # TODO: Future optimization - avoid list materialization for true streaming
-            # Could use a buffered iterator or make ClauseCursor lazily evaluate
-            # while still supporting has_more() checks for choicepoint creation
-            matches = list(self.program.select(pred_key, goal.term, self.store))
-            
-            # Track candidates in debug mode
-            if self.debug:
-                self._candidates_considered += len(matches)
-                if self.metrics:
-                    # Count how many are actually yielded (have potential to match)
-                    yielded = len([m for m in matches if m is not None])
-                    self.metrics.record_candidates(len(matches), yielded)
-                
-                # Log detailed info if trace is enabled too
-                if self.trace:
-                    # Optimize total clause count for IndexedProgram
-                    if isinstance(self.program, IndexedProgram):
-                        pred_idx = self.program._index.preds.get((functor, arity))
-                        total_clauses = len(pred_idx.order) if pred_idx else 0
-                    else:
-                        total_clauses = len(self.program.clauses_for(functor, arity))
-                    
-                    if total_clauses > 0:
-                        self._trace_log.append(
-                            f"pred {functor}/{arity}: considered {len(matches)} of {total_clauses} clauses"
-                        )
+
+            # Determine if we should use streaming
+            # Streaming is disabled when debug or metrics are enabled to preserve candidate counting
+            should_stream = (
+                self.use_streaming
+                and not self.debug
+                and not self.metrics
+                and not self.tracer  # Also disable with tracer to preserve debug behavior
+            )
+
+            if should_stream:
+                # Use streaming cursor for memory efficiency
+                clause_iterator = self.program.select(pred_key, goal.term, self.store)
+                cursor = StreamingClauseCursor(functor=functor, arity=arity, it=clause_iterator)
+            else:
+                # Materialize list for debug/metrics compatibility
+                matches = list(self.program.select(pred_key, goal.term, self.store))
+                cursor = ClauseCursor(matches=matches, functor=functor, arity=arity)
+
+                # Track candidates in debug mode (only when materialized)
+                if self.debug:
+                    self._candidates_considered += len(matches)
+                    if self.metrics:
+                        # Count how many are actually yielded (have potential to match)
+                        yielded = len([m for m in matches if m is not None])
+                        self.metrics.record_candidates(len(matches), yielded)
+
+                    # Log detailed info if trace is enabled too
+                    if self.trace:
+                        # Optimize total clause count for IndexedProgram
+                        if isinstance(self.program, IndexedProgram):
+                            pred_idx = self.program._index.preds.get((functor, arity))
+                            total_clauses = len(pred_idx.order) if pred_idx else 0
+                        else:
+                            total_clauses = len(self.program.clauses_for(functor, arity))
+
+                        if total_clauses > 0:
+                            self._trace_log.append(
+                                f"pred {functor}/{arity}: considered {len(matches)} of {total_clauses} clauses"
+                            )
         else:
             # Fall back to standard clause selection
             matches = self.program.clauses_for(functor, arity)
+            cursor = ClauseCursor(matches=matches, functor=functor, arity=arity)
 
             # Track all candidates in debug mode (no filtering)
             if self.debug:
@@ -657,8 +693,6 @@ class Engine:
                 if self.metrics:
                     # All clauses are yielded (no filtering without indexing)
                     self.metrics.record_candidates(len(matches), len(matches))
-        
-        cursor = ClauseCursor(matches=matches, functor=functor, arity=arity)
 
         if not cursor.has_more():
             # No matching clauses - emit FAIL port
