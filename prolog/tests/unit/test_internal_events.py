@@ -476,6 +476,42 @@ class TestCatchEvents:
         # Should NOT have catch event (no exception)
         assert len(catch_events) == 0
 
+    def test_catch_with_backtracking_regression(self):
+        """Regression test: CATCH choicepoint goal height tracking with POP_FRAME sentinel."""
+        # This tests the specific bug where CATCH CP stored stale goal height
+        # when POP_FRAME sentinel was consumed before backtracking
+        program = Program((
+            Clause(Struct("test_catch_backtrack", ()), (
+                Struct("catch", (
+                    Struct(";", (Atom("true"), Atom("fail"))),  # Disjunction that backtracks
+                    Var(0, "_"),
+                    Atom("fail")
+                )),
+            )),
+        ))
+
+        engine = Engine(program, trace=True)
+        sink = CollectorSink()
+        engine.tracer.add_sink(sink)
+        engine.tracer.enable_internal_events = True
+
+        results = list(engine.query("?- test_catch_backtrack."))
+
+        # Should succeed once (from the true branch of disjunction)
+        assert len(results) == 1
+
+        # Verify CP events are balanced
+        cp_push = [e for e in sink.events
+                   if isinstance(e, InternalEvent) and e.kind == "cp_push"]
+        cp_pop = [e for e in sink.events
+                  if isinstance(e, InternalEvent) and e.kind == "cp_pop"]
+
+        # Should have at least one CP (for disjunction)
+        # CATCH doesn't always create a CP - only when needed
+        assert len(cp_push) >= 1
+        # All CPs should be properly cleaned up
+        assert len(cp_push) == len(cp_pop)
+
 
 class TestEventOrdering:
     """Test that internal events appear in correct order."""

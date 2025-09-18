@@ -995,6 +995,15 @@ class Engine:
                 frame = self.frame_stack.pop()
                 self._debug_frame_pops += 1
 
+                # After popping frame, check if any CATCH CPs need their goal_stack_height adjusted
+                # This handles the case where catch/3 created a CP with a height that included
+                # the POP_FRAME sentinel we just consumed
+                current_goal_height = self.goal_stack.height()
+                for cp in self.cp_stack:
+                    if cp.kind == ChoicepointKind.CATCH and cp.goal_stack_height > current_goal_height:
+                        # This CATCH CP's stored height is stale - update it directly
+                        cp.goal_stack_height = current_goal_height
+
                 # Emit internal event for frame pop
                 if self.tracer:
                     self.tracer.emit_internal_event("frame_pop", {
@@ -1082,6 +1091,25 @@ class Engine:
                     self._trace_log.append(
                         f"Deferring goal stack restoration for {cp.kind} CP"
                     )
+            elif cp.kind == ChoicepointKind.CATCH and cp.payload.get("has_pop_frame"):
+                # Special handling for CATCH CPs that had a POP_FRAME sentinel
+                # The POP_FRAME might have been consumed, so we need to use the adjusted height
+                current_height = self.goal_stack.height()
+                target_height = cp.goal_stack_height
+
+                # If current height is less than expected, the POP_FRAME was consumed
+                if current_height < target_height:
+                    # Use the adjusted height (without the POP_FRAME)
+                    adjusted_height = cp.payload.get("adjusted_height", 0)
+                    self.goal_stack.shrink_to(adjusted_height)
+                    # Verify we got the right height
+                    assert self.goal_stack.height() == adjusted_height, \
+                        f"CATCH CP restoration failed: {self.goal_stack.height()} != {adjusted_height}"
+                else:
+                    # POP_FRAME hasn't been consumed yet, use normal height
+                    self.goal_stack.shrink_to(target_height)
+                    assert self.goal_stack.height() == target_height, \
+                        f"CATCH CP restoration failed: {self.goal_stack.height()} != {target_height}"
             else:
                 # Standard restoration for other CP kinds
                 if self.trace:
@@ -2282,7 +2310,13 @@ class Engine:
         base_goal_height = self.goal_stack.height()
         base_frame_height = len(self.frame_stack)
         base_cp_height = len(self.cp_stack)
-        
+
+        # Check if there's a POP_FRAME sentinel on top of the goal stack
+        # If so, we need to track that it might be consumed before we backtrack
+        has_pop_frame_sentinel = (self.goal_stack.height() > 0 and
+                                  self.goal_stack._stack and
+                                  self.goal_stack._stack[-1].type == GoalType.POP_FRAME)
+
         # Create CATCH choicepoint (phase=GOAL)
         stamp = self.trail.next_stamp()
         catch_cp = Choicepoint(
@@ -2295,11 +2329,20 @@ class Engine:
                 "catcher": catcher_arg,
                 "recovery": recovery_arg,
                 "cp_height": base_cp_height,  # Store CP height for restoration
+                "has_pop_frame": has_pop_frame_sentinel,  # Track if we have a POP_FRAME that might be consumed
+                "adjusted_height": base_goal_height - 1 if has_pop_frame_sentinel else base_goal_height,
             },
             stamp=stamp,
         )
         self.cp_stack.append(catch_cp)
-        
+
+        # Emit internal event for CP push
+        if self.tracer:
+            self.tracer.emit_internal_event("cp_push", {
+                "pred_id": "catch",
+                "trail_top": base_trail_top
+            })
+
         # Push the user's Goal to execute
         self.goal_stack.push(Goal.from_term(goal))
         
