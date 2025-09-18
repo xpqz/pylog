@@ -18,10 +18,33 @@ uv run pytest prolog/tests/benchmarks/ -v -m "perf and not slow"
 
 ### Run benchmarks with performance enforcement
 ```bash
-# Enable performance assertions in CI
-CI_ENFORCE_PERF=1 uv run pytest prolog/tests/benchmarks/ -v
+# Enable performance assertions (accepts 1, true, yes, on)
+CI_ENFORCE_PERF=true uv run pytest prolog/tests/benchmarks/ -v
+
+# With reduced hashset noise in CI
+PYTHONHASHSEED=0 CI_ENFORCE_PERF=1 uv run pytest prolog/tests/benchmarks/ -v
 
 # This will fail if performance targets are not met
+```
+
+### Environment Variables
+
+#### Enforcement Control
+- `CI_ENFORCE_PERF`: Enable performance assertions (values: `1`, `true`, `yes`, `on`)
+
+#### Configurable Thresholds
+- `PERF_INFRASTRUCTURE_MAX`: Max overhead for trace infrastructure (default: 5.0%)
+- `PERF_PRETTY_MAX`: Max overhead for pretty tracing (default: 25.0%)
+- `PERF_JSONL_MAX`: Max overhead for JSONL tracing (default: 35.0%)
+- `PERF_COLLECTOR_MAX`: Max overhead for CollectorSink (default: 15.0%)
+- `PERF_BACKTRACKING_MAX`: Max overhead with heavy backtracking (default: 45.0%)
+- `PERF_SCALING_MAX`: Max scaling factor large/small (default: 3.0x)
+- `PERF_FIRST_EVENT_MAX`: Max overhead for first event (default: 5.0x)
+- `PERF_EVENT_RATE_MIN`: Min events per second (default: 1000)
+
+Example with custom thresholds:
+```bash
+CI_ENFORCE_PERF=true PERF_PRETTY_MAX=30 PERF_JSONL_MAX=40 uv run pytest prolog/tests/benchmarks/ -v
 ```
 
 ## Performance Targets

@@ -25,6 +25,22 @@ from prolog.debug.tracer import PortsTracer
 from prolog.debug.sinks import PrettyTraceSink, JSONLTraceSink, CollectorSink
 
 
+class NullSink:
+    """A no-op sink that discards all events without any processing."""
+
+    def write_event(self, event):
+        """Discard event immediately."""
+        return True
+
+    def flush(self):
+        """No-op flush."""
+        return True
+
+    def close(self):
+        """No-op close."""
+        pass
+
+
 def create_test_program(size: str = "medium") -> Program:
     """Create a test program for benchmarking.
 
@@ -135,7 +151,20 @@ class TestTracingOverhead:
     @classmethod
     def should_enforce(cls):
         """Check if performance assertions should be enforced."""
-        return os.getenv('CI_ENFORCE_PERF') == '1'
+        enforce_val = os.getenv('CI_ENFORCE_PERF', '').lower()
+        return enforce_val in ('1', 'true', 'yes', 'on')
+
+    @classmethod
+    def get_threshold(cls, name: str, default: float) -> float:
+        """Get configurable threshold from environment."""
+        env_var = f'PERF_{name.upper()}_MAX'
+        val = os.getenv(env_var)
+        if val:
+            try:
+                return float(val)
+            except ValueError:
+                pass
+        return default
 
     def test_overhead_with_trace_infrastructure(self):
         """Test overhead of trace infrastructure with no-op filter."""
@@ -147,9 +176,11 @@ class TestTracingOverhead:
 
         # With trace=True but no-op filter (no events emitted)
         engine_traced = Engine(program, trace=True)
-        # Set a filter that rejects all events
+        # Set a filter that rejects all events - avoid closure overhead
+        def reject_all(ev):
+            return False
         if hasattr(engine_traced.tracer, 'set_filter'):
-            engine_traced.tracer.set_filter(lambda ev: False)
+            engine_traced.tracer.set_filter(reject_all)
         traced_time, traced_iqr = measure_execution_time(engine_traced, "even(X)")
 
         # Calculate overhead
@@ -158,9 +189,12 @@ class TestTracingOverhead:
         # Report results
         print(f"\nTrace infrastructure overhead: {overhead:.1f}% (median: {traced_time:.3f}s vs {baseline_time:.3f}s)")
 
-        # Conditional assertion
-        if self.should_enforce():
-            assert overhead <= 5.0, f"Overhead with trace infrastructure: {overhead:.1f}% (target: ≤5%)"
+        # Check enforcement
+        if not self.should_enforce():
+            pytest.skip("Performance enforcement disabled (set CI_ENFORCE_PERF=true to enable)")
+
+        threshold = self.get_threshold('infrastructure', 5.0)
+        assert overhead <= threshold, f"Overhead with trace infrastructure: {overhead:.1f}% (target: ≤{threshold}%)"
 
     def test_overhead_with_pretty_tracing(self, tmp_path):
         """Test overhead with pretty tracing."""
@@ -185,9 +219,12 @@ class TestTracingOverhead:
         # Report results
         print(f"\nPretty tracing overhead: {overhead:.1f}% (median: {pretty_time:.3f}s vs {baseline_time:.3f}s)")
 
-        # Conditional assertion
-        if self.should_enforce():
-            assert overhead <= 25.0, f"Overhead with pretty tracing: {overhead:.1f}% (target: ≤25%)"
+        # Check enforcement
+        if not self.should_enforce():
+            pytest.skip("Performance enforcement disabled (set CI_ENFORCE_PERF=true to enable)")
+
+        threshold = self.get_threshold('pretty', 25.0)
+        assert overhead <= threshold, f"Overhead with pretty tracing: {overhead:.1f}% (target: ≤{threshold}%)"
 
     def test_overhead_with_jsonl_tracing(self, tmp_path):
         """Test overhead with JSONL tracing."""
@@ -212,9 +249,12 @@ class TestTracingOverhead:
         # Report results
         print(f"\nJSONL tracing overhead: {overhead:.1f}% (median: {jsonl_time:.3f}s vs {baseline_time:.3f}s)")
 
-        # Conditional assertion
-        if self.should_enforce():
-            assert overhead <= 35.0, f"Overhead with JSONL tracing: {overhead:.1f}% (target: ≤35%)"
+        # Check enforcement
+        if not self.should_enforce():
+            pytest.skip("Performance enforcement disabled (set CI_ENFORCE_PERF=true to enable)")
+
+        threshold = self.get_threshold('jsonl', 35.0)
+        assert overhead <= threshold, f"Overhead with JSONL tracing: {overhead:.1f}% (target: ≤{threshold}%)"
 
     def test_overhead_with_collector_sink(self):
         """Test overhead with CollectorSink (no I/O)."""
@@ -236,9 +276,12 @@ class TestTracingOverhead:
         # Report results
         print(f"\nCollectorSink overhead: {overhead:.1f}% (median: {collector_time:.3f}s vs {baseline_time:.3f}s)")
 
-        # Conditional assertion
-        if self.should_enforce():
-            assert overhead <= 15.0, f"Overhead with CollectorSink: {overhead:.1f}% (target: ≤15%)"
+        # Check enforcement
+        if not self.should_enforce():
+            pytest.skip("Performance enforcement disabled (set CI_ENFORCE_PERF=true to enable)")
+
+        threshold = self.get_threshold('collector', 15.0)
+        assert overhead <= threshold, f"Overhead with CollectorSink: {overhead:.1f}% (target: ≤{threshold}%)"
 
 
 
@@ -250,7 +293,20 @@ class TestScalabilityOverhead:
     @classmethod
     def should_enforce(cls):
         """Check if performance assertions should be enforced."""
-        return os.getenv('CI_ENFORCE_PERF') == '1'
+        enforce_val = os.getenv('CI_ENFORCE_PERF', '').lower()
+        return enforce_val in ('1', 'true', 'yes', 'on')
+
+    @classmethod
+    def get_threshold(cls, name: str, default: float) -> float:
+        """Get configurable threshold from environment."""
+        env_var = f'PERF_{name.upper()}_MAX'
+        val = os.getenv(env_var)
+        if val:
+            try:
+                return float(val)
+            except ValueError:
+                pass
+        return default
 
     def test_overhead_scaling_with_program_size(self):
         """Test that overhead doesn't increase dramatically with program size."""
@@ -291,10 +347,13 @@ class TestScalabilityOverhead:
             scaling_factor = overheads['large'] / overheads['small']
             print(f"Scaling factor (large/small): {scaling_factor:.2f}x")
 
-            # Conditional assertion with wider tolerance
-            if self.should_enforce():
-                assert scaling_factor <= 3.0, \
-                    f"Overhead scaling too high: {scaling_factor:.2f}x (target: ≤3.0x)"
+            # Check enforcement
+            if not self.should_enforce():
+                pytest.skip("Performance enforcement disabled (set CI_ENFORCE_PERF=true to enable)")
+
+            threshold = self.get_threshold('scaling', 3.0)
+            assert scaling_factor <= threshold, \
+                f"Overhead scaling too high: {scaling_factor:.2f}x (target: ≤{threshold}x)"
 
 
 @pytest.mark.perf
@@ -343,7 +402,20 @@ class TestTracingWithBacktracking:
     @classmethod
     def should_enforce(cls):
         """Check if performance assertions should be enforced."""
-        return os.getenv('CI_ENFORCE_PERF') == '1'
+        enforce_val = os.getenv('CI_ENFORCE_PERF', '').lower()
+        return enforce_val in ('1', 'true', 'yes', 'on')
+
+    @classmethod
+    def get_threshold(cls, name: str, default: float) -> float:
+        """Get configurable threshold from environment."""
+        env_var = f'PERF_{name.upper()}_MAX'
+        val = os.getenv(env_var)
+        if val:
+            try:
+                return float(val)
+            except ValueError:
+                pass
+        return default
 
     def test_overhead_with_heavy_backtracking(self):
         """Test overhead remains reasonable with heavy backtracking."""
@@ -382,10 +454,13 @@ class TestTracingWithBacktracking:
         # Report results
         print(f"\nOverhead with heavy backtracking: {overhead:.1f}%")
 
-        # Conditional assertion
-        if self.should_enforce():
-            assert overhead <= 45.0, \
-                f"Overhead with heavy backtracking: {overhead:.1f}% (target: ≤45%)"
+        # Check enforcement
+        if not self.should_enforce():
+            pytest.skip("Performance enforcement disabled (set CI_ENFORCE_PERF=true to enable)")
+
+        threshold = self.get_threshold('backtracking', 45.0)
+        assert overhead <= threshold, \
+            f"Overhead with heavy backtracking: {overhead:.1f}% (target: ≤{threshold}%)"
 
 
 @pytest.mark.perf
@@ -436,7 +511,20 @@ class TestMicroBenchmarks:
     @classmethod
     def should_enforce(cls):
         """Check if performance assertions should be enforced."""
-        return os.getenv('CI_ENFORCE_PERF') == '1'
+        enforce_val = os.getenv('CI_ENFORCE_PERF', '').lower()
+        return enforce_val in ('1', 'true', 'yes', 'on')
+
+    @classmethod
+    def get_threshold(cls, name: str, default: float) -> float:
+        """Get configurable threshold from environment."""
+        env_var = f'PERF_{name.upper()}_MAX'
+        val = os.getenv(env_var)
+        if val:
+            try:
+                return float(val)
+            except ValueError:
+                pass
+        return default
 
     def test_time_to_first_event(self):
         """Test overhead for generating the first trace event on a trivial query."""
@@ -483,11 +571,15 @@ class TestMicroBenchmarks:
               f"traced={traced_time*1000:.3f}ms, "
               f"overhead={overhead_pct:.1f}% ({overhead_ratio:.2f}x)")
 
+        # Check enforcement
+        if not self.should_enforce():
+            pytest.skip("Performance enforcement disabled (set CI_ENFORCE_PERF=true to enable)")
+
         # We expect higher overhead on tiny operations due to fixed setup costs
         # but it should still be bounded
-        if self.should_enforce():
-            assert overhead_ratio <= 5.0, \
-                f"Time-to-first-event overhead too high: {overhead_ratio:.2f}x (target: ≤5x)"
+        threshold = self.get_threshold('first_event', 5.0)
+        assert overhead_ratio <= threshold, \
+            f"Time-to-first-event overhead too high: {overhead_ratio:.2f}x (target: ≤{threshold}x)"
 
     def test_event_creation_rate(self):
         """Test rate of trace event creation without I/O."""
@@ -505,7 +597,7 @@ class TestMicroBenchmarks:
         )
         program = Program(tuple(clauses))
 
-        # Measure with CollectorSink (no I/O)
+        # Measure with CollectorSink (includes list append overhead)
         engine = Engine(program, trace=True)
         sink = CollectorSink()
         engine.tracer.add_sink(sink)
@@ -526,10 +618,57 @@ class TestMicroBenchmarks:
         else:
             events_per_second = float('inf')
 
-        print(f"\nEvent creation rate: {num_events} events in {elapsed:.3f}s "
+        print(f"\nEvent creation rate (CollectorSink): {num_events} events in {elapsed:.3f}s "
               f"= {events_per_second:.0f} events/sec")
 
+        # Check enforcement
+        if not self.should_enforce():
+            pytest.skip("Performance enforcement disabled (set CI_ENFORCE_PERF=true to enable)")
+
         # Basic sanity check - should handle at least 1000 events/sec
-        if self.should_enforce():
-            assert events_per_second >= 1000, \
-                f"Event creation rate too slow: {events_per_second:.0f} events/sec (target: ≥1000)"
+        min_rate = float(os.getenv('PERF_EVENT_RATE_MIN', '1000'))
+        assert events_per_second >= min_rate, \
+            f"Event creation rate too slow: {events_per_second:.0f} events/sec (target: ≥{min_rate})"
+
+    def test_pure_event_creation_rate(self):
+        """Test pure event creation rate with NullSink (no append overhead)."""
+        # Create program that generates many events quickly
+        clauses = []
+        for i in range(100):
+            clauses.append(Clause(head=Struct("test", (Int(i),)), body=()))
+
+        clauses.append(
+            Clause(
+                head=Struct("all_tests", (Var(0, "X"),)),
+                body=(Struct("test", (Var(0, "X"),)),)
+            )
+        )
+        program = Program(tuple(clauses))
+
+        # Measure with NullSink (no storage overhead)
+        engine = Engine(program, trace=True)
+        sink = NullSink()
+        engine.tracer.add_sink(sink)
+
+        gc.collect()
+        gc.disable()
+        try:
+            start = time.perf_counter()
+            results = list(engine.query("all_tests(X)"))
+            elapsed = time.perf_counter() - start
+        finally:
+            gc.enable()
+
+        # Estimate event count (100 facts * ~4 ports each)
+        estimated_events = len(results) * 4
+
+        if elapsed > 0:
+            events_per_second = estimated_events / elapsed
+        else:
+            events_per_second = float('inf')
+
+        print(f"\nPure event creation rate (NullSink): ~{estimated_events} events in {elapsed:.3f}s "
+              f"= {events_per_second:.0f} events/sec")
+
+        # Skip enforcement for this test as it's purely informational
+        pytest.skip("Pure event creation rate is informational only")
