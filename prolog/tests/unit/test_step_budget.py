@@ -148,7 +148,7 @@ class TestStepBudget:
         # Steps should be under budget
         assert engine._steps_taken <= engine.max_steps or len(solutions) == 0
 
-    @pytest.mark.xfail(reason="Indexing with specific facts needs investigation")
+    @pytest.mark.xfail(reason="Bug #101: IndexedProgram fails with TypeError - clauses not hashable")
     def test_step_budget_with_indexing(self):
         """Test step budget with indexing enabled."""
         # Create a program with many clauses
