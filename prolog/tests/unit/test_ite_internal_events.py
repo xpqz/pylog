@@ -242,5 +242,6 @@ class TestIfThenElseInternalEvents:
         assert ("call", "then_branch") in port_pred_names
         assert ("exit", "then_branch") in port_pred_names
 
-        # else_branch should not be called
-        assert ("call", "else_branch") not in port_pred_names
+        # Validate that else_branch is NOT called when then branch is taken
+        assert ("call", "else_branch") not in port_pred_names, "else_branch should not be called when then branch succeeds"
+        assert ("exit", "else_branch") not in port_pred_names, "else_branch should not exit when then branch succeeds"

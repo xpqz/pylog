@@ -329,7 +329,6 @@ class TestLibraryPredicatePerformance:
         assert len(solutions) == 1
     
     @pytest.mark.timeout(5)
-    @pytest.mark.skip(reason="Arithmetic comparison predicates not yet implemented")
     def test_between_generation(self):
         """between/3 should efficiently generate ranges."""
         # Define between
@@ -358,7 +357,6 @@ class TestEnginePerformance:
     """Test overall engine performance."""
     
     @pytest.mark.timeout(10)
-    @pytest.mark.skip(reason="Arithmetic comparison predicates not yet implemented")
     def test_backtracking_performance(self):
         """Engine should handle deep backtracking efficiently."""
         # Create a program that causes backtracking

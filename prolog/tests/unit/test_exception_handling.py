@@ -206,9 +206,12 @@ class TestExceptionHandling:
         catch_events = [e for e in internal_events if e.kind == "catch_switch"]
         assert len(catch_events) > 0, "Should emit catch_switch event"
 
-        # Check event details
-        assert "exception" in catch_events[0].details
-        assert "handler" in catch_events[0].details
+        # Check event details - these keys should only be present for catch_switch events
+        for event in catch_events:
+            assert "exception" in event.details, "catch_switch should have exception key"
+            assert "handler" in event.details, "catch_switch should have handler key"
+            # Ensure no other unexpected keys
+            assert set(event.details.keys()) == {"exception", "handler"}
 
     def test_throw_without_catch(self):
         """Test throw without any catch handler raises Python exception."""

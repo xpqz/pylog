@@ -211,3 +211,72 @@ class TestBuiltinPorts:
 
         # is/2 should be at depth 1 (called from within test/2)
         assert all(depth == 1 for _, _, depth in is_events)
+
+    def test_zero_arity_port_sequence(self):
+        """Test zero-arity predicates maintain correct 4-port parity."""
+        # Create a program with zero-arity facts
+        clauses = parser.parse_program("""
+            z.
+            z.
+            other :- z, fail.
+        """)
+        engine = Engine(Program(tuple(clauses)), trace=True)
+
+        # Use collector sink to capture events
+        collector = CollectorSink()
+        engine.tracer.add_sink(collector)
+
+        # Query z/0 which has two facts
+        goals = parser.parse_query("?- z.")
+        solutions = list(engine.run(goals))
+
+        # Should get two solutions (two facts)
+        assert len(solutions) == 2
+
+        # Extract trace events
+        trace_events = [e for e in collector.events if isinstance(e, TraceEvent)]
+
+        # Find z/0 events
+        z_events = [(e.port, e.pred_id) for e in trace_events if e.pred_id == "z/0"]
+
+        # The exact sequence depends on implementation, but we should see:
+        # - One CALL at the beginning
+        # - Two EXITs (one for each fact)
+        # - May or may not have REDO depending on how the engine handles multiple facts
+
+        # Check minimum requirements for 4-port correctness
+        assert z_events[0] == ("call", "z/0"), "Should start with CALL"
+
+        # Count exits - should be 2 (one for each fact)
+        exit_count = sum(1 for port, _ in z_events if port == "exit")
+        assert exit_count == 2, f"Should have 2 EXIT events (one per fact), got {exit_count}"
+
+        # If there's a REDO, it should be between the two EXITs
+        if ("redo", "z/0") in z_events:
+            redo_idx = z_events.index(("redo", "z/0"))
+            first_exit = z_events.index(("exit", "z/0"))
+            assert redo_idx > first_exit, "REDO should come after first EXIT"
+
+        # Test z/0 in a failing context
+        collector.events.clear()
+        goals = parser.parse_query("?- other.")
+        solutions = list(engine.run(goals))
+
+        # Should fail (because of fail/0)
+        assert len(solutions) == 0
+
+        # Extract trace events
+        trace_events = [e for e in collector.events if isinstance(e, TraceEvent)]
+
+        # Find other/0 and z/0 events
+        other_events = [(e.port, e.pred_id) for e in trace_events if e.pred_id == "other/0"]
+        z_events = [(e.port, e.pred_id) for e in trace_events if e.pred_id == "z/0"]
+
+        # other/0 should CALL and FAIL
+        assert ("call", "other/0") in other_events
+        assert ("fail", "other/0") in other_events
+
+        # z/0 should be called and succeed initially, then redo and succeed again, then fail
+        # The exact sequence depends on how fail/0 propagates, but z/0 should show all attempts
+        assert ("call", "z/0") in z_events
+        assert ("exit", "z/0") in z_events  # At least one success before fail/0

@@ -10,7 +10,7 @@ Ensures that:
 
 from typing import List, Tuple, Optional, Set, Dict
 from dataclasses import dataclass
-from collections import defaultdict, Counter
+from collections import defaultdict
 
 import pytest
 
@@ -59,10 +59,6 @@ class PortSequenceValidator:
 
     def __init__(self):
         self.errors: List[str] = []
-        # Use Counter to track multiple calls at same depth
-        self.call_depth_counts: Counter = Counter()  # depth -> count
-        self.call_stack: List[Tuple[str, int]] = []  # Stack of (pred_id, depth)
-        self.exited_frames: Set[Tuple[str, int]] = set()  # (pred_id, depth)
 
     def validate_sequence(self, events: List[TraceEvent]) -> bool:
         """Validate a sequence of trace events.
@@ -71,11 +67,10 @@ class PortSequenceValidator:
         Errors are stored in self.errors.
         """
         self.errors = []
-        self.call_depth_counts = Counter()
-        self.call_stack = []
-        self.exited_frames = set()
-
         prev_event: Optional[TraceEvent] = None
+
+        call_counts: Dict[Tuple[str, int], int] = defaultdict(int)
+        exited_frames: Set[Tuple[str, int]] = set()
 
         for event in events:
             if event.port not in ['call', 'exit', 'redo', 'fail']:
@@ -90,55 +85,36 @@ class PortSequenceValidator:
                         f"at step {event.step_id} for {event.pred_id}"
                     )
 
-            # Track call stack by frame depth
+            key = (event.pred_id, event.frame_depth)
+
             if event.port == 'call':
-                self.call_depth_counts[event.frame_depth] += 1
-                self.call_stack.append((event.pred_id, event.frame_depth))
+                call_counts[key] += 1
 
             elif event.port == 'exit':
-                # For backtracking, we might see multiple EXITs for one CALL
-                # Only decrement if we have calls remaining
-                if self.call_depth_counts[event.frame_depth] > 0:
-                    # Only pop stack on first exit at this depth
-                    if self.call_stack and self.call_stack[-1][1] == event.frame_depth:
-                        if (event.pred_id, event.frame_depth) not in self.exited_frames:
-                            self.call_stack.pop()
-                            self.call_depth_counts[event.frame_depth] -= 1
-                    self.exited_frames.add((event.pred_id, event.frame_depth))
-                # Allow multiple exits for backtracking without error
+                if call_counts[key] <= 0:
+                    self.errors.append(
+                        f"EXIT without CALL at step {event.step_id} "
+                        f"for {event.pred_id} at depth {event.frame_depth}"
+                    )
+                else:
+                    call_counts[key] -= 1
+                exited_frames.add(key)
 
             elif event.port == 'redo':
-                # Must have previously exited this frame depth
-                # Check using predicate and depth for more precision
-                matching_exit = False
-                for pred_id, depth in self.exited_frames:
-                    if depth == event.frame_depth:
-                        # Found an exit at this depth
-                        matching_exit = True
-                        break
-
-                if not matching_exit:
+                if key not in exited_frames:
                     self.errors.append(
                         f"REDO without prior EXIT at step {event.step_id} "
                         f"for {event.pred_id} at depth {event.frame_depth}"
                     )
-                else:
-                    # Re-add to call stack since we're retrying
-                    self.call_stack.append((event.pred_id, event.frame_depth))
-                    self.call_depth_counts[event.frame_depth] += 1
 
             elif event.port == 'fail':
-                # Remove from call stack if present
-                if self.call_depth_counts[event.frame_depth] <= 0:
+                if call_counts[key] > 0:
+                    call_counts[key] -= 1
+                elif key not in exited_frames:
                     self.errors.append(
-                        f"FAIL without CALL at step {event.step_id} "
+                        f"FAIL without CALL/EXIT at step {event.step_id} "
                         f"for {event.pred_id} at depth {event.frame_depth}"
                     )
-                else:
-                    # Pop from stack if it matches the top
-                    if self.call_stack and self.call_stack[-1][1] == event.frame_depth:
-                        self.call_stack.pop()
-                    self.call_depth_counts[event.frame_depth] -= 1
 
             prev_event = event
 

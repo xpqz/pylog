@@ -718,7 +718,9 @@ class TestSinkCompatibility:
 
         # Should not raise AttributeError
         list(engine.query("?- test."))
-        
+
+        sink.close()  # Ensure all events are flushed
+
         result = output.getvalue()
         assert "CALL test/0" in result
         assert "INTERNAL frame_push" in result

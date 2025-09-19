@@ -131,7 +131,6 @@ class TestTraceIntegration:
 class TestSpyIntegration:
     """Test spypoint functionality with real programs."""
 
-    @pytest.mark.xfail(reason="Requires full spy implementation")
     def test_spy_filters_output(self, capsys):
         """Test spypoints only show specified predicates."""
         repl = PrologREPL()
@@ -319,7 +318,6 @@ class TestErrorHandling:
         captured = capsys.readouterr()
         assert "error" in captured.out.lower() or "invalid" in captured.out.lower()
 
-    @pytest.mark.xfail(reason="Requires error handling implementation")
     def test_trace_file_permission_error(self, capsys):
         """Test error handling when trace file can't be written."""
         repl = PrologREPL()

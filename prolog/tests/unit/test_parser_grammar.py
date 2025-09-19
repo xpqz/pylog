@@ -115,8 +115,6 @@ class TestBasicTerms:
     def test_quoted_atom_with_doubled_quote(self, grammar_term):
         """Test if doubled single quotes work for embedding quotes."""
         # Standard Prolog way to include single quote: double it
-        # Skip if not implemented
-        pytest.skip("Doubled quote syntax may not be implemented")
         assert grammar_term.parse("'it''s'")  # Represents: it's
 
     @pytest.mark.parametrize(
