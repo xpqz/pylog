@@ -47,7 +47,7 @@ class TestExceptionHandling:
 
         assert len(solutions) == 1
 
-    @pytest.mark.xfail(reason="catch/throw mechanism not properly integrated - throws Python exception")
+    @pytest.mark.xfail(reason="Bug #102: catch/throw incomplete - fails with streaming")
     def test_catch_with_streaming(self):
         """Test catch/throw with streaming enabled."""
         # Create a program with catch/throw
@@ -84,7 +84,7 @@ class TestExceptionHandling:
         assert solutions[2]["Y"] == Atom("ok")
         assert solutions[2]["X"] == Int(3)
 
-    @pytest.mark.xfail(reason="catch/throw mechanism not properly integrated")
+    @pytest.mark.xfail(reason="Bug #102: catch/throw incomplete - unification failure case")
     def test_catch_unification_failure(self):
         """Test catch when catcher doesn't unify with thrown ball."""
         clauses = parser.parse_program("""
@@ -131,7 +131,7 @@ class TestExceptionHandling:
         # Inner catch should handle it
         assert len(solutions) == 1
 
-    @pytest.mark.xfail(reason="catch/throw mechanism not properly integrated")
+    @pytest.mark.xfail(reason="Bug #102: catch/throw incomplete - cut interaction")
     def test_catch_with_cut(self):
         """Test catch interaction with cut."""
         clauses = parser.parse_program("""
@@ -159,7 +159,7 @@ class TestExceptionHandling:
         assert len(solutions) == 1
         assert solutions[0]["X"] == Atom("caught")
 
-    @pytest.mark.xfail(reason="catch/throw mechanism not properly integrated")
+    @pytest.mark.xfail(reason="Bug #102: catch/throw incomplete - state restoration")
     def test_catch_restores_state(self):
         """Test that catch properly restores engine state."""
         clauses = parser.parse_program("""
