@@ -92,6 +92,8 @@ class Frame:
     cut_barrier: int
     goal_height: int  # Goal stack height when frame was created
     pred: Optional[Any] = None  # Predicate reference
+    goal_term: Optional[Any] = None  # Original goal term for tracing
+    call_depth: int = 0  # Frame depth at call time for tracing
     env: Optional[Dict[int, Any]] = None  # Local environment if needed
 
     def __repr__(self) -> str:

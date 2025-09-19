@@ -139,7 +139,11 @@ class PortsTracer:
         goal_canonical = str(goal)
 
         # Extract stack depths from engine
-        frame_depth = len(self.engine.frame_stack)
+        override = getattr(self.engine, '_frame_depth_override', None)
+        if override is not None:
+            frame_depth = override
+        else:
+            frame_depth = len(self.engine.frame_stack)
         cp_depth = len(getattr(self.engine, 'cp_stack', []))
         goal_height = len(getattr(self.engine, 'goal_stack', []))
         write_stamp = getattr(self.engine, 'write_stamp', 0)
