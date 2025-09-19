@@ -35,7 +35,9 @@ class IndexedProgram:
         self.clauses = tuple(clauses) if not isinstance(clauses, tuple) else clauses
         self._index = index if index is not None else build_from_clauses(list(clauses))
         # Build clause-to-index map once to avoid O(N) rebuilding on every select
-        self._clause_to_idx = {clause: i for i, clause in enumerate(self.clauses)}
+        self._clause_to_idx = {
+            self._clause_key(clause): i for i, clause in enumerate(self.clauses)
+        }
     
     @classmethod
     def from_clauses(cls, clauses: List[Clause]) -> "IndexedProgram":
@@ -62,7 +64,7 @@ class IndexedProgram:
             New IndexedProgram with same clauses
         """
         return cls(program.clauses)
-    
+
     def clauses_for(self, functor: str, arity: int) -> List[ClauseIdx]:
         """
         Return indices of clauses matching functor/arity.
@@ -114,9 +116,17 @@ class IndexedProgram:
         """
         # Use the index to get matching clause candidates
         matching_clauses = self._index.select(pred_key, goal, store)
-        
+
         # Convert clauses to indices using cached map
         for clause in matching_clauses:
-            idx = self._clause_to_idx.get(clause)
+            idx = self._clause_to_idx.get(self._clause_key(clause))
             if idx is not None:
                 yield idx
+
+    @staticmethod
+    def _clause_key(clause: Clause) -> Tuple[Term, Tuple[Term, ...]]:
+        """Create a hashable key for a clause based on head and body."""
+        body = clause.body
+        if not isinstance(body, tuple):
+            body = tuple(body)
+        return (clause.head, body)
