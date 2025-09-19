@@ -153,7 +153,6 @@ class TestLibraryPredicatesAcceptance:
         solutions4 = list(engine.run(goals4))
         assert len(solutions4) == 0  # Incorrect
     
-    @pytest.mark.skip(reason="Arithmetic comparison predicates (=<, <) not yet implemented")
     def test_between_acceptance(self):
         """between/3 should generate integer ranges."""
         # Define between
@@ -482,7 +481,6 @@ class TestPrettyPrinterAcceptance:
 class TestStage1Integration:
     """Integration tests for complete Stage 1 functionality."""
     
-    @pytest.mark.skip(reason="Some required predicates not yet implemented")
     def test_complete_program_execution(self):
         """Test execution of a complete Stage 1 program."""
         # A complete program using Stage 1 features
