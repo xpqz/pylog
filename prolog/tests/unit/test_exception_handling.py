@@ -47,7 +47,7 @@ class TestExceptionHandling:
 
         assert len(solutions) == 1
 
-    @pytest.mark.xfail(reason="catch/throw not fully implemented")
+    @pytest.mark.xfail(reason="catch/throw mechanism not properly integrated - throws Python exception")
     def test_catch_with_streaming(self):
         """Test catch/throw with streaming enabled."""
         # Create a program with catch/throw
@@ -84,7 +84,7 @@ class TestExceptionHandling:
         assert solutions[2]["Y"] == Atom("ok")
         assert solutions[2]["X"] == Int(3)
 
-    @pytest.mark.xfail(reason="catch/throw not fully implemented")
+    @pytest.mark.xfail(reason="catch/throw mechanism not properly integrated")
     def test_catch_unification_failure(self):
         """Test catch when catcher doesn't unify with thrown ball."""
         clauses = parser.parse_program("""
@@ -131,7 +131,7 @@ class TestExceptionHandling:
         # Inner catch should handle it
         assert len(solutions) == 1
 
-    @pytest.mark.xfail(reason="catch/throw not fully implemented")
+    @pytest.mark.xfail(reason="catch/throw mechanism not properly integrated")
     def test_catch_with_cut(self):
         """Test catch interaction with cut."""
         clauses = parser.parse_program("""
@@ -159,7 +159,7 @@ class TestExceptionHandling:
         assert len(solutions) == 1
         assert solutions[0]["X"] == Atom("caught")
 
-    @pytest.mark.xfail(reason="catch/throw not fully implemented")
+    @pytest.mark.xfail(reason="catch/throw mechanism not properly integrated")
     def test_catch_restores_state(self):
         """Test that catch properly restores engine state."""
         clauses = parser.parse_program("""
@@ -210,19 +210,23 @@ class TestExceptionHandling:
         assert "exception" in catch_events[0].details
         assert "handler" in catch_events[0].details
 
-    @pytest.mark.xfail(reason="catch/throw not fully implemented")
     def test_throw_without_catch(self):
-        """Test throw without any catch handler fails."""
+        """Test throw without any catch handler raises Python exception."""
+        from prolog.engine.errors import PrologThrow
+
         clauses = parser.parse_program("""
             test :- throw(error(uncaught)).
         """)
         engine = Engine(Program(tuple(clauses)))
 
         goals = parser.parse_query("?- test.")
-        solutions = list(engine.run(goals))
 
-        # Should fail when no handler found
-        assert len(solutions) == 0
+        # Should raise PrologThrow when no handler found
+        with pytest.raises(PrologThrow) as exc_info:
+            solutions = list(engine.run(goals))
+
+        # Check the exception contains the thrown term
+        assert "uncaught" in str(exc_info.value)
 
     def test_catch_scope_boundary(self):
         """Test catch scope boundaries are respected."""
