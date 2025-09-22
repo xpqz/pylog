@@ -513,12 +513,41 @@ class Engine:
 
         return result
     
+    def _match_only(self, term1: Term, term2: Term) -> bool:
+        """Check if two terms unify WITHOUT modifying the store.
+
+        This is used for trial matching in catch/throw to avoid polluting
+        the store with bindings that might need to be undone.
+
+        Args:
+            term1: First term
+            term2: Second term
+
+        Returns:
+            True if the terms would unify, False otherwise
+        """
+        # Save current trail position and stamp
+        saved_trail_pos = self.trail.position()
+        saved_stamp = self.trail.current_stamp
+
+        # Create a temporary stamp for the trial
+        trial_stamp = self.trail.next_stamp()
+
+        # Do trial unification
+        result = self._unify(term1, term2)
+
+        # Restore everything - undo any changes made
+        self.trail.unwind_to(saved_trail_pos, self.store)
+        self.trail.set_current_stamp(saved_stamp)
+
+        return result
+
     def _handle_throw(self, ball: Term) -> bool:
         """Handle a thrown exception by searching for a matching catch.
-        
+
         Args:
             ball: The thrown exception term
-            
+
         Returns:
             True if exception was caught and handled, False otherwise
         """
@@ -527,7 +556,7 @@ class Engine:
         while i >= 0:
             cp = self.cp_stack[i]
             i -= 1
-            
+
             if cp.kind != ChoicepointKind.CATCH:
                 continue
             if cp.payload.get("phase") != "GOAL":
@@ -536,13 +565,9 @@ class Engine:
             cp_height = cp.payload.get("cp_height", 0)
             if cp_height > len(self.cp_stack) - 1:
                 continue
-            
-            # --- Trial unification WITHOUT committing state ---
-            trial_top = self.trail.position()
-            # No need to change stamp for trial
-            ok = self._unify(ball, cp.payload.get("catcher"))
-            self.trail.unwind_to(trial_top, self.store)  # Restore to pre-trial state
-            if not ok:
+
+            # --- Two-phase unification: check match without side effects ---
+            if not self._match_only(ball, cp.payload.get("catcher")):
                 continue
             
             # --- We have a matching catcher: restore to catch baselines ---
@@ -2608,6 +2633,24 @@ class Engine:
                 "pred_id": "catch",
                 "trail_top": base_trail_top
             })
+
+        # Create a frame to establish cut barrier for the catch scope
+        # This prevents cuts within Goal from escaping the catch boundary
+        self._next_frame_id += 1
+        catch_frame = Frame(
+            frame_id=self._next_frame_id,
+            cut_barrier=len(self.cp_stack),  # Cut stops at the CATCH CP
+            goal_height=self.goal_stack.height(),
+            pred=("catch", 3),
+        )
+        self.frame_stack.append(catch_frame)
+
+        # Push POP_FRAME to clean up the catch frame after Goal completes
+        self._push_goal(Goal(
+            GoalType.POP_FRAME,
+            None,
+            payload={"frame_id": self._next_frame_id}
+        ))
 
         # Push the user's Goal to execute
         self._push_goal(Goal.from_term(goal))
