@@ -134,14 +134,22 @@ class TestStateRestoration:
         clauses = parser.parse_program("""
             test :-
                 catch(
-                    (
-                        f(X, Y, Z) = f(1, 2, 3),
-                        g(A, B) = g(X, Y),
-                        throw(reset)
-                    ),
+                    do_unifications(X, Y, Z, A, B),
                     reset,
-                    (var(X), var(Y), var(Z), var(A), var(B))
+                    check_all_unbound(X, Y, Z, A, B)
                 ).
+
+            do_unifications(X, Y, Z, A, B) :-
+                f(X, Y, Z) = f(1, 2, 3),
+                g(A, B) = g(X, Y),
+                throw(reset).
+
+            check_all_unbound(X, Y, Z, A, B) :-
+                var(X),
+                var(Y),
+                var(Z),
+                var(A),
+                var(B).
         """)
         engine = Engine(Program(tuple(clauses)))
 
@@ -157,10 +165,15 @@ class TestStateRestoration:
             test(Result) :-
                 X = original,
                 catch(
-                    (X = [1,2,3|T], T = [4,5], throw(error)),
+                    rebind_list(X),
                     error,
                     Result = X
                 ).
+
+            rebind_list(X) :-
+                X = [1,2,3|T],
+                T = [4,5],
+                throw(error).
         """)
         engine = Engine(Program(tuple(clauses)))
 
@@ -176,10 +189,21 @@ class TestStateRestoration:
         clauses = parser.parse_program("""
             test :-
                 catch(
-                    (X = Y, Y = Z, Z = value, throw(error)),
+                    do_alias(X, Y, Z),
                     error,
-                    (var(X), var(Y), var(Z))
+                    check_vars(X, Y, Z)
                 ).
+
+            do_alias(X, Y, Z) :-
+                X = Y,
+                Y = Z,
+                Z = value,
+                throw(error).
+
+            check_vars(X, Y, Z) :-
+                var(X),
+                var(Y),
+                var(Z).
         """)
         engine = Engine(Program(tuple(clauses)))
 
@@ -397,7 +421,10 @@ class TestCutInteraction:
         """Catch should act as cut barrier."""
         clauses = parser.parse_program("""
             test(X) :-
-                (catch(!, _, fail) ; X = survived).
+                test_catch_or_survive(X).
+
+            test_catch_or_survive(X) :- catch(!, _, fail).
+            test_catch_or_survive(survived).
         """)
         engine = Engine(Program(tuple(clauses)))
 
