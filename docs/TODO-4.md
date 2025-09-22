@@ -2,47 +2,47 @@
 
 **Key Policy**: Attributes live only on union-find root variables after dereferencing. All attribute mutations are trailed with before-images for exact restoration on backtrack.
 
-## Phase 1: Core Attribute Storage (4.0)
+## Phase 1: Core Attribute Storage (4.0) ✅ COMPLETED (PR #115)
 
 ### 1. Extend Store with Attribute Support
-- [ ] Write test: Store initializes with empty attrs dict
-- [ ] Write test: get_attrs returns None for variable without attributes
-- [ ] Write test: get_attrs follows deref to root
-- [ ] Write test: get_attr returns specific module value
-- [ ] Write test: get_attr returns None for missing module
-- [ ] Add store.attrs: Dict[int, Dict[str, Any]] field to Store.__init__
-- [ ] Implement Store.get_attrs(varid) method
-- [ ] Implement Store.get_attr(varid, module) method
-- [ ] Verify sparse storage (no entry for vars without attrs)
+- [x] Write test: Store initializes with empty attrs dict
+- [x] Write test: get_attrs returns None for variable without attributes
+- [x] Write test: get_attrs follows deref to root
+- [x] Write test: get_attr returns specific module value
+- [x] Write test: get_attr returns None for missing module
+- [x] Add store.attrs: Dict[int, Dict[str, Any]] field to Store.__init__
+- [x] Implement Store.get_attrs(varid) method
+- [x] Implement Store.get_attr(varid, module) method
+- [x] Verify sparse storage (no entry for vars without attrs)
 
 ### 2. Implement Attribute Mutation with Trailing
-- [ ] Write test: put_attr sets attribute value
-- [ ] Write test: put_attr overwrites existing value
-- [ ] Write test: put_attr trails old value (or None if new)
-- [ ] Write test: del_attr removes attribute
-- [ ] Write test: del_attr trails old value before deletion
-- [ ] Write test: del_attr succeeds even if attribute absent
-- [ ] Implement Store.put_attr(varid, module, value, trail)
-- [ ] Implement Store.del_attr(varid, module, trail)
-- [ ] Verify trail entries have format ('attr', varid, module, old_value)
-- [ ] Verify attributes stored on deref'd root
+- [x] Write test: put_attr sets attribute value
+- [x] Write test: put_attr overwrites existing value
+- [x] Write test: put_attr trails old value (or None if new)
+- [x] Write test: del_attr removes attribute
+- [x] Write test: del_attr trails old value before deletion
+- [x] Write test: del_attr succeeds even if attribute absent
+- [x] Implement Store.put_attr(varid, module, value, trail)
+- [x] Implement Store.del_attr(varid, module, trail)
+- [x] Verify trail entries have format ('attr', varid, module, old_value)
+- [x] Verify attributes stored on deref'd root
 
 ### 3. Extend Trail for Attribute Entries
-- [ ] Write test: Trail handles ('attr', ...) entries
-- [ ] Write test: undo_to restores attribute to old value
-- [ ] Write test: undo_to removes attribute if was None
-- [ ] Write test: undo_to handles multiple attr changes to same var
-- [ ] Extend prolog/unify/trail.py:undo_to with 'attr' case
-- [ ] Implement restoration logic for attr entries
-- [ ] Verify exact state restoration after backtrack
+- [x] Write test: Trail handles ('attr', ...) entries
+- [x] Write test: undo_to restores attribute to old value
+- [x] Write test: undo_to removes attribute if was None
+- [x] Write test: undo_to handles multiple attr changes to same var
+- [x] Extend prolog/unify/trail.py:undo_to with 'attr' case
+- [x] Implement restoration logic for attr entries
+- [x] Verify exact state restoration after backtrack
 
 ### 4. Verify Runtime Trail (Already Implemented)
-- [ ] Confirm: Runtime Trail.push_attr exists in prolog/engine/runtime.py:260
-- [ ] Write test: Runtime Trail.push_attr creates correct entry format
-- [ ] Write test: Runtime Trail.unwind_to handles attr entries correctly
-- [ ] Write test: Multiple modules on same var restored in correct order
-- [ ] Write test: Attr restoration preserves exact state after backtrack
-- [ ] Verify runtime and unify trail implementations align
+- [x] Confirm: Runtime Trail.push_attr exists in prolog/engine/runtime.py:260
+- [x] Write test: Runtime Trail.push_attr creates correct entry format
+- [x] Write test: Runtime Trail.unwind_to handles attr entries correctly
+- [x] Write test: Multiple modules on same var restored in correct order
+- [x] Write test: Attr restoration preserves exact state after backtrack
+- [x] Verify runtime and unify trail implementations align
 
 ## Phase 2: Builtin Predicates (4.1)
 
