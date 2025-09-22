@@ -692,7 +692,7 @@ D1 = data1, D2 = data2.
 - SWI-Prolog: [Attributed Variables](https://www.swi-prolog.org/pldoc/man?section=attvar)
 - ECLiPSe: [Attribute Handling](http://eclipseclp.org/doc/userman/umsroot087.html)
 - Theory: [Attributed Variables: A Versatile Unification Mechanism](https://citeseerx.ist.psu.edu/document?doi=10.1.1.47.5457)
-- Implementation: [hProlog attributed variables](https://github.com/vscosta/yap-6.3/blob/master/docs/attributes.md)
+- Implementation: [hProlog attributed variables](https://github.com/vscosta/yap-6.3/blob/master/docs/md/attributes.md)
 
 ## Summary
 

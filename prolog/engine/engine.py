@@ -314,6 +314,10 @@ class Engine:
         self._builtins[("once", 1)] = lambda eng, args: eng._builtin_once(args)
         self._builtins[("throw", 1)] = lambda eng, args: eng._builtin_throw(args)
         self._builtins[("catch", 3)] = lambda eng, args: eng._builtin_catch(args)
+        # Attributed variable builtins
+        self._builtins[("put_attr", 3)] = lambda eng, args: eng._builtin_put_attr(args)
+        self._builtins[("get_attr", 3)] = lambda eng, args: eng._builtin_get_attr(args)
+        self._builtins[("del_attr", 2)] = lambda eng, args: eng._builtin_del_attr(args)
 
     def solve(self, goal: Term, max_solutions: Optional[int] = None) -> List[Dict[str, Any]]:
         """Solve a single goal (convenience method for tests).
@@ -2668,6 +2672,152 @@ class Engine:
             )
         except (ValueError, TypeError):
             return False
+
+    def _builtin_put_attr(self, args: tuple) -> bool:
+        """put_attr(Var, Module, Value) - attach attribute to variable.
+
+        Args:
+            args: (variable, module_name, value)
+
+        Returns:
+            True if successful, False if failed
+        """
+        if len(args) != 3:
+            return False
+
+        var_arg, module_arg, value_arg = args
+
+        # Module must be an atom
+        if not isinstance(module_arg, Atom):
+            return False
+        module_name = module_arg.name
+
+        # Variable must be unbound after deref
+        if not isinstance(var_arg, Var):
+            return False
+
+        result = self.store.deref(var_arg.id)
+        if result[0] != "UNBOUND":
+            # Can only put attributes on unbound variables
+            return False
+
+        _, root_id = result
+
+        # Trail the old attribute state before modification
+        if root_id in self.store.attrs:
+            if module_name in self.store.attrs[root_id]:
+                # Trail existing value
+                old_value = self.store.attrs[root_id][module_name]
+                self.trail.push(("attr", root_id, module_name, old_value))
+            else:
+                # Trail absence (None indicates no previous value)
+                self.trail.push(("attr", root_id, module_name, None))
+        else:
+            # Trail absence of entire attr dict
+            self.trail.push(("attr", root_id, module_name, None))
+
+        # Set the attribute
+        if root_id not in self.store.attrs:
+            self.store.attrs[root_id] = {}
+        self.store.attrs[root_id][module_name] = value_arg
+
+        return True
+
+    def _builtin_get_attr(self, args: tuple) -> bool:
+        """get_attr(Var, Module, Value) - retrieve attribute from variable.
+
+        Args:
+            args: (variable, module_name, value)
+
+        Returns:
+            True if attribute exists and unifies with value, False otherwise
+        """
+        if len(args) != 3:
+            return False
+
+        var_arg, module_arg, value_arg = args
+
+        # Module must be an atom
+        if not isinstance(module_arg, Atom):
+            return False
+        module_name = module_arg.name
+
+        # Variable must be unbound after deref
+        if not isinstance(var_arg, Var):
+            return False
+
+        result = self.store.deref(var_arg.id)
+        if result[0] != "UNBOUND":
+            # Can only get attributes from unbound variables
+            return False
+
+        _, root_id = result
+
+        # Check if attribute exists
+        if root_id not in self.store.attrs:
+            return False
+        if module_name not in self.store.attrs[root_id]:
+            return False
+
+        # Unify the value with the third argument
+        stored_value = self.store.attrs[root_id][module_name]
+        trail_adapter = TrailAdapter(self.trail, engine=self, store=self.store)
+        return unify(
+            value_arg,
+            stored_value,
+            self.store,
+            trail_adapter,  # type: ignore
+            occurs_check=self.occurs_check,
+        )
+
+    def _builtin_del_attr(self, args: tuple) -> bool:
+        """del_attr(Var, Module) - remove attribute from variable.
+
+        Args:
+            args: (variable, module_name)
+
+        Returns:
+            True always (succeeds even if attribute doesn't exist)
+        """
+        if len(args) != 2:
+            return False
+
+        var_arg, module_arg = args
+
+        # Module must be an atom
+        if not isinstance(module_arg, Atom):
+            return False
+        module_name = module_arg.name
+
+        # Variable must be unbound after deref
+        if not isinstance(var_arg, Var):
+            return False
+
+        result = self.store.deref(var_arg.id)
+        if result[0] != "UNBOUND":
+            # Can only delete attributes from unbound variables
+            return False
+
+        _, root_id = result
+
+        # If no attributes or module not present, succeed without trailing
+        if root_id not in self.store.attrs:
+            return True
+        if module_name not in self.store.attrs[root_id]:
+            return True
+
+        # Trail the old value before deletion
+        old_value = self.store.attrs[root_id][module_name]
+        self.trail.push(("attr", root_id, module_name, old_value))
+
+        # Delete the attribute
+        del self.store.attrs[root_id][module_name]
+
+        # Clean up empty attribute dicts
+        if not self.store.attrs[root_id]:
+            del self.store.attrs[root_id]
+
+        return True
 
     def _eval_arithmetic(self, term: Term) -> int:
         """Evaluate an arithmetic expression iteratively.

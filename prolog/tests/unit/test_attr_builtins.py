@@ -20,7 +20,9 @@ class TestPutAttr:
         # ?- put_attr(X, color, red).
         solutions = list(engine.query("?- put_attr(X, color, red)."))
         assert len(solutions) == 1
-        assert solutions[0] == {}  # Success with no visible bindings
+        # X remains unbound but is part of the solution
+        assert "X" in solutions[0]
+        assert isinstance(solutions[0]["X"], Var)
 
     def test_put_attr_bound_var_fails(self):
         """put_attr/3 with variable that derefs to bound term should fail."""
@@ -185,10 +187,16 @@ class TestDelAttr:
         # ?- del_attr(X, color).  (X has no attributes)
         solutions = list(engine.query("?- del_attr(X, color)."))
         assert len(solutions) == 1
+        # X remains unbound but is part of the solution
+        assert "X" in solutions[0]
+        assert isinstance(solutions[0]["X"], Var)
 
         # ?- put_attr(X, size, 10), del_attr(X, color).  (X has size but not color)
         solutions = list(engine.query("?- put_attr(X, size, 10), del_attr(X, color)."))
         assert len(solutions) == 1
+        # X remains unbound but is part of the solution
+        assert "X" in solutions[0]
+        assert isinstance(solutions[0]["X"], Var)
 
     def test_del_attr_trails_deletion(self):
         """del_attr/2 should trail deletion for backtracking."""
@@ -196,8 +204,9 @@ class TestDelAttr:
         engine = Engine(program)
 
         # Test backtracking restores deleted attribute
-        # ?- put_attr(X, color, red), (del_attr(X, color), fail) ; get_attr(X, color, C).
-        query = "?- put_attr(X, color, red), (del_attr(X, color), fail) ; get_attr(X, color, C)."
+        # Put attribute first, then in disjunction: delete and fail, or get it
+        # ?- put_attr(X, color, red), ((del_attr(X, color), fail) ; get_attr(X, color, C)).
+        query = "?- put_attr(X, color, red), ((del_attr(X, color), fail) ; get_attr(X, color, C))."
         solutions = list(engine.query(query))
         assert len(solutions) == 1
         assert solutions[0]["C"] == Atom("red")
@@ -285,12 +294,12 @@ class TestAttributeIntegration:
         engine = Engine(program)
 
         # Test complex backtrack scenario
-        # ?- put_attr(X, a, 1),
-        #    (put_attr(X, b, 2), put_attr(X, a, 3), fail) ;
-        #    (get_attr(X, a, A), (get_attr(X, b, _) -> fail ; true)).
+        # First put_attr(X, a, 1), then try two alternatives:
+        # 1. Add b=2, change a to 3, then fail (should backtrack)
+        # 2. Check that a=1 and b doesn't exist
         query = """?- put_attr(X, a, 1),
-                     (put_attr(X, b, 2), put_attr(X, a, 3), fail) ;
-                     (get_attr(X, a, A), (get_attr(X, b, _) -> fail ; true))."""
+                     ((put_attr(X, b, 2), put_attr(X, a, 3), fail) ;
+                      (get_attr(X, a, A), (get_attr(X, b, _) -> fail ; true)))."""
         solutions = list(engine.query(query))
         assert len(solutions) == 1
         assert solutions[0]["A"] == Int(1)  # Original value restored
