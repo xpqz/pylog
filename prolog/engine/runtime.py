@@ -277,9 +277,15 @@ class Trail:
     
     def set_current_stamp(self, stamp: int) -> None:
         """Set the current write stamp.
-        
+
         Called when entering/redoing a choicepoint to restore its stamp window.
+        When moving to an older stamp, clears var_stamps to prevent stale
+        "already trailed" entries from suppressing necessary trailing.
         """
+        if stamp < self._write_stamp:
+            # Moving to older stamp window - clear var_stamps to prevent
+            # "already trailed" false positives from newer stamps
+            self._var_stamps.clear()
         self._write_stamp = stamp
     
     @property

@@ -100,23 +100,33 @@ class TestBasicCatchThrow:
 class TestStateRestoration:
     """Tests for proper state restoration during exception handling."""
 
-    @pytest.mark.xfail(reason="Bug #102: State restoration incomplete")
     def test_bindings_undone_after_catch(self):
         """All bindings made before throw should be undone."""
         clauses = parser.parse_program("""
-            test :-
+            test(X, Result) :-
                 catch(
-                    (X = bound, Y = value, throw(error)),
+                    bind_and_throw(X),
                     error,
-                    (var(X), var(Y))
+                    check_var(X, Result)
                 ).
+
+            bind_and_throw(X) :-
+                '='(X, bound_value),
+                throw(error).
+
+            check_var(X, unbound) :- var(X).
+            check_var(X, bound(X)) :- nonvar(X).
         """)
         engine = Engine(Program(tuple(clauses)))
 
-        goals = parser.parse_query("?- test.")
+        goals = parser.parse_query("?- test(X, R).")
         solutions = list(engine.run(goals))
 
-        assert len(solutions) == 1  # Variables should be unbound
+        # After catch, X should be unbound because the binding was undone
+        assert len(solutions) == 1
+        assert solutions[0]['R'] == Atom("unbound")
+        # X should remain unbound in the solution
+        assert 'X' not in solutions[0] or isinstance(solutions[0]['X'], Var)
 
     @pytest.mark.xfail(reason="Bug #102: State restoration incomplete")
     def test_complex_unification_undone(self):
@@ -357,16 +367,17 @@ class TestNestedCatches:
 class TestCutInteraction:
     """Tests for interaction between cut and catch."""
 
-    @pytest.mark.xfail(reason="Bug #102: Cut barrier not established")
     def test_cut_in_catch_goal(self):
         """Cut within catch goal shouldn't escape catch."""
         clauses = parser.parse_program("""
             test(X) :-
                 catch(
-                    (choice(X), !, throw(error)),
+                    test_choice_cut_throw(X),
                     error,
                     true
                 ).
+
+            test_choice_cut_throw(X) :- choice(X), !, throw(error).
 
             choice(1).
             choice(2).
