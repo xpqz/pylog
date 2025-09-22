@@ -228,3 +228,4 @@ Follow this process for each GitHub issue:
 9. **Await PR review** - Wait for human review
 10. **Merge and update** - After approval, merge PR and update the epic
 - Don't use /tmp and other locations outside the current repository
+- You MUST stop for reviews before ANY implementation
