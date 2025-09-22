@@ -88,6 +88,24 @@ def undo_to(mark: int, trail: Any, store: Any) -> None:
             _, vid, old_rank = entry
             store.cells[vid].rank = old_rank
 
+        elif tag == "attr":
+            # Restore attribute value
+            _, vid, module, old_value = entry
+            if old_value is None:
+                # Attribute didn't exist before - remove it
+                if hasattr(store, 'attrs') and vid in store.attrs and module in store.attrs[vid]:
+                    del store.attrs[vid][module]
+                    # Clean up empty dict
+                    if not store.attrs[vid]:
+                        del store.attrs[vid]
+            else:
+                # Restore old value
+                if not hasattr(store, 'attrs'):
+                    store.attrs = {}
+                if vid not in store.attrs:
+                    store.attrs[vid] = {}
+                store.attrs[vid][module] = old_value
+
         else:
             raise ValueError(f"Unknown trail entry tag: {tag}")
 

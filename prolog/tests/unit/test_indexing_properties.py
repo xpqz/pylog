@@ -15,7 +15,7 @@ from typing import List, Dict, Any, Tuple
 from prolog.ast.terms import Atom, Int, Var, Struct
 from prolog.ast.clauses import Clause, Program
 from prolog.engine.engine import Engine
-from prolog.parser.reader import Reader
+from prolog.parser.parser import Reader
 
 
 class TestSemanticEquivalence:

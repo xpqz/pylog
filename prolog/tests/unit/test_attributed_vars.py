@@ -363,12 +363,12 @@ class TestRuntimeTrailVerification:
         # Verify push_attr exists
         assert hasattr(trail, 'push_attr')
 
-        # Test it works
-        trail.push_attr(0, "module", Int(42))
+        # Test it works (runtime Trail has different signature with old_value param)
+        trail.push_attr(0, "module", Int(42))  # old_value is Int(42)
 
-        # Check entry was added
-        assert len(trail.entries) == 1
-        entry = trail.entries[0]
+        # Check entry was added (runtime Trail uses _entries)
+        assert len(trail._entries) == 1
+        entry = trail._entries[0]
         assert entry[0] == 'attr'
         assert entry[1] == 0
         assert entry[2] == "module"
@@ -384,17 +384,24 @@ class TestRuntimeTrailVerification:
 
         v = store.new_var()
 
-        # Manually set attribute and trail it
+        # Set initial attribute (no trailing needed for initial set)
         if not hasattr(store, 'attrs'):
             store.attrs = {}
         store.attrs[v] = {"test": Int(1)}
-        trail.push_attr(v, "test", None)  # None was old value
 
-        # Change it
-        mark = len(trail.entries)
+        # Mark position before changes
+        mark = len(trail._entries)
+
+        # Advance stamp to simulate new choice region
+        trail.next_stamp()
+
+        # Change attribute and trail the old value
         old_val = store.attrs[v]["test"]
         store.attrs[v]["test"] = Int(2)
         trail.push_attr(v, "test", old_val)
+
+        # Verify change took effect
+        assert store.attrs[v]["test"] == Int(2)
 
         # Unwind
         trail.unwind_to(mark, store)
