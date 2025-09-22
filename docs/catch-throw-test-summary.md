@@ -27,11 +27,13 @@ All tests XFAIL - Critical bug identified:
 
 **Root Cause**: Trail var-stamps not cleared when rewinding to older stamp window
 
-### 3. Ball Unification (3/4 PASS) ✅
+### 3. Ball Unification (4/4 PASS) ✅
 - Ball binds catcher variables ✅
-- Non-matching catcher propagates ✨ (XPASS - works but marked as expected fail)
+- Non-matching catcher propagates ✅ (XPASS - base Engine works correctly)
 - Partial unification failure ✅
 - Catcher with existing bindings ✅
+
+**Note**: The XPASS indicates base Engine already handles propagation correctly (ISO compliant). DevEngine intentionally converts to failure for developer convenience.
 
 ### 4. Nested Catches (4/4 PASS) ✅
 - Inner catch handles first ✅
@@ -124,6 +126,7 @@ Both tests XFAIL:
 
 ## Notes
 
-- The XPASS test (non-matching catcher propagation) suggests the base Engine already handles this correctly, contradicting the gap analysis. This needs investigation.
+- The XPASS test (non-matching catcher propagation) confirms base Engine handles this correctly (ISO compliant). DevEngine intentionally converts uncaught throws to failures for developer convenience.
 - Several tests had to be rewritten to avoid parser limitations (no inline conjunctions in some contexts).
 - The test suite is designed to be run both before and after fixes to track progress.
+- Tests use base `Engine` by default for ISO compliance validation.

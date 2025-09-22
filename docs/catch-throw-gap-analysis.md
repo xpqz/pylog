@@ -46,27 +46,28 @@ Running `prolog/tests/unit/test_exception_handling.py`:
 - Clear or adjust `Trail._var_stamps` when switching to older stamp via `set_current_stamp()`
 - Ensure stamp windows are correctly managed during restoration to avoid trailing suppression
 
-### 2. Unification Failure Propagation
-**Test**: `test_catch_unification_failure` (XFAIL)
+### 2. Unification Failure Propagation (Engine Mode Dependent)
+**Test**: `test_non_matching_catcher_propagates` (XPASS in base Engine)
 
-**Problem**: When the catcher pattern doesn't unify with the thrown ball, the exception should propagate up but currently fails silently in DevEngine mode.
+**Problem**: Behavior differs between Engine modes.
 
 **Example**:
 ```prolog
 ?- catch(throw(error(type1)), error(type2), true).
-% Expected: throws uncaught exception (patterns don't match)
-% Actual: silently fails (in DevEngine mode)
+% Base Engine: throws uncaught exception (ISO compliant) ✅
+% DevEngine: silently fails (development convenience)
 ```
 
-**Root Cause**:
-- Base `Engine` correctly re-raises `PrologThrow` when `_handle_throw()` returns `False` (engine.py:455-465)
-- However, `DevEngine` intentionally converts uncaught `PrologThrow` to failure (patches.py)
-- Test expects ISO behavior but gets development mode behavior
+**Current State**:
+- **Base `Engine`**: Correctly re-raises `PrologThrow` when no catcher matches (engine.py:455-465) - **WORKING**
+- **`DevEngine`**: Intentionally converts uncaught `PrologThrow` to failure for development (patches.py:33-41)
+- Test marked XFAIL but actually passes with base Engine (XPASS)
 
-**Fix Required**:
-- Clarify expected behavior: ISO compliance requires propagation
-- Tests should use base `Engine` not `DevEngine` for ISO compliance testing
-- Or make DevEngine behavior configurable
+**Resolution**:
+- This is not a bug but a design choice
+- Base Engine is ISO compliant (propagates)
+- DevEngine provides developer-friendly behavior (fails)
+- Tests should specify which engine mode they expect
 
 ### 3. Streaming Compatibility Issue
 **Test**: `test_catch_with_streaming` (XFAIL)
@@ -180,26 +181,30 @@ self.trail.unwind_to(trial_top, self.store)  # Incomplete cleanup
    - Most fundamental issue
    - Breaks basic exception handling semantics
    - Required for any serious use of catch/throw
+   - 4 tests failing
 
-2. **Priority 2 - Unification Failure** (test_catch_unification_failure)
-   - Silent failures are dangerous
-   - Violates ISO Prolog semantics
-   - Easy to fix once identified
-
-3. **Priority 3 - Two-Phase Unification**
+2. **Priority 2 - Two-Phase Unification**
    - Correctness issue for complex patterns
    - Prevents proper state isolation
    - Foundation for robust exception handling
+   - Root cause of state restoration issues
 
-4. **Priority 4 - Cut Barrier** (test_catch_with_cut)
+3. **Priority 3 - Cut Barrier** (test_catch_with_cut)
    - Control flow isolation issue
    - Important for program correctness
    - Similar to existing if-then-else handling
+   - 2 tests failing
 
-5. **Priority 5 - Streaming Compatibility** (test_catch_with_streaming)
+4. **Priority 4 - Streaming Compatibility** (test_catch_with_streaming)
    - Performance optimization compatibility
    - Not critical for correctness
    - Can disable streaming as workaround
+   - 2 tests failing
+
+5. **Not a Bug - Engine Mode Choice**
+   - Unification failure propagation works correctly in base Engine
+   - DevEngine intentionally differs for developer convenience
+   - No fix needed, just documentation
 
 ## Testing Strategy
 
