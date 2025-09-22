@@ -238,10 +238,10 @@ self.trail.unwind_to(trial_top, self.store)  # Incomplete cleanup
 def set_current_stamp(self, stamp: int) -> None:
     """Switch to different stamp window."""
     assert stamp >= 0
-    self._write_stamp = stamp
     # NEW: Clear var-stamps when moving to older window
     if stamp < self._write_stamp:
         self._var_stamps.clear()  # Reset "already trailed" tracking
+    self._write_stamp = stamp
 ```
 
 ### Step 2: Implement Read-Only Unification
