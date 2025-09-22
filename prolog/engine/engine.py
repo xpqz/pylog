@@ -1281,6 +1281,8 @@ class Engine:
             elif cp.kind == ChoicepointKind.CATCH and cp.payload.get("has_pop_frame"):
                 # Special handling for CATCH CPs that had a POP_FRAME sentinel
                 # Simply restore to the target height - the POP_FRAME handling is already correct
+                # Note: We don't assert goal stack height for CATCH CPs because POP_FRAME
+                # sentinels and catch window semantics can cause legitimate height variations
                 target_height = cp.goal_stack_height
                 self._shrink_goal_stack_to(target_height)
             else:
@@ -1294,6 +1296,7 @@ class Engine:
 
                 # Assert invariant: goal stack restored correctly
                 # Skip assertion for CATCH CPs as they have complex restoration semantics
+                # due to POP_FRAME sentinels and catch window management
                 if cp.kind != ChoicepointKind.CATCH:
                     assert (
                         self.goal_stack.height() == cp.goal_stack_height

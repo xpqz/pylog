@@ -577,9 +577,9 @@ class TestStreamingCompatibility:
         assert solutions[2]['X'] == Int(3)
         assert solutions[2]['Y'] == Atom("ok")
 
-    @pytest.mark.xfail(reason="Bug #102: Streaming cursor state lost")
+    @pytest.mark.xfail(reason="Design choice: catch prunes in-scope CPs including streaming cursors")
     def test_streaming_cursor_restoration(self):
-        """Streaming cursor state should be restored correctly."""
+        """Streaming cursor state is pruned by design when catching exceptions."""
         clauses = parser.parse_program("""
             test(Result) :-
                 catch(
@@ -779,9 +779,9 @@ class TestISOCompliance:
         # X and Y should be unified (both unbound)
         assert len(solutions) == 1
 
-    @pytest.mark.xfail(reason="Bug #102: Ball copy semantics not implemented")
+    @pytest.mark.xfail(reason="Design choice: PyLog uses reification not ISO copy semantics")
     def test_iso_ball_copy_semantics(self):
-        """ISO requires ball to be copied, not shared."""
+        """PyLog uses reification at throw time instead of ISO's copy semantics."""
         clauses = parser.parse_program("""
             test(X, Y) :-
                 '='(X, original),

@@ -2,6 +2,9 @@
 
 ## Issue #102 - ISO Prolog Exception Handling
 
+**Note**: This document describes the initial gap analysis. For the actual minimal fixes implemented,
+see [catch-throw-minimal-fixes-summary.md](catch-throw-minimal-fixes-summary.md).
+
 This document analyzes the current partial implementation of catch/throw in PyLog and identifies specific gaps that need to be addressed for full ISO Prolog compliance.
 
 ## Current Implementation Status
