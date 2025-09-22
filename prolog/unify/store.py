@@ -24,6 +24,7 @@ class Store:
     def __init__(self):
         """Initialize an empty store."""
         self.cells: List[Cell] = []
+        self.attrs: dict[int, dict[str, Any]] = {}  # Sparse attribute storage
 
     def new_var(self, hint: Optional[str] = None) -> int:
         """Create a new unbound variable and return its ID.
@@ -107,3 +108,85 @@ class Store:
                 self.cells[p].ref = root_vid
 
         return root
+
+    def get_attrs(self, varid: int) -> Optional[dict[str, Any]]:
+        """Get all attributes for a variable (after deref).
+
+        Args:
+            varid: Variable ID
+
+        Returns:
+            Dictionary of module->value or None if no attributes
+        """
+        # Deref to find root
+        result = self.deref(varid)
+        if result[0] == "BOUND":
+            # Bound variables don't have attributes
+            return None
+        root_vid = result[1]
+        return self.attrs.get(root_vid)
+
+    def get_attr(self, varid: int, module: str) -> Optional[Any]:
+        """Get specific attribute for a variable.
+
+        Args:
+            varid: Variable ID
+            module: Module name
+
+        Returns:
+            Attribute value or None if not present
+        """
+        attrs = self.get_attrs(varid)
+        return attrs.get(module) if attrs else None
+
+    def put_attr(self, varid: int, module: str, value: Any, trail: Any) -> None:
+        """Set attribute with trailing.
+
+        Args:
+            varid: Variable ID
+            module: Module name
+            value: Attribute value
+            trail: Trail for backtracking
+        """
+        # Deref to find root
+        result = self.deref(varid)
+        if result[0] == "BOUND":
+            # Cannot put attributes on bound variables
+            return
+        root_vid = result[1]
+
+        # Trail the old value (None if new)
+        old_value = None
+        if root_vid in self.attrs and module in self.attrs[root_vid]:
+            old_value = self.attrs[root_vid][module]
+        trail.push(('attr', root_vid, module, old_value))
+
+        # Set new value
+        if root_vid not in self.attrs:
+            self.attrs[root_vid] = {}
+        self.attrs[root_vid][module] = value
+
+    def del_attr(self, varid: int, module: str, trail: Any) -> None:
+        """Delete attribute with trailing.
+
+        Args:
+            varid: Variable ID
+            module: Module name
+            trail: Trail for backtracking
+        """
+        # Deref to find root
+        result = self.deref(varid)
+        if result[0] == "BOUND":
+            # Cannot delete attributes from bound variables
+            return
+        root_vid = result[1]
+
+        # Only act if attribute exists
+        if root_vid in self.attrs and module in self.attrs[root_vid]:
+            old_value = self.attrs[root_vid][module]
+            trail.push(('attr', root_vid, module, old_value))
+            del self.attrs[root_vid][module]
+
+            # Clean up empty dict
+            if not self.attrs[root_vid]:
+                del self.attrs[root_vid]
