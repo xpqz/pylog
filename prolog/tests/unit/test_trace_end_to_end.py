@@ -199,10 +199,13 @@ class TestEndToEndTraces:
         output.seek(0)
         events = [json.loads(line) for line in output if line.strip()]
 
-        # Check frame depths increase during recursion
-        frame_depths = [e.get('fd', 0) for e in events if e['p'] == 0]  # CALL events
-        max_depth = max(frame_depths)
-        assert max_depth >= 5  # Should recurse at least 5 levels
+        # Validate recursion via either goal height or number of recursive calls.
+        # Frame depth is not a reliable proxy because CALL events are emitted
+        # before pushing a new frame and EXIT uses the parent's depth.
+        call_events = [e for e in events if e.get('pid') == 'count_down/1' and e['p'] == 0]
+        assert len(call_events) >= 5  # Should observe multiple recursive CALLs
+        max_goal_height = max(e.get('gh', 0) for e in events)
+        assert max_goal_height >= 5
 
     def test_pretty_trace_format(self):
         """Test pretty trace output format."""
@@ -294,9 +297,10 @@ class TestTraceCompatibility:
 
             # Enable tracing
             output = StringIO()
-            sink = JSONLSink(output)
-            tracer = PortsTracer(sink=sink)
-            engine.tracer = tracer
+            sink = JSONLTraceSink(output)
+            # Attach a tracer to the engine and add the sink
+            engine.tracer = PortsTracer(engine)
+            engine.tracer.add_sink(sink)
 
             goals = parser.parse_query("?- fact(c, X).")
             solutions = list(engine.run(goals))
