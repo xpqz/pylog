@@ -14,15 +14,18 @@ from prolog.unify.store import Cell, Store
 
 
 def union_vars(v1: int, v2: int, trail: List, store: Store) -> bool:
-    """Union two variables using union-by-rank.
+    """Union two variables using union-by-rank with attribute merging.
 
     Contract:
     - Dereferences both v1 and v2 to find their roots
     - Raises ValueError if either root is bound (union is only for unbound roots)
+    - For attributed variables, calls hooks for overlapping modules
+    - Merges attributes to the union-find root with proper trailing
     - Performs union-by-rank with trail entries:
       - ("parent", child_root, old_parent): parent link change
       - ("rank", new_root, old_rank): rank increment (only if ranks were equal)
-    - Returns True on success
+      - ("attr", varid, module, old_value): attribute changes
+    - Returns True on success, False if hooks reject the unification
 
     Args:
         v1: First variable ID
@@ -31,7 +34,7 @@ def union_vars(v1: int, v2: int, trail: List, store: Store) -> bool:
         store: Variable store
 
     Returns:
-        True (always succeeds for valid unbound vars)
+        True if unification succeeds, False if hooks reject it
 
     Raises:
         ValueError: If either root is bound
@@ -53,12 +56,23 @@ def union_vars(v1: int, v2: int, trail: List, store: Store) -> bool:
     if root1 == root2:
         return True
 
+    # Handle attribute merging for var-var aliasing
+    if hasattr(store, 'attrs') and hasattr(trail, 'engine') and trail.engine is not None:
+        if not _handle_var_var_aliasing(root1, root2, trail, store):
+            return False
+
     # Get ranks
     rank1 = store.cells[root1].rank
     rank2 = store.cells[root2].rank
 
+    # Determine winner and loser for attribute merging
+    winner_root = None
+    loser_root = None
+
     if rank1 < rank2:
         # root1 joins root2
+        winner_root = root2
+        loser_root = root1
         if hasattr(trail, "push"):
             trail.push(("parent", root1, store.cells[root1].ref))
         else:
@@ -66,25 +80,130 @@ def union_vars(v1: int, v2: int, trail: List, store: Store) -> bool:
         store.cells[root1].ref = root2
     elif rank2 < rank1:
         # root2 joins root1
+        winner_root = root1
+        loser_root = root2
         if hasattr(trail, "push"):
             trail.push(("parent", root2, store.cells[root2].ref))
         else:
             trail.append(("parent", root2, store.cells[root2].ref))
         store.cells[root2].ref = root1
     else:
-        # Equal ranks: root1 joins root2, increment root2's rank
+        # Equal ranks: root2 joins root1, increment root1's rank
+        winner_root = root1
+        loser_root = root2
         if hasattr(trail, "push"):
-            trail.push(("parent", root1, store.cells[root1].ref))
+            trail.push(("parent", root2, store.cells[root2].ref))
         else:
-            trail.append(("parent", root1, store.cells[root1].ref))
-        store.cells[root1].ref = root2
+            trail.append(("parent", root2, store.cells[root2].ref))
+        store.cells[root2].ref = root1
         if hasattr(trail, "push"):
-            trail.push(("rank", root2, store.cells[root2].rank))
+            trail.push(("rank", root1, store.cells[root1].rank))
         else:
-            trail.append(("rank", root2, store.cells[root2].rank))
-        store.cells[root2].rank += 1
+            trail.append(("rank", root1, store.cells[root1].rank))
+        store.cells[root1].rank += 1
+
+    # Merge attributes after union
+    if hasattr(store, 'attrs') and winner_root is not None and loser_root is not None:
+        _merge_attributes_to_root(winner_root, loser_root, trail, store)
 
     return True
+
+
+def _handle_var_var_aliasing(root1: int, root2: int, trail: List, store: Store) -> bool:
+    """Handle attribute merging when unifying two attributed variables.
+
+    Args:
+        root1: First variable root ID
+        root2: Second variable root ID
+        trail: Trail for recording changes
+        store: Variable store
+
+    Returns:
+        True if hooks accept unification, False if any hook rejects
+    """
+    # Get attributes for both roots
+    attrs1 = store.attrs.get(root1, {})
+    attrs2 = store.attrs.get(root2, {})
+
+    # If neither has attributes, nothing to do
+    if not attrs1 and not attrs2:
+        return True
+
+    # Find overlapping modules
+    overlapping = set(attrs1.keys()) & set(attrs2.keys())
+
+    # For overlapping modules, call hooks in sorted order
+    if overlapping:
+        for module in sorted(overlapping):
+            if module in trail.engine._attr_hooks:
+                hook = trail.engine._attr_hooks[module]
+                # Call hook from both perspectives as required by the spec
+                # First call: hook(engine, root1, Var(root2))
+                if not hook(trail.engine, root1, Var(root2, "")):
+                    return False
+                # Second call: hook(engine, root2, Var(root1))
+                if not hook(trail.engine, root2, Var(root1, "")):
+                    return False
+
+    return True
+
+
+def _merge_attributes_to_root(winner_root: int, loser_root: int, trail: List, store: Store) -> None:
+    """Merge attributes from loser to winner after union.
+
+    Args:
+        winner_root: Root that becomes the final root
+        loser_root: Root that gets merged into winner
+        trail: Trail for recording changes
+        store: Variable store
+    """
+    # Get attributes
+    winner_attrs = store.attrs.get(winner_root, {})
+    loser_attrs = store.attrs.get(loser_root, {})
+
+    if not loser_attrs:
+        return
+
+    # Ensure winner has attrs dict
+    if winner_root not in store.attrs:
+        store.attrs[winner_root] = {}
+
+    # For each attribute in loser, merge to winner
+    for module, value in loser_attrs.items():
+        if module in winner_attrs:
+            # For overlapping modules, keep winner's value (simplest approach)
+            # Still need to trail the removal from loser (done below)
+            pass
+        else:
+            # Non-overlapping: trail that this attribute didn't exist on winner (None)
+            _trail_attr_change(trail, winner_root, module, None)
+            # Set the value from loser
+            store.attrs[winner_root][module] = value
+
+    # Clear loser's attributes and trail the removals
+    for module, old_value in loser_attrs.items():
+        _trail_attr_change(trail, loser_root, module, old_value)
+
+    # Clear the loser's attributes
+    if loser_root in store.attrs:
+        del store.attrs[loser_root]
+
+
+def _trail_attr_change(trail: List, varid: int, module: str, old_value: Any) -> None:
+    """Trail an attribute change.
+
+    Args:
+        trail: Trail for recording changes
+        varid: Variable ID
+        module: Attribute module name
+        old_value: Previous value (None if didn't exist)
+    """
+    if hasattr(trail, 'push_attr'):
+        trail.push_attr(varid, module, old_value)
+    elif hasattr(trail, 'push'):
+        trail.push(("attr", varid, module, old_value))
+    else:
+        trail.append(("attr", varid, module, old_value))
 
 
 def bind_root_to_term(vid: int, term: Any, trail: List, store: Store) -> None:

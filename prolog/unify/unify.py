@@ -97,7 +97,10 @@ def unify(
         if tag1 == "VAR" and tag2 == "VAR":
             if val1 != val2:  # Different variables
                 try:
-                    union_vars(val1, val2, trail, store)
+                    if not union_vars(val1, val2, trail, store):
+                        # Hook rejected the unification
+                        _undo_and_fail(mark, trail, store)
+                        return False
                 except ValueError:
                     # One is bound (shouldn't happen after deref, but be safe)
                     _undo_and_fail(mark, trail, store)
