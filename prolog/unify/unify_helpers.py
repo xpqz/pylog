@@ -88,7 +88,9 @@ def union_vars(v1: int, v2: int, trail: List, store: Store) -> bool:
             trail.append(("parent", root2, store.cells[root2].ref))
         store.cells[root2].ref = root1
     else:
-        # Equal ranks: root2 joins root1, increment root1's rank
+        # Equal ranks: root2 joins root1 (first argument becomes root), increment root1's rank
+        # This ensures deterministic behavior where the first argument of unify(X, Y)
+        # becomes the root when ranks are equal.
         winner_root = root1
         loser_root = root2
         if hasattr(trail, "push"):
@@ -137,10 +139,14 @@ def _handle_var_var_aliasing(root1: int, root2: int, trail: List, store: Store) 
         for module in sorted(overlapping):
             if module in trail.engine._attr_hooks:
                 hook = trail.engine._attr_hooks[module]
-                # Call hook from both perspectives as required by the spec
+                # IMPORTANT: Hooks must be called from BOTH perspectives for var-var unification.
+                # This allows each variable's hook to inspect and potentially veto the merge.
+                # The hook sees its own variable ID and the other as a Var term.
+
                 # First call: hook(engine, root1, Var(root2))
                 if not hook(trail.engine, root1, Var(root2, "")):
                     return False
+
                 # Second call: hook(engine, root2, Var(root1))
                 if not hook(trail.engine, root2, Var(root1, "")):
                     return False
@@ -171,8 +177,10 @@ def _merge_attributes_to_root(winner_root: int, loser_root: int, trail: List, st
     # For each attribute in loser, merge to winner
     for module, value in loser_attrs.items():
         if module in winner_attrs:
-            # For overlapping modules, keep winner's value (simplest approach)
-            # Still need to trail the removal from loser (done below)
+            # For overlapping modules, keep winner's existing value.
+            # This is the simplest and most predictable approach:
+            # the root (winner) retains its original attribute values.
+            # The loser's value is discarded (but properly trailed below).
             pass
         else:
             # Non-overlapping: trail that this attribute didn't exist on winner (None)
