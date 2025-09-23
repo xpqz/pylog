@@ -193,6 +193,7 @@ class TestBacktrackingCompleteness:
         assert solutions[0]["V2"] == Int(2)
 
 
+@settings(max_examples=50)
 class AttributeStateMachine(RuleBasedStateMachine):
     """Stateful testing of attributed variables."""
 
@@ -364,6 +365,5 @@ class TestPerformanceCharacteristics:
         assert result
 
 
-# Run the stateful test with settings
+# Create the test case from the state machine
 TestAttributeStateMachine = AttributeStateMachine.TestCase
-TestAttributeStateMachine.settings = settings(max_examples=50)

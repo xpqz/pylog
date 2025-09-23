@@ -6,6 +6,22 @@ Tests that the attributed variables system meets performance targets:
 - < 10% overhead with dense attributes (90% of vars)
 """
 
+# Performance test constants
+DEFAULT_ITERATIONS = 1000
+SMALL_ITERATIONS = 100
+NUM_VARS = 100
+NUM_LARGE_VARS = 1000
+SPARSE_ATTR_PERCENTAGE = 10  # 10% of vars have attributes
+DENSE_ATTR_PERCENTAGE = 90   # 90% of vars have attributes
+MAX_MODULES = 100
+DEEP_CHAIN_LENGTH = 100
+
+# Performance targets (percentage overhead)
+TARGET_NO_ATTRS_OVERHEAD = 1.0      # < 1%
+TARGET_SPARSE_ATTRS_OVERHEAD = 5.0  # < 5%
+TARGET_DENSE_ATTRS_OVERHEAD = 10.0  # < 10%
+TARGET_HOOK_DISPATCH_OVERHEAD = 15.0  # < 15%
+
 import time
 import pytest
 from statistics import mean, stdev
@@ -20,7 +36,7 @@ from prolog.ast.clauses import Program
 class TestPerformanceTargets:
     """Test that performance targets are met."""
 
-    def measure_time(self, func, iterations=1000):
+    def measure_time(self, func, iterations=DEFAULT_ITERATIONS):
         """Measure average time for a function over multiple iterations."""
         times = []
         for _ in range(iterations):
@@ -62,7 +78,7 @@ class TestPerformanceTargets:
         overhead = ((with_system_mean - baseline_mean) / baseline_mean) * 100
         print(f"Overhead with attr system but no attrs: {overhead:.2f}%")
 
-        assert overhead < 1.0, f"Overhead {overhead:.2f}% exceeds 1% target"
+        assert overhead < TARGET_NO_ATTRS_OVERHEAD, f"Overhead {overhead:.2f}% exceeds {TARGET_NO_ATTRS_OVERHEAD}% target"
 
     def _baseline_no_attrs(self):
         """Baseline without attribute system."""
@@ -96,7 +112,7 @@ class TestPerformanceTargets:
         overhead = ((sparse_mean - baseline_mean) / baseline_mean) * 100
         print(f"Overhead with sparse attrs (10%): {overhead:.2f}%")
 
-        assert overhead < 5.0, f"Overhead {overhead:.2f}% exceeds 5% target"
+        assert overhead < TARGET_SPARSE_ATTRS_OVERHEAD, f"Overhead {overhead:.2f}% exceeds {TARGET_SPARSE_ATTRS_OVERHEAD}% target"
 
     def _with_sparse_attrs(self):
         """With attributes on 10% of variables."""
@@ -123,7 +139,7 @@ class TestPerformanceTargets:
         overhead = ((dense_mean - baseline_mean) / baseline_mean) * 100
         print(f"Overhead with dense attrs (90%): {overhead:.2f}%")
 
-        assert overhead < 10.0, f"Overhead {overhead:.2f}% exceeds 10% target"
+        assert overhead < TARGET_DENSE_ATTRS_OVERHEAD, f"Overhead {overhead:.2f}% exceeds {TARGET_DENSE_ATTRS_OVERHEAD}% target"
 
     def _with_dense_attrs(self):
         """With attributes on 90% of variables."""
