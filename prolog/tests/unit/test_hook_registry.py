@@ -160,20 +160,16 @@ class TestHookDispatch:
 
         engine.register_attr_hook("test", hook)
 
-        # Create two variables and unify them
+        # Create a variable and put attribute on it
         x = engine.store.new_var("X")
-        y = engine.store.new_var("Y")
-
-        # Put attribute on X
         engine.store.attrs[x] = {"test": "value"}
 
-        # Unify X and Y (Y will point to X as root)
-        from prolog.unify.unify import unify
-        from prolog.engine.trail_adapter import TrailAdapter
-        trail_adapter = TrailAdapter(engine.trail, engine=engine, store=engine.store)
-        unify(Var(x, "X"), Var(y, "Y"), engine.store, trail_adapter, occurs_check=False)
+        # Create an alias that points to X
+        y = engine.store.new_var("Y")
+        # Make Y point to X manually (simulating partial deref chain)
+        engine.store.cells[y].ref = x
 
-        # Dispatch on Y should pass X (the root) to hook
+        # Dispatch on Y should dereference to X (the root) and pass X to hook
         result = engine.dispatch_attr_hooks(y, Int(42))
         assert result is True
         assert received_varid == x  # Hook should receive the root

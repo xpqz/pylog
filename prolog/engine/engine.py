@@ -110,6 +110,9 @@ class Engine:
         self._builtins = {}
         self._register_builtins()
 
+        # Attribute hook registry: maps module_name -> hook_function
+        self._attr_hooks = {}
+
         # Debug counters and frame tracking
         self._debug_frame_pops = 0
         self._debug_trail_writes = 0
@@ -2817,6 +2820,58 @@ class Engine:
         if not self.store.attrs[root_id]:
             del self.store.attrs[root_id]
 
+        return True
+
+    def register_attr_hook(self, module: str, hook_fn) -> None:
+        """Register an attribute hook for a module.
+
+        Args:
+            module: Module name
+            hook_fn: Hook function with signature (engine, varid, other) -> bool
+        """
+        self._attr_hooks[module] = hook_fn
+
+    def dispatch_attr_hooks(self, varid: int, other: Term) -> bool:
+        """Dispatch hooks for attributed variable unification.
+
+        Called when unifying an attributed variable with a term.
+        Hooks are called in sorted module name order for determinism.
+
+        Args:
+            varid: Variable ID (will be dereferenced)
+            other: Term being unified with
+
+        Returns:
+            True if all hooks accept, False if any reject
+        """
+        # Dereference to get root variable
+        result = self.store.deref(varid)
+        if result[0] != "UNBOUND":
+            # Not an unbound variable, no hooks to dispatch
+            return True
+
+        _, root_id = result
+
+        # Fast path: no attributes on this variable
+        if root_id not in self.store.attrs:
+            return True
+
+        # Get attributes for this variable
+        attrs = self.store.attrs[root_id]
+
+        # Call hooks in sorted order for modules that have attributes
+        for module in sorted(attrs.keys()):
+            # Skip if no hook registered for this module
+            if module not in self._attr_hooks:
+                continue
+
+            # Call the hook
+            hook = self._attr_hooks[module]
+            if not hook(self, root_id, other):
+                # Hook rejected the unification
+                return False
+
+        # All hooks accepted
         return True
 
     def _eval_arithmetic(self, term: Term) -> int:

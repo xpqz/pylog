@@ -110,6 +110,14 @@ def unify(
             if occurs_check and occurs(val1, val2, store):
                 _undo_and_fail(mark, trail, store)
                 return False
+
+            # Dispatch attribute hooks if trail has engine
+            if hasattr(trail, "engine") and trail.engine is not None:
+                if not trail.engine.dispatch_attr_hooks(val1, val2):
+                    # Hook rejected the unification
+                    _undo_and_fail(mark, trail, store)
+                    return False
+
             bind_root_to_term(val1, val2, trail, store)
 
         elif tag2 == "VAR":
@@ -117,6 +125,14 @@ def unify(
             if occurs_check and occurs(val2, val1, store):
                 _undo_and_fail(mark, trail, store)
                 return False
+
+            # Dispatch attribute hooks if trail has engine
+            if hasattr(trail, "engine") and trail.engine is not None:
+                if not trail.engine.dispatch_attr_hooks(val2, val1):
+                    # Hook rejected the unification
+                    _undo_and_fail(mark, trail, store)
+                    return False
+
             bind_root_to_term(val2, val1, trail, store)
 
         # Case 3: Both are non-variables
