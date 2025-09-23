@@ -486,17 +486,27 @@ class TestIntegrationWithBuiltins:
         assert solutions[0]["V1"] == Atom("initial")
         assert solutions[0]["V2"] == Atom("modified")
 
-    @pytest.mark.skip(reason="Clause.from_str not implemented yet")
     def test_aliasing_in_predicate_context(self):
         """Aliasing should work in predicate context with attributes."""
-        # This test requires Clause.from_str which doesn't exist yet.
-        # The test would verify that aliasing works correctly within
-        # user-defined predicates, not just at the query level.
-        #
-        # Once Clause.from_str is implemented, this test would:
-        # 1. Define a predicate that merges colors using put_attr and unification
-        # 2. Call that predicate and verify the merged attributes
-        pass
+        program = Program((
+            Clause.from_str("merge_colors(X, Y) :- "
+                          "put_attr(X, color, red), "
+                          "put_attr(Y, color, blue), "
+                          "X = Y."),
+            Clause.from_str("check_merge(X, Y, C) :- "
+                          "merge_colors(X, Y), "
+                          "get_attr(X, color, C)."),
+        ))
+        engine = Engine(program)
+
+        # Register hook that takes first value
+        engine.register_attr_hook("color", lambda e, v, o: True)
+
+        # ?- check_merge(A, B, Color).
+        solutions = list(engine.query("?- check_merge(A, B, Color)."))
+        assert len(solutions) == 1
+        # Should have one of the colors (implementation dependent which wins)
+        assert solutions[0]["Color"] in [Atom("red"), Atom("blue")]
 
 
 class TestRankBasedMerging:

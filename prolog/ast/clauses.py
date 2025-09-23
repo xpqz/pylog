@@ -20,6 +20,22 @@ class Clause:
     head: Union[Atom, Struct]
     body: Tuple[Term, ...]
 
+    @classmethod
+    def from_str(cls, text: str) -> "Clause":
+        """Create a Clause from a string representation.
+
+        Args:
+            text: String representation of a clause (e.g., "foo(X) :- bar(X).")
+
+        Returns:
+            Parsed Clause object
+
+        Raises:
+            ParseError: If the text cannot be parsed as a clause
+        """
+        from prolog.parser.parser import parse_clause
+        return parse_clause(text)
+
 
 @dataclass(frozen=True)
 class Program:
