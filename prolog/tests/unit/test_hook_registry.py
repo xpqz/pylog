@@ -167,6 +167,9 @@ class TestHookDispatch:
         # Create an alias that points to X
         y = engine.store.new_var("Y")
         # Make Y point to X manually (simulating partial deref chain)
+        # Note: In Stage 4, attributes live on roots. Attribute migration
+        # during var-var unification will be handled in Phase 4.3.
+        # This test isolates the dispatch dereferencing behavior.
         engine.store.cells[y].ref = x
 
         # Dispatch on Y should dereference to X (the root) and pass X to hook
@@ -485,6 +488,49 @@ class TestExampleConstraint:
         # Should succeed
         assert len(solutions) == 1
         assert isinstance(solutions[0]["X"], Struct)
+
+
+class TestVarVarUnification:
+    """Test var-var unification attribute handling (Phase 4.3)."""
+
+    @pytest.mark.xfail(reason="Attribute merging not yet implemented (Phase 4.3)")
+    def test_attributes_merge_during_var_var_unification(self):
+        """Attributes from both variables should merge during var-var unification.
+
+        This test will fail until Phase 4.3 implements proper attribute merging
+        when two attributed variables are unified. Currently, only one set of
+        attributes is preserved (depending on union-find root selection).
+        """
+        program = Program(())
+        engine = Engine(program)
+
+        # Register hooks for both modules
+        hook_calls = []
+
+        def hook_a(eng, varid, other):
+            hook_calls.append(("a", varid, other))
+            return True
+
+        def hook_b(eng, varid, other):
+            hook_calls.append(("b", varid, other))
+            return True
+
+        engine.register_attr_hook("mod_a", hook_a)
+        engine.register_attr_hook("mod_b", hook_b)
+
+        # This query puts different attributes on X and Y, then unifies them
+        # After unification, both attributes should be on the root
+        query = "?- put_attr(X, mod_a, data_a), put_attr(Y, mod_b, data_b), X = Y, X = 42."
+        solutions = list(engine.query(query))
+
+        # The query should succeed
+        assert len(solutions) == 1
+        assert solutions[0]["X"] == Int(42)
+
+        # Both hooks should have been called (after proper merging)
+        assert len(hook_calls) == 2, f"Expected 2 hooks, got {len(hook_calls)}"
+        modules_called = {call[0] for call in hook_calls}
+        assert modules_called == {"a", "b"}, "Both module hooks should be called"
 
 
 class TestBacktracking:
