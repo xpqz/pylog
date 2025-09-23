@@ -239,6 +239,33 @@ class TestHookDispatch:
         assert result is False
         assert calls == ["hook1", "hook2"]  # hook3 not called
 
+    def test_dispatch_skips_modules_without_hooks(self):
+        """dispatch_attr_hooks should skip modules without registered hooks."""
+        program = Program(())
+        engine = Engine(program)
+
+        hook_called = False
+
+        def hook(eng, vid, other):
+            nonlocal hook_called
+            hook_called = True
+            return True
+
+        # Only register hook for mod1
+        engine.register_attr_hook("mod1", hook)
+
+        # Variable has attributes for mod1 and mod2
+        varid = engine.store.new_var("X")
+        engine.store.attrs[varid] = {
+            "mod1": "value1",
+            "mod2": "value2"  # No hook for mod2
+        }
+
+        # Should call hook for mod1, skip mod2
+        result = engine.dispatch_attr_hooks(varid, Int(42))
+        assert result is True
+        assert hook_called  # mod1 hook was called
+
 
 class TestTrailAdapterIntegration:
     """Test TrailAdapter carries engine reference."""
@@ -282,8 +309,8 @@ class TestTrailAdapterIntegration:
 
         assert trail_adapter.engine is None
 
-        # Basic operations should still work
-        trail_adapter.push(("test", 1, 2))
+        # Basic operations should still work (use a valid tag)
+        trail_adapter.push(("rank", 0, 0))
         assert len(engine.trail._entries) == 1
 
 
