@@ -315,12 +315,18 @@ class Trail:
                 # Ensure attrs dict exists on store
                 if not hasattr(store, "attrs"):
                     store.attrs = {}
-                if varid not in store.attrs:
-                    store.attrs[varid] = {}
+
                 if old_value is None:
-                    # Was not present before
-                    store.attrs[varid].pop(module, None)
+                    # Attribute wasn't present before - remove it
+                    if varid in store.attrs and module in store.attrs[varid]:
+                        del store.attrs[varid][module]
+                        # Clean up empty dict
+                        if not store.attrs[varid]:
+                            del store.attrs[varid]
                 else:
+                    # Restore old value
+                    if varid not in store.attrs:
+                        store.attrs[varid] = {}
                     store.attrs[varid][module] = old_value
             elif kind == "domain":
                 _, varid, old_domain = entry
