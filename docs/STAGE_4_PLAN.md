@@ -591,6 +591,43 @@ def test_zero_overhead_without_attributes():
 - [ ] Tracer support for debugging
 - [ ] REPL commands for inspection
 
+## Builtin Predicates
+
+PyLog provides three core predicates for working with attributed variables:
+
+### put_attr/3
+```prolog
+put_attr(+Var, +Module, +Value)
+```
+Attaches an attribute `Value` to variable `Var` under module `Module`.
+
+**Requirements:**
+- `Var` must be an unbound variable (fails if bound)
+- `Module` must be an atom
+- `Value` can be any term
+
+### get_attr/3
+```prolog
+get_attr(+Var, +Module, ?Value)
+```
+Retrieves the attribute for module `Module` from variable `Var` and unifies it with `Value`.
+
+**Requirements:**
+- `Var` must be an unbound variable (fails if bound)
+- `Module` must be an atom
+- Fails if no attribute exists for the given module
+
+### del_attr/2
+```prolog
+del_attr(+Var, +Module)
+```
+Removes the attribute for module `Module` from variable `Var`.
+
+**Requirements:**
+- `Var` must be an unbound variable (fails if bound)
+- `Module` must be an atom
+- Succeeds even if no attribute exists (idempotent)
+
 ## Example Usage
 
 ### Basic Attribute Operations

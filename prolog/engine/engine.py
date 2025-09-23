@@ -2708,13 +2708,13 @@ class Engine:
             if module_name in self.store.attrs[root_id]:
                 # Trail existing value
                 old_value = self.store.attrs[root_id][module_name]
-                self.trail.push(("attr", root_id, module_name, old_value))
+                self.trail.push_attr(root_id, module_name, old_value)
             else:
                 # Trail absence (None indicates no previous value)
-                self.trail.push(("attr", root_id, module_name, None))
+                self.trail.push_attr(root_id, module_name, None)
         else:
             # Trail absence of entire attr dict
-            self.trail.push(("attr", root_id, module_name, None))
+            self.trail.push_attr(root_id, module_name, None)
 
         # Set the attribute
         if root_id not in self.store.attrs:
@@ -2808,7 +2808,7 @@ class Engine:
 
         # Trail the old value before deletion
         old_value = self.store.attrs[root_id][module_name]
-        self.trail.push(("attr", root_id, module_name, old_value))
+        self.trail.push_attr(root_id, module_name, old_value)
 
         # Delete the attribute
         del self.store.attrs[root_id][module_name]
