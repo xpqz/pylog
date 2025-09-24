@@ -17,9 +17,15 @@ MAX_MODULES = 100
 DEEP_CHAIN_LENGTH = 100
 
 # Performance targets (percentage overhead)
-TARGET_NO_ATTRS_OVERHEAD = 2.0      # < 2% (relaxed to account for variability)
-TARGET_SPARSE_ATTRS_OVERHEAD = 5.0  # < 5%
-TARGET_DENSE_ATTRS_OVERHEAD = 25.0  # < 25% (relaxed for initial implementation)
+# Note: These targets have been relaxed from the original Issue #114 specification
+# (which targeted < 1%, < 5%, and < 10% respectively) to account for:
+# 1. Python's inherent overhead vs compiled Prolog systems
+# 2. Measurement variability in CI environments
+# 3. Initial implementation prioritizing correctness over optimization
+# TODO: Create follow-up issue to optimize performance to meet original targets
+TARGET_NO_ATTRS_OVERHEAD = 2.0      # < 2% (relaxed from 1% to account for variability)
+TARGET_SPARSE_ATTRS_OVERHEAD = 5.0  # < 5% (matches original target)
+TARGET_DENSE_ATTRS_OVERHEAD = 25.0  # < 25% (relaxed from 10% for initial implementation)
 TARGET_HOOK_DISPATCH_OVERHEAD = 15.0  # < 15%
 
 import time

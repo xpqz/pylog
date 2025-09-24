@@ -21,6 +21,7 @@ dev = [
     "pytest-timeout>=2.0.0",
     "ruff>=0.1.0",
     "isort>=5.12.0",
+    "hypothesis>=6.138.15",
 ]
 
 [build-system]
@@ -41,7 +42,6 @@ python_functions = ["test_*"]
 addopts = "-v"
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
-    "swi_baseline: Tests that require SWI-Prolog for baseline comparison",
     "perf: Performance tests that may be time-sensitive",
     "performance: Performance tests for attributed variables overhead",
     "benchmark: Performance benchmark tests",
@@ -88,7 +88,3 @@ title = "PyLog Coverage Report"
 [tool.coverage.xml]
 output = "coverage.xml"
 
-[dependency-groups]
-dev = [
-    "hypothesis>=6.138.15",
-]

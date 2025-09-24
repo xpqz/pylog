@@ -204,6 +204,193 @@ Comprehensive test coverage ensures correctness:
 - Scalability with many modules/variables
 - Memory usage tracking
 
+## Troubleshooting
+
+### Common Issues and Solutions
+
+#### 1. Attributes Not Preserved After Unification
+**Problem**: Attributes disappear after unifying variables.
+
+**Solution**: Ensure your hook returns `True` to allow unification. Check that attributes are attached to the root variable after union-find operations:
+```python
+root_id = engine.store.find(varid)
+attrs = engine.store.attrs.get(root_id, {})
+```
+
+#### 2. Hook Not Being Called
+**Problem**: Registered hook isn't triggered during unification.
+
+**Solution**:
+- Verify the module name matches exactly between `put_attr` and hook registration
+- Check that the variable is actually attributed before unification
+- Ensure hook is registered before the unification occurs
+
+#### 3. Unexpected Backtracking Behavior
+**Problem**: Attributes not properly restored after failure.
+
+**Solution**: All attribute operations are automatically trailed. If custom operations modify attributes directly, use the Store's methods rather than direct manipulation:
+```python
+# Wrong - bypasses trailing
+engine.store.attrs[varid][module] = value
+
+# Correct - properly trailed
+engine.store.put_attr(varid, module, value)
+```
+
+#### 4. Performance Degradation
+**Problem**: Significant slowdown with attributed variables.
+
+**Solution**:
+- Check if many variables have unused attributes
+- Consider lazy attribute initialization
+- Profile hook functions for expensive operations
+- Use sparse attribute patterns when possible
+
+## Performance Tuning Guidelines
+
+### Optimization Strategies
+
+#### 1. Minimize Attribute Access
+- Cache frequently accessed attributes in local variables
+- Use batch operations when updating multiple attributes
+- Avoid redundant `get_attr` calls in tight loops
+
+#### 2. Efficient Hook Implementation
+```python
+def optimized_hook(engine, varid, other):
+    # Fast path for common cases
+    if isinstance(other, Var):
+        return True  # Defer checking to later
+
+    # Only fetch attributes when needed
+    if not isinstance(other, Int):
+        return True
+
+    # Now do expensive attribute checking
+    attrs = engine.store.attrs.get(varid, {})
+    # ...
+```
+
+#### 3. Strategic Attribute Placement
+- Attach attributes only to variables that need them
+- Use module-specific attributes rather than generic ones
+- Clean up attributes when no longer needed with `del_attr`
+
+#### 4. Memory Management
+- Periodically compact the union-find structure during GC
+- Consider attribute pooling for frequently created/destroyed attributes
+- Use weak references for auxiliary attribute data when appropriate
+
+### Profiling Attributed Variables
+
+To identify performance bottlenecks:
+
+```python
+import cProfile
+import pstats
+
+# Profile your Prolog code
+profiler = cProfile.Profile()
+profiler.enable()
+
+# Run your query
+engine.query("your_goal(X)")
+
+profiler.disable()
+stats = pstats.Stats(profiler)
+stats.sort_stats('cumulative')
+stats.print_stats(20)  # Top 20 functions
+```
+
+Look for:
+- High call counts to `get_attr`/`put_attr`
+- Slow hook functions
+- Excessive trail operations
+
+## Migration Guide from Other Prolog Systems
+
+### From SWI-Prolog
+
+PyLog's attributed variables closely follow SWI-Prolog's model:
+
+**Similarities**:
+- Same core predicates: `put_attr/3`, `get_attr/3`, `del_attr/2`
+- Module-based attribute organization
+- Hook-based unification customization
+
+**Differences**:
+- Hook signature: PyLog uses `(engine, varid, other)` vs SWI's module-based hooks
+- No automatic attribute portray hooks (implement manually if needed)
+- No `attr_unify_hook/2` declaration - register hooks programmatically
+
+**Migration example**:
+```prolog
+% SWI-Prolog
+:- module(myconstraint, []).
+:- use_module(library(atts)).
+
+attr_unify_hook(Attr, Other) :-
+    % Handle unification
+    ...
+
+% PyLog equivalent (in Python)
+def myconstraint_hook(engine, varid, other):
+    # Handle unification
+    ...
+
+engine.register_attr_hook("myconstraint", myconstraint_hook)
+```
+
+### From SICStus Prolog
+
+**Key differences**:
+- SICStus uses `Module:get_atts/2` vs PyLog's `get_attr/3`
+- No `put_atts/2` with modification lists - use individual `put_attr` calls
+- Simpler hook mechanism in PyLog
+
+**Migration pattern**:
+```prolog
+% SICStus
+get_atts(Var, module(Attr))
+
+% PyLog
+get_attr(Var, module, Attr)
+```
+
+### From ECLiPSe Prolog
+
+**Main changes**:
+- ECLiPSe's `meta_attribute/2` declaration not needed
+- Suspension mechanisms must be implemented manually
+- Demon-style constraints need explicit propagation queues
+
+### General Migration Tips
+
+1. **Start with core functionality**: Port basic attribute operations first
+2. **Adapt hooks incrementally**: Convert unification hooks one module at a time
+3. **Test backtracking thoroughly**: Ensure proper trail restoration
+4. **Profile early**: Compare performance characteristics between systems
+5. **Leverage PyLog specifics**: Use Python's features for complex data structures
+
+### Compatibility Layer Example
+
+For easier migration, create a compatibility layer:
+
+```python
+class SWICompatibility:
+    def __init__(self, engine):
+        self.engine = engine
+
+    def put_atts(self, var, attrs):
+        """SICStus-style attribute setting."""
+        for module, value in attrs.items():
+            self.engine.store.put_attr(var.id, module, value)
+
+    def get_atts(self, var, module):
+        """SICStus-style attribute getting."""
+        return self.engine.store.get_attr(var.id, module)
+```
+
 ## Future Extensions
 
 The attributed variables system provides the foundation for:
