@@ -158,52 +158,39 @@ def push_labeling_choices(engine, vars, var_select, val_select):
         # Empty domain - nothing to do, will fail
         return
 
-    # Create unification goals for each value
+    # Build branches as (X = Value, label(Vars)) to chain labeling deterministically
+    var_term = Var(selected_var, f"_G{selected_var}")
+
+    # Reconstruct a List term from the provided var IDs for recursive call
+    # Preserve original query variable names when available
+    from prolog.ast.terms import List as PrologList
+    items = []
+    for vid in vars:
+        name = getattr(engine, '_qname_by_id', {}).get(vid, f"_G{vid}")
+        items.append(Var(vid, name))
+    vars_term = PrologList(tuple(items))
+
+    def branch_struct(value):
+        assign = Struct("=", (var_term, Int(value)))
+        # Recurse via label/1 using same vars list; bound vars are skipped
+        label_goal = Struct("label", (vars_term,))
+        return Struct(",", (assign, label_goal))
+
     if len(values) == 1:
-        # Single value - push continuation FIRST, then unification
-        # (goals are LIFO, so unification will execute before continuation)
-        if vars:
-            # Push continuation first
-            cont_goal = Goal(GoalType.CONTROL, None, {
-                'op': 'LABEL_CONTINUE',
-                'vars': vars,
-                'var_select': var_select,
-                'val_select': val_select
-            })
-            engine._push_goal(cont_goal)
-
-        # Then push unification goal (will execute first due to LIFO)
-        var_term = Var(selected_var, f"_G{selected_var}")
-        value_term = Int(values[0])
-        unify_goal = Struct("=", (var_term, value_term))
-        engine._push_goal(Goal(GoalType.BUILTIN, unify_goal))
+        # Deterministic: push conjunction (X=V, label(Vars))
+        conj = branch_struct(values[0])
+        engine._push_goal(Goal.from_term(conj))
     else:
-        # Multiple values - create choice point
-        # First, push continuation for labeling remaining vars
-        if vars:
-            cont_goal = Goal(GoalType.CONTROL, None, {
-                'op': 'LABEL_CONTINUE',
-                'vars': vars,
-                'var_select': var_select,
-                'val_select': val_select
-            })
-            engine._push_goal(cont_goal)
-
-        # Create disjunction of value assignments
-        # Build (X=V1 ; X=V2 ; ... ; X=Vn)
-        var_term = Var(selected_var, f"_G{selected_var}")
-
-        # Build disjunction tree
+        # Non-deterministic: (X=V1, label(Vars)) ; (X=V2, label(Vars)) ; ...
         def build_disjunction(vals):
             if len(vals) == 1:
-                return Struct("=", (var_term, Int(vals[0])))
-            else:
-                left = Struct("=", (var_term, Int(vals[0])))
-                right = build_disjunction(vals[1:])
-                return Struct(";", (left, right))
+                return branch_struct(vals[0])
+            left = branch_struct(vals[0])
+            right = build_disjunction(vals[1:])
+            return Struct(";", (left, right))
 
         disj_goal = build_disjunction(values)
-        engine._push_goal(Goal(GoalType.DISJUNCTION, disj_goal))
+        engine._push_goal(Goal.from_term(disj_goal))
 
 
 def select_variable(unbound, strategy, engine):

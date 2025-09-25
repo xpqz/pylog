@@ -1288,6 +1288,8 @@ class Engine:
             vars = goal.payload["vars"]
             var_select = goal.payload["var_select"]
             val_select = goal.payload["val_select"]
+            if self.trace:
+                self._trace_log.append("[LABEL_CONTINUE] dispatching continuation")
             push_labeling_choices(self, vars, var_select, val_select)
         # CATCH_BEGIN and CATCH_END are no longer used - catch/3 uses CATCH choicepoints
 
@@ -1578,6 +1580,12 @@ class Engine:
                     target_height = cp.goal_stack_height
                     current_height = self.goal_stack.height()
 
+                    # Debug: log restoration details for disjunction CPs
+                    if self.trace:
+                        self._trace_log.append(
+                            f"[DISJ RESTORE] target_height={target_height}, current_height={current_height}, cont_len={len(continuation)}"
+                        )
+
                     # Restore goal stack to have continuation
                     if current_height > target_height:
                         self._shrink_goal_stack_to(target_height)
@@ -1586,6 +1594,11 @@ class Engine:
                         slice_depths = continuation_depths[current_height:target_height]
                         slice_calls = continuation_calls[current_height:target_height]
                         self._push_goals_with_metadata(slice_goals, slice_depths, slice_calls)
+
+                        if self.trace:
+                            self._trace_log.append(
+                                f"[DISJ RESTORE] pushed {len(slice_goals)} continuation goals"
+                            )
 
                 # Remove catch frames that are now out of scope
                 new_goal_height = self.goal_stack.height()
@@ -1696,6 +1709,15 @@ class Engine:
             solution[var_name] = value
 
         self.solutions.append(solution)
+        if self.trace:
+            try:
+                xv = solution.get('X')
+                yv = solution.get('Y')
+                self._trace_log.append(
+                    f"[SOLUTION] X={getattr(xv,'value', xv)}, Y={getattr(yv,'value', yv)}"
+                )
+            except Exception:
+                pass
 
     def _reify_var(self, varid: int) -> Any:
         """Follow bindings to get the value of a variable.
@@ -1961,6 +1983,8 @@ class Engine:
             self.metrics.record_unification_attempt()
 
         trail_adapter = TrailAdapter(self.trail, engine=self, store=self.store)
+        if self.trace:
+            self._trace_log.append(f"[UNIFY] attempting unify: {left} = {right}")
         result = unify(
             left,
             right,
@@ -1971,6 +1995,8 @@ class Engine:
 
         if self.metrics and result:
             self.metrics.record_unification_success()
+        if self.trace:
+            self._trace_log.append(f"[UNIFY] result: {result}")
 
         return result
 

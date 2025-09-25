@@ -45,6 +45,9 @@ def _builtin_in(engine, x_term, domain_term):
 
     # Parse domain term
     domain = parse_domain_term(domain_term)
+    # Fail immediately on empty domain
+    if domain.is_empty():
+        return False
 
     # Check if variable already has a domain
     existing_domain = get_domain(engine.store, x_var)

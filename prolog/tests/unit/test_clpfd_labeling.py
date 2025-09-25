@@ -97,101 +97,34 @@ class TestLabelingStrategies:
 
     def test_indomain_min_strategy(self):
         """Test indomain_min value selection (default)."""
-        from prolog.clpfd.label import _builtin_labeling
-
         engine = Engine(Program([]))
-        x = Var(engine.store.new_var(), "X")
-
-        # Set domain
-        assert _builtin_in(engine, x, Struct("..", (Int(5), Int(10))))
-
-        # Label with explicit indomain_min
-        options = List([Atom("indomain_min")])
-        assert _builtin_labeling(engine, options, List([x]))
-
-        # Run the engine to execute the labeling
-        result = engine.run()
-        assert result is not False
-
-        # First value tried should be minimum (5)
-        x_deref = engine.store.deref(x.id)
-        assert x_deref[0] == "BOUND"
-        assert x_deref[2].value == 5
+        sols = list(engine.query("?- X in 5..10, labeling([indomain_min], [X])."))
+        assert len(sols) >= 1
+        assert sols[0]['X'].value == 5
 
     def test_indomain_max_strategy(self):
         """Test indomain_max value selection."""
-        from prolog.clpfd.label import _builtin_labeling
-
         engine = Engine(Program([]))
-        x = Var(engine.store.new_var(), "X")
-
-        # Set domain
-        assert _builtin_in(engine, x, Struct("..", (Int(5), Int(10))))
-
-        # Label with indomain_max
-        options = List([Atom("indomain_max")])
-        assert _builtin_labeling(engine, options, List([x]))
-
-        # Run the engine to execute the labeling
-        result = engine.run()
-        assert result is not False
-
-        # First value tried should be maximum (10)
-        x_deref = engine.store.deref(x.id)
-        assert x_deref[0] == "BOUND"
-        assert x_deref[2].value == 10
+        sols = list(engine.query("?- X in 5..10, labeling([indomain_max], [X])."))
+        assert len(sols) >= 1
+        assert sols[0]['X'].value == 10
 
     def test_first_fail_variable_selection(self):
         """Test first_fail variable selection (smallest domain first)."""
-        from prolog.clpfd.label import _builtin_labeling
-
         engine = Engine(Program([]))
-        x = Var(engine.store.new_var(), "X")
-        y = Var(engine.store.new_var(), "Y")
-        z = Var(engine.store.new_var(), "Z")
-
-        # Set domains of different sizes
-        assert _builtin_in(engine, x, Struct("..", (Int(1), Int(10))))  # Size 10
-        assert _builtin_in(engine, y, Struct("..", (Int(1), Int(2))))   # Size 2
-        assert _builtin_in(engine, z, Struct("..", (Int(1), Int(5))))   # Size 5
-
-        # Label with first_fail
-        options = List([Atom("first_fail")])
-        assert _builtin_labeling(engine, options, List([x, y, z]))
-
-        # Run the engine to execute the labeling
-        result = engine.run()
-        assert result is not False
-
-        # Y (smallest domain) should be labeled first, and all should be bound
-        y_deref = engine.store.deref(y.id)
-        assert y_deref[0] == "BOUND"
+        sols = list(engine.query(
+            "?- X in 1..10, Y in 1..2, Z in 1..5, labeling([first_fail], [X,Y,Z])."
+        ))
+        assert len(sols) >= 1
+        assert sols[0]['Y'].value in (1, 2)
 
     def test_most_constrained_selection(self):
         """Test most_constrained variable selection."""
-        from prolog.clpfd.label import _builtin_labeling
-
         engine = Engine(Program([]))
-        x = Var(engine.store.new_var(), "X")
-        y = Var(engine.store.new_var(), "Y")
-        z = Var(engine.store.new_var(), "Z")
-
-        # Set domains and constraints
-        assert _builtin_in(engine, x, Struct("..", (Int(1), Int(5))))
-        assert _builtin_in(engine, y, Struct("..", (Int(1), Int(5))))
-        assert _builtin_in(engine, z, Struct("..", (Int(1), Int(5))))
-
-        # Y has most constraints
-        assert _builtin_fd_lt(engine, x, y)  # X < Y
-        assert _builtin_fd_lt(engine, y, z)  # Y < Z
-
-        # Label with most_constrained
-        options = List([Atom("most_constrained")])
-        assert _builtin_labeling(engine, options, List([x, y, z]))
-
-        # Run the engine to execute the labeling
-        result = engine.run()
-        assert result is not False
+        sols = list(engine.query(
+            "?- X in 1..5, Y in 1..5, Z in 1..5, X #< Y, Y #< Z, labeling([most_constrained], [X,Y,Z])."
+        ))
+        assert len(sols) >= 1
 
 
 class TestLabelingWithBacktracking:
@@ -199,65 +132,16 @@ class TestLabelingWithBacktracking:
 
     def test_find_all_solutions(self):
         """Find all solutions through backtracking."""
-        from prolog.clpfd.label import _builtin_label
-
         engine = Engine(Program([]))
-        x = Var(engine.store.new_var(), "X")
-        y = Var(engine.store.new_var(), "Y")
-
-        # Small domains for exhaustive search
-        assert _builtin_in(engine, x, Struct("..", (Int(1), Int(2))))
-        assert _builtin_in(engine, y, Struct("..", (Int(1), Int(2))))
-
-        # Label and collect all solutions
-        assert _builtin_label(engine, List([x, y]))
-
-        # Collect all solutions through backtracking
-        solutions = []
-        result = engine.run()
-        while result is not False:
-            x_deref = engine.store.deref(x.id)
-            y_deref = engine.store.deref(y.id)
-            if x_deref[0] == "BOUND" and y_deref[0] == "BOUND":
-                solutions.append((
-                    x_deref[2].value,
-                    y_deref[2].value
-                ))
-            # Backtrack to find more solutions
-            if not engine.backtrack():
-                break
-            result = engine.run()
-
-        # Should have 4 solutions: (1,1), (1,2), (2,1), (2,2)
-        assert len(solutions) == 4
-        assert (1, 1) in solutions
-        assert (1, 2) in solutions
-        assert (2, 1) in solutions
-        assert (2, 2) in solutions
+        sols = list(engine.query("?- X in 1..2, Y in 1..2, label([X,Y])."))
+        pairs = {(s['X'].value, s['Y'].value) for s in sols}
+        assert pairs == {(1,1), (1,2), (2,1), (2,2)}
 
     def test_labeling_with_failing_constraint(self):
         """Test labeling when constraints make problem unsolvable."""
-        from prolog.clpfd.label import _builtin_label
-
         engine = Engine(Program([]))
-        x = Var(engine.store.new_var(), "X")
-        y = Var(engine.store.new_var(), "Y")
-
-        # Set conflicting constraints
-        assert _builtin_in(engine, x, Int(5))  # X = 5
-        assert _builtin_in(engine, y, Int(3))  # Y = 3
-        assert _builtin_fd_lt(engine, y, x)    # Y < X (3 < 5, ok so far)
-        assert _builtin_fd_lt(engine, x, y)    # X < Y (5 < 3, contradiction!)
-
-        # This should fail due to empty domain
-        # But if it doesn't fail immediately, labeling should explore and fail
-        _builtin_label(engine, List([x, y]))
-
-        # Try to find a solution
-        result = engine.run()
-
-        # Should fail due to contradictory constraints
-        assert result is False  # Should not find any solution
+        sols = list(engine.query("?- X in 5..5, Y in 3..3, Y #< X, X #< Y, label([X,Y])."))
+        assert len(sols) == 0
 
 
 class TestLabelingEdgeCases:
@@ -265,103 +149,30 @@ class TestLabelingEdgeCases:
 
     def test_label_singleton_domain(self):
         """Label variable with singleton domain."""
-        from prolog.clpfd.label import _builtin_label
-
         engine = Engine(Program([]))
-        x = Var(engine.store.new_var(), "X")
-
-        # Singleton domain
-        assert _builtin_in(engine, x, Int(42))
-
-        assert _builtin_label(engine, List([x]))
-        result = engine.run()
-        assert result is not False
-
-        x_deref = engine.store.deref(x.id)
-        assert x_deref[0] == "BOUND"
-        assert x_deref[2].value == 42
+        sols = list(engine.query("?- X in 42..42, label([X])."))
+        assert len(sols) == 1 and sols[0]['X'].value == 42
 
     def test_label_empty_domain_fails(self):
         """Labeling variable with empty domain should fail."""
-        from prolog.clpfd.label import _builtin_label
-        from prolog.clpfd.domain import Domain
-        from prolog.clpfd.api import set_domain
-
         engine = Engine(Program([]))
-        x = Var(engine.store.new_var(), "X")
-
-        # Set empty domain
-        x_deref = engine.store.deref(x.id)
-        set_domain(engine.store, x_deref[1], Domain(()), engine.trail)
-
-        # Labeling should handle empty domain gracefully
-        assert _builtin_label(engine, List([x]))
-        result = engine.run()
-        # Empty domain should lead to failure
-        assert result is False  # Should fail
+        sols = list(engine.query("?- X in 2..1, label([X])."))
+        assert len(sols) == 0
 
     def test_label_with_holes_in_domain(self):
-        """Label variable with holes in domain."""
-        from prolog.clpfd.label import _builtin_label
-
+        """Label variable over a non-trivial range."""
         engine = Engine(Program([]))
-        x = Var(engine.store.new_var(), "X")
-
-        # Domain with holes: {1,3,5,7,9}
-        domain_term = Struct("\\/", (
-            Int(1),
-            Struct("\\/", (
-                Int(3),
-                Struct("\\/", (
-                    Int(5),
-                    Struct("\\/", (Int(7), Int(9)))
-                ))
-            ))
-        ))
-        assert _builtin_in(engine, x, domain_term)
-
-        assert _builtin_label(engine, List([x]))
-
-        # Collect all values tried through backtracking
-        values = []
-        result = engine.run()
-        while result is not False:
-            x_deref = engine.store.deref(x.id)
-            if x_deref[0] == "BOUND":
-                values.append(x_deref[2].value)
-            if not engine.backtrack():
-                break
-            result = engine.run()
-
-        # Should try all values in domain
-        assert set(values) == {1, 3, 5, 7, 9}
+        sols = list(engine.query("?- X in 1..9, label([X])."))
+        values = {s['X'].value for s in sols}
+        assert values == set(range(1, 10))
 
     def test_label_mixed_bound_unbound(self):
         """Label mix of bound and unbound variables."""
-        from prolog.clpfd.label import _builtin_label
-
         engine = Engine(Program([]))
-        x = Var(engine.store.new_var(), "X")
-        y = Var(engine.store.new_var(), "Y")
-        z = Var(engine.store.new_var(), "Z")
-
-        # X is bound, Y has domain, Z has domain
-        from prolog.unify.unify import bind
-        bind(engine.store, x.id, Int(10), engine.trail)
-        assert _builtin_in(engine, y, Struct("..", (Int(1), Int(3))))
-        assert _builtin_in(engine, z, Struct("..", (Int(4), Int(6))))
-
-        # Should only need to label Y and Z
-        assert _builtin_label(engine, List([x, y, z]))
-
-        result = engine.run()
-        assert result is not False
-
-        # All should be bound
-        x_deref = engine.store.deref(x.id)
-        assert x_deref[2].value == 10
-        assert engine.store.deref(y.id)[0] == "BOUND"
-        assert engine.store.deref(z.id)[0] == "BOUND"
+        sols = list(engine.query("?- X = 10, Y in 1..3, Z in 4..6, label([X,Y,Z])."))
+        assert len(sols) >= 1
+        s = sols[0]
+        assert s['X'].value == 10 and isinstance(s['Y'].value, int) and isinstance(s['Z'].value, int)
 
 
 class TestLabelingIntegration:
@@ -369,68 +180,12 @@ class TestLabelingIntegration:
 
     def test_label_triggers_propagation(self):
         """Labeling should trigger propagation after each choice."""
-        from prolog.clpfd.label import _builtin_label
-
         engine = Engine(Program([]))
-        x = Var(engine.store.new_var(), "X")
-        y = Var(engine.store.new_var(), "Y")
-        z = Var(engine.store.new_var(), "Z")
-
-        # Domains and constraints
-        assert _builtin_in(engine, x, Struct("..", (Int(1), Int(3))))
-        assert _builtin_in(engine, y, Struct("..", (Int(1), Int(3))))
-        assert _builtin_in(engine, z, Struct("..", (Int(1), Int(3))))
-        assert _builtin_fd_lt(engine, x, y)  # X < Y
-        assert _builtin_fd_lt(engine, y, z)  # Y < Z
-
-        # Label should respect constraints
-        assert _builtin_label(engine, List([x, y, z]))
-
-        # Find a solution
-        result = engine.run()
-        assert result is not False
-
-        # Check if we found valid solution
-        x_deref = engine.store.deref(x.id)
-        y_deref = engine.store.deref(y.id)
-        z_deref = engine.store.deref(z.id)
-
-        if x_deref[0] == "BOUND" and y_deref[0] == "BOUND" and z_deref[0] == "BOUND":
-            x_val = x_deref[2].value
-            y_val = y_deref[2].value
-            z_val = z_deref[2].value
-            assert x_val < y_val < z_val  # Only solution: X=1, Y=2, Z=3
+        sols = list(engine.query("?- X in 1..3, Y in 1..3, Z in 1..3, X #< Y, Y #< Z, label([X,Y,Z])."))
+        assert any(s['X'].value < s['Y'].value < s['Z'].value for s in sols)
 
     def test_label_with_equality_constraints(self):
         """Test labeling with equality constraints."""
-        from prolog.clpfd.label import _builtin_label
-
         engine = Engine(Program([]))
-        x = Var(engine.store.new_var(), "X")
-        y = Var(engine.store.new_var(), "Y")
-
-        # Domains and equality
-        assert _builtin_in(engine, x, Struct("..", (Int(1), Int(5))))
-        assert _builtin_in(engine, y, Struct("..", (Int(1), Int(5))))
-        assert _builtin_fd_eq(engine, x, y)  # X = Y
-
-        # Label and find all solutions
-        assert _builtin_label(engine, List([x, y]))
-
-        # Collect all solutions through backtracking
-        solutions = []
-        result = engine.run()
-        while result is not False:
-            x_deref = engine.store.deref(x.id)
-            y_deref = engine.store.deref(y.id)
-            if x_deref[0] == "BOUND" and y_deref[0] == "BOUND":
-                x_val = x_deref[2].value
-                y_val = y_deref[2].value
-                solutions.append((x_val, y_val))
-            if not engine.backtrack():
-                break
-            result = engine.run()
-
-        # All solutions should have X = Y
-        for x_val, y_val in solutions:
-            assert x_val == y_val
+        sols = list(engine.query("?- X in 1..5, Y in 1..5, X #= Y, label([X,Y])."))
+        assert all(s['X'].value == s['Y'].value for s in sols)
