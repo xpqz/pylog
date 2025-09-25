@@ -4,15 +4,8 @@ Helper functions for accessing and updating CLP(FD) attributes
 via the Stage 4 attributed variables mechanism.
 """
 
-from enum import Enum
 from typing import Optional, Any, Set, Iterator, Tuple
-
-
-class Priority(Enum):
-    """Propagator priority levels."""
-    HIGH = 0
-    MED = 1
-    LOW = 2
+from prolog.clpfd.queue import Priority
 
 
 def get_fd_attrs(store, varid: int) -> Optional[dict]:
@@ -91,7 +84,7 @@ def add_watcher(store, varid: int, pid: int, priority: Priority, trail):
     # Get or create clpfd attrs (immutable update)
     fd_attrs = attrs.get('clpfd', {}).copy() if 'clpfd' in attrs else {}
 
-    # Initialize watchers if needed
+    # Initialize or copy watchers for immutable update
     if 'watchers' not in fd_attrs:
         fd_attrs['watchers'] = {
             Priority.HIGH: set(),
@@ -99,9 +92,12 @@ def add_watcher(store, varid: int, pid: int, priority: Priority, trail):
             Priority.LOW: set()
         }
     else:
-        # Copy watchers for immutable update
+        # Copy watchers for immutable update, ensuring all priorities exist
+        old_watchers = fd_attrs['watchers']
         fd_attrs['watchers'] = {
-            p: fd_attrs['watchers'][p].copy() for p in Priority
+            Priority.HIGH: old_watchers.get(Priority.HIGH, set()).copy(),
+            Priority.MED: old_watchers.get(Priority.MED, set()).copy(),
+            Priority.LOW: old_watchers.get(Priority.LOW, set()).copy()
         }
 
     # Add to appropriate priority set
