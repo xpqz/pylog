@@ -128,7 +128,6 @@ class TestStateRestoration:
         # X should remain unbound in the solution
         assert 'X' not in solutions[0] or isinstance(solutions[0]['X'], Var)
 
-    @pytest.mark.xfail(reason="Bug #102: State restoration incomplete")
     def test_complex_unification_undone(self):
         """Complex unifications should be completely undone."""
         clauses = parser.parse_program("""
@@ -158,7 +157,7 @@ class TestStateRestoration:
 
         assert len(solutions) == 1  # All vars should be unbound
 
-    @pytest.mark.xfail(reason="Bug #102: State restoration incomplete")
+    @pytest.mark.xfail(reason="List unification restoration still has issues")
     def test_list_unification_restoration(self):
         """List structure unification should be restored correctly."""
         clauses = parser.parse_program("""
@@ -183,7 +182,6 @@ class TestStateRestoration:
         assert len(solutions) == 1
         assert solutions[0]['R'] == Atom("original")
 
-    @pytest.mark.xfail(reason="Bug #102: State restoration incomplete")
     def test_variable_aliasing_restoration(self):
         """Variable aliasing should be properly restored."""
         clauses = parser.parse_program("""
@@ -236,7 +234,6 @@ class TestBallUnification:
         assert solutions[0]['B'] == Int(2)
         assert solutions[0]['C'] == Int(3)
 
-    @pytest.mark.xfail(reason="Bug #102: Unification failure not propagated")
     def test_non_matching_catcher_propagates(self):
         """Non-matching catcher should let exception propagate."""
         clauses = parser.parse_program("""
@@ -416,7 +413,7 @@ class TestCutInteraction:
         assert len(solutions) == 1
         # X would be 1 from first choice, but after catch it's unbound
 
-    @pytest.mark.xfail(reason="Bug #102: Cut barrier semantics unclear")
+    @pytest.mark.xfail(reason="Cut barrier semantics not fully implemented")
     def test_catch_creates_cut_barrier(self):
         """Catch should act as cut barrier."""
         clauses = parser.parse_program("""
@@ -511,7 +508,7 @@ class TestBacktrackingBehavior:
         assert 'X' not in solutions[0] or isinstance(solutions[0]['X'], Var)
         assert solutions[0]['Y'] == Atom("caught")
 
-    @pytest.mark.xfail(reason="Bug #102: CATCH CP restoration assertion failure")
+    @pytest.mark.xfail(reason="Catch at choice points not fully working")
     def test_catch_at_choice_points(self):
         """Multiple catch alternatives at same level."""
         clauses = parser.parse_program("""
@@ -632,7 +629,7 @@ class TestEdgeCases:
         if solutions:
             assert len(solutions) == 1
 
-    @pytest.mark.xfail(reason="Bug #102: CATCH CP restoration issue with recursion")
+    @pytest.mark.xfail(reason="Recursive predicates with catch have edge cases")
     def test_recursive_predicate_with_catch(self):
         """Recursive predicates with catch/throw."""
         clauses = parser.parse_program("""
