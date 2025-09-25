@@ -4,8 +4,29 @@ Handles domain checking and merging during variable unification.
 """
 
 from prolog.ast.terms import Int, Var
-from prolog.clpfd.api import get_domain, set_domain
-from prolog.clpfd.queue import PropagationQueue
+from prolog.clpfd.api import get_domain, set_domain, get_fd_attrs, iter_watchers
+from prolog.clpfd.queue import Priority
+
+
+def _ensure_queue(engine):
+    """Ensure engine has a CLP(FD) propagation queue."""
+    if not hasattr(engine, 'clpfd_queue'):
+        from prolog.clpfd.queue import PropagationQueue
+        engine.clpfd_queue = PropagationQueue()
+    return engine.clpfd_queue
+
+
+def _wake_watchers_and_propagate(engine, varid):
+    """Wake all watchers for a variable and run propagation to fixpoint."""
+    queue = _ensure_queue(engine)
+
+    # Schedule all watchers
+    for pid, priority in iter_watchers(engine.store, varid):
+        queue.schedule(pid, priority)
+
+    # Run to fixpoint
+    if not queue.is_empty():
+        queue.run_to_fixpoint(engine.store, engine.trail, engine)
 
 
 def clpfd_unify_hook(engine, varid, other):
@@ -35,8 +56,14 @@ def clpfd_unify_hook(engine, varid, other):
         if not var_domain.contains(other.value):
             return False  # Value outside domain, fail unification
 
-        # Value is in domain, unification can proceed
-        # The actual binding will be done by the unification algorithm
+        # Value is in domain - narrow to singleton and propagate
+        from prolog.clpfd.domain import Domain
+        singleton_domain = Domain(((other.value, other.value),))
+        set_domain(engine.store, varid, singleton_domain, engine.trail)
+
+        # Wake watchers and propagate since domain changed
+        _wake_watchers_and_propagate(engine, varid)
+
         return True
 
     elif isinstance(other, Var):
@@ -48,7 +75,15 @@ def clpfd_unify_hook(engine, varid, other):
             bound_value = other_deref[2]
             if isinstance(bound_value, Int):
                 # Check if the value is in our domain
-                return var_domain.contains(bound_value.value)
+                if not var_domain.contains(bound_value.value):
+                    return False
+
+                # Narrow to singleton and propagate
+                from prolog.clpfd.domain import Domain
+                singleton_domain = Domain(((bound_value.value, bound_value.value),))
+                set_domain(engine.store, varid, singleton_domain, engine.trail)
+                _wake_watchers_and_propagate(engine, varid)
+                return True
             else:
                 # Bound to non-integer, FD variable can't unify with it
                 return False
@@ -58,31 +93,42 @@ def clpfd_unify_hook(engine, varid, other):
             other_domain = get_domain(engine.store, other_var)
 
             if other_domain is not None:
-                # Both variables have domains - intersect them
+                # Both variables have domains - intersect them and merge watchers
                 new_domain = var_domain.intersect(other_domain)
 
                 if new_domain.is_empty():
                     # Domains are disjoint, unification fails
                     return False
 
-                # Set the intersected domain on both variables
-                # (The unification will make them aliases)
-                set_domain(engine.store, varid, new_domain, engine.trail)
+                # Merge watchers from both variables
+                var_attrs = get_fd_attrs(engine.store, varid) or {}
+                other_attrs = get_fd_attrs(engine.store, other_var) or {}
 
-                # If there's a propagation queue, schedule propagation
-                if hasattr(engine, 'clpfd_queue'):
-                    # Wake up watchers for domain change
-                    from prolog.clpfd.api import iter_watchers
-                    from prolog.clpfd.queue import Priority
+                # Collect all watchers from both variables
+                merged_watchers = {}
+                for priority in Priority:
+                    var_watchers = var_attrs.get('watchers', {}).get(priority, set())
+                    other_watchers = other_attrs.get('watchers', {}).get(priority, set())
+                    merged_watchers[priority] = var_watchers.union(other_watchers)
 
-                    for pid, priority in iter_watchers(engine.store, varid):
-                        engine.clpfd_queue.schedule(pid, priority)
+                # Create merged attributes
+                merged_attrs = {
+                    'domain': new_domain,
+                    'watchers': merged_watchers
+                }
 
-                    # Run propagation to fixpoint
-                    engine.clpfd_queue.run_to_fixpoint(engine.store, engine.trail, engine)
+                # Set merged attributes on BOTH variables
+                # This ensures watchers are preserved regardless of which becomes root
+                engine.store.put_attr(varid, 'clpfd', merged_attrs, engine.trail)
+                engine.store.put_attr(other_var, 'clpfd', merged_attrs, engine.trail)
+
+                # Wake watchers for both variables and propagate
+                _wake_watchers_and_propagate(engine, varid)
+                _wake_watchers_and_propagate(engine, other_var)
             else:
                 # Other variable has no domain, it will inherit ours through aliasing
-                pass
+                # Still need to propagate in case there are watchers
+                _wake_watchers_and_propagate(engine, varid)
 
             return True
 

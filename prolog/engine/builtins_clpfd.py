@@ -120,7 +120,7 @@ def _ensure_queue(engine):
     return engine.clpfd_queue
 
 
-def _post_constraint_propagator(engine, x_term, y_term, create_propagator_func):
+def _post_constraint_propagator(engine, x_term, y_term, create_propagator_func, priority=None):
     """Post a binary constraint propagator.
 
     Args:
@@ -128,6 +128,7 @@ def _post_constraint_propagator(engine, x_term, y_term, create_propagator_func):
         x_term: First term (variable or int)
         y_term: Second term (variable or int)
         create_propagator_func: Function to create the propagator
+        priority: Priority level (defaults to HIGH for equality, MED for others)
 
     Returns:
         True if constraint posted successfully, False if failed immediately
@@ -168,6 +169,15 @@ def _post_constraint_propagator(engine, x_term, y_term, create_propagator_func):
         else:
             y_var = y_deref[1]
 
+    # Determine priority if not specified
+    if priority is None:
+        # Use HIGH for equality, MED for inequalities
+        from prolog.clpfd.props.equality import create_equality_propagator
+        if create_propagator_func.__name__ == 'create_equality_propagator':
+            priority = Priority.HIGH
+        else:
+            priority = Priority.MED
+
     # Handle different cases
     if x_var is not None and y_var is not None:
         # Both variables: create and register propagator
@@ -175,11 +185,11 @@ def _post_constraint_propagator(engine, x_term, y_term, create_propagator_func):
         pid = queue.register(prop)
 
         # Add as watcher for both variables
-        add_watcher(store, x_var, pid, Priority.HIGH, trail)
-        add_watcher(store, y_var, pid, Priority.HIGH, trail)
+        add_watcher(store, x_var, pid, priority, trail)
+        add_watcher(store, y_var, pid, priority, trail)
 
         # Schedule initial propagation
-        queue.schedule(pid, Priority.HIGH)
+        queue.schedule(pid, priority)
 
         # Run to fixpoint
         return queue.run_to_fixpoint(store, trail, engine)
@@ -245,6 +255,15 @@ def _builtin_fd_eq(engine, x_term, y_term):
                 if new_dom.is_empty():
                     return False
             set_domain(store, x_var, new_dom, trail)
+
+            # Wake watchers and propagate
+            queue = _ensure_queue(engine)
+            from prolog.clpfd.api import iter_watchers
+            for pid, priority in iter_watchers(store, x_var):
+                queue.schedule(pid, priority)
+            if not queue.is_empty():
+                queue.run_to_fixpoint(store, trail, engine)
+
             return True
 
     if isinstance(x_term, Int) and isinstance(y_term, Var):
@@ -289,6 +308,15 @@ def _builtin_fd_lt(engine, x_term, y_term):
                 return False
             if new_dom is not x_dom:
                 set_domain(store, x_var, new_dom, trail)
+
+                # Wake watchers and propagate
+                queue = _ensure_queue(engine)
+                from prolog.clpfd.api import iter_watchers
+                for pid, priority in iter_watchers(store, x_var):
+                    queue.schedule(pid, priority)
+                if not queue.is_empty():
+                    queue.run_to_fixpoint(store, trail, engine)
+
             return True
 
     # Handle int-var case: val #< Y
@@ -307,6 +335,15 @@ def _builtin_fd_lt(engine, x_term, y_term):
                 return False
             if new_dom is not y_dom:
                 set_domain(store, y_var, new_dom, trail)
+
+                # Wake watchers and propagate
+                queue = _ensure_queue(engine)
+                from prolog.clpfd.api import iter_watchers
+                for pid, priority in iter_watchers(store, y_var):
+                    queue.schedule(pid, priority)
+                if not queue.is_empty():
+                    queue.run_to_fixpoint(store, trail, engine)
+
             return True
 
     # Var-var case
@@ -348,6 +385,15 @@ def _builtin_fd_le(engine, x_term, y_term):
                 return False
             if new_dom is not x_dom:
                 set_domain(store, x_var, new_dom, trail)
+
+                # Wake watchers and propagate
+                queue = _ensure_queue(engine)
+                from prolog.clpfd.api import iter_watchers
+                for pid, priority in iter_watchers(store, x_var):
+                    queue.schedule(pid, priority)
+                if not queue.is_empty():
+                    queue.run_to_fixpoint(store, trail, engine)
+
             return True
 
     # Handle int-var case: val #=< Y
@@ -366,6 +412,15 @@ def _builtin_fd_le(engine, x_term, y_term):
                 return False
             if new_dom is not y_dom:
                 set_domain(store, y_var, new_dom, trail)
+
+                # Wake watchers and propagate
+                queue = _ensure_queue(engine)
+                from prolog.clpfd.api import iter_watchers
+                for pid, priority in iter_watchers(store, y_var):
+                    queue.schedule(pid, priority)
+                if not queue.is_empty():
+                    queue.run_to_fixpoint(store, trail, engine)
+
             return True
 
     # Var-var case
