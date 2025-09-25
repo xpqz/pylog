@@ -42,7 +42,7 @@ You are tasked with generating a comprehensive pull request description followin
    - Show the user the generated description
 
 9. **Update the PR:**
-   - Update the PR description directly: `gh pr edit {number} --body-file thoughts/shared/prs/{number}_description.md`
+   - Update the PR description directly: `gh pr edit {number} --body-file docs/prs/{number}_description.md`
    - Confirm the update was successful
    - If any verification steps remain unchecked, remind the user to complete them before merging
    - Report the full PR URL to the user for convenience
