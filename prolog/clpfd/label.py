@@ -160,17 +160,10 @@ def push_labeling_choices(engine, vars, var_select, val_select):
 
     # Create unification goals for each value
     if len(values) == 1:
-        # Single value - just push unification goal
-        var_term = Var(selected_var, f"_G{selected_var}")
-        value_term = Int(values[0])
-        unify_goal = Struct("=", (var_term, value_term))
-
-        # Push the unification goal
-        engine._push_goal(Goal(GoalType.BUILTIN, unify_goal))
-
-        # Push continuation to label remaining variables
+        # Single value - push continuation FIRST, then unification
+        # (goals are LIFO, so unification will execute before continuation)
         if vars:
-            # Create a custom labeling continuation goal
+            # Push continuation first
             cont_goal = Goal(GoalType.CONTROL, None, {
                 'op': 'LABEL_CONTINUE',
                 'vars': vars,
@@ -178,6 +171,12 @@ def push_labeling_choices(engine, vars, var_select, val_select):
                 'val_select': val_select
             })
             engine._push_goal(cont_goal)
+
+        # Then push unification goal (will execute first due to LIFO)
+        var_term = Var(selected_var, f"_G{selected_var}")
+        value_term = Int(values[0])
+        unify_goal = Struct("=", (var_term, value_term))
+        engine._push_goal(Goal(GoalType.BUILTIN, unify_goal))
     else:
         # Multiple values - create choice point
         # First, push continuation for labeling remaining vars
@@ -303,8 +302,28 @@ def select_values(domain, strategy):
 
     elif strategy == "indomain_split":
         # Binary search style - split domain in half
-        # For now, just use min strategy
-        return values
+        if len(values) <= 1:
+            return values
+
+        # For bisection, we would ideally split the domain into two ranges
+        # and create constraints X #=< Mid ; X #> Mid
+        # For now, try middle value first, then alternate outward
+        mid_idx = len(values) // 2
+        result = [values[mid_idx]]
+
+        # Add lower half (reversed) and upper half alternating
+        lower = list(reversed(values[:mid_idx]))
+        upper = values[mid_idx + 1:]
+
+        i = 0
+        while i < len(lower) or i < len(upper):
+            if i < len(upper):
+                result.append(upper[i])
+            if i < len(lower):
+                result.append(lower[i])
+            i += 1
+
+        return result
 
     else:
         # Default to minimum first
