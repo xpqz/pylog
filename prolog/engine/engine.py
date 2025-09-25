@@ -322,6 +322,27 @@ class Engine:
         self._builtins[("get_attr", 3)] = lambda eng, args: eng._builtin_get_attr(args)
         self._builtins[("del_attr", 2)] = lambda eng, args: eng._builtin_del_attr(args)
 
+        # CLP(FD) builtins
+        from prolog.engine.builtins_clpfd import (
+            _builtin_in, _builtin_fd_eq, _builtin_fd_lt, _builtin_fd_le,
+            _builtin_fd_gt, _builtin_fd_ge, _builtin_fd_var, _builtin_fd_inf,
+            _builtin_fd_sup, _builtin_fd_dom
+        )
+        from prolog.clpfd.label import _builtin_label, _builtin_labeling
+
+        self._builtins[("in", 2)] = lambda eng, args: _builtin_in(eng, *args)
+        self._builtins[("#=", 2)] = lambda eng, args: _builtin_fd_eq(eng, *args)
+        self._builtins[("#<", 2)] = lambda eng, args: _builtin_fd_lt(eng, *args)
+        self._builtins[("#=<", 2)] = lambda eng, args: _builtin_fd_le(eng, *args)
+        self._builtins[("#>", 2)] = lambda eng, args: _builtin_fd_gt(eng, *args)
+        self._builtins[("#>=", 2)] = lambda eng, args: _builtin_fd_ge(eng, *args)
+        self._builtins[("fd_var", 1)] = lambda eng, args: _builtin_fd_var(eng, *args)
+        self._builtins[("fd_inf", 2)] = lambda eng, args: _builtin_fd_inf(eng, *args)
+        self._builtins[("fd_sup", 2)] = lambda eng, args: _builtin_fd_sup(eng, *args)
+        self._builtins[("fd_dom", 2)] = lambda eng, args: _builtin_fd_dom(eng, *args)
+        self._builtins[("label", 1)] = lambda eng, args: _builtin_label(eng, *args)
+        self._builtins[("labeling", 2)] = lambda eng, args: _builtin_labeling(eng, *args)
+
     def solve(self, goal: Term, max_solutions: Optional[int] = None) -> List[Dict[str, Any]]:
         """Solve a single goal (convenience method for tests).
         
@@ -1261,6 +1282,13 @@ class Engine:
             then_goal = goal.payload["then_goal"]
             then_depth = goal.payload.get("then_goal_depth", len(self.frame_stack))
             self._push_goal(then_goal, depth=then_depth)
+        elif op == "LABEL_CONTINUE":
+            # Continue labeling after binding a variable
+            from prolog.clpfd.label import push_labeling_choices
+            vars = goal.payload["vars"]
+            var_select = goal.payload["var_select"]
+            val_select = goal.payload["val_select"]
+            push_labeling_choices(self, vars, var_select, val_select)
         # CATCH_BEGIN and CATCH_END are no longer used - catch/3 uses CATCH choicepoints
 
     def _backtrack(self) -> bool:
