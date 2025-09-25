@@ -310,9 +310,13 @@ Initial set:
 
 ### 9.5 Labeling (separate from propagation)
 
-- Var selection: `first`, `ff` (first-fail).  
-- Value choice: `indomain_min` (default), `bisect`.  
-- Creates choicepoints; after each decision, run propagation to fixpoint.
+- Variable selection: `first`, `first_fail` (ff), `most_constrained`.
+- Value selection: `indomain_min` (default), `indomain_max`, `indomain_middle`, `indomain_random`, `indomain_split`.
+- Randomization control: `labeling/2` accepts an optional `seed(N)` option to configure the RNG for `indomain_random`.
+  Example: `labeling([indomain_random, seed(12345)], [X, Y]).` When omitted, a default deterministic seed is used for reproducible tests.
+- Creates choicepoints; after each decision, runs propagation to a fixpoint.
+
+Implementation note: Labeling encodes each alternative together with its continuation, e.g., `(X = V1, label(Vars)) ; (X = V2, label(Vars)) ; ...`, ensuring robust backtracking without empty goal stack gaps. For single-value domains, the VM schedules the unify above `label(Vars)` so assignment executes before continuing.
 
 ### 9.6 Reification (Stage 5.5)
 

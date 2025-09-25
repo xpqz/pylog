@@ -56,6 +56,16 @@ _OPERATOR_TABLE_MUTABLE: Dict[Tuple[str, str], OperatorInfo] = {
     
     # Other standard operators
     ('is', 'infix'): (700, 'xfx', "'is'"),     # Arithmetic evaluation
+
+    # CLP(FD) operators
+    ('in', 'infix'): (700, 'xfx', "'in'"),     # Domain membership
+    ('..', 'infix'): (500, 'xfx', "'..'"),     # Range operator
+    ('#=', 'infix'): (700, 'xfx', "'#='"),     # FD equality
+    ('#\\=', 'infix'): (700, 'xfx', "'#\\='"), # FD inequality
+    ('#<', 'infix'): (700, 'xfx', "'#<'"),     # FD less than
+    ('#>', 'infix'): (700, 'xfx', "'#>'"),     # FD greater than
+    ('#=<', 'infix'): (700, 'xfx', "'#=<'"),   # FD less or equal
+    ('#>=', 'infix'): (700, 'xfx', "'#>='"),   # FD greater or equal
 }
 
 # Read-only view of the operator table to prevent accidental mutation

@@ -15,7 +15,7 @@ from dataclasses import dataclass
 
 from prolog.ast.terms import Term, Atom, Int, Var, Struct, List as PrologList
 from prolog.ast.clauses import Clause
-from prolog.parser.operators import get_operator_info, is_xfx_operator, is_stage1_supported
+from prolog.parser.operators import get_operator_info, is_xfx_operator, is_stage1_supported, get_all_operators
 
 logger = logging.getLogger(__name__)
 
@@ -65,81 +65,135 @@ class Token:
     position: int = 0
 
 
-class Tokenizer:
-    """Tokenizer for Prolog text."""
-    
-    # Token patterns in order of priority
-    PATTERNS = [
-        # Comments (skip)
-        (r'%.*', None),
-        (r'/\*(.|\n)*?\*/', None),
-        
-        # Multi-character operators (longest-first to ensure greedy matches)
-        (r':-', 'COLON_MINUS'),
-        (r'\?-', 'QUESTION_MINUS'),
-        (r'->', 'ARROW'),
-        
-        # Arithmetic operators
-        (r'//', 'DOUBLE_SLASH'),
-        (r'\*\*', 'DOUBLE_STAR'),
-        
-        # Comparison operators (longest-first for greedy matching)
-        (r'=\\=', 'EQ_BACKSLASH_EQ'),   # Arithmetic inequality
-        (r'=:=', 'EQ_COLON_EQ'),         # Arithmetic equality
-        (r'\\==', 'BACKSLASH_EQEQ'),     # Before \= (structural inequality)
-        (r'\\=', 'BACKSLASH_EQ'),        # Not unifiable
-        (r'@>=', 'AT_GT_EQ'),            # Before @> (term greater-equal)
-        (r'@=<', 'AT_EQ_LT'),            # Before @< (term less-equal)  
-        (r'@>', 'AT_GT'),                # Term greater than
-        (r'@<', 'AT_LT'),                # Term less than
-        (r'>=', 'GT_EQ'),                # Before > (greater-equal)
-        (r'=<', 'EQ_LT'),                # Before = and < (less-equal)
-        (r'==', 'DOUBLE_EQ'),            # Before = (structural equality)
-        
-        # Negation
-        (r'\\\+', 'BACKSLASH_PLUS'),
-        
-        # Single-character operators and punctuation
-        (r',', 'COMMA'),
-        (r';', 'SEMICOLON'),
-        (r'=', 'EQUALS'),
-        (r'<', 'LT'),
-        (r'>', 'GT'),
-        (r'\+', 'PLUS'),
-        (r'-', 'MINUS'),
-        (r'\*', 'STAR'),
-        (r'/', 'SLASH'),
+def _generate_tokenizer_patterns():
+    """Generate tokenizer patterns from operator table.
+
+    This function dynamically generates token patterns from the operator table,
+    ensuring that the tokenizer always matches what's defined in operators.py.
+    """
+    patterns = []
+
+    # Comments (skip) - must come first
+    patterns.append((r'%.*', None))
+    patterns.append((r'/\*(.|\n)*?\*/', None))
+
+    # Get all operators from the operator table
+    operator_table = get_all_operators()
+
+    # Sort operators by length (longest first) for greedy matching
+    # This ensures e.g., "=\\=" matches before "="
+    operators_by_length = {}
+    for (op, pos), info in operator_table.items():
+        length = len(op)
+        if length not in operators_by_length:
+            operators_by_length[length] = []
+        if op not in [item[0] for item in operators_by_length[length]]:
+            operators_by_length[length].append((op, pos))
+
+    # Add special operators not in the table
+    patterns.append((r':-', 'COLON_MINUS'))
+    patterns.append((r'\?-', 'QUESTION_MINUS'))
+
+    # Process operators from longest to shortest
+    for length in sorted(operators_by_length.keys(), reverse=True):
+        for op, pos in operators_by_length[length]:
+            # Escape special regex characters
+            escaped_op = re.escape(op)
+
+            # Create token name from operator
+            token_name = _operator_to_token_name(op)
+
+            # Word operators need word boundaries
+            if op.isalpha():
+                pattern = r'\b' + escaped_op + r'\b'
+            else:
+                pattern = escaped_op
+
+            # Check if pattern already added (some ops may be both infix and prefix)
+            if not any(p[0] == pattern for p in patterns):
+                patterns.append((pattern, token_name))
+
+    # Add non-operator tokens
+    patterns.extend([
+        # Punctuation
         (r'\.', 'DOT'),
         (r'\|', 'PIPE'),
         (r'\(', 'LPAREN'),
         (r'\)', 'RPAREN'),
         (r'\[', 'LBRACKET'),
         (r'\]', 'RBRACKET'),
-        
-        # Word operators
-        (r'\bmod\b', 'MOD'),
-        (r'\bis\b', 'IS'),
-        
+
         # Quoted atoms
         (r"'([^'\\\\]|\\\\.)*'", 'QUOTED_ATOM'),
-        
+
         # Numbers (including negative)
         (r'-?\d+', 'SIGNED_INT'),
-        
+
         # Variables (uppercase or underscore start)
         (r'[A-Z_][a-zA-Z0-9_]*', 'VARIABLE'),
-        
+
         # Atoms (lowercase start or special)
         (r'[a-z][a-zA-Z0-9_]*', 'ATOM'),
         (r'!', 'ATOM'),
-        
+
         # Whitespace (skip)
         (r'\s+', None),
-    ]
-    
+    ])
+
+    return patterns
+
+
+def _operator_to_token_name(op):
+    """Convert operator symbol to token name."""
+    # Map of special cases
+    special_names = {
+        ',': 'COMMA',
+        ';': 'SEMICOLON',
+        '=': 'EQUALS',
+        '<': 'LT',
+        '>': 'GT',
+        '+': 'PLUS',
+        '-': 'MINUS',
+        '*': 'STAR',
+        '/': 'SLASH',
+        '->': 'ARROW',
+        '//': 'DOUBLE_SLASH',
+        '**': 'DOUBLE_STAR',
+        '=:=': 'EQ_COLON_EQ',
+        '=\\=': 'EQ_BACKSLASH_EQ',
+        '\\=': 'BACKSLASH_EQ',
+        '\\==': 'BACKSLASH_EQEQ',
+        '==': 'DOUBLE_EQ',
+        '@<': 'AT_LT',
+        '@>': 'AT_GT',
+        '@=<': 'AT_EQ_LT',
+        '@>=': 'AT_GT_EQ',
+        '>=': 'GT_EQ',
+        '=<': 'EQ_LT',
+        '\\+': 'BACKSLASH_PLUS',
+        'mod': 'MOD',
+        'is': 'IS',
+        'in': 'IN',
+        '..': 'DOT_DOT',
+        '#=': 'HASH_EQ',
+        '#\\=': 'HASH_BACKSLASH_EQ',
+        '#<': 'HASH_LT',
+        '#>': 'HASH_GT',
+        '#=<': 'HASH_EQ_LT',
+        '#>=': 'HASH_GT_EQ',
+    }
+
+    return special_names.get(op, op.upper())
+
+
+class Tokenizer:
+    """Tokenizer for Prolog text."""
+
     def __init__(self):
+        # Generate patterns dynamically from operator table
+        patterns = _generate_tokenizer_patterns()
         # Compile patterns
-        self.compiled_patterns = [(re.compile(p), t) for p, t in self.PATTERNS]
+        self.compiled_patterns = [(re.compile(p), t) for p, t in patterns]
     
     def tokenize(self, text: str) -> List[Token]:
         """Tokenize input text."""
@@ -678,12 +732,14 @@ class PrattParser:
     
     def _get_infix_info(self, token: Token) -> Optional[Tuple[int, str, str]]:
         """Get operator info for infix position."""
-        if token.type in ['COMMA', 'SEMICOLON', 'EQUALS', 'LT', 'GT', 
+        if token.type in ['COMMA', 'SEMICOLON', 'EQUALS', 'LT', 'GT',
                           'PLUS', 'MINUS', 'STAR', 'SLASH', 'ARROW',
                           'DOUBLE_SLASH', 'EQ_COLON_EQ', 'EQ_BACKSLASH_EQ',
                           'BACKSLASH_EQ', 'BACKSLASH_EQEQ', 'AT_LT', 'AT_GT',
-                          'AT_EQ_LT', 'AT_GT_EQ', 'EQ_LT', 'GT_EQ', 
-                          'DOUBLE_EQ', 'DOUBLE_STAR', 'MOD', 'IS']:
+                          'AT_EQ_LT', 'AT_GT_EQ', 'EQ_LT', 'GT_EQ',
+                          'DOUBLE_EQ', 'DOUBLE_STAR', 'MOD', 'IS', 'IN', 'DOT_DOT',
+                          'HASH_EQ', 'HASH_BACKSLASH_EQ', 'HASH_LT', 'HASH_GT',
+                          'HASH_EQ_LT', 'HASH_GT_EQ']:
             return get_operator_info(token.value, 'infix')
         return None
     

@@ -64,7 +64,13 @@ structure: atom LPAREN term_list RPAREN
 // Lexer rules (terminals)
 // ====================
 
-// Atoms
+// Keywords must come before ATOM to get priority
+// Word operators (must be recognized as separate tokens before ATOM)
+MOD: "mod"
+IS: "is"
+IN: "in"
+
+// Atoms (after keywords)
 ATOM: /[a-z][a-zA-Z0-9_]*/
     | "!"            // cut as atom (Stage 1 needs this in goal lists)
 
@@ -113,6 +119,15 @@ DOUBLE_EQ: "=="
 DOUBLE_STAR: "**"
 BACKSLASH_PLUS: "\\+"
 
+// CLP(FD) operators
+DOT_DOT: ".."
+HASH_EQ: "#="
+HASH_BACKSLASH_EQ: "#\\="
+HASH_LT: "#<"
+HASH_GT: "#>"
+HASH_EQ_LT: "#=<"
+HASH_GT_EQ: "#>="
+
 // Single-character operators
 COMMA: ","
 SEMICOLON: ";"
@@ -124,9 +139,6 @@ MINUS: "-"
 STAR: "*"
 SLASH: "/"
 
-// Word operators (must be recognized as separate tokens)
-MOD: "mod"
-IS: "is"
 
 // Parentheses (needed for operator expressions)
 LPAREN: "("
@@ -135,10 +147,12 @@ LBRACKET: "["
 RBRACKET: "]"
 
 // Other punctuation
-DOT: "."
 PIPE: "|"
 COLON_MINUS: ":-"
 QUESTION_MINUS: "?-"
+
+// Single character last (DOT must be after DOT_DOT!)
+DOT: "."
 
 // Comments
 COMMENT: /%.*/

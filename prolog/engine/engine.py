@@ -322,6 +322,27 @@ class Engine:
         self._builtins[("get_attr", 3)] = lambda eng, args: eng._builtin_get_attr(args)
         self._builtins[("del_attr", 2)] = lambda eng, args: eng._builtin_del_attr(args)
 
+        # CLP(FD) builtins
+        from prolog.engine.builtins_clpfd import (
+            _builtin_in, _builtin_fd_eq, _builtin_fd_lt, _builtin_fd_le,
+            _builtin_fd_gt, _builtin_fd_ge, _builtin_fd_var, _builtin_fd_inf,
+            _builtin_fd_sup, _builtin_fd_dom
+        )
+        from prolog.clpfd.label import _builtin_label, _builtin_labeling
+
+        self._builtins[("in", 2)] = lambda eng, args: _builtin_in(eng, *args)
+        self._builtins[("#=", 2)] = lambda eng, args: _builtin_fd_eq(eng, *args)
+        self._builtins[("#<", 2)] = lambda eng, args: _builtin_fd_lt(eng, *args)
+        self._builtins[("#=<", 2)] = lambda eng, args: _builtin_fd_le(eng, *args)
+        self._builtins[("#>", 2)] = lambda eng, args: _builtin_fd_gt(eng, *args)
+        self._builtins[("#>=", 2)] = lambda eng, args: _builtin_fd_ge(eng, *args)
+        self._builtins[("fd_var", 1)] = lambda eng, args: _builtin_fd_var(eng, *args)
+        self._builtins[("fd_inf", 2)] = lambda eng, args: _builtin_fd_inf(eng, *args)
+        self._builtins[("fd_sup", 2)] = lambda eng, args: _builtin_fd_sup(eng, *args)
+        self._builtins[("fd_dom", 2)] = lambda eng, args: _builtin_fd_dom(eng, *args)
+        self._builtins[("label", 1)] = lambda eng, args: _builtin_label(eng, *args)
+        self._builtins[("labeling", 2)] = lambda eng, args: _builtin_labeling(eng, *args)
+
     def solve(self, goal: Term, max_solutions: Optional[int] = None) -> List[Dict[str, Any]]:
         """Solve a single goal (convenience method for tests).
         
@@ -440,6 +461,11 @@ class Engine:
                         if not self._dispatch_predicate(goal, call_depth, call_emitted):
                             if not self._backtrack():
                                 break
+                elif goal.type == GoalType.BUILTIN:
+                    # Explicit builtin goal (used by some internal schedulers)
+                    if not self._dispatch_builtin(goal, call_depth, call_emitted):
+                        if not self._backtrack():
+                            break
                 elif goal.type == GoalType.CONJUNCTION:
                     self._dispatch_conjunction(goal)
                 elif goal.type == GoalType.DISJUNCTION:
@@ -1261,6 +1287,15 @@ class Engine:
             then_goal = goal.payload["then_goal"]
             then_depth = goal.payload.get("then_goal_depth", len(self.frame_stack))
             self._push_goal(then_goal, depth=then_depth)
+        elif op == "LABEL_CONTINUE":
+            # Continue labeling after binding a variable
+            from prolog.clpfd.label import push_labeling_choices
+            vars = goal.payload["vars"]
+            var_select = goal.payload["var_select"]
+            val_select = goal.payload["val_select"]
+            if self.trace:
+                self._trace_log.append("[LABEL_CONTINUE] dispatching continuation")
+            push_labeling_choices(self, vars, var_select, val_select)
         # CATCH_BEGIN and CATCH_END are no longer used - catch/3 uses CATCH choicepoints
 
     def _backtrack(self) -> bool:
@@ -1550,6 +1585,12 @@ class Engine:
                     target_height = cp.goal_stack_height
                     current_height = self.goal_stack.height()
 
+                    # Debug: log restoration details for disjunction CPs
+                    if self.trace:
+                        self._trace_log.append(
+                            f"[DISJ RESTORE] target_height={target_height}, current_height={current_height}, cont_len={len(continuation)}"
+                        )
+
                     # Restore goal stack to have continuation
                     if current_height > target_height:
                         self._shrink_goal_stack_to(target_height)
@@ -1558,6 +1599,11 @@ class Engine:
                         slice_depths = continuation_depths[current_height:target_height]
                         slice_calls = continuation_calls[current_height:target_height]
                         self._push_goals_with_metadata(slice_goals, slice_depths, slice_calls)
+
+                        if self.trace:
+                            self._trace_log.append(
+                                f"[DISJ RESTORE] pushed {len(slice_goals)} continuation goals"
+                            )
 
                 # Remove catch frames that are now out of scope
                 new_goal_height = self.goal_stack.height()
@@ -1668,6 +1714,15 @@ class Engine:
             solution[var_name] = value
 
         self.solutions.append(solution)
+        if self.trace:
+            try:
+                xv = solution.get('X')
+                yv = solution.get('Y')
+                self._trace_log.append(
+                    f"[SOLUTION] X={getattr(xv,'value', xv)}, Y={getattr(yv,'value', yv)}"
+                )
+            except Exception:
+                pass
 
     def _reify_var(self, varid: int) -> Any:
         """Follow bindings to get the value of a variable.
@@ -1933,6 +1988,8 @@ class Engine:
             self.metrics.record_unification_attempt()
 
         trail_adapter = TrailAdapter(self.trail, engine=self, store=self.store)
+        if self.trace:
+            self._trace_log.append(f"[UNIFY] attempting unify: {left} = {right}")
         result = unify(
             left,
             right,
@@ -1943,6 +2000,8 @@ class Engine:
 
         if self.metrics and result:
             self.metrics.record_unification_success()
+        if self.trace:
+            self._trace_log.append(f"[UNIFY] result: {result}")
 
         return result
 
