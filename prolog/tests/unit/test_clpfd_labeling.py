@@ -109,10 +109,14 @@ class TestLabelingStrategies:
         options = List([Atom("indomain_min")])
         assert _builtin_labeling(engine, options, List([x]))
 
-        # First value tried should be minimum (5)
-        result = engine.step()
+        # Run the engine to execute the labeling
+        result = engine.run()
         assert result is not False
-        assert engine.store.deref(x.id)[2].value == 5
+
+        # First value tried should be minimum (5)
+        x_deref = engine.store.deref(x.id)
+        assert x_deref[0] == "BOUND"
+        assert x_deref[2].value == 5
 
     def test_indomain_max_strategy(self):
         """Test indomain_max value selection."""
@@ -128,10 +132,14 @@ class TestLabelingStrategies:
         options = List([Atom("indomain_max")])
         assert _builtin_labeling(engine, options, List([x]))
 
-        # First value tried should be maximum (10)
-        result = engine.step()
+        # Run the engine to execute the labeling
+        result = engine.run()
         assert result is not False
-        assert engine.store.deref(x.id)[2].value == 10
+
+        # First value tried should be maximum (10)
+        x_deref = engine.store.deref(x.id)
+        assert x_deref[0] == "BOUND"
+        assert x_deref[2].value == 10
 
     def test_first_fail_variable_selection(self):
         """Test first_fail variable selection (smallest domain first)."""
@@ -151,11 +159,11 @@ class TestLabelingStrategies:
         options = List([Atom("first_fail")])
         assert _builtin_labeling(engine, options, List([x, y, z]))
 
-        # Y (smallest domain) should be labeled first
-        result = engine.step()
+        # Run the engine to execute the labeling
+        result = engine.run()
         assert result is not False
 
-        # Y should be bound, X and Z might not be yet
+        # Y (smallest domain) should be labeled first, and all should be bound
         y_deref = engine.store.deref(y.id)
         assert y_deref[0] == "BOUND"
 
@@ -181,7 +189,8 @@ class TestLabelingStrategies:
         options = List([Atom("most_constrained")])
         assert _builtin_labeling(engine, options, List([x, y, z]))
 
-        result = engine.step()
+        # Run the engine to execute the labeling
+        result = engine.run()
         assert result is not False
 
 
@@ -203,25 +212,21 @@ class TestLabelingWithBacktracking:
         # Label and collect all solutions
         assert _builtin_label(engine, List([x, y]))
 
+        # Collect all solutions through backtracking
         solutions = []
-        while True:
-            result = engine.step()
-            if result is False:
-                # Backtrack to find more solutions
-                if not engine.backtrack():
-                    break  # No more solutions
-            else:
-                # Record solution if we're done labeling
-                x_deref = engine.store.deref(x.id)
-                y_deref = engine.store.deref(y.id)
-                if x_deref[0] == "BOUND" and y_deref[0] == "BOUND":
-                    solutions.append((
-                        x_deref[2].value,
-                        y_deref[2].value
-                    ))
-                    # Force backtrack to find next solution
-                    if not engine.backtrack():
-                        break
+        result = engine.run()
+        while result is not False:
+            x_deref = engine.store.deref(x.id)
+            y_deref = engine.store.deref(y.id)
+            if x_deref[0] == "BOUND" and y_deref[0] == "BOUND":
+                solutions.append((
+                    x_deref[2].value,
+                    y_deref[2].value
+                ))
+            # Backtrack to find more solutions
+            if not engine.backtrack():
+                break
+            result = engine.run()
 
         # Should have 4 solutions: (1,1), (1,2), (2,1), (2,2)
         assert len(solutions) == 4
@@ -249,15 +254,10 @@ class TestLabelingWithBacktracking:
         _builtin_label(engine, List([x, y]))
 
         # Try to find a solution
-        found_solution = False
-        while engine.step() is not False:
-            x_deref = engine.store.deref(x.id)
-            y_deref = engine.store.deref(y.id)
-            if x_deref[0] == "BOUND" and y_deref[0] == "BOUND":
-                found_solution = True
-                break
+        result = engine.run()
 
-        assert not found_solution  # Should not find any solution
+        # Should fail due to contradictory constraints
+        assert result is False  # Should not find any solution
 
 
 class TestLabelingEdgeCases:
@@ -274,10 +274,12 @@ class TestLabelingEdgeCases:
         assert _builtin_in(engine, x, Int(42))
 
         assert _builtin_label(engine, List([x]))
-        result = engine.step()
+        result = engine.run()
         assert result is not False
 
-        assert engine.store.deref(x.id)[2].value == 42
+        x_deref = engine.store.deref(x.id)
+        assert x_deref[0] == "BOUND"
+        assert x_deref[2].value == 42
 
     def test_label_empty_domain_fails(self):
         """Labeling variable with empty domain should fail."""
@@ -294,7 +296,8 @@ class TestLabelingEdgeCases:
 
         # Labeling should handle empty domain gracefully
         assert _builtin_label(engine, List([x]))
-        result = engine.step()
+        result = engine.run()
+        # Empty domain should lead to failure
         assert result is False  # Should fail
 
     def test_label_with_holes_in_domain(self):
@@ -319,19 +322,16 @@ class TestLabelingEdgeCases:
 
         assert _builtin_label(engine, List([x]))
 
-        # Collect all values tried
+        # Collect all values tried through backtracking
         values = []
-        while True:
-            result = engine.step()
-            if result is False:
-                if not engine.backtrack():
-                    break
-            else:
-                x_deref = engine.store.deref(x.id)
-                if x_deref[0] == "BOUND":
-                    values.append(x_deref[2].value)
-                    if not engine.backtrack():
-                        break
+        result = engine.run()
+        while result is not False:
+            x_deref = engine.store.deref(x.id)
+            if x_deref[0] == "BOUND":
+                values.append(x_deref[2].value)
+            if not engine.backtrack():
+                break
+            result = engine.run()
 
         # Should try all values in domain
         assert set(values) == {1, 3, 5, 7, 9}
@@ -346,18 +346,20 @@ class TestLabelingEdgeCases:
         z = Var(engine.store.new_var(), "Z")
 
         # X is bound, Y has domain, Z has domain
-        engine.store.bind(x.id, Int(10), engine.trail)
+        from prolog.unify.unify import bind
+        bind(engine.store, x.id, Int(10), engine.trail)
         assert _builtin_in(engine, y, Struct("..", (Int(1), Int(3))))
         assert _builtin_in(engine, z, Struct("..", (Int(4), Int(6))))
 
         # Should only need to label Y and Z
         assert _builtin_label(engine, List([x, y, z]))
 
-        result = engine.step()
+        result = engine.run()
         assert result is not False
 
         # All should be bound
-        assert engine.store.deref(x.id)[2].value == 10
+        x_deref = engine.store.deref(x.id)
+        assert x_deref[2].value == 10
         assert engine.store.deref(y.id)[0] == "BOUND"
         assert engine.store.deref(z.id)[0] == "BOUND"
 
@@ -385,8 +387,8 @@ class TestLabelingIntegration:
         assert _builtin_label(engine, List([x, y, z]))
 
         # Find a solution
-        while engine.step() is not False:
-            pass
+        result = engine.run()
+        assert result is not False
 
         # Check if we found valid solution
         x_deref = engine.store.deref(x.id)
@@ -415,19 +417,19 @@ class TestLabelingIntegration:
         # Label and find all solutions
         assert _builtin_label(engine, List([x, y]))
 
+        # Collect all solutions through backtracking
         solutions = []
-        while True:
-            result = engine.step()
-            if result is not False:
-                x_deref = engine.store.deref(x.id)
-                y_deref = engine.store.deref(y.id)
-                if x_deref[0] == "BOUND" and y_deref[0] == "BOUND":
-                    x_val = x_deref[2].value
-                    y_val = y_deref[2].value
-                    solutions.append((x_val, y_val))
-
+        result = engine.run()
+        while result is not False:
+            x_deref = engine.store.deref(x.id)
+            y_deref = engine.store.deref(y.id)
+            if x_deref[0] == "BOUND" and y_deref[0] == "BOUND":
+                x_val = x_deref[2].value
+                y_val = y_deref[2].value
+                solutions.append((x_val, y_val))
             if not engine.backtrack():
                 break
+            result = engine.run()
 
         # All solutions should have X = Y
         for x_val, y_val in solutions:
