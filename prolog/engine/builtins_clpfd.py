@@ -120,7 +120,7 @@ def _ensure_queue(engine):
     return engine.clpfd_queue
 
 
-def _post_constraint_propagator(engine, x_term, y_term, create_propagator_func):
+def _post_constraint_propagator(engine, x_term, y_term, create_propagator_func, priority=None):
     """Post a binary constraint propagator.
 
     Args:
@@ -128,6 +128,7 @@ def _post_constraint_propagator(engine, x_term, y_term, create_propagator_func):
         x_term: First term (variable or int)
         y_term: Second term (variable or int)
         create_propagator_func: Function to create the propagator
+        priority: Priority level (defaults to HIGH for equality, MED for others)
 
     Returns:
         True if constraint posted successfully, False if failed immediately
@@ -168,6 +169,15 @@ def _post_constraint_propagator(engine, x_term, y_term, create_propagator_func):
         else:
             y_var = y_deref[1]
 
+    # Determine priority if not specified
+    if priority is None:
+        # Use HIGH for equality, MED for inequalities
+        from prolog.clpfd.props.equality import create_equality_propagator
+        if create_propagator_func.__name__ == 'create_equality_propagator':
+            priority = Priority.HIGH
+        else:
+            priority = Priority.MED
+
     # Handle different cases
     if x_var is not None and y_var is not None:
         # Both variables: create and register propagator
@@ -175,11 +185,11 @@ def _post_constraint_propagator(engine, x_term, y_term, create_propagator_func):
         pid = queue.register(prop)
 
         # Add as watcher for both variables
-        add_watcher(store, x_var, pid, Priority.HIGH, trail)
-        add_watcher(store, y_var, pid, Priority.HIGH, trail)
+        add_watcher(store, x_var, pid, priority, trail)
+        add_watcher(store, y_var, pid, priority, trail)
 
         # Schedule initial propagation
-        queue.schedule(pid, Priority.HIGH)
+        queue.schedule(pid, priority)
 
         # Run to fixpoint
         return queue.run_to_fixpoint(store, trail, engine)
@@ -245,6 +255,15 @@ def _builtin_fd_eq(engine, x_term, y_term):
                 if new_dom.is_empty():
                     return False
             set_domain(store, x_var, new_dom, trail)
+
+            # Wake watchers and propagate
+            queue = _ensure_queue(engine)
+            from prolog.clpfd.api import iter_watchers
+            for pid, priority in iter_watchers(store, x_var):
+                queue.schedule(pid, priority)
+            if not queue.is_empty():
+                queue.run_to_fixpoint(store, trail, engine)
+
             return True
 
     if isinstance(x_term, Int) and isinstance(y_term, Var):
@@ -289,6 +308,15 @@ def _builtin_fd_lt(engine, x_term, y_term):
                 return False
             if new_dom is not x_dom:
                 set_domain(store, x_var, new_dom, trail)
+
+                # Wake watchers and propagate
+                queue = _ensure_queue(engine)
+                from prolog.clpfd.api import iter_watchers
+                for pid, priority in iter_watchers(store, x_var):
+                    queue.schedule(pid, priority)
+                if not queue.is_empty():
+                    queue.run_to_fixpoint(store, trail, engine)
+
             return True
 
     # Handle int-var case: val #< Y
@@ -307,6 +335,15 @@ def _builtin_fd_lt(engine, x_term, y_term):
                 return False
             if new_dom is not y_dom:
                 set_domain(store, y_var, new_dom, trail)
+
+                # Wake watchers and propagate
+                queue = _ensure_queue(engine)
+                from prolog.clpfd.api import iter_watchers
+                for pid, priority in iter_watchers(store, y_var):
+                    queue.schedule(pid, priority)
+                if not queue.is_empty():
+                    queue.run_to_fixpoint(store, trail, engine)
+
             return True
 
     # Var-var case
@@ -348,6 +385,15 @@ def _builtin_fd_le(engine, x_term, y_term):
                 return False
             if new_dom is not x_dom:
                 set_domain(store, x_var, new_dom, trail)
+
+                # Wake watchers and propagate
+                queue = _ensure_queue(engine)
+                from prolog.clpfd.api import iter_watchers
+                for pid, priority in iter_watchers(store, x_var):
+                    queue.schedule(pid, priority)
+                if not queue.is_empty():
+                    queue.run_to_fixpoint(store, trail, engine)
+
             return True
 
     # Handle int-var case: val #=< Y
@@ -366,6 +412,15 @@ def _builtin_fd_le(engine, x_term, y_term):
                 return False
             if new_dom is not y_dom:
                 set_domain(store, y_var, new_dom, trail)
+
+                # Wake watchers and propagate
+                queue = _ensure_queue(engine)
+                from prolog.clpfd.api import iter_watchers
+                for pid, priority in iter_watchers(store, y_var):
+                    queue.schedule(pid, priority)
+                if not queue.is_empty():
+                    queue.run_to_fixpoint(store, trail, engine)
+
             return True
 
     # Var-var case
@@ -403,3 +458,201 @@ def _builtin_fd_ge(engine, x_term, y_term):
         True if constraint succeeded, False if failed
     """
     return _builtin_fd_le(engine, y_term, x_term)
+
+
+def _builtin_fd_var(engine, term):
+    """Check if term is a finite domain variable.
+
+    Args:
+        engine: Engine instance
+        term: Term to check
+
+    Returns:
+        True if term is an FD variable, False otherwise
+    """
+    if not isinstance(term, Var):
+        return False
+
+    # Dereference the variable
+    deref = engine.store.deref(term.id)
+
+    if deref[0] == "BOUND":
+        # Bound variables are not FD variables
+        return False
+
+    # Check if it has a domain
+    varid = deref[1]
+    domain = get_domain(engine.store, varid)
+    return domain is not None
+
+
+def _builtin_fd_inf(engine, x_term, inf_term):
+    """Get the infimum (minimum) of an FD variable's domain.
+
+    Args:
+        engine: Engine instance
+        x_term: FD variable
+        inf_term: Term to unify with the minimum
+
+    Returns:
+        True if unification succeeds, False otherwise
+    """
+    if not isinstance(x_term, Var):
+        return False
+
+    # Dereference the variable
+    deref = engine.store.deref(x_term.id)
+
+    if deref[0] == "BOUND":
+        # Bound variable - its value is both min and max
+        value = deref[2]
+        if isinstance(value, Int):
+            from prolog.unify.unify import unify
+            return unify(inf_term, value, engine.store, engine.trail, engine.occurs_check)
+        return False
+
+    # Get domain
+    varid = deref[1]
+    domain = get_domain(engine.store, varid)
+
+    if domain is None:
+        return False  # Not an FD variable
+
+    min_val = domain.min()
+    if min_val is None:
+        return False  # Empty domain
+
+    from prolog.unify.unify import unify
+    return unify(inf_term, Int(min_val), engine.store, engine.trail, engine.occurs_check)
+
+
+def _builtin_fd_sup(engine, x_term, sup_term):
+    """Get the supremum (maximum) of an FD variable's domain.
+
+    Args:
+        engine: Engine instance
+        x_term: FD variable
+        sup_term: Term to unify with the maximum
+
+    Returns:
+        True if unification succeeds, False otherwise
+    """
+    if not isinstance(x_term, Var):
+        return False
+
+    # Dereference the variable
+    deref = engine.store.deref(x_term.id)
+
+    if deref[0] == "BOUND":
+        # Bound variable - its value is both min and max
+        value = deref[2]
+        if isinstance(value, Int):
+            from prolog.unify.unify import unify
+            return unify(sup_term, value, engine.store, engine.trail, engine.occurs_check)
+        return False
+
+    # Get domain
+    varid = deref[1]
+    domain = get_domain(engine.store, varid)
+
+    if domain is None:
+        return False  # Not an FD variable
+
+    max_val = domain.max()
+    if max_val is None:
+        return False  # Empty domain
+
+    from prolog.unify.unify import unify
+    return unify(sup_term, Int(max_val), engine.store, engine.trail, engine.occurs_check)
+
+
+def _builtin_fd_dom(engine, x_term, dom_term):
+    """Get the domain of an FD variable as a term.
+
+    The domain is represented as a term that can be used with 'in'/2.
+    For a simple interval, it's Low..High.
+    For multiple intervals or holes, it uses \\/ (union).
+
+    Args:
+        engine: Engine instance
+        x_term: FD variable
+        dom_term: Term to unify with the domain representation
+
+    Returns:
+        True if unification succeeds, False otherwise
+    """
+    if not isinstance(x_term, Var):
+        return False
+
+    # Dereference the variable
+    deref = engine.store.deref(x_term.id)
+
+    if deref[0] == "BOUND":
+        # Bound variable - its domain is a singleton
+        value = deref[2]
+        if isinstance(value, Int):
+            from prolog.unify.unify import unify
+            return unify(dom_term, value, engine.store, engine.trail, engine.occurs_check)
+        return False
+
+    # Get domain
+    varid = deref[1]
+    domain = get_domain(engine.store, varid)
+
+    if domain is None:
+        return False  # Not an FD variable
+
+    # Convert domain to term representation
+    domain_term = domain_to_term(domain)
+
+    from prolog.unify.unify import unify
+    return unify(dom_term, domain_term, engine.store, engine.trail, engine.occurs_check)
+
+
+def domain_to_term(domain):
+    """Convert a Domain object to a Prolog term representation.
+
+    Args:
+        domain: Domain object
+
+    Returns:
+        Term representing the domain
+    """
+    if domain.is_empty():
+        # Empty domain - could use a special representation
+        # For now, we'll use an empty interval
+        return Struct("..", (Int(1), Int(0)))
+
+    intervals = domain.intervals
+
+    if len(intervals) == 1:
+        # Single interval
+        low, high = intervals[0]
+        if low == high:
+            # Singleton
+            return Int(low)
+        else:
+            # Range
+            return Struct("..", (Int(low), Int(high)))
+
+    # Multiple intervals - build union
+    def build_union(intervals):
+        if len(intervals) == 1:
+            low, high = intervals[0]
+            if low == high:
+                return Int(low)
+            else:
+                return Struct("..", (Int(low), Int(high)))
+        else:
+            # Recursively build union
+            first = intervals[0]
+            rest = intervals[1:]
+            low, high = first
+            if low == high:
+                first_term = Int(low)
+            else:
+                first_term = Struct("..", (Int(low), Int(high)))
+            rest_term = build_union(rest)
+            return Struct("\\/", (first_term, rest_term))
+
+    return build_union(intervals)

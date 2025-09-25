@@ -519,6 +519,21 @@ class Engine:
             self.metrics.record_unification_success()
 
         return result
+
+    def unify(self, a: Term, b: Term) -> bool:
+        """Public unification method for testing CLP(FD) integration.
+
+        This is a convenience method for tests that need to perform
+        unification with FD variables and check domain consistency.
+
+        Args:
+            a: First term to unify
+            b: Second term to unify
+
+        Returns:
+            True if unification succeeds, False otherwise
+        """
+        return self._unify(a, b)
     
     def _match_only(self, term1: Term, term2: Term) -> bool:
         """Check if two terms unify WITHOUT modifying the store.
