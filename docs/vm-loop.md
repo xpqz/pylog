@@ -198,6 +198,19 @@ def step(self) -> StepResult:
     elif goal.kind == GoalKind.CONTROL:
         return self.execute_control_op(goal.arg1, goal.arg2)
         
+
+## Note: CLP(FD) Labeling and Disjunctions
+
+Labeling in CLP(FD) is implemented entirely within the single‑loop VM without Python recursion by pushing explicit goals that encode the search tree.
+
+Key choice: continuations are embedded per alternative. Instead of scheduling a separate continuation goal after a value assignment (e.g., push(X=V), then later push(label(Vars))), the engine builds disjunctions whose branches include the continuation:
+
+- (X = V1, label(Vars)) ; (X = V2, label(Vars)) ; ...
+
+This avoids a fragile “empty goal stack window” between assignment and continuation that can appear when backtracking from a prior branch. With the continuation inside each branch, the VM restores a consistent state on redo, and all solutions are found. For the single‑value case, we push the unify goal on top and place label(Vars) immediately below it on the goal stack so the assignment executes first and the continuation follows deterministically — still with no Python recursion.
+
+This pattern is robust across backtracking and integrates with the existing disjunction choicepoint machinery without requiring special cases in the engine.
+
     else:
         return self.backtrack()
 ```

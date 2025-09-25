@@ -126,6 +126,35 @@ class TestLabelingStrategies:
         ))
         assert len(sols) >= 1
 
+    def test_indomain_random_seed_reproducible(self):
+        """indomain_random honors seed(N) for deterministic order."""
+        engine1 = Engine(Program([]))
+        sols1 = list(engine1.query("?- X in 1..7, labeling([indomain_random, seed(12345)], [X])."))
+        seq1 = [s['X'].value for s in sols1]
+
+        engine2 = Engine(Program([]))
+        sols2 = list(engine2.query("?- X in 1..7, labeling([indomain_random, seed(12345)], [X])."))
+        seq2 = [s['X'].value for s in sols2]
+
+        assert seq1 == seq2  # same seed => same permutation
+
+        engine3 = Engine(Program([]))
+        sols3 = list(engine3.query("?- X in 1..7, labeling([indomain_random, seed(54321)], [X])."))
+        seq3 = [s['X'].value for s in sols3]
+        assert seq1 != seq3  # different seed => likely different permutation
+
+    def test_indomain_random_default_deterministic(self):
+        """indomain_random without seed remains deterministic across runs (CI‑friendly)."""
+        engine1 = Engine(Program([]))
+        sols1 = list(engine1.query("?- X in 1..7, labeling([indomain_random], [X])."))
+        seq1 = [s['X'].value for s in sols1]
+
+        engine2 = Engine(Program([]))
+        sols2 = list(engine2.query("?- X in 1..7, labeling([indomain_random], [X])."))
+        seq2 = [s['X'].value for s in sols2]
+
+        assert seq1 == seq2
+
 
 class TestLabelingWithBacktracking:
     """Test labeling with backtracking to find all solutions."""

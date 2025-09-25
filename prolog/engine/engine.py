@@ -461,6 +461,11 @@ class Engine:
                         if not self._dispatch_predicate(goal, call_depth, call_emitted):
                             if not self._backtrack():
                                 break
+                elif goal.type == GoalType.BUILTIN:
+                    # Explicit builtin goal (used by some internal schedulers)
+                    if not self._dispatch_builtin(goal, call_depth, call_emitted):
+                        if not self._backtrack():
+                            break
                 elif goal.type == GoalType.CONJUNCTION:
                     self._dispatch_conjunction(goal)
                 elif goal.type == GoalType.DISJUNCTION:

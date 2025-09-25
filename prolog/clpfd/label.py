@@ -45,12 +45,13 @@ def _builtin_labeling(engine, options_term, vars_term):
     # Parse options
     var_select = parse_var_selection(options_term)
     val_select = parse_value_selection(options_term)
+    rng_seed = parse_random_seed(options_term)
 
     # Extract variable list
     vars_list = extract_var_list(vars_term)
 
     # Push labeling goal onto engine stack
-    push_labeling_choices(engine, vars_list, var_select, val_select)
+    push_labeling_choices(engine, vars_list, var_select, val_select, rng_seed=rng_seed)
 
     return True
 
@@ -100,6 +101,28 @@ def parse_value_selection(options_term):
     return "indomain_min"  # Default
 
 
+def parse_random_seed(options_term):
+    """Parse optional random seed for indomain_random.
+
+    Looks for seed(N) term in options.
+
+    Args:
+        options_term: List of option atoms/terms
+
+    Returns:
+        Integer seed if provided, otherwise None
+    """
+    if not isinstance(options_term, List):
+        return None
+
+    for item in options_term.items:
+        if isinstance(item, Struct) and item.functor == "seed" and len(item.args) == 1:
+            arg = item.args[0]
+            if isinstance(arg, Int):
+                return arg.value
+    return None
+
+
 def extract_var_list(vars_term):
     """Extract list of variables from term.
 
@@ -120,7 +143,7 @@ def extract_var_list(vars_term):
     return vars_list
 
 
-def push_labeling_choices(engine, vars, var_select, val_select):
+def push_labeling_choices(engine, vars, var_select, val_select, rng_seed=None):
     """Push labeling alternatives onto engine goal stack.
 
     Creates a choice point for each unbound FD variable, with alternatives
@@ -152,7 +175,7 @@ def push_labeling_choices(engine, vars, var_select, val_select):
     selected_var, selected_domain = select_variable(unbound, var_select, engine)
 
     # Get values to try in order
-    values = select_values(selected_domain, val_select)
+    values = select_values(selected_domain, val_select, rng_seed=rng_seed)
 
     if not values:
         # Empty domain - nothing to do, will fail
@@ -177,9 +200,13 @@ def push_labeling_choices(engine, vars, var_select, val_select):
         return Struct(",", (assign, label_goal))
 
     if len(values) == 1:
-        # Deterministic: push conjunction (X=V, label(Vars))
-        conj = branch_struct(values[0])
-        engine._push_goal(Goal.from_term(conj))
+        # Deterministic: push continuation BELOW, then the unification as BUILTIN on top
+        # so unify executes first and continuation follows.
+        # Continuation via calling label/1 recursively on the same vars list.
+        cont_call = Goal.from_term(Struct("label", (vars_term,)))
+        engine._push_goal(cont_call)
+        unify_goal = Struct("=", (var_term, Int(values[0])))
+        engine._push_goal(Goal(GoalType.BUILTIN, unify_goal))
     else:
         # Non-deterministic: (X=V1, label(Vars)) ; (X=V2, label(Vars)) ; ...
         def build_disjunction(vals):
@@ -239,7 +266,7 @@ def select_variable(unbound, strategy, engine):
         return unbound[0]
 
 
-def select_values(domain, strategy):
+def select_values(domain, strategy, rng_seed=None):
     """Select values from domain in order based on strategy.
 
     Args:
@@ -280,11 +307,11 @@ def select_values(domain, strategy):
         return result
 
     elif strategy == "indomain_random":
-        # Random order (for reproducibility, use a simple shuffle)
+        # Random order
         import random
-        random.seed(42)  # Fixed seed for reproducibility in tests
+        rng = random.Random(rng_seed if rng_seed is not None else 42)
         shuffled = values.copy()
-        random.shuffle(shuffled)
+        rng.shuffle(shuffled)
         return shuffled
 
     elif strategy == "indomain_split":
