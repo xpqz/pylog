@@ -35,25 +35,27 @@ class PropagationQueue:
             Priority.MED: deque(),
             Priority.LOW: deque()
         }
-        
+
         # Track which propagators are queued and at what priority
         # Maps propagator_id -> Priority
+        # Used for dedup and to check actual priority (for stale-skip)
         self.queued: Dict[int, Priority] = {}
-        
+
         # Registered propagators
         # Maps propagator_id -> callable(store, trail, engine, cause)
         self.propagators: Dict[int, Callable] = {}
-        
+
         # Propagator ID counter
         self._next_pid = 0
-        
+
         # Currently running propagator (for self-requeue detection)
         self.running: Optional[int] = None
-        
+
         # Reschedule set for self-requeued propagators
-        # Set of (propagator_id, Priority) tuples
-        self.reschedule: Set[Tuple[int, Priority]] = set()
-        
+        # Set of (propagator_id, Priority, cause) tuples
+        # Note: self-requeued items preserve their cause
+        self.reschedule: Set[Tuple[int, Priority, Any]] = set()
+
         # Causes for each queued propagator
         # Maps propagator_id -> cause
         self.causes: Dict[int, Any] = {}
@@ -76,32 +78,37 @@ class PropagationQueue:
 
     def schedule(self, propagator_id: int, priority: Priority, cause: Any = None) -> None:
         """Schedule a propagator for execution.
-        
+
         Features:
-        - If already queued at same or higher priority, no-op
+        - If already queued at same or higher priority, no-op (cause not updated)
         - If already queued at lower priority, escalates to higher priority
         - If currently running (self-requeue), adds to reschedule set
-        
+        - Cause overwrites: non-None cause always overwrites; None preserves existing
+
         Args:
             propagator_id: ID of propagator to schedule
             priority: Priority level for execution
             cause: Optional cause information (e.g., ('domain_changed', varid))
         """
-        # Handle self-requeue
+        # Handle self-requeue (preserves cause)
         if self.running == propagator_id:
-            self.reschedule.add((propagator_id, priority))
+            self.reschedule.add((propagator_id, priority, cause))
             return
-        
+
         # Check if already queued
         if propagator_id in self.queued:
             current_priority = self.queued[propagator_id]
-            
+
             # Priority escalation: move to higher priority if needed
+            # Uses stale-skip pattern: O(1) escalation by leaving stale entry
             if priority < current_priority:
-                # Remove from old queue
-                self._remove_from_queue(propagator_id, current_priority)
-                # Add to new higher priority queue
-                self._add_to_queue(propagator_id, priority, cause)
+                # Just update the priority mapping and add to new queue
+                # Old entry becomes stale and will be skipped on pop
+                self.queued[propagator_id] = priority
+                self.queues[priority].append(propagator_id)
+                # Update cause if provided
+                if cause is not None:
+                    self.causes[propagator_id] = cause
             # else: already at same or higher priority, no-op
         else:
             # Not queued, add it
@@ -115,9 +122,12 @@ class PropagationQueue:
             self.causes[propagator_id] = cause
 
     def _remove_from_queue(self, propagator_id: int, priority: Priority) -> None:
-        """Remove propagator from specified priority queue."""
-        # Note: This is O(n) but queues are typically small
-        # Could optimize with additional data structures if needed
+        """Remove propagator from specified priority queue.
+
+        Note: This method is no longer used due to stale-skip optimization.
+        Kept for potential future use or if we need to revert to eager removal.
+        Expected queue sizes are small (10s-100s of propagators) so O(n) is acceptable.
+        """
         queue = self.queues[priority]
         try:
             queue.remove(propagator_id)
@@ -126,19 +136,29 @@ class PropagationQueue:
 
     def pop(self) -> Optional[Tuple[int, Any]]:
         """Pop highest priority propagator from queue.
-        
+
+        Uses stale-skip: ignores entries that have been escalated to a different
+        priority queue (stale entries from priority escalation).
+
         Returns:
             Tuple of (propagator_id, cause) or None if queue is empty
         """
         # Try priorities in order (HIGH -> MED -> LOW)
         for priority in Priority:
             queue = self.queues[priority]
-            if queue:
+            while queue:
                 pid = queue.popleft()
+
+                # Stale-skip: check if this entry is stale (escalated elsewhere)
+                if pid not in self.queued or self.queued[pid] != priority:
+                    # Stale entry from escalation, skip it
+                    continue
+
+                # Valid entry, return it
                 del self.queued[pid]
                 cause = self.causes.pop(pid, None)
                 return (pid, cause)
-        
+
         return None
 
     def is_empty(self) -> bool:
@@ -185,23 +205,24 @@ class PropagationQueue:
                 # Clear running status
                 self.running = None
                 
-                # Process reschedule set
-                for p, prio in self.reschedule:
-                    self.schedule(p, prio)
+                # Process reschedule set (includes causes)
+                for p, prio, cause in self.reschedule:
+                    self.schedule(p, prio, cause)
                 self.reschedule.clear()
         
         return True
 
     def _wake_watchers(self, store, varid: int) -> None:
         """Wake all watchers of a variable.
-        
+
         Args:
             store: Variable store
             varid: Variable ID whose watchers to wake
         """
         # Import here to avoid circular dependency
         from prolog.clpfd.api import iter_watchers
-        
+
         for watcher_id, priority in iter_watchers(store, varid):
             # Schedule with cause indicating which variable changed
+            # Future: could add domain rev here for staleness detection
             self.schedule(watcher_id, priority, cause=('domain_changed', varid))

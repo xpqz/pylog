@@ -204,7 +204,7 @@ class TestSelfRequeue:
 
         # Should be added to reschedule set, not queued
         assert pid not in queue.queued
-        assert (pid, Priority.HIGH) in queue.reschedule
+        assert (pid, Priority.HIGH, None) in queue.reschedule
 
     def test_reschedule_set_processed_after_run(self):
         """Reschedule set is processed after propagator finishes."""
@@ -218,14 +218,14 @@ class TestSelfRequeue:
         queue.schedule(pid, Priority.MED)
 
         # Should be in reschedule set
-        assert (pid, Priority.MED) in queue.reschedule
+        assert (pid, Priority.MED, None) in queue.reschedule
 
         # Clear running status (simulating end of run)
         queue.running = None
 
         # Process reschedule set
-        for p, prio in queue.reschedule:
-            queue.schedule(p, prio)
+        for p, prio, cause in queue.reschedule:
+            queue.schedule(p, prio, cause)
         queue.reschedule.clear()
 
         # Now should be queued
@@ -465,3 +465,181 @@ class TestQueueIntegration:
         assert execution_order[2] == 'med'
         # Then low
         assert execution_order[3] == 'low'
+
+
+class TestQueueEdgeCases:
+    """Test edge cases and optimizations."""
+
+    def test_multiple_changed_vars_dedup(self):
+        """Propagator watching multiple vars only queued once."""
+        queue = PropagationQueue()
+
+        executions = []
+
+        def prop(store, trail, engine, cause):
+            executions.append(cause)
+            return ('ok', None)
+
+        pid = queue.register(prop)
+
+        # Mock watchers - this propagator watches vars 1, 2, 3
+        def mock_iter_watchers(store, varid):
+            if varid in [1, 2, 3]:
+                yield (pid, Priority.MED if varid == 1 else Priority.LOW)
+
+        import prolog.clpfd.api
+        original = getattr(prolog.clpfd.api, 'iter_watchers', None)
+        prolog.clpfd.api.iter_watchers = mock_iter_watchers
+
+        try:
+            # Wake for multiple variables
+            queue._wake_watchers({}, 1)  # MED priority
+            queue._wake_watchers({}, 2)  # LOW priority
+            queue._wake_watchers({}, 3)  # LOW priority
+
+            # Should be queued only once at highest priority (MED)
+            assert pid in queue.queued
+            assert queue.queued[pid] == Priority.MED
+
+            # Run to fixpoint
+            queue.run_to_fixpoint({}, [], None)
+
+            # Should execute exactly once
+            assert len(executions) == 1
+            # With the first cause (from highest priority wake)
+            assert executions[0] == ('domain_changed', 1)
+        finally:
+            if original:
+                prolog.clpfd.api.iter_watchers = original
+            elif hasattr(prolog.clpfd.api, 'iter_watchers'):
+                delattr(prolog.clpfd.api, 'iter_watchers')
+
+    def test_cause_overwrite_on_escalation(self):
+        """Escalation with new cause overwrites old cause."""
+        queue = PropagationQueue()
+
+        received_cause = None
+
+        def prop(store, trail, engine, cause):
+            nonlocal received_cause
+            received_cause = cause
+            return ('ok', None)
+
+        pid = queue.register(prop)
+
+        # Schedule with cause A at MED
+        cause_a = ('domain_changed', 1)
+        queue.schedule(pid, Priority.MED, cause=cause_a)
+
+        # Reschedule with cause B at HIGH (escalation)
+        cause_b = ('domain_changed', 2)
+        queue.schedule(pid, Priority.HIGH, cause=cause_b)
+
+        # Pop and check
+        item = queue.pop()
+        assert item[0] == pid
+        assert item[1] == cause_b  # New cause should overwrite
+
+    def test_escalation_with_none_cause_preserves(self):
+        """Escalation with None cause preserves existing cause."""
+        queue = PropagationQueue()
+
+        prop = lambda s, t, e, c: ('ok', None)
+        pid = queue.register(prop)
+
+        # Schedule with cause at MED
+        original_cause = ('domain_changed', 5)
+        queue.schedule(pid, Priority.MED, cause=original_cause)
+
+        # Escalate with None cause
+        queue.schedule(pid, Priority.HIGH, cause=None)
+
+        # Pop and check
+        item = queue.pop()
+        assert item[0] == pid
+        assert item[1] == original_cause  # Original cause preserved
+
+    def test_empty_changed_vars_no_wakes(self):
+        """Propagator returning empty changed_vars causes no wakes."""
+        queue = PropagationQueue()
+
+        # Propagator that returns empty list
+        def prop1(store, trail, engine, cause):
+            return ('ok', [])  # Empty list
+
+        # Watcher that should not be woken
+        wake_count = 0
+
+        def prop2(store, trail, engine, cause):
+            nonlocal wake_count
+            wake_count += 1
+            return ('ok', None)
+
+        pid1 = queue.register(prop1)
+        pid2 = queue.register(prop2)
+
+        # Mock watchers (wouldn't be called anyway with empty list)
+        def mock_iter_watchers(store, varid):
+            yield (pid2, Priority.MED)
+
+        import prolog.clpfd.api
+        original = getattr(prolog.clpfd.api, 'iter_watchers', None)
+        prolog.clpfd.api.iter_watchers = mock_iter_watchers
+
+        try:
+            queue.schedule(pid1, Priority.HIGH)
+            result = queue.run_to_fixpoint({}, [], None)
+
+            assert result is True
+            assert wake_count == 0  # No wakes should occur
+        finally:
+            if original:
+                prolog.clpfd.api.iter_watchers = original
+            elif hasattr(prolog.clpfd.api, 'iter_watchers'):
+                delattr(prolog.clpfd.api, 'iter_watchers')
+
+    def test_stale_skip_on_escalation(self):
+        """Stale entries from escalation are skipped on pop."""
+        queue = PropagationQueue()
+
+        prop = lambda s, t, e, c: ('ok', None)
+        pid = queue.register(prop)
+
+        # Schedule at LOW
+        queue.schedule(pid, Priority.LOW)
+
+        # Escalate to HIGH (leaves stale entry in LOW queue)
+        queue.schedule(pid, Priority.HIGH)
+
+        # Pop should get from HIGH queue
+        item = queue.pop()
+        assert item[0] == pid
+
+        # Queue should now be empty (stale LOW entry ignored)
+        assert queue.is_empty()
+        assert queue.pop() is None
+
+    def test_self_requeue_preserves_cause(self):
+        """Self-requeued propagators preserve their cause."""
+        queue = PropagationQueue()
+
+        received_causes = []
+
+        def prop(store, trail, engine, cause):
+            received_causes.append(cause)
+            if len(received_causes) == 1:
+                # First run: self-requeue with different cause
+                queue.schedule(queue.running, Priority.LOW, cause='second_cause')
+            return ('ok', None)
+
+        pid = queue.register(prop)
+
+        # Initial schedule with first cause
+        queue.schedule(pid, Priority.HIGH, cause='first_cause')
+
+        result = queue.run_to_fixpoint({}, [], None)
+
+        assert result is True
+        assert len(received_causes) == 2
+        assert received_causes[0] == 'first_cause'
+        assert received_causes[1] == 'second_cause'  # Self-requeue cause preserved
