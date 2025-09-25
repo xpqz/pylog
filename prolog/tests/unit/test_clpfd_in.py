@@ -8,6 +8,7 @@ from prolog.ast.terms import Atom, Int, Var, Struct, List
 from prolog.unify.store import Store
 from prolog.unify.trail import Trail
 from prolog.engine.engine import Engine
+from prolog.ast.clauses import Program
 from prolog.clpfd.domain import Domain
 from prolog.clpfd.api import get_domain
 from prolog.engine.builtins_clpfd import _builtin_in, parse_domain_term
@@ -134,7 +135,7 @@ class TestInBuiltin:
 
     def test_in_sets_domain_on_unbound_var(self):
         """X in Domain sets domain on unbound variable."""
-        engine = Engine()
+        engine = Engine(Program([]))
         store = engine.store
         trail = engine.trail
 
@@ -150,7 +151,7 @@ class TestInBuiltin:
 
     def test_in_checks_bound_integer(self):
         """in/2 checks if bound integer is in domain."""
-        engine = Engine()
+        engine = Engine(Program([]))
 
         # Test with integer in domain
         result = _builtin_in(engine, Int(5), Struct("..", (Int(1), Int(10))))
@@ -169,7 +170,7 @@ class TestInBuiltin:
 
     def test_in_rejects_non_integer_bound_values(self):
         """in/2 fails for non-integer bound values."""
-        engine = Engine()
+        engine = Engine(Program([]))
 
         result = _builtin_in(engine, Atom("foo"), Struct("..", (Int(1), Int(10))))
         assert result is False
@@ -179,7 +180,7 @@ class TestInBuiltin:
 
     def test_in_multiple_domains_same_var(self):
         """Multiple in/2 constraints narrow domain."""
-        engine = Engine()
+        engine = Engine(Program([]))
         store = engine.store
         trail = engine.trail
 
@@ -203,7 +204,7 @@ class TestInBuiltin:
 
     def test_in_registers_unification_hook_once(self):
         """in/2 registers CLP(FD) unification hook on first use."""
-        engine = Engine()
+        engine = Engine(Program([]))
         store = engine.store
 
         # Initially no CLP(FD) hook
@@ -218,7 +219,7 @@ class TestInBuiltin:
 
     def test_in_with_singleton_domain(self):
         """X in 5 sets domain to singleton."""
-        engine = Engine()
+        engine = Engine(Program([]))
         store = engine.store
         trail = engine.trail
 
@@ -232,7 +233,7 @@ class TestInBuiltin:
 
     def test_in_with_enumerated_set(self):
         """X in {1,3,5} sets domain to enumerated values."""
-        engine = Engine()
+        engine = Engine(Program([]))
         store = engine.store
         trail = engine.trail
 
@@ -248,8 +249,8 @@ class TestInBuiltin:
         assert not domain.contains(4)
 
     def test_in_with_union_domains(self):
-        """X in (1..3 \/ 7..9) sets union domain."""
-        engine = Engine()
+        r"""X in (1..3 \/ 7..9) sets union domain."""
+        engine = Engine(Program([]))
         store = engine.store
         trail = engine.trail
 
@@ -275,7 +276,7 @@ class TestInBuiltinIntegration:
 
     def test_in_trailing_and_backtracking(self):
         """Domain changes via in/2 are properly trailed."""
-        engine = Engine()
+        engine = Engine(Program([]))
         store = engine.store
         trail = engine.trail
 
@@ -296,7 +297,7 @@ class TestInBuiltinIntegration:
 
     def test_in_with_deref(self):
         """in/2 properly handles variables that need dereferencing."""
-        engine = Engine()
+        engine = Engine(Program([]))
         store = engine.store
         trail = engine.trail
 
@@ -323,7 +324,7 @@ class TestInBuiltinIntegration:
         """Setting domain via in/2 preserves other FD attributes."""
         from prolog.clpfd.api import add_watcher, Priority, iter_watchers
 
-        engine = Engine()
+        engine = Engine(Program([]))
         store = engine.store
         trail = engine.trail
 

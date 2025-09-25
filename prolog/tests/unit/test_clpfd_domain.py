@@ -403,10 +403,12 @@ class TestDomainRevisionSemantics:
         result = d1.intersect(d2)
         assert result.rev == 11  # max(10,7) + 1
 
-        # Other direction should give same result
+        # Other direction - d2.intersect(d1) returns d2 unchanged
+        # since (5,15) intersect (1,20) = (5,15) which equals d2
         result2 = d2.intersect(d1)
         assert result2.intervals == result.intervals
-        assert result2.rev == 11  # Same revision
+        assert result2 is d2  # Should return self when unchanged
+        assert result2.rev == 7  # No change, so no rev bump
 
     def test_remove_operations_bump_rev(self):
         """All narrowing operations bump revision."""
