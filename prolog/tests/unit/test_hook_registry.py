@@ -493,13 +493,11 @@ class TestExampleConstraint:
 class TestVarVarUnification:
     """Test var-var unification attribute handling (Phase 4.3)."""
 
-    @pytest.mark.xfail(reason="Attribute merging not yet implemented (Phase 4.3)")
     def test_attributes_merge_during_var_var_unification(self):
         """Attributes from both variables should merge during var-var unification.
 
-        This test will fail until Phase 4.3 implements proper attribute merging
-        when two attributed variables are unified. Currently, only one set of
-        attributes is preserved (depending on union-find root selection).
+        When two attributed variables are unified, their attributes are merged
+        correctly through the var-var aliasing mechanism implemented in PR #118.
         """
         program = Program(())
         engine = Engine(program)
