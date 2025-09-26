@@ -54,7 +54,11 @@ class Engine:
         """
         # Convert to IndexedProgram if indexing is enabled
         if use_indexing:
-            self.program = IndexedProgram.from_program(program) if not isinstance(program, IndexedProgram) else program
+            self.program = (
+                IndexedProgram.from_program(program)
+                if not isinstance(program, IndexedProgram)
+                else program
+            )
         else:
             self.program = program
 
@@ -64,11 +68,11 @@ class Engine:
 
         # Determine if streaming should be enabled
         # Check environment variable override
-        env_streaming = os.environ.get('PYLOG_STREAM_SELECTION')
-        if env_streaming == '1':
+        env_streaming = os.environ.get("PYLOG_STREAM_SELECTION")
+        if env_streaming == "1":
             # Force streaming on (if indexing enabled)
             self.use_streaming = use_indexing
-        elif env_streaming == '0':
+        elif env_streaming == "0":
             # Force streaming off
             self.use_streaming = False
         else:
@@ -137,6 +141,7 @@ class Engine:
         # Initialize tracer if trace=True
         if trace:
             from prolog.debug.tracer import PortsTracer
+
             self.tracer = PortsTracer(self)
         else:
             self.tracer = None
@@ -147,6 +152,7 @@ class Engine:
         # Initialize metrics if metrics=True
         if metrics:
             from prolog.debug.metrics import EngineMetrics
+
             self.metrics = EngineMetrics()
         else:
             self.metrics = None
@@ -162,43 +168,47 @@ class Engine:
 
     def trail_top_value(self) -> int:
         """Get the current trail position."""
-        return self.trail.position() if hasattr(self.trail, 'position') else len(self.trail)
+        return (
+            self.trail.position()
+            if hasattr(self.trail, "position")
+            else len(self.trail)
+        )
 
     def goal_height(self) -> int:
         """Get the current goal stack height."""
-        return len(self.goal_stack) if hasattr(self, 'goal_stack') else 0
+        return len(self.goal_stack) if hasattr(self, "goal_stack") else 0
 
     def goal_top_value(self) -> int:
         """Get the current goal top (same as height for list-based stack)."""
-        return len(self.goal_stack) if hasattr(self, 'goal_stack') else 0
+        return len(self.goal_stack) if hasattr(self, "goal_stack") else 0
 
     def frame_height(self) -> int:
         """Get the current frame stack height."""
-        return len(self.frame_stack) if hasattr(self, 'frame_stack') else 0
+        return len(self.frame_stack) if hasattr(self, "frame_stack") else 0
 
     def frame_top_value(self) -> int:
         """Get the current frame top (same as height for list-based stack)."""
-        return len(self.frame_stack) if hasattr(self, 'frame_stack') else 0
+        return len(self.frame_stack) if hasattr(self, "frame_stack") else 0
 
     def choicepoint_height(self) -> int:
         """Get the current choicepoint stack height."""
-        return len(self.cp_stack) if hasattr(self, 'cp_stack') else 0
+        return len(self.cp_stack) if hasattr(self, "cp_stack") else 0
 
     def choicepoint_top(self) -> int:
         """Get the current choicepoint top (same as height for list-based stack)."""
-        return len(self.cp_stack) if hasattr(self, 'cp_stack') else 0
+        return len(self.cp_stack) if hasattr(self, "cp_stack") else 0
 
     def write_stamp_value(self) -> int:
         """Get the current write stamp."""
-        return self.write_stamp if hasattr(self, 'write_stamp') else 0
+        return self.write_stamp if hasattr(self, "write_stamp") else 0
 
     def choicepoints(self) -> list:
         """Get list of current choicepoints (for snapshot)."""
-        return self.cp_stack if hasattr(self, 'cp_stack') else []
+        return self.cp_stack if hasattr(self, "cp_stack") else []
 
     def frames(self) -> list:
         """Get list of current frames (for snapshot)."""
-        return self.frame_stack if hasattr(self, 'frame_stack') else []
+        return self.frame_stack if hasattr(self, "frame_stack") else []
 
     def reset(self):
         """Reset engine state for reuse."""
@@ -232,7 +242,9 @@ class Engine:
         # Exception handling is done via try/except PrologThrow
         # Don't reset ports - they accumulate across runs
 
-    def _trace_port(self, port: str, term: Optional[Term], depth_override: Optional[int] = None) -> None:
+    def _trace_port(
+        self, port: str, term: Optional[Term], depth_override: Optional[int] = None
+    ) -> None:
         """Emit a trace event with optional frame depth override."""
         if not self.tracer or term is None:
             return
@@ -254,7 +266,9 @@ class Engine:
             depth = len(self.frame_stack)
         self._goal_call_depths[id(goal)] = depth
 
-    def _push_goal(self, goal: Goal, depth: Optional[int] = None, call_emitted: bool = False) -> None:
+    def _push_goal(
+        self, goal: Goal, depth: Optional[int] = None, call_emitted: bool = False
+    ) -> None:
         """Push a goal and record its logical metadata."""
         self.goal_stack.push(goal)
         self._register_goal_depth(goal, depth)
@@ -270,7 +284,9 @@ class Engine:
         for goal, depth, call_emitted in zip(goals, depths, call_flags):
             self._push_goal(goal, depth, call_emitted)
 
-    def _pop_goal_metadata(self, goal: Goal, default_depth: Optional[int] = None) -> tuple[int, bool]:
+    def _pop_goal_metadata(
+        self, goal: Goal, default_depth: Optional[int] = None
+    ) -> tuple[int, bool]:
         """Remove and return metadata for a goal being dispatched."""
         if default_depth is None:
             default_depth = len(self.frame_stack)
@@ -324,9 +340,17 @@ class Engine:
 
         # CLP(FD) builtins
         from prolog.engine.builtins_clpfd import (
-            _builtin_in, _builtin_fd_eq, _builtin_fd_lt, _builtin_fd_le,
-            _builtin_fd_gt, _builtin_fd_ge, _builtin_fd_var, _builtin_fd_inf,
-            _builtin_fd_sup, _builtin_fd_dom
+            _builtin_in,
+            _builtin_fd_eq,
+            _builtin_fd_lt,
+            _builtin_fd_le,
+            _builtin_fd_gt,
+            _builtin_fd_ge,
+            _builtin_fd_var,
+            _builtin_fd_inf,
+            _builtin_fd_sup,
+            _builtin_fd_dom,
+            _builtin_all_different,
         )
         from prolog.clpfd.label import _builtin_label, _builtin_labeling
 
@@ -334,6 +358,7 @@ class Engine:
         self._builtins[("#=", 2)] = lambda eng, args: _builtin_fd_eq(eng, *args)
         # FD inequality
         from prolog.engine.builtins_clpfd import _builtin_fd_neq
+
         self._builtins[("#\\=", 2)] = lambda eng, args: _builtin_fd_neq(eng, *args)
         self._builtins[("#<", 2)] = lambda eng, args: _builtin_fd_lt(eng, *args)
         self._builtins[("#=<", 2)] = lambda eng, args: _builtin_fd_le(eng, *args)
@@ -344,24 +369,31 @@ class Engine:
         self._builtins[("fd_sup", 2)] = lambda eng, args: _builtin_fd_sup(eng, *args)
         self._builtins[("fd_dom", 2)] = lambda eng, args: _builtin_fd_dom(eng, *args)
         self._builtins[("label", 1)] = lambda eng, args: _builtin_label(eng, *args)
-        self._builtins[("labeling", 2)] = lambda eng, args: _builtin_labeling(eng, *args)
+        self._builtins[("labeling", 2)] = lambda eng, args: _builtin_labeling(
+            eng, *args
+        )
+        self._builtins[("all_different", 1)] = lambda eng, args: _builtin_all_different(
+            eng, *args
+        )
 
-    def solve(self, goal: Term, max_solutions: Optional[int] = None) -> List[Dict[str, Any]]:
+    def solve(
+        self, goal: Term, max_solutions: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
         """Solve a single goal (convenience method for tests).
-        
+
         Args:
             goal: Single goal term to solve.
             max_solutions: Maximum number of solutions to find.
-            
+
         Returns:
             List of solution dictionaries mapping variable names to values.
         """
         # Reset debug counter at start of each solve
         if self.debug:
             self._candidates_considered = 0
-        
+
         return self.run([goal], max_solutions)
-    
+
     def run(
         self, goals: List[Term], max_solutions: Optional[int] = None
     ) -> List[Dict[str, Any]]:
@@ -429,7 +461,7 @@ class Engine:
                 if self._steps_taken > self.max_steps:
                     # Step budget exceeded - stop execution
                     break
-            
+
             try:
                 # Pop next goal
                 goal = self.goal_stack.pop()
@@ -487,7 +519,7 @@ class Engine:
                     # Unknown goal type - should not happen
                     if not self._backtrack():
                         break
-            
+
             except PrologThrow as exc:
                 # Handle thrown exception
                 handled = self._handle_throw(exc.ball)
@@ -528,17 +560,18 @@ class Engine:
             for sol in self.solutions:
                 for v in sol.values():
                     from prolog.ast.terms import Var as _Var
+
                     if isinstance(v, _Var):
                         # Deref to current root
                         r = self.store.deref(v.id)
                         if r[0] == "UNBOUND":
                             root = r[1]
                             # Capture clpfd domain if present
-                            if root in getattr(self.store, 'attrs', {}):
+                            if root in getattr(self.store, "attrs", {}):
                                 mod_attrs = self.store.attrs[root]
-                                if 'clpfd' in mod_attrs:
-                                    fd = mod_attrs['clpfd']
-                                    dom = fd.get('domain')
+                                if "clpfd" in mod_attrs:
+                                    fd = mod_attrs["clpfd"]
+                                    dom = fd.get("domain")
                                     if dom is not None:
                                         persist_domains[root] = dom
 
@@ -550,14 +583,14 @@ class Engine:
 
         # Re-apply persisted domains without trailing (post-cleanup state)
         if persist_domains:
-            if not hasattr(self.store, 'attrs'):
+            if not hasattr(self.store, "attrs"):
                 self.store.attrs = {}
             for vid, dom in persist_domains.items():
                 if vid not in self.store.attrs:
                     self.store.attrs[vid] = {}
                 # Recreate clpfd attribute with only domain preserved
-                self.store.attrs[vid]['clpfd'] = {
-                    'domain': dom,
+                self.store.attrs[vid]["clpfd"] = {
+                    "domain": dom,
                 }
 
         return self.solutions
@@ -597,7 +630,7 @@ class Engine:
             True if unification succeeds, False otherwise
         """
         return self._unify(a, b)
-    
+
     def _match_only(self, term1: Term, term2: Term) -> bool:
         """Check if two terms unify WITHOUT modifying the store.
 
@@ -654,11 +687,13 @@ class Engine:
             # --- Two-phase unification: check match without side effects ---
             if not self._match_only(ball, cp.payload.get("catcher")):
                 continue
-            
+
             # --- We have a matching catcher: restore to catch baselines ---
             if self.trace:
-                self._trace_log.append(f"[CATCH] Restoring: cp_height={cp_height}, current cp_stack len={len(self.cp_stack)}")
-            
+                self._trace_log.append(
+                    f"[CATCH] Restoring: cp_height={cp_height}, current cp_stack len={len(self.cp_stack)}"
+                )
+
             self.trail.unwind_to(cp.trail_top, self.store)
             self._shrink_goal_stack_to(cp.goal_stack_height)
             while len(self.frame_stack) > cp.frame_stack_height:
@@ -667,33 +702,36 @@ class Engine:
                 removed = self.cp_stack.pop()
                 if self.trace:
                     self._trace_log.append(f"[CATCH] Removing CP: {removed.kind.name}")
-            
+
             # Switch to the catch window stamp
             self.trail.set_current_stamp(cp.stamp)
-            
+
             # Re-unify to make catcher bindings visible to Recovery
             ok2 = self._unify(ball, cp.payload.get("catcher"))
             assert ok2, "ball unified in trial but failed after restore (bug)"
-            
+
             # Debug assertions
             assert self.goal_stack.height() == cp.goal_stack_height
             assert len(self.cp_stack) == cp_height
             assert len(self.frame_stack) >= cp.frame_stack_height
-            
+
             # Emit catch_switch event when we catch an exception
             if self.tracer:
-                self.tracer.emit_internal_event("catch_switch", {
-                    "exception": str(ball),
-                    "handler": str(cp.payload.get("recovery"))
-                })
+                self.tracer.emit_internal_event(
+                    "catch_switch",
+                    {
+                        "exception": str(ball),
+                        "handler": str(cp.payload.get("recovery")),
+                    },
+                )
 
             # Push only the recovery goal - DO NOT re-install the CATCH choicepoint
             # If recovery fails, we backtrack transparently to outer choicepoints
             self._push_goal(Goal.from_term(cp.payload.get("recovery")))
             return True
-        
+
         return False  # No catcher matched
-    
+
     def _allocate_query_vars(self, term: Term) -> Term:
         """Allocate fresh variables for query terms and track them.
 
@@ -779,7 +817,9 @@ class Engine:
 
         return processed[id(term)]
 
-    def _dispatch_predicate(self, goal: Goal, call_depth: int, call_emitted: bool) -> bool:
+    def _dispatch_predicate(
+        self, goal: Goal, call_depth: int, call_emitted: bool
+    ) -> bool:
         """Dispatch a predicate goal.
 
         Args:
@@ -811,7 +851,7 @@ class Engine:
             self.metrics.record_call(pred_id)
 
         # Get matching clauses - use indexing if available
-        if self.use_indexing and hasattr(self.program, 'select'):
+        if self.use_indexing and hasattr(self.program, "select"):
             # Use indexed selection
             pred_key = (functor, arity)
 
@@ -827,7 +867,9 @@ class Engine:
             if should_stream:
                 # Use streaming cursor for memory efficiency
                 clause_iterator = self.program.select(pred_key, goal.term, self.store)
-                cursor = StreamingClauseCursor(functor=functor, arity=arity, it=clause_iterator)
+                cursor = StreamingClauseCursor(
+                    functor=functor, arity=arity, it=clause_iterator
+                )
             else:
                 # Materialize list for debug/metrics compatibility
                 matches = list(self.program.select(pred_key, goal.term, self.store))
@@ -848,7 +890,9 @@ class Engine:
                             pred_idx = self.program._index.preds.get((functor, arity))
                             total_clauses = len(pred_idx.order) if pred_idx else 0
                         else:
-                            total_clauses = len(self.program.clauses_for(functor, arity))
+                            total_clauses = len(
+                                self.program.clauses_for(functor, arity)
+                            )
 
                         if total_clauses > 0:
                             self._trace_log.append(
@@ -895,8 +939,7 @@ class Engine:
                 for g in continuation
             )
             continuation_calls = tuple(
-                self._goal_call_flags.get(id(g), False)
-                for g in continuation
+                self._goal_call_flags.get(id(g), False) for g in continuation
             )
 
             # Save store size for allocation cleanup
@@ -936,15 +979,18 @@ class Engine:
                 # Compute alternatives count based on cursor type
                 alternatives = 0
                 if cursor:
-                    if hasattr(cursor, 'matches') and hasattr(cursor, 'pos'):
+                    if hasattr(cursor, "matches") and hasattr(cursor, "pos"):
                         alternatives = len(cursor.matches) - cursor.pos
-                    elif hasattr(cursor, 'has_more'):
+                    elif hasattr(cursor, "has_more"):
                         alternatives = 1 if cursor.has_more() else 0
-                self.tracer.emit_internal_event("cp_push", {
-                    "pred_id": f"{functor}/{arity}",
-                    "alternatives": alternatives,
-                    "trail_top": cp.trail_top
-                })
+                self.tracer.emit_internal_event(
+                    "cp_push",
+                    {
+                        "pred_id": f"{functor}/{arity}",
+                        "alternatives": alternatives,
+                        "trail_top": cp.trail_top,
+                    },
+                )
 
         # Rename clause with fresh variables
         renamed_clause = self._renamer.rename_clause(clause)
@@ -967,10 +1013,10 @@ class Engine:
 
             # Emit internal event for frame push
             if self.tracer:
-                self.tracer.emit_internal_event("frame_push", {
-                    "pred_id": f"{functor}/{arity}",
-                    "frame_id": frame_id
-                })
+                self.tracer.emit_internal_event(
+                    "frame_push",
+                    {"pred_id": f"{functor}/{arity}", "frame_id": frame_id},
+                )
 
             # Don't call next_stamp() here - only when creating CPs
 
@@ -992,7 +1038,9 @@ class Engine:
             # Unification failed - no frame was created
             return False
 
-    def _dispatch_builtin(self, goal: Goal, call_depth: int, call_emitted: bool) -> bool:
+    def _dispatch_builtin(
+        self, goal: Goal, call_depth: int, call_emitted: bool
+    ) -> bool:
         """Dispatch a builtin goal.
 
         Args:
@@ -1077,8 +1125,7 @@ class Engine:
                 for g in continuation
             )
             continuation_calls = tuple(
-                self._goal_call_flags.get(id(g), False)
-                for g in continuation
+                self._goal_call_flags.get(id(g), False) for g in continuation
             )
 
             self.trail.next_stamp()
@@ -1099,10 +1146,9 @@ class Engine:
 
             # Emit internal event for CP push
             if self.tracer:
-                self.tracer.emit_internal_event("cp_push", {
-                    "pred_id": "disjunction",
-                    "trail_top": cp.trail_top
-                })
+                self.tracer.emit_internal_event(
+                    "cp_push", {"pred_id": "disjunction", "trail_top": cp.trail_top}
+                )
 
             # Try left first
             left_goal = Goal.from_term(left)
@@ -1150,10 +1196,9 @@ class Engine:
 
         # Emit internal event for CP push
         if self.tracer:
-            self.tracer.emit_internal_event("cp_push", {
-                "pred_id": "if_then_else",
-                "trail_top": cp.trail_top
-            })
+            self.tracer.emit_internal_event(
+                "cp_push", {"pred_id": "if_then_else", "trail_top": cp.trail_top}
+            )
 
         # Push control goal that will commit and run Then on first success
         then_goal = Goal.from_term(then_term)
@@ -1193,10 +1238,10 @@ class Engine:
                 if removed_cp.kind == ChoicepointKind.PREDICATE:
                     # For predicate CPs, count remaining clauses
                     cursor = removed_cp.payload.get("cursor")
-                    if cursor and hasattr(cursor, 'matches') and hasattr(cursor, 'pos'):
+                    if cursor and hasattr(cursor, "matches") and hasattr(cursor, "pos"):
                         # Count remaining alternatives in cursor (materialized)
                         alternatives_pruned += len(cursor.matches) - cursor.pos
-                    elif cursor and hasattr(cursor, 'has_more'):
+                    elif cursor and hasattr(cursor, "has_more"):
                         # For streaming cursors, just count as 1 (can't count ahead)
                         alternatives_pruned += 1 if cursor.has_more() else 0
                     else:
@@ -1207,17 +1252,22 @@ class Engine:
 
                 # Emit internal event for CP pop due to cut
                 if self.tracer:
-                    pred_id = removed_cp.payload.get("pred_ref", removed_cp.kind.name.lower()) if removed_cp.kind == ChoicepointKind.PREDICATE else removed_cp.kind.name.lower()
-                    self.tracer.emit_internal_event("cp_pop", {
-                        "pred_id": pred_id
-                    })
+                    pred_id = (
+                        removed_cp.payload.get("pred_ref", removed_cp.kind.name.lower())
+                        if removed_cp.kind == ChoicepointKind.PREDICATE
+                        else removed_cp.kind.name.lower()
+                    )
+                    self.tracer.emit_internal_event("cp_pop", {"pred_id": pred_id})
 
             # Emit cut_commit event after all CP pops (even if no alternatives pruned)
             if self.tracer:
-                self.tracer.emit_internal_event("cut_commit", {
-                    "alternatives_pruned": alternatives_pruned,
-                    "barrier": cut_barrier
-                })
+                self.tracer.emit_internal_event(
+                    "cut_commit",
+                    {
+                        "alternatives_pruned": alternatives_pruned,
+                        "barrier": cut_barrier,
+                    },
+                )
 
             # Record metrics
             if self.metrics and alternatives_pruned > 0:
@@ -1236,7 +1286,7 @@ class Engine:
 
     def _dispatch_pop_frame(self, goal: Goal):
         """Pop frame sentinel - executed when predicate completes.
-        
+
         Only pops the frame if no choicepoints still reference it.
         This ensures frames stay alive for backtracking.
 
@@ -1250,13 +1300,16 @@ class Engine:
             # A CP needs this frame if its frame_stack_height is >= our current frame height
             current_frame_height = len(self.frame_stack)
             frame_still_needed = False
-            
+
             for cp in self.cp_stack:
                 # Skip PREDICATE CPs as they use frame_stack_height=0 as sentinel
-                if cp.kind != ChoicepointKind.PREDICATE and cp.frame_stack_height >= current_frame_height:
+                if (
+                    cp.kind != ChoicepointKind.PREDICATE
+                    and cp.frame_stack_height >= current_frame_height
+                ):
                     frame_still_needed = True
                     break
-            
+
             if not frame_still_needed:
                 # Safe to pop the frame - no CPs reference it
                 frame = self.frame_stack.pop()
@@ -1266,24 +1319,27 @@ class Engine:
 
                 # Emit internal event for frame pop
                 if self.tracer:
-                    self.tracer.emit_internal_event("frame_pop", {
-                        "pred_id": frame.pred,
-                        "frame_id": frame.frame_id
-                    })
+                    self.tracer.emit_internal_event(
+                        "frame_pop", {"pred_id": frame.pred, "frame_id": frame.frame_id}
+                    )
 
                 # Emit EXIT port when frame is popped
                 pred_ref = frame.pred or "unknown"
                 self._port("EXIT", pred_ref)
                 if frame.goal_term:
                     # Use the stored goal term for proper EXIT port emission
-                    self._trace_port("exit", frame.goal_term, depth_override=frame.call_depth)
+                    self._trace_port(
+                        "exit", frame.goal_term, depth_override=frame.call_depth
+                    )
                 if self.metrics and frame.pred:
                     self.metrics.record_exit(frame.pred)
 
                 # Mark predicate choicepoint as having produced a solution
                 for cp_entry in reversed(self.cp_stack):
-                    if cp_entry.kind == ChoicepointKind.PREDICATE and \
-                        cp_entry.payload.get("pred_ref") == pred_ref:
+                    if (
+                        cp_entry.kind == ChoicepointKind.PREDICATE
+                        and cp_entry.payload.get("pred_ref") == pred_ref
+                    ):
                         cp_entry.payload["has_succeeded"] = True
                         break
 
@@ -1327,6 +1383,7 @@ class Engine:
         elif op == "LABEL_CONTINUE":
             # Continue labeling after binding a variable
             from prolog.clpfd.label import push_labeling_choices
+
             vars = goal.payload["vars"]
             var_select = goal.payload["var_select"]
             val_select = goal.payload["val_select"]
@@ -1349,13 +1406,17 @@ class Engine:
 
             # Emit internal event for CP pop
             if self.tracer:
-                pred_id = cp.payload.get("pred_ref", cp.kind.name.lower()) if cp.kind == ChoicepointKind.PREDICATE else cp.kind.name.lower()
-                self.tracer.emit_internal_event("cp_pop", {
-                    "pred_id": pred_id
-                })
+                pred_id = (
+                    cp.payload.get("pred_ref", cp.kind.name.lower())
+                    if cp.kind == ChoicepointKind.PREDICATE
+                    else cp.kind.name.lower()
+                )
+                self.tracer.emit_internal_event("cp_pop", {"pred_id": pred_id})
 
             if self.trace:
-                self._trace_log.append(f"[BACKTRACK] Popped CP: {cp.kind.name}, phase={cp.payload.get('phase', 'N/A')}")
+                self._trace_log.append(
+                    f"[BACKTRACK] Popped CP: {cp.kind.name}, phase={cp.payload.get('phase', 'N/A')}"
+                )
 
             # Restore state - unwind first, then restore heights
             # This order is safer if future features attach watchers to frames
@@ -1395,7 +1456,7 @@ class Engine:
                     assert (
                         self.goal_stack.height() == cp.goal_stack_height
                     ), f"Goal stack height mismatch after restore: {self.goal_stack.height()} != {cp.goal_stack_height}"
-                
+
             # Remove catch frames that are now out of scope
             # When we backtrack past a catch's window, remove its frame
             # A catch frame is out of scope if we've backtracked BELOW its goal height
@@ -1411,10 +1472,10 @@ class Engine:
 
                     # Emit internal event for frame pop
                     if self.tracer:
-                        self.tracer.emit_internal_event("frame_pop", {
-                            "pred_id": frame.pred,
-                            "frame_id": frame.frame_id
-                        })
+                        self.tracer.emit_internal_event(
+                            "frame_pop",
+                            {"pred_id": frame.pred, "frame_id": frame.frame_id},
+                        )
 
                 # Debug assertion: verify frame restoration
                 assert (
@@ -1429,10 +1490,7 @@ class Engine:
 
                 # If the previous clause left an active frame (i.e., failed before exit),
                 # emit FAIL for that frame before proceeding.
-                if (
-                    self.frame_stack
-                    and self.frame_stack[-1].pred == pred_ref
-                ):
+                if self.frame_stack and self.frame_stack[-1].pred == pred_ref:
                     self._fail_current_frame()
 
                 # Emit REDO port before resuming normal predicate (only after success)
@@ -1457,15 +1515,16 @@ class Engine:
                     continuation = cp.payload["continuation"]
                     continuation_depths = cp.payload.get(
                         "continuation_depths",
-                        tuple(len(self.frame_stack) for _ in continuation)
+                        tuple(len(self.frame_stack) for _ in continuation),
                     )
                     continuation_calls = cp.payload.get(
-                        "continuation_calls",
-                        tuple(False for _ in continuation)
+                        "continuation_calls", tuple(False for _ in continuation)
                     )
                     # Restore the continuation - these are the goals after the predicate
-                    self._push_goals_with_metadata(continuation, continuation_depths, continuation_calls)
-                    
+                    self._push_goals_with_metadata(
+                        continuation, continuation_depths, continuation_calls
+                    )
+
                     if self.trace:
                         self._trace_log.append(
                             f"PREDICATE CP: restored {len(continuation)} continuation goals"
@@ -1473,14 +1532,18 @@ class Engine:
 
                 has_more = cursor.has_more()
                 if self.trace:
-                    self._trace_log.append(f"PREDICATE CP: cursor.has_more()={has_more}")
-                
+                    self._trace_log.append(
+                        f"PREDICATE CP: cursor.has_more()={has_more}"
+                    )
+
                 if has_more:
                     clause_idx = cursor.take()
                     clause = self.program.clauses[clause_idx]
-                    
+
                     if self.trace:
-                        self._trace_log.append(f"PREDICATE CP: Trying next clause #{clause_idx}")
+                        self._trace_log.append(
+                            f"PREDICATE CP: Trying next clause #{clause_idx}"
+                        )
 
                     # Shrink store to checkpoint size for allocation cleanup
                     if "store_top" in cp.payload:
@@ -1500,11 +1563,10 @@ class Engine:
                         continuation = cp.payload.get("continuation", ())
                         continuation_depths = cp.payload.get(
                             "continuation_depths",
-                            tuple(len(self.frame_stack) for _ in continuation)
+                            tuple(len(self.frame_stack) for _ in continuation),
                         )
                         continuation_calls = cp.payload.get(
-                            "continuation_calls",
-                            tuple(False for _ in continuation)
+                            "continuation_calls", tuple(False for _ in continuation)
                         )
 
                         new_cp = Choicepoint(
@@ -1517,8 +1579,12 @@ class Engine:
                                 "cursor": cursor,
                                 "pred_ref": cp.payload["pred_ref"],
                                 "continuation": continuation,  # Preserve original continuation
-                                "store_top": cp.payload.get("store_top", self.store.size()),
-                                "call_depth": cp.payload.get("call_depth", len(self.frame_stack)),
+                                "store_top": cp.payload.get(
+                                    "store_top", self.store.size()
+                                ),
+                                "call_depth": cp.payload.get(
+                                    "call_depth", len(self.frame_stack)
+                                ),
                                 "continuation_depths": continuation_depths,
                                 "continuation_calls": continuation_calls,
                                 "has_succeeded": cp.payload.get("has_succeeded", False),
@@ -1531,29 +1597,38 @@ class Engine:
                             # Compute alternatives count based on cursor type
                             alternatives = 0
                             if cursor:
-                                if hasattr(cursor, 'matches') and hasattr(cursor, 'pos'):
+                                if hasattr(cursor, "matches") and hasattr(
+                                    cursor, "pos"
+                                ):
                                     alternatives = len(cursor.matches) - cursor.pos
-                                elif hasattr(cursor, 'has_more'):
+                                elif hasattr(cursor, "has_more"):
                                     alternatives = 1 if cursor.has_more() else 0
-                            self.tracer.emit_internal_event("cp_push", {
-                                "pred_id": pred_ref,
-                                "alternatives": alternatives,
-                                "trail_top": new_cp.trail_top
-                            })
+                            self.tracer.emit_internal_event(
+                                "cp_push",
+                                {
+                                    "pred_id": pred_ref,
+                                    "alternatives": alternatives,
+                                    "trail_top": new_cp.trail_top,
+                                },
+                            )
 
                     # Rename clause with fresh variables
                     renamed_clause = self._renamer.rename_clause(clause)
 
                     # Try to unify with clause head
                     unify_result = self._unify(renamed_clause.head, goal.term)
-                    
+
                     if self.trace:
-                        self._trace_log.append(f"PREDICATE CP: Unify result = {unify_result}")
-                    
+                        self._trace_log.append(
+                            f"PREDICATE CP: Unify result = {unify_result}"
+                        )
+
                     if unify_result:
                         # Emit CALL port for resumed clause execution
                         if goal and goal.term:
-                            self._trace_port("call", goal.term, depth_override=call_depth)
+                            self._trace_port(
+                                "call", goal.term, depth_override=call_depth
+                            )
 
                         # Unification succeeded - create frame for body execution
                         # cut_barrier was already computed above before pushing CP
@@ -1582,10 +1657,12 @@ class Engine:
                         for body_term in reversed(renamed_clause.body):
                             body_goal = Goal.from_term(body_term)
                             self._push_goal(body_goal)
-                        
+
                         if self.trace:
-                            self._trace_log.append(f"PREDICATE CP: Resuming with {self.goal_stack.height()} goals on stack")
-                        
+                            self._trace_log.append(
+                                f"PREDICATE CP: Resuming with {self.goal_stack.height()} goals on stack"
+                            )
+
                         return True
                     else:
                         # Unification failed, continue backtracking
@@ -1593,10 +1670,7 @@ class Engine:
                         continue
                 else:
                     # No more clauses to try - emit FAIL port
-                    if (
-                        self.frame_stack
-                        and self.frame_stack[-1].pred == pred_ref
-                    ):
+                    if self.frame_stack and self.frame_stack[-1].pred == pred_ref:
                         self._fail_current_frame()
                     else:
                         self._emit_fail_port(
@@ -1613,11 +1687,10 @@ class Engine:
                     continuation = cp.payload["continuation"]
                     continuation_depths = cp.payload.get(
                         "continuation_depths",
-                        tuple(len(self.frame_stack) for _ in continuation)
+                        tuple(len(self.frame_stack) for _ in continuation),
                     )
                     continuation_calls = cp.payload.get(
-                        "continuation_calls",
-                        tuple(False for _ in continuation)
+                        "continuation_calls", tuple(False for _ in continuation)
                     )
                     target_height = cp.goal_stack_height
                     current_height = self.goal_stack.height()
@@ -1635,7 +1708,9 @@ class Engine:
                         slice_goals = continuation[current_height:target_height]
                         slice_depths = continuation_depths[current_height:target_height]
                         slice_calls = continuation_calls[current_height:target_height]
-                        self._push_goals_with_metadata(slice_goals, slice_depths, slice_calls)
+                        self._push_goals_with_metadata(
+                            slice_goals, slice_depths, slice_calls
+                        )
 
                         if self.trace:
                             self._trace_log.append(
@@ -1645,11 +1720,11 @@ class Engine:
                 # Remove catch frames that are now out of scope
                 new_goal_height = self.goal_stack.height()
                 # Catch frames are now managed via CATCH choicepoints
-                
+
                 # Increment stamp before trying alternative branch
                 # This ensures changes in the alternative are properly trailed
                 self.trail.next_stamp()
-                
+
                 # Try alternative branch
                 alternative = cp.payload["alternative"]
                 alt_depth = cp.payload.get("alternative_depth", len(self.frame_stack))
@@ -1662,12 +1737,16 @@ class Engine:
                     # Recovery failed - just continue backtracking
                     # The continuation was already on the goal stack
                     if self.trace:
-                        self._trace_log.append(f"CATCH CP (RECOVERY) - continuing backtrack")
+                        self._trace_log.append(
+                            f"CATCH CP (RECOVERY) - continuing backtrack"
+                        )
                     continue
                 else:
                     # GOAL phase CATCH choicepoints are never resumed
                     if self.trace:
-                        self._trace_log.append(f"CATCH CP (GOAL) - continuing backtrack")
+                        self._trace_log.append(
+                            f"CATCH CP (GOAL) - continuing backtrack"
+                        )
                     continue
 
             elif cp.kind == ChoicepointKind.IF_THEN_ELSE:
@@ -1690,7 +1769,9 @@ class Engine:
 
         return False
 
-    def _emit_fail_port(self, pred_ref: str, goal: Optional[Any], depth_override: Optional[int] = None) -> None:
+    def _emit_fail_port(
+        self, pred_ref: str, goal: Optional[Any], depth_override: Optional[int] = None
+    ) -> None:
         """Emit FAIL port (and tracer event) for a predicate."""
         pred = pred_ref or "unknown"
         self._port("FAIL", pred)
@@ -1719,7 +1800,9 @@ class Engine:
             return
 
         frame = self.frame_stack[-1]
-        self._emit_fail_port(frame.pred, frame.goal_term, depth_override=frame.call_depth)
+        self._emit_fail_port(
+            frame.pred, frame.goal_term, depth_override=frame.call_depth
+        )
         self._last_exit_info = None
 
         # Pop the frame after emitting FAIL (depth is correct during emission)
@@ -1727,10 +1810,9 @@ class Engine:
         self._debug_frame_pops += 1
 
         if self.tracer:
-            self.tracer.emit_internal_event("frame_pop", {
-                "pred_id": frame.pred,
-                "frame_id": frame.frame_id
-            })
+            self.tracer.emit_internal_event(
+                "frame_pop", {"pred_id": frame.pred, "frame_id": frame.frame_id}
+            )
 
         self._update_catch_frames_after_pop()
 
@@ -1738,7 +1820,10 @@ class Engine:
         """Adjust CATCH CP goal heights after a frame pop."""
         current_goal_height = self.goal_stack.height()
         for cp in self.cp_stack:
-            if cp.kind == ChoicepointKind.CATCH and cp.goal_stack_height > current_goal_height:
+            if (
+                cp.kind == ChoicepointKind.CATCH
+                and cp.goal_stack_height > current_goal_height
+            ):
                 cp.goal_stack_height = current_goal_height
 
     def _record_solution(self):
@@ -1753,8 +1838,8 @@ class Engine:
         self.solutions.append(solution)
         if self.trace:
             try:
-                xv = solution.get('X')
-                yv = solution.get('Y')
+                xv = solution.get("X")
+                yv = solution.get("Y")
                 self._trace_log.append(
                     f"[SOLUTION] X={getattr(xv,'value', xv)}, Y={getattr(yv,'value', yv)}"
                 )
@@ -2645,18 +2730,18 @@ class Engine:
         self._push_goal(Goal.from_term(goal))
 
         return True
-    
+
     def _builtin_throw(self, args: tuple) -> bool:
         """throw(Ball) - throw an exception.
-        
+
         Raises an exception with the given ball term. The exception
         propagates up the execution stack until caught by catch/3.
         """
         if len(args) != 1:
             return False
-        
+
         ball = args[0]
-        
+
         # Dereference the ball
         if isinstance(ball, Var):
             ball_result = self.store.deref(ball.id)
@@ -2666,29 +2751,29 @@ class Engine:
                 # Stage-1 policy: require instantiated ball
                 # ISO would allow throwing unbound variables
                 return False  # Dev-mode: fail on unbound
-        
+
         # Reify the ball to capture current bindings
         # This ensures that variable bindings are preserved in the thrown term
         reified_ball = self._reify_term(ball)
-        
+
         # Record metrics for exception thrown
         if self.metrics:
             self.metrics.record_exception_thrown()
 
         # Raise PrologThrow directly
         raise PrologThrow(reified_ball)
-    
+
     def _builtin_catch(self, args: tuple) -> bool:
         """catch(Goal, Catcher, Recovery) - catch exceptions.
-        
+
         Executes Goal. If Goal throws an exception that unifies with
         Catcher, executes Recovery. Otherwise the exception propagates.
         """
         if len(args) != 3:
             return False
-        
+
         goal_arg, catcher_arg, recovery_arg = args
-        
+
         # Dereference the goal
         if isinstance(goal_arg, Var):
             goal_result = self.store.deref(goal_arg.id)
@@ -2699,11 +2784,11 @@ class Engine:
                 return False  # Dev-mode: fail
         else:
             goal = goal_arg
-        
+
         # Goal must be callable
         if not isinstance(goal, (Atom, Struct)):
             return False  # Dev-mode: fail on non-callable
-        
+
         # Capture baseline heights BEFORE pushing anything
         # These represent the state at the call site of catch/3
         base_trail_top = self.trail.position()
@@ -2713,9 +2798,11 @@ class Engine:
 
         # Check if there's a POP_FRAME sentinel on top of the goal stack
         # If so, we need to track that it might be consumed before we backtrack
-        has_pop_frame_sentinel = (self.goal_stack.height() > 0 and
-                                  self.goal_stack._stack and
-                                  self.goal_stack._stack[-1].type == GoalType.POP_FRAME)
+        has_pop_frame_sentinel = (
+            self.goal_stack.height() > 0
+            and self.goal_stack._stack
+            and self.goal_stack._stack[-1].type == GoalType.POP_FRAME
+        )
 
         # Create CATCH choicepoint (phase=GOAL)
         stamp = self.trail.next_stamp()
@@ -2730,7 +2817,9 @@ class Engine:
                 "recovery": recovery_arg,
                 "cp_height": base_cp_height,  # Store CP height for restoration
                 "has_pop_frame": has_pop_frame_sentinel,  # Track if we have a POP_FRAME that might be consumed
-                "adjusted_height": base_goal_height - 1 if has_pop_frame_sentinel else base_goal_height,
+                "adjusted_height": (
+                    base_goal_height - 1 if has_pop_frame_sentinel else base_goal_height
+                ),
             },
             stamp=stamp,
         )
@@ -2738,10 +2827,9 @@ class Engine:
 
         # Emit internal event for CP push
         if self.tracer:
-            self.tracer.emit_internal_event("cp_push", {
-                "pred_id": "catch",
-                "trail_top": base_trail_top
-            })
+            self.tracer.emit_internal_event(
+                "cp_push", {"pred_id": "catch", "trail_top": base_trail_top}
+            )
 
         # Create a frame to establish cut barrier for the catch scope
         # This prevents cuts within Goal from escaping the catch boundary
@@ -2755,15 +2843,13 @@ class Engine:
         self.frame_stack.append(catch_frame)
 
         # Push POP_FRAME to clean up the catch frame after Goal completes
-        self._push_goal(Goal(
-            GoalType.POP_FRAME,
-            None,
-            payload={"frame_id": self._next_frame_id}
-        ))
+        self._push_goal(
+            Goal(GoalType.POP_FRAME, None, payload={"frame_id": self._next_frame_id})
+        )
 
         # Push the user's Goal to execute
         self._push_goal(Goal.from_term(goal))
-        
+
         return True
 
     def _builtin_is(self, args: tuple) -> bool:
@@ -3096,31 +3182,32 @@ class Engine:
     def debug_trail_writes(self) -> int:
         """Get number of trail writes for debugging."""
         return self._debug_trail_writes
-    
+
     def consult_string(self, text: str) -> None:
         """Load clauses from a string into the program.
-        
+
         Args:
             text: Prolog program text to parse and load
         """
         from prolog.parser.parser import parse_program
         from prolog.ast.clauses import Program as ProgramClass
-        
+
         clauses = parse_program(text)
         # Create new program with existing clauses plus new ones
         all_clauses = list(self.program.clauses) + clauses
         self.program = ProgramClass(tuple(all_clauses))
-    
+
     def query(self, query_text: str) -> List[Dict[str, Any]]:
         """Execute a query and return all solutions.
-        
+
         Args:
             query_text: Query string like "p(X), q(Y)" (without ?- and .)
-            
+
         Returns:
             List of solution dictionaries
         """
         from prolog.parser.parser import parse_query
+
         # Add ?- and . if not present
         if not query_text.strip().startswith("?-"):
             query_text = "?- " + query_text
