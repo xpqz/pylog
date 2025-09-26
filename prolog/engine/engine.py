@@ -562,18 +562,20 @@ class Engine:
                     from prolog.ast.terms import Var as _Var
 
                     if isinstance(v, _Var):
-                        # Deref to current root
-                        r = self.store.deref(v.id)
-                        if r[0] == "UNBOUND":
-                            root = r[1]
-                            # Capture clpfd domain if present
-                            if root in getattr(self.store, "attrs", {}):
-                                mod_attrs = self.store.attrs[root]
-                                if "clpfd" in mod_attrs:
-                                    fd = mod_attrs["clpfd"]
-                                    dom = fd.get("domain")
-                                    if dom is not None:
-                                        persist_domains[root] = dom
+                        # Check if variable ID is valid before dereferencing
+                        if v.id < len(self.store.cells):
+                            # Deref to current root
+                            r = self.store.deref(v.id)
+                            if r[0] == "UNBOUND":
+                                root = r[1]
+                                # Capture clpfd domain if present
+                                if root in getattr(self.store, "attrs", {}):
+                                    mod_attrs = self.store.attrs[root]
+                                    if "clpfd" in mod_attrs:
+                                        fd = mod_attrs["clpfd"]
+                                        dom = fd.get("domain")
+                                        if dom is not None:
+                                            persist_domains[root] = dom
 
         # Clean up all state before returning
         self.trail.unwind_to(0, self.store)
