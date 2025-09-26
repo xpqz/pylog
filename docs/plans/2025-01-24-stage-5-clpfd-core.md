@@ -1,8 +1,16 @@
 # Stage 5: CLP(FD) Core Implementation Plan
 
+## Critical Update: Missing Phase 5.2 (Linear Sum Constraints)
+
+**Important**: The original PLAN.md specified "Stage 5.2 - Small linear sums" for handling arithmetic expressions like `A*X + B*Y #= C`. This phase was skipped during implementation, jumping directly from basic propagators (Phase 3) to labeling strategies (Phase 5) and then to Stage 6 (global constraints like `all_different`).
+
+**Impact**: Without linear sum propagators, complex arithmetic constraints like those in SEND+MORE (`1000*S + 100*E + 10*N + D + ...`) fall back to weak propagation, causing severe performance issues. The tests are marked as skipped with "arithmetic constraint propagation issue".
+
+**This document has been expanded** to include the missing Phase 5.2 implementation plan (see Phase 5 below), which should be implemented to complete Stage 5 properly and enable cryptarithmetic problems to work efficiently.
+
 ## Overview
 
-Implement the core CLP(FD) (Constraint Logic Programming over Finite Domains) solver with domain representation, propagation queue, basic propagators, and labeling strategies. This provides working finite domain constraint solving with propagation to fixpoint.
+Implement the core CLP(FD) (Constraint Logic Programming over Finite Domains) solver with domain representation, propagation queue, basic propagators, **linear sum constraints**, and labeling strategies. This provides working finite domain constraint solving with propagation to fixpoint.
 
 ## Current State Analysis
 
@@ -730,10 +738,395 @@ def _builtin_constraint_lt(engine, x_term, y_term):
 
 ---
 
-## Phase 5: Labeling Strategies
+## Phase 5: Linear Sum Constraints (Stage 5.2 from PLAN.md)
+
+### Overview
+Implement linear sum constraints to support arithmetic expressions like `1000*S + 100*E + 10*N + D #= Result` and `X + Y + Z #= 15`. This fills the critical gap between basic propagators (Phase 3) and global constraints (Stage 6), enabling SEND+MORE and similar cryptarithmetic problems.
+
+**NOTE**: This phase was originally planned in PLAN.md as "Stage 5.2 - Small linear sums" but was skipped. Without it, complex arithmetic constraints fall back to weak propagation, causing poor performance.
+
+### Changes Required:
+
+#### 1. Expression Parser for Arithmetic Terms
+**File**: `prolog/clpfd/expr.py` (new file)
+**Changes**: Parse arithmetic expressions into coefficient-variable pairs
+
+```python
+from typing import List, Tuple, Optional, Dict
+from prolog.ast.terms import Var, Int, Struct
+
+def parse_linear_expression(term, engine) -> Tuple[Dict[int, int], int]:
+    """Parse linear expression into coefficients and constant.
+
+    Returns:
+        (coeffs, constant) where coeffs maps var_id -> coefficient
+
+    Examples:
+        1000*S + 100*E + 5  =>  ({S_id: 1000, E_id: 100}, 5)
+        X + Y + Z           =>  ({X_id: 1, Y_id: 1, Z_id: 1}, 0)
+    """
+    coeffs = {}
+    constant = 0
+
+    def parse_term(t, sign=1):
+        """Recursively parse arithmetic term."""
+        nonlocal constant
+
+        if isinstance(t, Int):
+            constant += sign * t.value
+        elif isinstance(t, Var):
+            # Deref to get var ID
+            deref = engine.store.deref(t.id)
+            if deref[0] == "BOUND":
+                if isinstance(deref[2], Int):
+                    constant += sign * deref[2].value
+                else:
+                    raise ValueError(f"Non-integer in arithmetic: {deref[2]}")
+            else:
+                # Unbound variable with implicit coefficient 1
+                var_id = deref[1]
+                coeffs[var_id] = coeffs.get(var_id, 0) + sign
+        elif isinstance(t, Struct):
+            if t.functor == "+" and len(t.args) == 2:
+                # Addition: A + B
+                parse_term(t.args[0], sign)
+                parse_term(t.args[1], sign)
+            elif t.functor == "-" and len(t.args) == 2:
+                # Subtraction: A - B
+                parse_term(t.args[0], sign)
+                parse_term(t.args[1], -sign)
+            elif t.functor == "*" and len(t.args) == 2:
+                # Multiplication: check for Constant * Variable
+                left, right = t.args[0], t.args[1]
+
+                # Try Constant * Variable
+                if isinstance(left, Int) and isinstance(right, Var):
+                    right_deref = engine.store.deref(right.id)
+                    if right_deref[0] == "UNBOUND":
+                        var_id = right_deref[1]
+                        coeffs[var_id] = coeffs.get(var_id, 0) + sign * left.value
+                    else:
+                        # Variable is bound, treat as constant
+                        if isinstance(right_deref[2], Int):
+                            constant += sign * left.value * right_deref[2].value
+                        else:
+                            raise ValueError(f"Non-integer in multiplication")
+
+                # Try Variable * Constant
+                elif isinstance(right, Int) and isinstance(left, Var):
+                    left_deref = engine.store.deref(left.id)
+                    if left_deref[0] == "UNBOUND":
+                        var_id = left_deref[1]
+                        coeffs[var_id] = coeffs.get(var_id, 0) + sign * right.value
+                    else:
+                        if isinstance(left_deref[2], Int):
+                            constant += sign * right.value * left_deref[2].value
+                        else:
+                            raise ValueError(f"Non-integer in multiplication")
+
+                # Try Constant * Constant
+                elif isinstance(left, Int) and isinstance(right, Int):
+                    constant += sign * left.value * right.value
+                else:
+                    raise ValueError(f"Non-linear term: {t}")
+            elif t.functor == "-" and len(t.args) == 1:
+                # Unary minus: -X
+                parse_term(t.args[0], -sign)
+            else:
+                raise ValueError(f"Unsupported arithmetic operator: {t.functor}")
+        else:
+            raise ValueError(f"Invalid arithmetic term: {t}")
+
+    parse_term(term)
+    return coeffs, constant
+```
+
+#### 2. Linear Sum Propagator
+**File**: `prolog/clpfd/props/linear.py` (new file)
+**Changes**: Implement bounds-consistent propagator for linear constraints
+
+```python
+from typing import List, Optional, Tuple, Dict
+from prolog.clpfd.api import get_domain, set_domain
+from prolog.clpfd.domain import Domain
+
+def create_linear_propagator(coeffs: Dict[int, int], rhs: int):
+    """Create propagator for sum(coeff_i * X_i) = rhs.
+
+    Uses bounds consistency: for each variable, compute bounds from others.
+
+    Args:
+        coeffs: Maps var_id -> coefficient (non-zero)
+        rhs: Right-hand side constant
+    """
+    # Convert to lists for easier iteration
+    var_ids = list(coeffs.keys())
+    coefficients = [coeffs[v] for v in var_ids]
+
+    def propagator(store, trail, engine, cause) -> Tuple[str, Optional[List[int]]]:
+        """Propagate linear constraint using bounds reasoning."""
+        changed = []
+
+        # For each variable, compute its bounds from the others
+        for i, xi_id in enumerate(var_ids):
+            xi_coeff = coefficients[i]
+            xi_dom = get_domain(store, xi_id)
+
+            if xi_dom is None:
+                continue  # Variable is ground
+
+            # Compute bounds for sum of other variables
+            others_min = 0
+            others_max = 0
+
+            for j, xj_id in enumerate(var_ids):
+                if i == j:
+                    continue
+
+                xj_dom = get_domain(store, xj_id)
+                if xj_dom is None:
+                    continue  # Variable is ground
+
+                xj_coeff = coefficients[j]
+
+                if xj_coeff > 0:
+                    # Positive coefficient: min*coeff, max*coeff
+                    if xj_dom.min() is not None:
+                        others_min += xj_coeff * xj_dom.min()
+                    else:
+                        others_min = float('-inf')
+                    if xj_dom.max() is not None:
+                        others_max += xj_coeff * xj_dom.max()
+                    else:
+                        others_max = float('inf')
+                else:
+                    # Negative coefficient: max*coeff, min*coeff (swapped)
+                    if xj_dom.max() is not None:
+                        others_min += xj_coeff * xj_dom.max()
+                    else:
+                        others_min = float('-inf')
+                    if xj_dom.min() is not None:
+                        others_max += xj_coeff * xj_dom.min()
+                    else:
+                        others_max = float('inf')
+
+            # Compute bounds for Xi
+            # xi_coeff * Xi + others = rhs
+            # Xi = (rhs - others) / xi_coeff
+
+            if xi_coeff > 0:
+                # Xi >= (rhs - others_max) / xi_coeff
+                # Xi <= (rhs - others_min) / xi_coeff
+                if others_max != float('inf'):
+                    xi_min = (rhs - others_max) // xi_coeff
+                    if (rhs - others_max) % xi_coeff > 0:
+                        xi_min += 1  # Ceiling for lower bound
+                else:
+                    xi_min = None
+
+                if others_min != float('-inf'):
+                    xi_max = (rhs - others_min) // xi_coeff
+                else:
+                    xi_max = None
+            else:
+                # Negative coefficient - bounds swap
+                # Xi >= (rhs - others_min) / xi_coeff (but dividing by negative)
+                # Xi <= (rhs - others_max) / xi_coeff
+                if others_min != float('-inf'):
+                    xi_max = (rhs - others_min) // xi_coeff
+                else:
+                    xi_max = None
+
+                if others_max != float('inf'):
+                    xi_min = (rhs - others_max) // xi_coeff
+                    if (rhs - others_max) % xi_coeff < 0:
+                        xi_min += 1
+                else:
+                    xi_min = None
+
+            # Update domain
+            new_dom = xi_dom
+            if xi_min is not None:
+                new_dom = new_dom.remove_lt(xi_min)
+            if xi_max is not None:
+                new_dom = new_dom.remove_gt(xi_max)
+
+            if new_dom.is_empty():
+                return ('fail', None)
+
+            if new_dom is not xi_dom:
+                set_domain(store, xi_id, new_dom, trail)
+                changed.append(xi_id)
+
+        return ('ok', changed if changed else None)
+
+    return propagator
+```
+
+#### 3. Multi-Variable Sum Propagator
+**File**: `prolog/clpfd/props/sum.py` (new file)
+**Changes**: Special case for unweighted sums (X + Y + Z = C)
+
+```python
+from typing import List, Optional, Tuple
+from prolog.clpfd.api import get_domain, set_domain
+from prolog.clpfd.domain import Domain
+
+def create_sum_propagator(var_ids: List[int], total: int):
+    """Create propagator for X1 + X2 + ... + Xn = total.
+
+    Optimized version of linear propagator for unit coefficients.
+    """
+    def propagator(store, trail, engine, cause) -> Tuple[str, Optional[List[int]]]:
+        """Propagate sum constraint."""
+        changed = []
+
+        # Compute sum bounds from all variables
+        sum_min = 0
+        sum_max = 0
+
+        for var_id in var_ids:
+            dom = get_domain(store, var_id)
+            if dom is None:
+                continue
+
+            if dom.min() is not None:
+                sum_min += dom.min()
+            else:
+                sum_min = float('-inf')
+
+            if dom.max() is not None:
+                sum_max += dom.max()
+            else:
+                sum_max = float('inf')
+
+        # Check feasibility
+        if sum_min > total or sum_max < total:
+            return ('fail', None)
+
+        # Prune each variable
+        for i, xi_id in enumerate(var_ids):
+            xi_dom = get_domain(store, xi_id)
+            if xi_dom is None:
+                continue
+
+            # Compute bounds for sum of others
+            others_min = sum_min - (xi_dom.max() if xi_dom.max() is not None else 0)
+            others_max = sum_max - (xi_dom.min() if xi_dom.min() is not None else 0)
+
+            # Xi bounds: Xi = total - sum(others)
+            xi_min = total - others_max
+            xi_max = total - others_min
+
+            # Update domain
+            new_dom = xi_dom
+            if xi_min is not None and xi_min != float('-inf'):
+                new_dom = new_dom.remove_lt(int(xi_min))
+            if xi_max is not None and xi_max != float('inf'):
+                new_dom = new_dom.remove_gt(int(xi_max))
+
+            if new_dom.is_empty():
+                return ('fail', None)
+
+            if new_dom is not xi_dom:
+                set_domain(store, xi_id, new_dom, trail)
+                changed.append(xi_id)
+
+        return ('ok', changed if changed else None)
+
+    return propagator
+```
+
+#### 4. Integration with #= Builtin
+**File**: `prolog/engine/builtins_clpfd.py`
+**Changes**: Extend `_builtin_fd_eq` to handle complex arithmetic
+
+```python
+# Add after line 288 (before simple Z = X + K pattern):
+
+# Try parsing as general linear expression
+try:
+    from prolog.clpfd.expr import parse_linear_expression
+
+    # Parse both sides as linear expressions
+    left_coeffs, left_const = parse_linear_expression(x_term, engine)
+    right_coeffs, right_const = parse_linear_expression(y_term, engine)
+
+    # Combine into single equation: left - right = 0
+    # Rewrite as: sum(coeffs[i] * X[i]) = right_const - left_const
+    combined_coeffs = {}
+
+    # Add left side coefficients
+    for var_id, coeff in left_coeffs.items():
+        combined_coeffs[var_id] = combined_coeffs.get(var_id, 0) + coeff
+
+    # Subtract right side coefficients
+    for var_id, coeff in right_coeffs.items():
+        combined_coeffs[var_id] = combined_coeffs.get(var_id, 0) - coeff
+
+    # Remove zero coefficients
+    combined_coeffs = {v: c for v, c in combined_coeffs.items() if c != 0}
+
+    # Compute RHS constant
+    rhs = right_const - left_const
+
+    if not combined_coeffs:
+        # No variables - just check constant equality
+        return rhs == 0
+
+    # Check if it's a simple sum (all coefficients are 1 or -1)
+    all_unit = all(abs(c) == 1 for c in combined_coeffs.values())
+
+    if all_unit and all(c == 1 for c in combined_coeffs.values()):
+        # Special case: X + Y + Z = constant
+        from prolog.clpfd.props.sum import create_sum_propagator
+        prop = create_sum_propagator(list(combined_coeffs.keys()), rhs)
+    else:
+        # General linear constraint
+        from prolog.clpfd.props.linear import create_linear_propagator
+        prop = create_linear_propagator(combined_coeffs, rhs)
+
+    # Register and run propagator
+    queue = _ensure_queue(engine)
+    pid = queue.register(prop)
+
+    # Add watchers
+    from prolog.clpfd.api import add_watcher
+    from prolog.clpfd.queue import Priority
+    for var_id in combined_coeffs.keys():
+        add_watcher(store, var_id, pid, Priority.MED, trail)
+
+    # Schedule and run
+    queue.schedule(pid, Priority.MED)
+    return queue.run_to_fixpoint(store, trail, engine)
+
+except (ValueError, ImportError):
+    # Fall back to existing pattern matching
+    pass
+```
+
+### Success Criteria:
+
+#### Automated Verification:
+- [ ] Unit tests pass: `uv run pytest prolog/tests/unit/test_clpfd_linear.py`
+- [ ] Expression parser handles: `1000*S + 100*E + 10*N + D`
+- [ ] Linear propagator correctly prunes domains
+- [ ] Sum propagator optimizes unit-coefficient cases
+- [ ] SEND+MORE completes in <1 second
+
+#### Manual Verification:
+- [ ] Complex arithmetic expressions parse correctly
+- [ ] Bounds propagation is tight and efficient
+- [ ] No regression in existing CLP(FD) tests
+
+---
+
+## Phase 6: Labeling Strategies (Originally Phase 5)
 
 ### Overview
 Implement search strategies for finding solutions.
+
+**Note**: This was originally Phase 5 in the implementation, but has been renumbered to Phase 6 to accommodate the missing linear sum constraints phase.
 
 ### Changes Required:
 
@@ -891,10 +1284,12 @@ def bisect_values(domain):
 
 ---
 
-## Phase 6: Hook Integration
+## Phase 7: Hook Integration (Originally Phase 6)
 
 ### Overview
 Integrate CLP(FD) with attributed variable unification hooks for domain merging.
+
+**Note**: This was originally Phase 6 in the implementation, but has been renumbered to Phase 7 to accommodate the missing linear sum constraints phase.
 
 ### Changes Required:
 
@@ -1046,3 +1441,73 @@ No existing code uses CLP(FD), so no migration needed. However:
 - Attributed variables: `docs/ATTRIBUTED_VARIABLES.md`
 - Stage 4 implementation: `prolog/engine/engine.py:2679-2875`
 - Trail support: `prolog/unify/trail.py:91-107`
+
+## Implementation History and Recommendations
+
+### What Happened
+
+1. **Phases 1-4**: Successfully implemented as planned
+   - Core domain infrastructure (#127)
+   - Propagation queue (#128)
+   - Basic propagators (#130)
+   - Engine integration (#131)
+
+2. **Phase 5 (Linear Sums)**: **SKIPPED** - This is the critical gap
+   - PLAN.md specified "Stage 5.2 - Small linear sums"
+   - Would handle `A*X + B*Y #= C` and `X+Y+Z #= C`
+   - Never implemented, causing SEND+MORE failures
+
+3. **Phase 5→6**: Labeling implemented (#132) but numbered as Phase 5
+
+4. **Phase 6→7**: Hook integration implemented (#133) but numbered as Phase 6
+
+5. **Stage 6**: Jumped ahead to implement `all_different` (#134-138)
+   - Works correctly but can't compensate for missing arithmetic
+
+### Why SEND+MORE Fails
+
+The SEND+MORE cryptarithmetic puzzle requires:
+```prolog
+1000*S + 100*E + 10*N + D + 1000*M + 100*O + 10*R + E #=
+10000*M + 1000*O + 100*N + 10*E + Y
+```
+
+Without Phase 5 (linear sums), this complex arithmetic expression:
+1. Cannot be parsed into coefficient-variable pairs
+2. Falls back to weak variable-variable equality
+3. Creates no meaningful propagation
+4. Results in exponential search space explosion
+
+Even with `all_different/1` correctly pruning some values, the lack of arithmetic propagation makes the problem intractable.
+
+### Recommendations
+
+1. **Implement Phase 5 (Linear Sums)** as specified above
+   - Create `prolog/clpfd/expr.py` for expression parsing
+   - Add `prolog/clpfd/props/linear.py` for linear constraints
+   - Add `prolog/clpfd/props/sum.py` for optimized sums
+   - Update `builtins_clpfd.py` to use the new parsers
+
+2. **Test with SEND+MORE** immediately after implementation
+   - Should complete in <1 second with proper propagation
+   - Currently times out after 100+ seconds
+
+3. **Consider future enhancements**:
+   - Division and modulo constraints
+   - Non-linear constraints (X*Y)
+   - Global cardinality constraints
+   - Optimization objectives
+
+### Verification After Implementation
+
+Run these tests to verify Phase 5 works correctly:
+```bash
+# Unit tests for linear constraints
+uv run pytest prolog/tests/unit/test_clpfd_linear.py -xvs
+
+# Integration test - should pass in <1s
+uv run pytest prolog/tests/scenarios/test_sendmore_benchmark.py::TestAllDifferentBenchmarks::test_sendmore_with_all_different -xvs
+
+# Full benchmark suite
+uv run pytest prolog/tests/scenarios/test_sendmore_benchmark.py -xvs
+```

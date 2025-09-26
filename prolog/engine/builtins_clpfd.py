@@ -252,6 +252,63 @@ def _builtin_fd_eq(engine, x_term, y_term):
     store = engine.store
     trail = engine.trail
 
+    # Try to parse as linear expressions
+    try:
+        from prolog.clpfd.expr import parse_linear_expression
+        from prolog.clpfd.props.linear import create_linear_propagator
+
+        # Parse left side
+        left_coeffs, left_const = parse_linear_expression(x_term, engine)
+        # Parse right side
+        right_coeffs, right_const = parse_linear_expression(y_term, engine)
+
+        # Combine into single constraint: left - right = 0
+        combined_coeffs = {}
+        for var_id, coeff in left_coeffs.items():
+            combined_coeffs[var_id] = combined_coeffs.get(var_id, 0) + coeff
+        for var_id, coeff in right_coeffs.items():
+            combined_coeffs[var_id] = combined_coeffs.get(var_id, 0) - coeff
+
+        combined_const = left_const - right_const
+
+        # If no variables, just check constant constraint
+        if not combined_coeffs:
+            return combined_const == 0
+
+        # Create and post the linear constraint propagator
+        prop = create_linear_propagator(combined_coeffs, -combined_const, '=')
+
+        # Ensure variables have domains
+        from prolog.clpfd.api import get_domain, set_domain
+        for var_id in combined_coeffs:
+            deref = store.deref(var_id)
+            if deref[0] == "UNBOUND":
+                root = deref[1]
+                if get_domain(store, root) is None:
+                    # Set default domain
+                    set_domain(store, root, Domain(((-(2**31), 2**31 - 1),)), trail)
+
+        # Run the propagator
+        queue = _ensure_queue(engine)
+        prop_id = queue.add_propagator(prop)
+
+        # Register propagator with all variables
+        from prolog.clpfd.api import add_watcher
+        for var_id in combined_coeffs:
+            deref = store.deref(var_id)
+            if deref[0] == "UNBOUND":
+                add_watcher(store, deref[1], prop_id, 0)  # Priority 0 for linear
+
+        # Schedule and run
+        queue.schedule(prop_id, 0)
+        result = queue.run_to_fixpoint(store, trail, engine)
+
+        return result != "fail"
+
+    except (ValueError, AttributeError):
+        # Fall back to old implementation for non-linear or special cases
+        pass
+
     # Handle int-int case
     if isinstance(x_term, Int) and isinstance(y_term, Int):
         return x_term.value == y_term.value
@@ -343,7 +400,7 @@ def _builtin_fd_eq(engine, x_term, y_term):
 
 
 def _builtin_fd_neq(engine, x_term, y_term):
-    """X #\= Y - constrain X and Y to be different.
+    r"""X #\= Y - constrain X and Y to be different.
 
     Args:
         engine: Engine instance
