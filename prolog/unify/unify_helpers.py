@@ -9,7 +9,7 @@ These functions support the main unification algorithm:
 from copy import deepcopy
 from typing import Any, List, Tuple
 
-from prolog.ast.terms import Var
+from prolog.ast.terms import Var, Int
 from prolog.unify.store import Cell, Store
 
 
@@ -107,6 +107,21 @@ def union_vars(v1: int, v2: int, trail: List, store: Store) -> bool:
     # Merge attributes after union
     if hasattr(store, 'attrs') and winner_root is not None and loser_root is not None:
         _merge_attributes_to_root(winner_root, loser_root, trail, store)
+
+        # If the merged CLP(FD) domain is a singleton, bind the root to that value.
+        # This ensures queries like `X in 5..5, Y in 5..5, X = Y` ground to 5.
+        try:
+            attrs = store.attrs.get(winner_root, {})
+            fd = attrs.get('clpfd') if isinstance(attrs, dict) else None
+            dom = fd.get('domain') if isinstance(fd, dict) else None
+            if dom is not None and hasattr(dom, 'is_singleton') and dom.is_singleton():
+                val = dom.min()
+                if val is not None:
+                    # Trail and bind the union root to the integer value
+                    bind_root_to_term(winner_root, Int(val), trail, store)
+        except Exception:
+            # Be conservative: if anything goes wrong, skip auto-binding
+            pass
 
     return True
 

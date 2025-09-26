@@ -332,6 +332,9 @@ class Engine:
 
         self._builtins[("in", 2)] = lambda eng, args: _builtin_in(eng, *args)
         self._builtins[("#=", 2)] = lambda eng, args: _builtin_fd_eq(eng, *args)
+        # FD inequality
+        from prolog.engine.builtins_clpfd import _builtin_fd_neq
+        self._builtins[("#\\=", 2)] = lambda eng, args: _builtin_fd_neq(eng, *args)
         self._builtins[("#<", 2)] = lambda eng, args: _builtin_fd_lt(eng, *args)
         self._builtins[("#=<", 2)] = lambda eng, args: _builtin_fd_le(eng, *args)
         self._builtins[("#>", 2)] = lambda eng, args: _builtin_fd_gt(eng, *args)
@@ -517,11 +520,45 @@ class Engine:
         self._qname_by_id = {}
         self._initial_var_cutoff = 0
 
+        # Persist CLP(FD) domains for solution variables across cleanup so
+        # tests can inspect final domains after query execution.
+        # Collect domains for all variables present in solutions.
+        persist_domains: Dict[int, Any] = {}
+        if self.solutions:
+            for sol in self.solutions:
+                for v in sol.values():
+                    from prolog.ast.terms import Var as _Var
+                    if isinstance(v, _Var):
+                        # Deref to current root
+                        r = self.store.deref(v.id)
+                        if r[0] == "UNBOUND":
+                            root = r[1]
+                            # Capture clpfd domain if present
+                            if root in getattr(self.store, 'attrs', {}):
+                                mod_attrs = self.store.attrs[root]
+                                if 'clpfd' in mod_attrs:
+                                    fd = mod_attrs['clpfd']
+                                    dom = fd.get('domain')
+                                    if dom is not None:
+                                        persist_domains[root] = dom
+
         # Clean up all state before returning
         self.trail.unwind_to(0, self.store)
         self._shrink_goal_stack_to(0)
         self.frame_stack.clear()
         self.cp_stack.clear()
+
+        # Re-apply persisted domains without trailing (post-cleanup state)
+        if persist_domains:
+            if not hasattr(self.store, 'attrs'):
+                self.store.attrs = {}
+            for vid, dom in persist_domains.items():
+                if vid not in self.store.attrs:
+                    self.store.attrs[vid] = {}
+                # Recreate clpfd attribute with only domain preserved
+                self.store.attrs[vid]['clpfd'] = {
+                    'domain': dom,
+                }
 
         return self.solutions
 
