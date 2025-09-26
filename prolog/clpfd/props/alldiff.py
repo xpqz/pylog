@@ -1,6 +1,6 @@
 """All-different global constraint propagator."""
 
-from typing import Tuple, Optional, List, Set, Dict
+from typing import Tuple, Optional, List, Dict
 from prolog.clpfd.api import get_domain, set_domain
 
 
@@ -14,8 +14,6 @@ def create_all_different_propagator(var_ids: List[int], fixed_values: Tuple[int,
     Returns:
         A propagator function that enforces all_different constraint
     """
-    # Convert to set for O(1) membership testing
-    var_id_set = set(var_ids)
 
     def all_different_propagator(
         store, trail, engine, cause
