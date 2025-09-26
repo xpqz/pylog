@@ -454,3 +454,197 @@ class TestDomainImmutability:
         assert d3 is not d
         assert d.intervals == ((1, 10),)  # Original unchanged
         assert d3.intervals == ((5, 10),)
+
+
+class TestDomainRemoveInterval:
+    """Test remove_interval() method for Phase 2."""
+
+    def test_remove_interval_no_overlap(self):
+        """Removing interval that doesn't overlap returns self."""
+        d = Domain(((1, 5), (10, 15)), rev=3)
+
+        # Remove interval [20, 25] - no overlap
+        result = d.remove_interval(20, 25)
+        assert result is d  # Same object, no change
+        assert result.rev == 3  # No revision bump
+
+        # Remove interval [6, 8] - in gap between intervals
+        result2 = d.remove_interval(6, 8)
+        assert result2 is d
+        assert result2.rev == 3
+
+    def test_remove_interval_complete_overlap(self):
+        """Removing interval that completely covers a domain interval."""
+        d = Domain(((5, 10), (15, 20)), rev=2)
+
+        # Remove [5, 10] - removes first interval entirely
+        result = d.remove_interval(5, 10)
+        assert result.intervals == ((15, 20),)
+        assert result.rev == 3
+
+        # Remove [0, 25] - removes everything
+        result2 = d.remove_interval(0, 25)
+        assert result2.is_empty()
+        assert result2.rev == 3
+
+    def test_remove_interval_partial_overlap_left(self):
+        """Removing interval that overlaps left side of domain interval."""
+        d = Domain(((10, 20),), rev=2)
+
+        # Remove [5, 12] - clips left side
+        result = d.remove_interval(5, 12)
+        assert result.intervals == ((13, 20),)
+        assert result.rev == 3
+
+    def test_remove_interval_partial_overlap_right(self):
+        """Removing interval that overlaps right side of domain interval."""
+        d = Domain(((10, 20),), rev=2)
+
+        # Remove [18, 25] - clips right side
+        result = d.remove_interval(18, 25)
+        assert result.intervals == ((10, 17),)
+        assert result.rev == 3
+
+    def test_remove_interval_splits_domain(self):
+        """Removing interval from middle splits domain interval."""
+        d = Domain(((1, 20),), rev=2)
+
+        # Remove [8, 12] - splits into two intervals
+        result = d.remove_interval(8, 12)
+        assert result.intervals == ((1, 7), (13, 20))
+        assert result.rev == 3
+
+    def test_remove_interval_multiple_overlaps(self):
+        """Removing interval that overlaps multiple domain intervals."""
+        d = Domain(((1, 5), (10, 15), (20, 25)), rev=2)
+
+        # Remove [3, 22] - affects all three intervals
+        result = d.remove_interval(3, 22)
+        assert result.intervals == ((1, 2), (23, 25))
+        assert result.rev == 3
+
+        # Remove [12, 18] - affects middle interval only
+        d2 = Domain(((1, 5), (10, 15), (20, 25)), rev=2)
+        result2 = d2.remove_interval(12, 18)
+        assert result2.intervals == ((1, 5), (10, 11), (20, 25))
+        assert result2.rev == 3
+
+    def test_remove_interval_edge_cases(self):
+        """Test edge cases for remove_interval."""
+        # Empty domain
+        d_empty = Domain((), rev=5)
+        result = d_empty.remove_interval(1, 10)
+        assert result is d_empty
+        assert result.rev == 5
+
+        # Singleton domain
+        d_singleton = Domain(((5, 5),), rev=2)
+        result = d_singleton.remove_interval(5, 5)
+        assert result.is_empty()
+        assert result.rev == 3
+
+        result2 = d_singleton.remove_interval(4, 4)
+        assert result2 is d_singleton
+        assert result2.rev == 2
+
+        # Invalid interval (low > high)
+        d = Domain(((1, 10),), rev=2)
+        result = d.remove_interval(10, 5)  # Invalid: low > high
+        assert result is d  # No change
+        assert result.rev == 2
+
+    def test_remove_interval_complex_scenario(self):
+        """Test complex scenario with multiple intervals and partial overlaps."""
+        # Domain: 1..3 ∪ 5..8 ∪ 10..15 ∪ 20..30
+        d = Domain(((1, 3), (5, 8), (10, 15), (20, 30)), rev=10)
+
+        # Remove [7, 22] - should affect intervals 2, 3, and 4
+        # Result: 1..3 ∪ 5..6 ∪ 23..30
+        result = d.remove_interval(7, 22)
+        assert result.intervals == ((1, 3), (5, 6), (23, 30))
+        assert result.rev == 11
+
+    def test_remove_interval_for_hall_pruning(self):
+        """Test scenario relevant to Hall-interval pruning in all_different."""
+        # Domain represents possible values for a variable
+        # Hall set found: must remove interval [2, 3]
+        d = Domain(((1, 5),), rev=5)
+
+        # Remove Hall interval [2, 3]
+        result = d.remove_interval(2, 3)
+        assert result.intervals == ((1, 1), (4, 5))
+        assert result.rev == 6
+
+        # Verify individual values
+        assert result.contains(1)
+        assert not result.contains(2)
+        assert not result.contains(3)
+        assert result.contains(4)
+        assert result.contains(5)
+
+    def test_remove_interval_idempotence(self):
+        """Removing the same interval twice should be idempotent."""
+        d = Domain(((1, 10),), rev=5)
+
+        # First removal
+        result1 = d.remove_interval(4, 6)
+        assert result1.intervals == ((1, 3), (7, 10))
+        assert result1.rev == 6
+
+        # Second removal of same interval should return self
+        result2 = result1.remove_interval(4, 6)
+        assert result2 is result1  # Same object
+        assert result2.rev == 6  # No revision bump
+
+    def test_remove_interval_adjacency_normalization(self):
+        """Adjacent intervals after removal should normalize properly."""
+        # Start with gaps
+        d = Domain(((1, 5), (7, 9)), rev=3)
+
+        # Remove the gap [6, 6] - no change
+        result1 = d.remove_interval(6, 6)
+        assert result1 is d
+        assert result1.rev == 3
+
+        # Remove [5, 7] - creates adjacent intervals that should merge
+        # Result: [1, 4] and [8, 9] which are NOT adjacent
+        result2 = d.remove_interval(5, 7)
+        assert result2.intervals == ((1, 4), (8, 9))
+        assert result2.rev == 4
+
+        # Test case where removal creates truly adjacent intervals
+        d2 = Domain(((1, 10),), rev=2)
+        # Remove [5, 5] splits into [1,4] and [6,10]
+        result3 = d2.remove_interval(5, 5)
+        assert result3.intervals == ((1, 4), (6, 10))
+
+        # Now if we had [1,4], [6,10] and add back [5,5] via intersection
+        # with [1,10], Domain normalization should merge them
+        d3 = Domain(((1, 4), (5, 5), (6, 10)), rev=0)
+        # Should normalize to (1, 10) on construction
+        assert d3.intervals == ((1, 10),)
+
+    def test_remove_interval_negative_ranges(self):
+        """Test remove_interval with negative and zero values."""
+        # Domain with negative values
+        d = Domain(((-10, -5), (0, 5), (10, 15)), rev=2)
+
+        # Remove negative interval
+        result1 = d.remove_interval(-8, -6)
+        assert result1.intervals == ((-10, -9), (-5, -5), (0, 5), (10, 15))
+        assert result1.rev == 3
+
+        # Remove interval spanning negative to positive
+        result2 = d.remove_interval(-2, 2)
+        assert result2.intervals == ((-10, -5), (3, 5), (10, 15))
+        assert result2.rev == 3
+
+        # Remove interval entirely below domain (no change)
+        result3 = d.remove_interval(-100, -50)
+        assert result3 is d
+        assert result3.rev == 2
+
+        # Remove interval entirely above domain (no change)
+        result4 = d.remove_interval(100, 200)
+        assert result4 is d
+        assert result4.rev == 2

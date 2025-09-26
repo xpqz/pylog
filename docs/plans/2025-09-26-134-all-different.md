@@ -280,15 +280,15 @@ def create_all_different_propagator(var_ids: List[int], fixed_values: Tuple[int,
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] Hall-interval unit tests pass
-- [ ] Domain.remove_interval() tests pass
-- [ ] All Phase 1 tests still pass
-- [ ] Property tests remain green
+- [x] Hall-interval unit tests pass
+- [x] Domain.remove_interval() tests pass
+- [x] All Phase 1 tests still pass
+- [x] Property tests remain green
 
 #### Manual Verification:
-- [ ] Hall case: {1..2},{1..2},{1..3} narrows third to 3 without labeling
-- [ ] No performance regression on simple cases
-- [ ] Improved pruning on Sudoku examples
+- [x] Hall case: {1..2},{1..2},{1..3} narrows third to 3 without labeling
+- [x] No performance regression on simple cases
+- [x] Improved pruning on Sudoku examples
 
 ---
 

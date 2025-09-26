@@ -1,11 +1,11 @@
 """All-different global constraint propagator."""
 
-from typing import Tuple, Optional, List, Set
+from typing import Tuple, Optional, List, Set, Dict
 from prolog.clpfd.api import get_domain, set_domain
 
 
 def create_all_different_propagator(var_ids: List[int], fixed_values: Tuple[int, ...]):
-    """Create all_different propagator with value elimination.
+    """Create all_different propagator with value elimination and Hall-interval pruning.
 
     Args:
         var_ids: List of variable IDs participating in the constraint
@@ -20,7 +20,7 @@ def create_all_different_propagator(var_ids: List[int], fixed_values: Tuple[int,
     def all_different_propagator(
         store, trail, engine, cause
     ) -> Tuple[str, Optional[List[int]]]:
-        """Enforce all_different constraint via value elimination.
+        """Enforce all_different constraint via value elimination and Hall-interval pruning.
 
         Returns:
             ('ok', changed_vars) if propagation succeeds
@@ -28,7 +28,7 @@ def create_all_different_propagator(var_ids: List[int], fixed_values: Tuple[int,
         """
         # Gather current state
         singletons = set(fixed_values)
-        domains = {}
+        domains: Dict[int, 'Domain'] = {}
 
         # Check for duplicated variables in constraint (X appears twice)
         seen_roots = set()
@@ -85,9 +85,51 @@ def create_all_different_propagator(var_ids: List[int], fixed_values: Tuple[int,
             if new_dom.rev != dom.rev:
                 set_domain(store, vid, new_dom, trail)
                 changed.append(vid)
+                domains[vid] = new_dom  # Update for Hall-interval phase
 
-        # Check if two variables were aliased (unified) - they must be different
-        # This is detected above when checking for duplicate roots
+        # Hall-interval pruning
+        if domains:
+            # Compute candidate intervals from unique bounds
+            bounds = set()
+            for dom in domains.values():
+                if not dom.is_empty():
+                    bounds.add(dom.min())
+                    bounds.add(dom.max())
+
+            sorted_bounds = sorted(bounds)
+
+            # Check each interval [a,b]
+            for i, a in enumerate(sorted_bounds):
+                for b in sorted_bounds[i:]:
+                    if a > b:
+                        continue
+
+                    interval_size = b - a + 1
+
+                    # Count tight variables (domain ⊆ [a,b])
+                    tight_vars = []
+                    for vid, dom in domains.items():
+                        if dom.min() >= a and dom.max() <= b:
+                            tight_vars.append(vid)
+
+                    tight_count = len(tight_vars)
+
+                    # Pigeonhole check
+                    if tight_count > interval_size:
+                        return ("fail", None)
+
+                    # Hall set found: remove [a,b] from non-tight vars
+                    if tight_count == interval_size and tight_count > 0:
+                        for vid, dom in domains.items():
+                            if vid not in tight_vars:
+                                new_dom = dom.remove_interval(a, b)
+                                if new_dom.is_empty():
+                                    return ("fail", None)
+                                if new_dom.rev != dom.rev:
+                                    set_domain(store, vid, new_dom, trail)
+                                    if vid not in changed:
+                                        changed.append(vid)
+                                    domains[vid] = new_dom  # Update for next iterations
 
         return ("ok", changed if changed else None)
 

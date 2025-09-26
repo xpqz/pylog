@@ -203,8 +203,40 @@ class Domain:
     def remove_interval(self, low: int, high: int) -> "Domain":
         """Remove closed interval [low, high] from domain.
 
-        Phase 1: Placeholder returning self (no-op).
-        Phase 2: Full implementation.
+        Args:
+            low: Lower bound of interval to remove (inclusive)
+            high: Upper bound of interval to remove (inclusive)
+
+        Returns:
+            Domain with interval removed (returns self if no change)
         """
-        # TODO: Phase 2 - implement interval removal
-        return self
+        # Handle empty domain first
+        if not self.intervals:
+            return self  # Empty domain
+
+        # Handle invalid interval or no overlap cases
+        if low > high or high < self.min() or low > self.max():
+            return self  # No overlap possible
+
+        result = []
+        for start, end in self.intervals:
+            if end < low or start > high:
+                # No overlap with removal interval
+                result.append((start, end))
+            elif start < low and end > high:
+                # Removal splits this interval in two
+                result.append((start, low - 1))
+                result.append((high + 1, end))
+            elif start < low <= end:
+                # Removal clips right side of this interval
+                result.append((start, low - 1))
+            elif start <= high < end:
+                # Removal clips left side of this interval
+                result.append((high + 1, end))
+            # else: interval completely removed (start >= low and end <= high)
+
+        new_intervals = tuple(result)
+        if new_intervals == self.intervals:
+            return self  # No change
+
+        return Domain(new_intervals, self.rev + 1)
