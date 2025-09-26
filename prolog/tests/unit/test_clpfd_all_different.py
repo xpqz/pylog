@@ -161,25 +161,8 @@ class TestAllDifferentBasic:
         from prolog.engine.builtins_clpfd import _builtin_all_different
 
         result = _builtin_all_different(engine, List(vars))
-        # Phase 1: This won't fail immediately without Hall pruning
-        # But after setting any var to singleton, propagation should fail
-        assert result is True  # Initially succeeds
-
-        # Set first var to 1
-        set_domain(store, vars[0].id, Domain(((1, 1),)), trail)
-
-        # Trigger propagation
-        from prolog.clpfd.api import iter_watchers
-
-        queue = engine.clpfd_queue
-        for pid, priority in iter_watchers(store, vars[0].id):
-            queue.schedule(pid, priority, cause=("domain_changed", vars[0].id))
-        result = queue.run_to_fixpoint(store, trail, engine)
-
-        # Other vars should have 1 removed, leaving {2,3}
-        for v in vars[1:]:
-            dom = get_domain(store, v.id)
-            assert dom.intervals == ((2, 3),)
+        # Phase 2: Hall-interval pruning detects pigeonhole violation immediately
+        assert result is False  # Fails due to Hall-interval detection
 
     def test_backtracking_restoration(self):
         """Domains should be restored on backtracking."""
@@ -537,3 +520,384 @@ class TestAllDifferentIntegration:
         for sol in solutions:
             values.append((sol["X"].value, sol["Y"].value))
         assert set(values) == {(1, 4), (4, 1)}
+
+
+class TestHallIntervalPruning:
+    """Test Hall-interval pruning for Phase 2."""
+
+    def test_hall_interval_basic(self):
+        """Basic Hall-interval detection and pruning.
+
+        Classic example: X1,X2 ∈ {1,2} and X3 ∈ {1,2,3}
+        The interval [1,2] is a Hall set with 2 tight variables.
+        X3 should have [1,2] removed, leaving only {3}.
+        """
+        engine = Engine(Program([]))
+        store = engine.store
+        trail = engine.trail
+
+        x1 = Var(store.new_var(), "X1")
+        x2 = Var(store.new_var(), "X2")
+        x3 = Var(store.new_var(), "X3")
+
+        # Set domains: X1,X2 in 1..2, X3 in 1..3
+        _builtin_in(engine, x1, Struct("..", (Int(1), Int(2))))
+        _builtin_in(engine, x2, Struct("..", (Int(1), Int(2))))
+        _builtin_in(engine, x3, Struct("..", (Int(1), Int(3))))
+
+        # Post all_different([X1, X2, X3])
+        from prolog.engine.builtins_clpfd import _builtin_all_different
+        result = _builtin_all_different(engine, List([x1, x2, x3]))
+        assert result is True
+
+        # Check that X3 had interval [1,2] removed
+        x3_dom = get_domain(store, x3.id)
+        assert x3_dom.intervals == ((3, 3),)
+        assert x3_dom.is_singleton()
+        assert x3_dom.min() == 3
+
+    def test_hall_interval_multiple_intervals(self):
+        """Hall-interval pruning with multiple Hall sets."""
+        engine = Engine(Program([]))
+        store = engine.store
+        trail = engine.trail
+
+        # Create variables
+        vars = []
+        for i in range(5):
+            v = Var(store.new_var(), f"X{i+1}")
+            vars.append(v)
+
+        # X1,X2 ∈ {1,2} - tight on [1,2]
+        _builtin_in(engine, vars[0], Struct("..", (Int(1), Int(2))))
+        _builtin_in(engine, vars[1], Struct("..", (Int(1), Int(2))))
+
+        # X3,X4 ∈ {4,5} - tight on [4,5]
+        _builtin_in(engine, vars[2], Struct("..", (Int(4), Int(5))))
+        _builtin_in(engine, vars[3], Struct("..", (Int(4), Int(5))))
+
+        # X5 ∈ {1,2,3,4,5} - should have both [1,2] and [4,5] removed
+        _builtin_in(engine, vars[4], Struct("..", (Int(1), Int(5))))
+
+        # Post all_different
+        from prolog.engine.builtins_clpfd import _builtin_all_different
+        result = _builtin_all_different(engine, List(vars))
+        assert result is True
+
+        # X5 should only have value 3 left
+        x5_dom = get_domain(store, vars[4].id)
+        assert x5_dom.intervals == ((3, 3),)
+        assert x5_dom.is_singleton()
+        assert x5_dom.min() == 3
+
+    def test_hall_interval_pigeonhole_detection(self):
+        """Hall-interval should detect pigeonhole principle violations."""
+        engine = Engine(Program([]))
+        store = engine.store
+        trail = engine.trail
+
+        # Create 3 variables all with domain {1,2}
+        vars = []
+        for i in range(3):
+            v = Var(store.new_var(), f"X{i+1}")
+            _builtin_in(engine, v, Struct("..", (Int(1), Int(2))))
+            vars.append(v)
+
+        # Post all_different - should fail (3 vars, only 2 values)
+        from prolog.engine.builtins_clpfd import _builtin_all_different
+        result = _builtin_all_different(engine, List(vars))
+
+        # Should fail immediately with Hall-interval detection
+        assert result is False
+
+    def test_hall_interval_partial_overlap(self):
+        """Hall-interval with partial domain overlaps."""
+        engine = Engine(Program([]))
+        store = engine.store
+        trail = engine.trail
+
+        x1 = Var(store.new_var(), "X1")
+        x2 = Var(store.new_var(), "X2")
+        x3 = Var(store.new_var(), "X3")
+        x4 = Var(store.new_var(), "X4")
+
+        # X1 ∈ {1,2} - tight on [1,2]
+        _builtin_in(engine, x1, Struct("..", (Int(1), Int(2))))
+        # X2 ∈ {1,2} - tight on [1,2]
+        _builtin_in(engine, x2, Struct("..", (Int(1), Int(2))))
+        # X3 ∈ {4,5} - tight on [4,5]
+        _builtin_in(engine, x3, Struct("..", (Int(4), Int(5))))
+        # X4 ∈ {1,2,3,4,5,6}
+        _builtin_in(engine, x4, Struct("..", (Int(1), Int(6))))
+
+        # Post all_different
+        from prolog.engine.builtins_clpfd import _builtin_all_different
+        result = _builtin_all_different(engine, List([x1, x2, x3, x4]))
+        assert result is True
+
+        # Check domains after Hall pruning
+        x4_dom = get_domain(store, x4.id)
+
+        # X4 should have [1,2] removed (Hall set for X1,X2)
+        # But not [4,5] because only X3 is tight on it (need 2 vars for interval size 2)
+        assert not x4_dom.contains(1)
+        assert not x4_dom.contains(2)
+        assert x4_dom.contains(3)  # Should remain
+
+    def test_hall_interval_with_singletons(self):
+        """Hall-interval combined with singleton propagation."""
+        engine = Engine(Program([]))
+        store = engine.store
+        trail = engine.trail
+
+        x1 = Var(store.new_var(), "X1")
+        x2 = Var(store.new_var(), "X2")
+        x3 = Var(store.new_var(), "X3")
+        x4 = Var(store.new_var(), "X4")
+
+        # X1 = 1 (singleton)
+        _builtin_in(engine, x1, Int(1))
+        # X2 ∈ {2,3}
+        _builtin_in(engine, x2, Struct("..", (Int(2), Int(3))))
+        # X3 ∈ {3,4}
+        _builtin_in(engine, x3, Struct("..", (Int(3), Int(4))))
+        # X4 ∈ {1,2,3,4,5}
+        _builtin_in(engine, x4, Struct("..", (Int(1), Int(5))))
+
+        # Post all_different
+        from prolog.engine.builtins_clpfd import _builtin_all_different
+        result = _builtin_all_different(engine, List([x1, x2, x3, x4]))
+        assert result is True
+
+        # X4 should have 1 removed (singleton) and potentially more from Hall sets
+        x4_dom = get_domain(store, x4.id)
+        assert not x4_dom.contains(1)  # Singleton removal
+
+        # With Hall pruning, interval [2,3] might be identified as tight for X2
+        # and interval [3,4] might be identified as tight for X3
+        # The exact pruning depends on the algorithm's order
+
+    def test_hall_interval_no_pruning_needed(self):
+        """Hall-interval when no pruning is possible."""
+        engine = Engine(Program([]))
+        store = engine.store
+        trail = engine.trail
+
+        # Create variables with non-overlapping domains
+        x1 = Var(store.new_var(), "X1")
+        x2 = Var(store.new_var(), "X2")
+        x3 = Var(store.new_var(), "X3")
+
+        _builtin_in(engine, x1, Struct("..", (Int(1), Int(2))))
+        _builtin_in(engine, x2, Struct("..", (Int(3), Int(4))))
+        _builtin_in(engine, x3, Struct("..", (Int(5), Int(6))))
+
+        # Post all_different
+        from prolog.engine.builtins_clpfd import _builtin_all_different
+        result = _builtin_all_different(engine, List([x1, x2, x3]))
+        assert result is True
+
+        # Domains should remain unchanged (no Hall sets found)
+        x1_dom = get_domain(store, x1.id)
+        x2_dom = get_domain(store, x2.id)
+        x3_dom = get_domain(store, x3.id)
+
+        assert x1_dom.intervals == ((1, 2),)
+        assert x2_dom.intervals == ((3, 4),)
+        assert x3_dom.intervals == ((5, 6),)
+
+    def test_hall_interval_large_example(self):
+        """Hall-interval on larger problem."""
+        engine = Engine(Program([]))
+        store = engine.store
+        trail = engine.trail
+
+        # Create 10 variables
+        vars = []
+
+        # First 5 variables: tight on [1,5]
+        for i in range(5):
+            v = Var(store.new_var(), f"X{i+1}")
+            _builtin_in(engine, v, Struct("..", (Int(1), Int(5))))
+            vars.append(v)
+
+        # Next 5 variables: domain [1,10]
+        for i in range(5):
+            v = Var(store.new_var(), f"Y{i+1}")
+            _builtin_in(engine, v, Struct("..", (Int(1), Int(10))))
+            vars.append(v)
+
+        # Post all_different
+        from prolog.engine.builtins_clpfd import _builtin_all_different
+        result = _builtin_all_different(engine, List(vars))
+        assert result is True
+
+        # The last 5 variables should have [1,5] removed
+        for i in range(5, 10):
+            dom = get_domain(store, vars[i].id)
+            assert dom.min() >= 6
+            assert dom.max() == 10
+            assert dom.intervals == ((6, 10),)
+
+    def test_hall_avoid_false_positives(self):
+        """Ensure Hall pruning doesn't create false positives on non-tight unions."""
+        engine = Engine(Program([]))
+        store = engine.store
+        trail = engine.trail
+
+        x1 = Var(store.new_var(), "X1")
+        x2 = Var(store.new_var(), "X2")
+        x3 = Var(store.new_var(), "X3")
+
+        # X1 ∈ {1,3}, X2 ∈ {2,4}, X3 ∈ {1,4}
+        # Union is {1,2,3,4} with 3 vars - NOT a Hall set
+        # No variable domain is tight on any interval
+        _builtin_in(engine, x1, Struct("\\/", (Int(1), Int(3))))
+        _builtin_in(engine, x2, Struct("\\/", (Int(2), Int(4))))
+        _builtin_in(engine, x3, Struct("\\/", (Int(1), Int(4))))
+
+        # Post all_different
+        from prolog.engine.builtins_clpfd import _builtin_all_different
+        result = _builtin_all_different(engine, List([x1, x2, x3]))
+        assert result is True
+
+        # Domains should remain unchanged - no spurious pruning
+        x1_dom = get_domain(store, x1.id)
+        x2_dom = get_domain(store, x2.id)
+        x3_dom = get_domain(store, x3.id)
+
+        # Check that no false Hall interval removal occurred
+        assert x1_dom.contains(1) and x1_dom.contains(3)
+        assert x2_dom.contains(2) and x2_dom.contains(4)
+        assert x3_dom.contains(1) and x3_dom.contains(4)
+
+    def test_hall_pruning_after_post_narrowing(self):
+        """Hall pruning should trigger when variables narrow after posting."""
+        engine = Engine(Program([]))
+        store = engine.store
+        trail = engine.trail
+
+        x1 = Var(store.new_var(), "X1")
+        x2 = Var(store.new_var(), "X2")
+        x3 = Var(store.new_var(), "X3")
+        x4 = Var(store.new_var(), "X4")
+
+        # Initially: no Hall sets
+        _builtin_in(engine, x1, Struct("..", (Int(1), Int(4))))
+        _builtin_in(engine, x2, Struct("..", (Int(1), Int(4))))
+        _builtin_in(engine, x3, Struct("..", (Int(1), Int(4))))
+        _builtin_in(engine, x4, Struct("..", (Int(1), Int(4))))
+
+        # Post all_different
+        from prolog.engine.builtins_clpfd import _builtin_all_different
+        result = _builtin_all_different(engine, List([x1, x2, x3, x4]))
+        assert result is True
+
+        # Domains should be unchanged initially (no Hall sets)
+        assert get_domain(store, x4.id).intervals == ((1, 4),)
+
+        # Now narrow X1 and X2 to create a Hall set
+        set_domain(store, x1.id, Domain(((1, 2),)), trail)
+        set_domain(store, x2.id, Domain(((1, 2),)), trail)
+
+        # Trigger propagation (simulating what would happen via watchers)
+        from prolog.clpfd.api import iter_watchers
+        queue = engine.clpfd_queue
+
+        # Wake watchers for X1
+        for pid, priority in iter_watchers(store, x1.id):
+            queue.schedule(pid, priority, cause=("domain_changed", x1.id))
+        # Wake watchers for X2
+        for pid, priority in iter_watchers(store, x2.id):
+            queue.schedule(pid, priority, cause=("domain_changed", x2.id))
+
+        result = queue.run_to_fixpoint(store, trail, engine)
+        assert result is True
+
+        # X3 and X4 should have [1,2] removed
+        x3_dom = get_domain(store, x3.id)
+        x4_dom = get_domain(store, x4.id)
+        assert x3_dom.intervals == ((3, 4),)
+        assert x4_dom.intervals == ((3, 4),)
+
+    def test_explicit_duplicate_roots(self):
+        """all_different([X, X, Y]) should fail immediately (duplicate root)."""
+        engine = Engine(Program([]))
+        store = engine.store
+
+        x = Var(store.new_var(), "X")
+        y = Var(store.new_var(), "Y")
+
+        # Set domains
+        _builtin_in(engine, x, Struct("..", (Int(1), Int(5))))
+        _builtin_in(engine, y, Struct("..", (Int(1), Int(5))))
+
+        # Post all_different with X appearing twice - should fail
+        from prolog.engine.builtins_clpfd import _builtin_all_different
+        result = _builtin_all_different(engine, List([x, x, y]))
+        assert result is False
+
+        # Also test with different variable objects but same root
+        z = Var(x.id, "Z")  # Same ID as X
+        result2 = _builtin_all_different(engine, List([x, z, y]))
+        assert result2 is False
+
+    def test_hall_unification_triggers_propagation(self):
+        """Unifying a variable to Int should trigger Hall propagation automatically."""
+        engine = Engine(Program([]))
+        store = engine.store
+        trail = engine.trail
+
+        x1 = Var(store.new_var(), "X1")
+        x2 = Var(store.new_var(), "X2")
+        x3 = Var(store.new_var(), "X3")
+
+        # Set domains
+        _builtin_in(engine, x1, Struct("..", (Int(1), Int(3))))
+        _builtin_in(engine, x2, Struct("..", (Int(1), Int(3))))
+        _builtin_in(engine, x3, Struct("..", (Int(1), Int(3))))
+
+        # Post all_different
+        from prolog.engine.builtins_clpfd import _builtin_all_different
+        result = _builtin_all_different(engine, List([x1, x2, x3]))
+        assert result is True
+
+        # Unify X1 with 1
+        from prolog.unify.unify import unify
+        result = unify(x1, Int(1), store, trail, occurs_check=False)
+        assert result is True
+
+        # NOTE: Without hooks, we need manual propagation
+        # This test documents expected behavior with hooks
+        from prolog.clpfd.api import iter_watchers
+        queue = engine.clpfd_queue
+
+        # In Phase 2, we manually trigger; Phase 3 hooks will automate
+        # Need to re-run all_different propagator since X1 is now bound
+        for pid, priority in iter_watchers(store, x1.id):
+            queue.schedule(pid, priority, cause=("unified_to_int", x1.id))
+
+        # Also trigger for X2 and X3 to ensure they are processed
+        for pid, priority in iter_watchers(store, x2.id):
+            queue.schedule(pid, priority, cause=("watching", x2.id))
+        for pid, priority in iter_watchers(store, x3.id):
+            queue.schedule(pid, priority, cause=("watching", x3.id))
+
+        queue.run_to_fixpoint(store, trail, engine)
+
+        # X2 and X3 should have value 1 removed
+        x2_dom = get_domain(store, x2.id)
+        x3_dom = get_domain(store, x3.id)
+        assert not x2_dom.contains(1)
+        assert not x3_dom.contains(1)
+
+        # Now if X2 becomes {2}, X3 should narrow to {3}
+        set_domain(store, x2.id, Domain(((2, 2),)), trail)
+
+        for pid, priority in iter_watchers(store, x2.id):
+            queue.schedule(pid, priority, cause=("domain_changed", x2.id))
+        queue.run_to_fixpoint(store, trail, engine)
+
+        x3_dom = get_domain(store, x3.id)
+        assert x3_dom.is_singleton()
+        assert x3_dom.min() == 3
