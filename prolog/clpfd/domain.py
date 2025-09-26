@@ -7,7 +7,9 @@ from dataclasses import dataclass
 from typing import Tuple, Optional
 
 
-def normalize_intervals(intervals: Tuple[Tuple[int, int], ...]) -> Tuple[Tuple[int, int], ...]:
+def normalize_intervals(
+    intervals: Tuple[Tuple[int, int], ...],
+) -> Tuple[Tuple[int, int], ...]:
     """Normalize intervals to canonical form (sorted, merged where overlapping/adjacent)."""
     if not intervals:
         return ()
@@ -42,6 +44,7 @@ class Domain:
         intervals: Sorted tuple of (min, max) inclusive ranges
         rev: Monotonic revision counter for change detection
     """
+
     intervals: Tuple[Tuple[int, int], ...]
     rev: int = 0
 
@@ -50,7 +53,7 @@ class Domain:
         # Normalize intervals on creation
         normalized = normalize_intervals(self.intervals)
         # Use object.__setattr__ to bypass frozen restriction
-        object.__setattr__(self, 'intervals', normalized)
+        object.__setattr__(self, "intervals", normalized)
 
     def is_empty(self) -> bool:
         """Check if domain is empty."""
@@ -58,8 +61,7 @@ class Domain:
 
     def is_singleton(self) -> bool:
         """Check if domain contains exactly one value."""
-        return (len(self.intervals) == 1 and
-                self.intervals[0][0] == self.intervals[0][1])
+        return len(self.intervals) == 1 and self.intervals[0][0] == self.intervals[0][1]
 
     def min(self) -> Optional[int]:
         """Get minimum value or None if empty."""
@@ -87,7 +89,7 @@ class Domain:
                 left = mid + 1
         return False
 
-    def intersect(self, other: 'Domain') -> 'Domain':
+    def intersect(self, other: "Domain") -> "Domain":
         """Return intersection (returns self if unchanged)."""
         # Two-pointer merge of sorted intervals
         result = []
@@ -126,7 +128,7 @@ class Domain:
 
         return new_domain
 
-    def remove_value(self, value: int) -> 'Domain':
+    def remove_value(self, value: int) -> "Domain":
         """Remove single value, splitting intervals if needed."""
         if not self.contains(value):
             return self  # No change
@@ -152,7 +154,7 @@ class Domain:
 
         return Domain(tuple(result), self.rev + 1)
 
-    def remove_lt(self, bound: int) -> 'Domain':
+    def remove_lt(self, bound: int) -> "Domain":
         """Remove all values < bound."""
         result = []
         for low, high in self.intervals:
@@ -171,11 +173,11 @@ class Domain:
             return self
         return Domain(new_intervals, self.rev + 1)
 
-    def remove_le(self, bound: int) -> 'Domain':
+    def remove_le(self, bound: int) -> "Domain":
         """Remove all values <= bound."""
         return self.remove_lt(bound + 1)
 
-    def remove_gt(self, bound: int) -> 'Domain':
+    def remove_gt(self, bound: int) -> "Domain":
         """Remove all values > bound."""
         result = []
         for low, high in self.intervals:
@@ -194,6 +196,15 @@ class Domain:
             return self
         return Domain(new_intervals, self.rev + 1)
 
-    def remove_ge(self, bound: int) -> 'Domain':
+    def remove_ge(self, bound: int) -> "Domain":
         """Remove all values >= bound."""
         return self.remove_gt(bound - 1)
+
+    def remove_interval(self, low: int, high: int) -> "Domain":
+        """Remove closed interval [low, high] from domain.
+
+        Phase 1: Placeholder returning self (no-op).
+        Phase 2: Full implementation.
+        """
+        # TODO: Phase 2 - implement interval removal
+        return self

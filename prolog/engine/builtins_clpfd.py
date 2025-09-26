@@ -63,15 +63,17 @@ def _builtin_in(engine, x_term, domain_term):
     # Wake watchers and propagate since domain may affect existing constraints
     queue = _ensure_queue(engine)
     from prolog.clpfd.api import iter_watchers
+
     for pid, priority in iter_watchers(engine.store, x_var):
         queue.schedule(pid, priority)
     if not queue.is_empty():
         queue.run_to_fixpoint(engine.store, engine.trail, engine)
 
     # Register unification hook if first CLP(FD) constraint
-    if not hasattr(engine, '_clpfd_inited') or not engine._clpfd_inited:
+    if not hasattr(engine, "_clpfd_inited") or not engine._clpfd_inited:
         from prolog.clpfd.hooks import clpfd_unify_hook
-        engine.register_attr_hook('clpfd', clpfd_unify_hook)
+
+        engine.register_attr_hook("clpfd", clpfd_unify_hook)
         engine._clpfd_inited = True
 
     return True
@@ -126,12 +128,14 @@ def parse_domain_term(term):
 
 def _ensure_queue(engine):
     """Ensure engine has a CLP(FD) propagation queue."""
-    if not hasattr(engine, 'clpfd_queue'):
+    if not hasattr(engine, "clpfd_queue"):
         engine.clpfd_queue = PropagationQueue()
     return engine.clpfd_queue
 
 
-def _post_constraint_propagator(engine, x_term, y_term, create_propagator_func, priority=None):
+def _post_constraint_propagator(
+    engine, x_term, y_term, create_propagator_func, priority=None
+):
     """Post a binary constraint propagator.
 
     Args:
@@ -184,7 +188,8 @@ def _post_constraint_propagator(engine, x_term, y_term, create_propagator_func, 
     if priority is None:
         # Use HIGH for equality, MED for inequalities
         from prolog.clpfd.props.equality import create_equality_propagator
-        if create_propagator_func.__name__ == 'create_equality_propagator':
+
+        if create_propagator_func.__name__ == "create_equality_propagator":
             priority = Priority.HIGH
         else:
             priority = Priority.MED
@@ -210,7 +215,7 @@ def _post_constraint_propagator(engine, x_term, y_term, create_propagator_func, 
         x_dom = get_domain(store, x_var)
         if x_dom is None:
             # No domain yet, create full domain
-            x_dom = Domain(((-(2**31), 2**31-1),))
+            x_dom = Domain(((-(2**31), 2**31 - 1),))
 
         # Apply constraint based on propagator type
         # We'll handle this in specific builtins
@@ -221,7 +226,7 @@ def _post_constraint_propagator(engine, x_term, y_term, create_propagator_func, 
         y_dom = get_domain(store, y_var)
         if y_dom is None:
             # No domain yet, create full domain
-            y_dom = Domain(((-(2**31), 2**31-1),))
+            y_dom = Domain(((-(2**31), 2**31 - 1),))
 
         # Apply constraint based on propagator type
         # We'll handle this in specific builtins
@@ -270,6 +275,7 @@ def _builtin_fd_eq(engine, x_term, y_term):
             # Wake watchers and propagate
             queue = _ensure_queue(engine)
             from prolog.clpfd.api import iter_watchers
+
             for pid, priority in iter_watchers(store, x_var):
                 queue.schedule(pid, priority)
             if not queue.is_empty():
@@ -281,7 +287,12 @@ def _builtin_fd_eq(engine, x_term, y_term):
         return _builtin_fd_eq(engine, y_term, x_term)
 
     # Handle arithmetic form: Z #= X + K or Z #= K + X (K integer)
-    if isinstance(x_term, Var) and isinstance(y_term, Struct) and y_term.functor == "+" and len(y_term.args) == 2:
+    if (
+        isinstance(x_term, Var)
+        and isinstance(y_term, Struct)
+        and y_term.functor == "+"
+        and len(y_term.args) == 2
+    ):
         # Extract pattern X + K (allow K provided via a bound Var)
         a, b = y_term.args
         # Deref operands if variables
@@ -311,6 +322,7 @@ def _builtin_fd_eq(engine, x_term, y_term):
             # Create and post sum_const propagator
             if z_d[0] == "UNBOUND" and x_d[0] == "UNBOUND":
                 from prolog.clpfd.props.sum_const import create_sum_const_propagator
+
                 queue = _ensure_queue(engine)
                 prop = create_sum_const_propagator(z_d[1], x_d[1], b.value)
                 pid = queue.register(prop)
@@ -324,7 +336,10 @@ def _builtin_fd_eq(engine, x_term, y_term):
 
     # Var-var case
     from prolog.clpfd.props.equality import create_equality_propagator
-    return _post_constraint_propagator(engine, x_term, y_term, create_equality_propagator)
+
+    return _post_constraint_propagator(
+        engine, x_term, y_term, create_equality_propagator
+    )
 
 
 def _builtin_fd_neq(engine, x_term, y_term):
@@ -355,7 +370,7 @@ def _builtin_fd_neq(engine, x_term, y_term):
             x_dom = get_domain(store, x_var)
             if x_dom is None:
                 # No domain yet: treat as full 32-bit range
-                x_dom = Domain(((-(2**31), 2**31-1),))
+                x_dom = Domain(((-(2**31), 2**31 - 1),))
             new_dom = x_dom.remove_value(y_term.value)
             if new_dom.is_empty():
                 return False
@@ -364,6 +379,7 @@ def _builtin_fd_neq(engine, x_term, y_term):
                 # Wake watchers and propagate
                 queue = _ensure_queue(engine)
                 from prolog.clpfd.api import iter_watchers
+
                 for pid, priority in iter_watchers(store, x_var):
                     queue.schedule(pid, priority)
                 if not queue.is_empty():
@@ -375,7 +391,10 @@ def _builtin_fd_neq(engine, x_term, y_term):
 
     # Var-var case: create and post not-equal propagator
     from prolog.clpfd.props.neq import create_not_equal_propagator
-    return _post_constraint_propagator(engine, x_term, y_term, create_not_equal_propagator, priority=Priority.MED)
+
+    return _post_constraint_propagator(
+        engine, x_term, y_term, create_not_equal_propagator, priority=Priority.MED
+    )
 
 
 def _builtin_fd_lt(engine, x_term, y_term):
@@ -416,7 +435,7 @@ def _builtin_fd_lt(engine, x_term, y_term):
             x_var = x_deref[1]
             x_dom = get_domain(store, x_var)
             if x_dom is None:
-                x_dom = Domain(((-(2**31), 2**31-1),))
+                x_dom = Domain(((-(2**31), 2**31 - 1),))
             new_dom = x_dom.remove_ge(y_term.value)
             if new_dom.is_empty():
                 return False
@@ -426,6 +445,7 @@ def _builtin_fd_lt(engine, x_term, y_term):
                 # Wake watchers and propagate
                 queue = _ensure_queue(engine)
                 from prolog.clpfd.api import iter_watchers
+
                 for pid, priority in iter_watchers(store, x_var):
                     queue.schedule(pid, priority)
                 if not queue.is_empty():
@@ -443,7 +463,7 @@ def _builtin_fd_lt(engine, x_term, y_term):
             y_var = y_deref[1]
             y_dom = get_domain(store, y_var)
             if y_dom is None:
-                y_dom = Domain(((-(2**31), 2**31-1),))
+                y_dom = Domain(((-(2**31), 2**31 - 1),))
             new_dom = y_dom.remove_le(x_term.value)
             if new_dom.is_empty():
                 return False
@@ -453,6 +473,7 @@ def _builtin_fd_lt(engine, x_term, y_term):
                 # Wake watchers and propagate
                 queue = _ensure_queue(engine)
                 from prolog.clpfd.api import iter_watchers
+
                 for pid, priority in iter_watchers(store, y_var):
                     queue.schedule(pid, priority)
                 if not queue.is_empty():
@@ -462,7 +483,10 @@ def _builtin_fd_lt(engine, x_term, y_term):
 
     # Var-var case
     from prolog.clpfd.props.comparison import create_less_than_propagator
-    return _post_constraint_propagator(engine, x_term, y_term, create_less_than_propagator)
+
+    return _post_constraint_propagator(
+        engine, x_term, y_term, create_less_than_propagator
+    )
 
 
 def _builtin_fd_le(engine, x_term, y_term):
@@ -503,7 +527,7 @@ def _builtin_fd_le(engine, x_term, y_term):
             x_var = x_deref[1]
             x_dom = get_domain(store, x_var)
             if x_dom is None:
-                x_dom = Domain(((-(2**31), 2**31-1),))
+                x_dom = Domain(((-(2**31), 2**31 - 1),))
             new_dom = x_dom.remove_gt(y_term.value)
             if new_dom.is_empty():
                 return False
@@ -513,6 +537,7 @@ def _builtin_fd_le(engine, x_term, y_term):
                 # Wake watchers and propagate
                 queue = _ensure_queue(engine)
                 from prolog.clpfd.api import iter_watchers
+
                 for pid, priority in iter_watchers(store, x_var):
                     queue.schedule(pid, priority)
                 if not queue.is_empty():
@@ -530,7 +555,7 @@ def _builtin_fd_le(engine, x_term, y_term):
             y_var = y_deref[1]
             y_dom = get_domain(store, y_var)
             if y_dom is None:
-                y_dom = Domain(((-(2**31), 2**31-1),))
+                y_dom = Domain(((-(2**31), 2**31 - 1),))
             new_dom = y_dom.remove_lt(x_term.value)
             if new_dom.is_empty():
                 return False
@@ -540,6 +565,7 @@ def _builtin_fd_le(engine, x_term, y_term):
                 # Wake watchers and propagate
                 queue = _ensure_queue(engine)
                 from prolog.clpfd.api import iter_watchers
+
                 for pid, priority in iter_watchers(store, y_var):
                     queue.schedule(pid, priority)
                 if not queue.is_empty():
@@ -549,7 +575,10 @@ def _builtin_fd_le(engine, x_term, y_term):
 
     # Var-var case
     from prolog.clpfd.props.comparison import create_less_equal_propagator
-    return _post_constraint_propagator(engine, x_term, y_term, create_less_equal_propagator)
+
+    return _post_constraint_propagator(
+        engine, x_term, y_term, create_less_equal_propagator
+    )
 
 
 def _builtin_fd_gt(engine, x_term, y_term):
@@ -632,7 +661,10 @@ def _builtin_fd_inf(engine, x_term, inf_term):
         value = deref[2]
         if isinstance(value, Int):
             from prolog.unify.unify import unify
-            return unify(inf_term, value, engine.store, engine.trail, engine.occurs_check)
+
+            return unify(
+                inf_term, value, engine.store, engine.trail, engine.occurs_check
+            )
         return False
 
     # Get domain
@@ -647,7 +679,10 @@ def _builtin_fd_inf(engine, x_term, inf_term):
         return False  # Empty domain
 
     from prolog.unify.unify import unify
-    return unify(inf_term, Int(min_val), engine.store, engine.trail, engine.occurs_check)
+
+    return unify(
+        inf_term, Int(min_val), engine.store, engine.trail, engine.occurs_check
+    )
 
 
 def _builtin_fd_sup(engine, x_term, sup_term):
@@ -672,7 +707,10 @@ def _builtin_fd_sup(engine, x_term, sup_term):
         value = deref[2]
         if isinstance(value, Int):
             from prolog.unify.unify import unify
-            return unify(sup_term, value, engine.store, engine.trail, engine.occurs_check)
+
+            return unify(
+                sup_term, value, engine.store, engine.trail, engine.occurs_check
+            )
         return False
 
     # Get domain
@@ -687,7 +725,10 @@ def _builtin_fd_sup(engine, x_term, sup_term):
         return False  # Empty domain
 
     from prolog.unify.unify import unify
-    return unify(sup_term, Int(max_val), engine.store, engine.trail, engine.occurs_check)
+
+    return unify(
+        sup_term, Int(max_val), engine.store, engine.trail, engine.occurs_check
+    )
 
 
 def _builtin_fd_dom(engine, x_term, dom_term):
@@ -716,7 +757,10 @@ def _builtin_fd_dom(engine, x_term, dom_term):
         value = deref[2]
         if isinstance(value, Int):
             from prolog.unify.unify import unify
-            return unify(dom_term, value, engine.store, engine.trail, engine.occurs_check)
+
+            return unify(
+                dom_term, value, engine.store, engine.trail, engine.occurs_check
+            )
         return False
 
     # Get domain
@@ -730,6 +774,7 @@ def _builtin_fd_dom(engine, x_term, dom_term):
     domain_term = domain_to_term(domain)
 
     from prolog.unify.unify import unify
+
     return unify(dom_term, domain_term, engine.store, engine.trail, engine.occurs_check)
 
 
@@ -780,3 +825,89 @@ def domain_to_term(domain):
             return Struct("\\/", (first_term, rest_term))
 
     return build_union(intervals)
+
+
+def _builtin_all_different(engine, list_term):
+    """Post all_different constraint on a list of variables.
+
+    Args:
+        engine: Engine instance
+        list_term: List of variables/values to constrain as all different
+
+    Returns:
+        True if constraint was posted successfully, False if failed
+    """
+    store = engine.store
+    trail = engine.trail
+
+    # Parse list to collect variables and fixed values
+    from prolog.ast.terms import List
+
+    fixed_values = set()
+    var_ids = []
+
+    # Handle both List and cons-form, but for Phase 1 we focus on List
+    if not isinstance(list_term, List):
+        # Could be cons-form '.'/2, but for Phase 1 we only handle List
+        return False
+
+    for item in list_term.items:
+        if isinstance(item, Int):
+            # Direct integer value
+            if item.value in fixed_values:
+                return False  # Duplicate fixed value
+            fixed_values.add(item.value)
+        elif isinstance(item, Var):
+            # Variable - need to deref
+            deref = store.deref(item.id)
+            if deref[0] == "BOUND":
+                val = deref[2]  # Bound term is at index 2
+                if not isinstance(val, Int):
+                    return False  # Non-integer ground term
+                if val.value in fixed_values:
+                    return False  # Duplicate fixed value
+                fixed_values.add(val.value)
+            elif deref[0] == "UNBOUND":
+                var_ids.append(deref[1])  # Root variable ID
+        else:
+            # Other term types - fail for CLP(FD)
+            return False
+
+    # Handle tail if it's not nil (for future cons-form support)
+    # For now, List.tail is always None or Atom('[]')
+
+    # Create and register propagator
+    from prolog.clpfd.props.alldiff import create_all_different_propagator
+
+    prop = create_all_different_propagator(var_ids, tuple(fixed_values))
+
+    queue = _ensure_queue(engine)
+    pid = queue.register(prop)
+
+    # Add watchers for all variables
+    for vid in var_ids:
+        add_watcher(store, vid, pid, Priority.MED, trail)
+
+    # Schedule and run to fixpoint
+    queue.schedule(pid, Priority.MED, cause="initial")
+    success = queue.run_to_fixpoint(store, trail, engine)
+
+    # Also immediately run the propagator to apply fixed value elimination
+    if success and (fixed_values or var_ids):
+        # Run propagator again to ensure immediate pruning
+        status, changed = prop(store, trail, engine, "initial")
+        if status == "fail":
+            return False
+        # Wake watchers if there were changes
+        if changed:
+            for vid in changed:
+                from prolog.clpfd.api import iter_watchers
+
+                for watcher_pid, priority in iter_watchers(store, vid):
+                    if watcher_pid != pid:  # Don't requeue ourselves
+                        queue.schedule(
+                            watcher_pid, priority, cause=("domain_changed", vid)
+                        )
+            success = queue.run_to_fixpoint(store, trail, engine)
+
+    return success
