@@ -60,6 +60,14 @@ def _builtin_in(engine, x_term, domain_term):
     # Set domain with trailing
     set_domain(engine.store, x_var, domain, engine.trail)
 
+    # Wake watchers and propagate since domain may affect existing constraints
+    queue = _ensure_queue(engine)
+    from prolog.clpfd.api import iter_watchers
+    for pid, priority in iter_watchers(engine.store, x_var):
+        queue.schedule(pid, priority)
+    if not queue.is_empty():
+        queue.run_to_fixpoint(engine.store, engine.trail, engine)
+
     # Register unification hook if first CLP(FD) constraint
     if not hasattr(engine, '_clpfd_inited') or not engine._clpfd_inited:
         from prolog.clpfd.hooks import clpfd_unify_hook
@@ -272,9 +280,102 @@ def _builtin_fd_eq(engine, x_term, y_term):
     if isinstance(x_term, Int) and isinstance(y_term, Var):
         return _builtin_fd_eq(engine, y_term, x_term)
 
+    # Handle arithmetic form: Z #= X + K or Z #= K + X (K integer)
+    if isinstance(x_term, Var) and isinstance(y_term, Struct) and y_term.functor == "+" and len(y_term.args) == 2:
+        # Extract pattern X + K (allow K provided via a bound Var)
+        a, b = y_term.args
+        # Deref operands if variables
+        if isinstance(a, Var):
+            a_d = store.deref(a.id)
+            if a_d[0] == "BOUND" and isinstance(a_d[2], Int):
+                a = a_d[2]
+        if isinstance(b, Var):
+            b_d = store.deref(b.id)
+            if b_d[0] == "BOUND" and isinstance(b_d[2], Int):
+                b = b_d[2]
+
+        if isinstance(a, Var) and isinstance(b, Int):
+            z_d = store.deref(x_term.id)
+            x_d = store.deref(a.id)
+            if z_d[0] == "BOUND" or x_d[0] == "BOUND":
+                # If either is bound to a non-Int, fail; if ints, check consistency
+                z_val = z_d[2] if z_d[0] == "BOUND" else None
+                x_val = x_d[2] if x_d[0] == "BOUND" else None
+                if z_val is not None and not isinstance(z_val, Int):
+                    return False
+                if x_val is not None and not isinstance(x_val, Int):
+                    return False
+                if z_val is not None and x_val is not None:
+                    return z_val.value == x_val.value + b.value
+                # Fall through to general case when one side unbound
+            # Create and post sum_const propagator
+            if z_d[0] == "UNBOUND" and x_d[0] == "UNBOUND":
+                from prolog.clpfd.props.sum_const import create_sum_const_propagator
+                queue = _ensure_queue(engine)
+                prop = create_sum_const_propagator(z_d[1], x_d[1], b.value)
+                pid = queue.register(prop)
+                add_watcher(store, z_d[1], pid, Priority.MED, trail)
+                add_watcher(store, x_d[1], pid, Priority.MED, trail)
+                queue.schedule(pid, Priority.MED)
+                return queue.run_to_fixpoint(store, trail, engine)
+        if isinstance(b, Var) and isinstance(a, Int):
+            # K + X, swap
+            return _builtin_fd_eq(engine, x_term, Struct("+", (b, a)))
+
     # Var-var case
     from prolog.clpfd.props.equality import create_equality_propagator
     return _post_constraint_propagator(engine, x_term, y_term, create_equality_propagator)
+
+
+def _builtin_fd_neq(engine, x_term, y_term):
+    """X #\= Y - constrain X and Y to be different.
+
+    Args:
+        engine: Engine instance
+        x_term: First term
+        y_term: Second term
+
+    Returns:
+        True if constraint succeeded, False if failed
+    """
+    store = engine.store
+    trail = engine.trail
+
+    # Handle int-int case immediately
+    if isinstance(x_term, Int) and isinstance(y_term, Int):
+        return x_term.value != y_term.value
+
+    # Var-int cases: remove value from variable domain
+    if isinstance(x_term, Var) and isinstance(y_term, Int):
+        x_deref = store.deref(x_term.id)
+        if x_deref[0] == "BOUND":
+            return isinstance(x_deref[2], Int) and x_deref[2].value != y_term.value
+        else:
+            x_var = x_deref[1]
+            x_dom = get_domain(store, x_var)
+            if x_dom is None:
+                # No domain yet: treat as full 32-bit range
+                x_dom = Domain(((-(2**31), 2**31-1),))
+            new_dom = x_dom.remove_value(y_term.value)
+            if new_dom.is_empty():
+                return False
+            if new_dom is not x_dom:
+                set_domain(store, x_var, new_dom, trail)
+                # Wake watchers and propagate
+                queue = _ensure_queue(engine)
+                from prolog.clpfd.api import iter_watchers
+                for pid, priority in iter_watchers(store, x_var):
+                    queue.schedule(pid, priority)
+                if not queue.is_empty():
+                    queue.run_to_fixpoint(store, trail, engine)
+            return True
+
+    if isinstance(x_term, Int) and isinstance(y_term, Var):
+        return _builtin_fd_neq(engine, y_term, x_term)
+
+    # Var-var case: create and post not-equal propagator
+    from prolog.clpfd.props.neq import create_not_equal_propagator
+    return _post_constraint_propagator(engine, x_term, y_term, create_not_equal_propagator, priority=Priority.MED)
 
 
 def _builtin_fd_lt(engine, x_term, y_term):
@@ -290,6 +391,16 @@ def _builtin_fd_lt(engine, x_term, y_term):
     """
     store = engine.store
     trail = engine.trail
+
+    # Deref any bound variables to Ints
+    if isinstance(x_term, Var):
+        xd = store.deref(x_term.id)
+        if xd[0] == "BOUND" and isinstance(xd[2], Int):
+            x_term = xd[2]
+    if isinstance(y_term, Var):
+        yd = store.deref(y_term.id)
+        if yd[0] == "BOUND" and isinstance(yd[2], Int):
+            y_term = yd[2]
 
     # Handle int-int case
     if isinstance(x_term, Int) and isinstance(y_term, Int):
@@ -367,6 +478,16 @@ def _builtin_fd_le(engine, x_term, y_term):
     """
     store = engine.store
     trail = engine.trail
+
+    # Deref any bound variables to Ints
+    if isinstance(x_term, Var):
+        xd = store.deref(x_term.id)
+        if xd[0] == "BOUND" and isinstance(xd[2], Int):
+            x_term = xd[2]
+    if isinstance(y_term, Var):
+        yd = store.deref(y_term.id)
+        if yd[0] == "BOUND" and isinstance(yd[2], Int):
+            y_term = yd[2]
 
     # Handle int-int case
     if isinstance(x_term, Int) and isinstance(y_term, Int):
