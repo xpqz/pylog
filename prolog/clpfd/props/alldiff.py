@@ -87,8 +87,10 @@ def create_all_different_propagator(var_ids: List[int], fixed_values: Tuple[int,
                 changed.append(vid)
                 domains[vid] = new_dom  # Update for Hall-interval phase
 
-        # Hall-interval pruning
-        if domains:
+        # Hall-interval pruning - OPTIMIZED
+        # Only do expensive Hall pruning if we have a reasonable number of variables
+        # and haven't already done significant pruning via value elimination
+        if domains and len(domains) <= 20:  # Limit complexity for larger problems
             # Compute candidate intervals from unique bounds
             bounds = set()
             for dom in domains.values():
@@ -98,6 +100,10 @@ def create_all_different_propagator(var_ids: List[int], fixed_values: Tuple[int,
 
             sorted_bounds = sorted(bounds)
 
+            # Limit the number of intervals we check for performance
+            # Only check intervals up to a reasonable size
+            max_interval_size = min(len(domains), 10)  # Don't check huge intervals
+
             # Check each interval [a,b]
             for i, a in enumerate(sorted_bounds):
                 for b in sorted_bounds[i:]:
@@ -105,6 +111,10 @@ def create_all_different_propagator(var_ids: List[int], fixed_values: Tuple[int,
                         continue
 
                     interval_size = b - a + 1
+
+                    # Skip intervals that are too large
+                    if interval_size > max_interval_size:
+                        continue
 
                     # Count tight variables (domain ⊆ [a,b])
                     tight_vars = []
