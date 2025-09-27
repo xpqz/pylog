@@ -25,7 +25,9 @@ Operational Guidelines:
 - Write clear, imperative mood commit messages (e.g., "Fix unification bug" not "Fixed unification bug")
 - Stage only relevant files for each logical change
 - Never commit sensitive information like passwords or API keys
-- Verify changes with `git diff` before committing
+- Verify changes with `git diff` before committing 
+- **CRITICAL**: NEVER USE `--no-verify` WITH GIT!
+- **CRITICAL**: NEVER MENTION AI OR CLAUDE IN COMMIT MESSAGES
 
 **For Pull Requests**:
 - Include issue references in PR descriptions when applicable
