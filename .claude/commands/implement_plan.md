@@ -2,9 +2,13 @@
 
 You are tasked with implementing an approved technical plan either from `docs/plans/`, or from a GitHub Epic issue, which should map to a plan document in docs/plans. These plans contain phases with specific changes and success criteria. Read docs/ARCH.md (the overarching system architecture) and docs/PLAN.md (the project's global plan) to ensure you understand the project's context.
 
+**CRITICAL**: **ALWAYS** run the full test suite before claiming that you have completed. Regressions are **NOT** tolerated! You may use the "not slow" switch when running the pytest suite:
+
+uv run pytest -m "not slow" -q --tb=short
+
 ## Getting Started
 
-**CRITICAL**: review coderules.md in its entirety. 
+**CRITICAL**: review and accept coderules.md in its entirety. 
 
 When given a plan path or GitHub Epic issue ID:
 
@@ -42,14 +46,19 @@ If you encounter a mismatch:
   How should I proceed?
   ```
 
+## Testing: TDD
+
+- Implement tests FIRST, before implementation
+- STOP for review of the tests
+- **CRITICAL**: once tests have been reviewed and approved, they form an agreed CONTRACT. You MAY NOT modify tests to fit observed behaviour, unless the tests are PROVABLY broken: this must be confirmed with a human reviewer
+
 ## Verification Approach
 
 After implementing a phase:
-- **CRITICAL**: Run the FULL TEST SUITE (usually `uv run pytest` covers everything). Regressions are NOT tolerated
-- Fix any issues before proceeding
-- Update your progress in both the plan and your todos
+- **CRITICAL**: Run the FULL TEST SUITE (usually `uv run pytest -m "not slow" -q --tb=short` is sufficient). Regressions are NOT tolerated
+- Fix any issues before proceeding, including anything discovered, but not directly caused by these changes
+- Update your progress in both the plan, your todos, and in GitHub issues and epics
 - Check off completed items in the plan file itself using Edit
-- If working against a GitHub issue, ensure you maintain the issue by ticking boxes
 
 ## If You Get Stuck
 

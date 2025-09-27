@@ -23,6 +23,11 @@ dev = [
     "isort>=5.12.0",
     "hypothesis>=6.138.15",
 ]
+docs = [
+    "mkdocs>=1.6.0",
+    "mkdocs-material>=9.5.0",
+    "pymdown-extensions>=10.0.0",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -87,4 +92,3 @@ title = "PyLog Coverage Report"
 
 [tool.coverage.xml]
 output = "coverage.xml"
-
