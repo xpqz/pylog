@@ -9,9 +9,20 @@ from enum import Enum
 
 from prolog.unify.store import Store
 from prolog.unify.trail import Trail
-from prolog.ast.terms import Var, Int
+from prolog.unify.unify import bind
+from prolog.ast.terms import Var, Int, Atom
 from prolog.clpfd.domain import Domain
 from prolog.clpfd.api import get_domain, set_domain
+from prolog.clpfd.entailment import (
+    Entailment,
+    check_equality_entailment,
+    check_less_than_entailment,
+    check_less_equal_entailment,
+    check_greater_than_entailment,
+    check_greater_equal_entailment,
+    check_not_equal_entailment,
+    CONSTRAINT_NEGATIONS,
+)
 
 
 class TestEntailmentEnum:
@@ -19,7 +30,6 @@ class TestEntailmentEnum:
 
     def test_entailment_enum_exists(self):
         """Test that Entailment enum is defined with correct values."""
-        from prolog.clpfd.entailment import Entailment
 
         assert Entailment.TRUE.value == 1
         assert Entailment.FALSE.value == 0
@@ -27,7 +37,6 @@ class TestEntailmentEnum:
 
     def test_entailment_enum_comparison(self):
         """Test that Entailment values can be compared."""
-        from prolog.clpfd.entailment import Entailment
 
         assert Entailment.TRUE != Entailment.FALSE
         assert Entailment.TRUE != Entailment.UNKNOWN
@@ -39,7 +48,6 @@ class TestEqualityEntailment:
 
     def test_int_int_equality(self):
         """Test equality entailment with two integers."""
-        from prolog.clpfd.entailment import check_equality_entailment, Entailment
 
         store = Store()
 
@@ -53,7 +61,6 @@ class TestEqualityEntailment:
 
     def test_var_int_equality(self):
         """Test equality entailment with variable and integer."""
-        from prolog.clpfd.entailment import check_equality_entailment, Entailment
 
         store = Store()
         trail = Trail()
@@ -76,7 +83,6 @@ class TestEqualityEntailment:
 
     def test_int_var_equality(self):
         """Test equality entailment with integer and variable (symmetric)."""
-        from prolog.clpfd.entailment import check_equality_entailment, Entailment
 
         store = Store()
         trail = Trail()
@@ -99,7 +105,6 @@ class TestEqualityEntailment:
 
     def test_var_var_equality_disjoint(self):
         """Test equality entailment with disjoint domains."""
-        from prolog.clpfd.entailment import check_equality_entailment, Entailment
 
         store = Store()
         trail = Trail()
@@ -114,7 +119,6 @@ class TestEqualityEntailment:
 
     def test_var_var_equality_overlapping(self):
         """Test equality entailment with overlapping domains."""
-        from prolog.clpfd.entailment import check_equality_entailment, Entailment
 
         store = Store()
         trail = Trail()
@@ -129,7 +133,6 @@ class TestEqualityEntailment:
 
     def test_var_var_equality_singleton_same(self):
         """Test equality entailment with same singleton domains."""
-        from prolog.clpfd.entailment import check_equality_entailment, Entailment
 
         store = Store()
         trail = Trail()
@@ -144,7 +147,6 @@ class TestEqualityEntailment:
 
     def test_var_var_equality_singleton_different(self):
         """Test equality entailment with different singleton domains."""
-        from prolog.clpfd.entailment import check_equality_entailment, Entailment
 
         store = Store()
         trail = Trail()
@@ -159,7 +161,6 @@ class TestEqualityEntailment:
 
     def test_var_var_equality_one_singleton(self):
         """Test equality entailment with one singleton domain."""
-        from prolog.clpfd.entailment import check_equality_entailment, Entailment
 
         store = Store()
         trail = Trail()
@@ -179,7 +180,6 @@ class TestEqualityEntailment:
 
     def test_var_var_equality_no_domains(self):
         """Test equality entailment with variables having no domains."""
-        from prolog.clpfd.entailment import check_equality_entailment, Entailment
 
         store = Store()
         x_id = store.new_var("X")
@@ -195,7 +195,6 @@ class TestLessThanEntailment:
 
     def test_int_int_less_than(self):
         """Test less-than entailment with two integers."""
-        from prolog.clpfd.entailment import check_less_than_entailment, Entailment
 
         store = Store()
 
@@ -213,7 +212,6 @@ class TestLessThanEntailment:
 
     def test_var_int_less_than(self):
         """Test less-than entailment with variable and integer."""
-        from prolog.clpfd.entailment import check_less_than_entailment, Entailment
 
         store = Store()
         trail = Trail()
@@ -236,7 +234,6 @@ class TestLessThanEntailment:
 
     def test_int_var_less_than(self):
         """Test less-than entailment with integer and variable."""
-        from prolog.clpfd.entailment import check_less_than_entailment, Entailment
 
         store = Store()
         trail = Trail()
@@ -259,7 +256,6 @@ class TestLessThanEntailment:
 
     def test_var_var_less_than_disjoint(self):
         """Test less-than entailment with disjoint domains."""
-        from prolog.clpfd.entailment import check_less_than_entailment, Entailment
 
         store = Store()
         trail = Trail()
@@ -280,7 +276,6 @@ class TestLessThanEntailment:
 
     def test_var_var_less_than_overlapping(self):
         """Test less-than entailment with overlapping domains."""
-        from prolog.clpfd.entailment import check_less_than_entailment, Entailment
 
         store = Store()
         trail = Trail()
@@ -295,7 +290,6 @@ class TestLessThanEntailment:
 
     def test_var_var_less_than_touching(self):
         """Test less-than entailment with touching domains."""
-        from prolog.clpfd.entailment import check_less_than_entailment, Entailment
 
         store = Store()
         trail = Trail()
@@ -314,7 +308,6 @@ class TestLessEqualEntailment:
 
     def test_int_int_less_equal(self):
         """Test less-equal entailment with two integers."""
-        from prolog.clpfd.entailment import check_less_equal_entailment, Entailment
 
         store = Store()
 
@@ -332,7 +325,6 @@ class TestLessEqualEntailment:
 
     def test_var_var_less_equal(self):
         """Test less-equal entailment with variables."""
-        from prolog.clpfd.entailment import check_less_equal_entailment, Entailment
 
         store = Store()
         trail = Trail()
@@ -357,7 +349,6 @@ class TestGreaterThanEntailment:
 
     def test_greater_than_via_less_than(self):
         """Test that X #> Y uses Y #< X internally."""
-        from prolog.clpfd.entailment import check_greater_than_entailment, Entailment
 
         store = Store()
         trail = Trail()
@@ -382,7 +373,6 @@ class TestGreaterEqualEntailment:
 
     def test_greater_equal_via_less_equal(self):
         """Test that X #>= Y uses Y #=< X internally."""
-        from prolog.clpfd.entailment import check_greater_equal_entailment, Entailment
 
         store = Store()
         trail = Trail()
@@ -401,7 +391,6 @@ class TestNotEqualEntailment:
 
     def test_not_equal_inverse_of_equal(self):
         """Test that not-equal is the inverse of equality."""
-        from prolog.clpfd.entailment import check_not_equal_entailment, Entailment
 
         store = Store()
         trail = Trail()
@@ -432,7 +421,6 @@ class TestConstraintNegations:
 
     def test_negation_mapping_complete(self):
         """Test that all constraint types have negations defined."""
-        from prolog.clpfd.entailment import CONSTRAINT_NEGATIONS
 
         # Check all required mappings exist
         assert "#=" in CONSTRAINT_NEGATIONS
@@ -444,7 +432,6 @@ class TestConstraintNegations:
 
     def test_negation_mapping_correct(self):
         """Test that negation mappings are correct."""
-        from prolog.clpfd.entailment import CONSTRAINT_NEGATIONS
 
         # ¬(X #= Y) = X #\= Y
         assert CONSTRAINT_NEGATIONS["#="] == "#\\="
@@ -466,7 +453,6 @@ class TestConstraintNegations:
 
     def test_negation_mapping_invertible(self):
         """Test that negations are invertible (double negation)."""
-        from prolog.clpfd.entailment import CONSTRAINT_NEGATIONS
 
         for constraint, negation in CONSTRAINT_NEGATIONS.items():
             # Double negation should give back the original
@@ -479,7 +465,6 @@ class TestEdgeCases:
 
     def test_empty_domain_handling(self):
         """Test handling of empty domains."""
-        from prolog.clpfd.entailment import check_equality_entailment, Entailment
 
         store = Store()
         trail = Trail()
@@ -496,7 +481,6 @@ class TestEdgeCases:
 
     def test_none_domain_handling(self):
         """Test handling when get_domain returns None."""
-        from prolog.clpfd.entailment import check_equality_entailment, Entailment
 
         store = Store()
         x_id = store.new_var("X")
@@ -508,7 +492,6 @@ class TestEdgeCases:
 
     def test_mixed_var_int_none_cases(self):
         """Test mixed cases with variables, integers, and None values."""
-        from prolog.clpfd.entailment import check_less_than_entailment, Entailment
 
         store = Store()
         x_id = store.new_var("X")
@@ -523,7 +506,6 @@ class TestPerformanceCharacteristics:
 
     def test_singleton_check_fast(self):
         """Test that singleton domain checks are efficient."""
-        from prolog.clpfd.entailment import check_equality_entailment, Entailment
 
         store = Store()
         trail = Trail()
@@ -541,7 +523,6 @@ class TestPerformanceCharacteristics:
 
     def test_bounds_check_fast(self):
         """Test that bounds-based checks are efficient."""
-        from prolog.clpfd.entailment import check_less_than_entailment, Entailment
 
         store = Store()
         trail = Trail()
@@ -556,3 +537,177 @@ class TestPerformanceCharacteristics:
             # Should be fast (just compare bounds)
             result = check_less_than_entailment(store, x_id, y_id)
             assert result == Entailment.TRUE
+
+
+class TestBoundVariableEntailment:
+    """Test entailment with bound variables (not just domain-constrained)."""
+
+    def test_bound_var_equality(self):
+        """Test equality entailment with bound variables."""
+
+        store = Store()
+        trail = Trail()
+        x_id = store.new_var("X")
+        y_id = store.new_var("Y")
+
+        # Bind X to 5
+        bind(store, x_id, Int(5), trail)
+
+        # X=5 #= Y (unbound) should be UNKNOWN
+        result = check_equality_entailment(store, x_id, y_id)
+        assert result == Entailment.UNKNOWN
+
+        # Bind Y to 5 as well
+        bind(store, y_id, Int(5), trail)
+
+        # X=5 #= Y=5 should be TRUE
+        result = check_equality_entailment(store, x_id, y_id)
+        assert result == Entailment.TRUE
+
+        # New variable Z bound to 3
+        z_id = store.new_var("Z")
+        bind(store, z_id, Int(3), trail)
+
+        # X=5 #= Z=3 should be FALSE
+        result = check_equality_entailment(store, x_id, z_id)
+        assert result == Entailment.FALSE
+
+    def test_bound_var_less_than(self):
+        """Test less-than entailment with bound variables."""
+
+        store = Store()
+        trail = Trail()
+        x_id = store.new_var("X")
+        y_id = store.new_var("Y")
+
+        # Bind X to 3, Y to 5
+        bind(store, x_id, Int(3), trail)
+        bind(store, y_id, Int(5), trail)
+
+        # X=3 #< Y=5 should be TRUE
+        result = check_less_than_entailment(store, x_id, y_id)
+        assert result == Entailment.TRUE
+
+        # Y=5 #< X=3 should be FALSE
+        result = check_less_than_entailment(store, y_id, x_id)
+        assert result == Entailment.FALSE
+
+        # X=3 #< X=3 should be FALSE
+        result = check_less_than_entailment(store, x_id, x_id)
+        assert result == Entailment.FALSE
+
+    def test_bound_var_mixed_with_domain(self):
+        """Test entailment with mix of bound vars and domain-constrained vars."""
+
+        store = Store()
+        trail = Trail()
+        x_id = store.new_var("X")
+        y_id = store.new_var("Y")
+
+        # X is bound to 5
+        bind(store, x_id, Int(5), trail)
+
+        # Y has domain 3..7
+        set_domain(store, y_id, Domain(((3, 7),)), trail)
+
+        # X=5 #=< Y in 3..7 should be UNKNOWN
+        result = check_less_equal_entailment(store, x_id, y_id)
+        assert result == Entailment.UNKNOWN
+
+        # Y has domain 6..10
+        set_domain(store, y_id, Domain(((6, 10),)), trail)
+
+        # X=5 #=< Y in 6..10 should be TRUE
+        result = check_less_equal_entailment(store, x_id, y_id)
+        assert result == Entailment.TRUE
+
+        # Y has domain 1..4
+        set_domain(store, y_id, Domain(((1, 4),)), trail)
+
+        # X=5 #=< Y in 1..4 should be FALSE
+        result = check_less_equal_entailment(store, x_id, y_id)
+        assert result == Entailment.FALSE
+
+    def test_bound_non_integer_returns_unknown(self):
+        """Test that bound non-integer values return UNKNOWN."""
+
+        store = Store()
+        trail = Trail()
+        x_id = store.new_var("X")
+        y_id = store.new_var("Y")
+
+        # Bind X to an atom (non-integer)
+        bind(store, x_id, Atom("foo"), trail)
+
+        # X=foo #= Y should return UNKNOWN (not an error)
+        result = check_equality_entailment(store, x_id, y_id)
+        assert result == Entailment.UNKNOWN
+
+        # X=foo #= 5 should return UNKNOWN
+        result = check_equality_entailment(store, x_id, (None, 5))
+        assert result == Entailment.UNKNOWN
+
+
+class TestEmptyDomainEntailment:
+    """Test entailment with empty domains."""
+
+    def test_empty_domain_equality(self):
+        """Test equality entailment with empty domains."""
+
+        store = Store()
+        trail = Trail()
+        x_id = store.new_var("X")
+        y_id = store.new_var("Y")
+
+        # X has empty domain
+        set_domain(store, x_id, Domain(()), trail)
+
+        # Y has normal domain
+        set_domain(store, y_id, Domain(((1, 5),)), trail)
+
+        # Empty domain comparisons should be FALSE (no valid assignment)
+        result = check_equality_entailment(store, x_id, y_id)
+        assert result == Entailment.FALSE
+
+        # Empty #= Empty should also be FALSE (no valid values)
+        set_domain(store, y_id, Domain(()), trail)
+        result = check_equality_entailment(store, x_id, y_id)
+        assert result == Entailment.FALSE
+
+    def test_empty_domain_less_than(self):
+        """Test less-than entailment with empty domains."""
+
+        store = Store()
+        trail = Trail()
+        x_id = store.new_var("X")
+        y_id = store.new_var("Y")
+
+        # X has empty domain
+        set_domain(store, x_id, Domain(()), trail)
+
+        # Y has normal domain
+        set_domain(store, y_id, Domain(((1, 5),)), trail)
+
+        # Empty < anything should be FALSE
+        result = check_less_than_entailment(store, x_id, y_id)
+        assert result == Entailment.FALSE
+
+        # Anything < Empty should be FALSE
+        result = check_less_than_entailment(store, y_id, x_id)
+        assert result == Entailment.FALSE
+
+    def test_empty_domain_less_equal(self):
+        """Test less-equal entailment with empty domains."""
+
+        store = Store()
+        trail = Trail()
+        x_id = store.new_var("X")
+        y_id = store.new_var("Y")
+
+        # Both empty domains
+        set_domain(store, x_id, Domain(()), trail)
+        set_domain(store, y_id, Domain(()), trail)
+
+        # Empty #=< Empty should be FALSE (no valid assignment)
+        result = check_less_equal_entailment(store, x_id, y_id)
+        assert result == Entailment.FALSE
