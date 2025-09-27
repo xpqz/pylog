@@ -67,6 +67,7 @@ class TestSimpleConstraintProblems:
             assert s2 + 2 <= s3  # Task 2 must finish before Task 3 starts
             assert s3 + 4 <= 15  # Task 3 must finish by time 15
 
+    @pytest.mark.slow
     def test_magic_square_3x3_sum(self):
         """3x3 magic square - all rows, columns, diagonals sum to same value."""
         engine = Engine(Program([]))
