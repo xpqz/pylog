@@ -29,8 +29,8 @@ class TestReificationEquivalenceBuiltin:
         """Test that B = 1 forces the constraint to hold."""
         engine = Engine(program(), trace=False, occurs_check=False)
 
-        # B = 1 should force X = 3
-        result = engine.query("B #<=> (X #= 3), X in 1..5, B = 1")
+        # B #= 1 should force X = 3
+        result = engine.query("B #<=> (X #= 3), X in 1..5, B #= 1, label([B, X])")
         solutions = list(result)
 
         assert len(solutions) == 1
@@ -42,8 +42,8 @@ class TestReificationEquivalenceBuiltin:
         """Test that B = 0 forces the constraint to not hold."""
         engine = Engine(program(), trace=False, occurs_check=False)
 
-        # B = 0 should force X #\= 3
-        result = engine.query("B #<=> (X #= 3), X in 1..5, B = 0")
+        # B #= 0 should force X #\= 3
+        result = engine.query("B #<=> (X #= 3), X in 1..5, B #= 0")
         solutions = list(result)
 
         # X can be 1, 2, 4, or 5
@@ -55,8 +55,8 @@ class TestReificationEquivalenceBuiltin:
         """Test that constraint being true forces B = 1."""
         engine = Engine(program(), trace=False, occurs_check=False)
 
-        # X = 3 should force B = 1
-        result = engine.query("B #<=> (X #= 3), X = 3")
+        # X #= 3 should force B = 1
+        result = engine.query("B #<=> (X #= 3), X #= 3, label([B, X])")
         solutions = list(result)
 
         assert len(solutions) == 1
@@ -68,8 +68,8 @@ class TestReificationEquivalenceBuiltin:
         """Test that constraint being false forces B = 0."""
         engine = Engine(program(), trace=False, occurs_check=False)
 
-        # X = 5 makes (X #= 3) false, so B must be 0
-        result = engine.query("B #<=> (X #= 3), X = 5")
+        # X #= 5 makes (X #= 3) false, so B must be 0
+        result = engine.query("B #<=> (X #= 3), X #= 5, label([B, X])")
         solutions = list(result)
 
         assert len(solutions) == 1
@@ -81,8 +81,8 @@ class TestReificationEquivalenceBuiltin:
         """Test B #<=> (X #< Y) with less-than constraint."""
         engine = Engine(program(), trace=False, occurs_check=False)
 
-        # B = 1 should force X < 5
-        result = engine.query("B #<=> (X #< 5), X in 1..10, B = 1")
+        # B #= 1 should force X < 5
+        result = engine.query("B #<=> (X #< 5), X in 1..10, B #= 1")
         solutions = list(result)
 
         assert len(solutions) == 1
@@ -92,8 +92,8 @@ class TestReificationEquivalenceBuiltin:
         """Test B #<=> (X #\\= Y) with not-equal constraint."""
         engine = Engine(program(), trace=False, occurs_check=False)
 
-        # B = 0 should force X = 3 (negation of X #\= 3)
-        result = engine.query("B #<=> (X #\\= 3), X in 1..5, B = 0")
+        # B #= 0 should force X = 3 (negation of X #\= 3)
+        result = engine.query("B #<=> (X #\\= 3), X in 1..5, B #= 0, label([B, X])")
         solutions = list(result)
 
         assert len(solutions) == 1
@@ -105,8 +105,8 @@ class TestReificationEquivalenceBuiltin:
         """Test that contradictory constraints fail."""
         engine = Engine(program(), trace=False, occurs_check=False)
 
-        # B = 1 and X = 5 contradict B #<=> (X #= 3)
-        result = engine.query("B #<=> (X #= 3), B = 1, X = 5")
+        # B #= 1 and X #= 5 contradict B #<=> (X #= 3)
+        result = engine.query("B #<=> (X #= 3), B #= 1, X #= 5")
         solutions = list(result)
 
         assert len(solutions) == 0
@@ -116,14 +116,14 @@ class TestReificationEquivalenceBuiltin:
         engine = Engine(program(), trace=False, occurs_check=False)
 
         # B #<=> (3 #= 3) should force B = 1
-        result = engine.query("B #<=> (3 #= 3)")
+        result = engine.query("B #<=> (3 #= 3), label([B])")
         solutions = list(result)
 
         assert len(solutions) == 1
         assert solutions[0]["B"] == Int(1)
 
         # B #<=> (3 #= 5) should force B = 0
-        result = engine.query("B #<=> (3 #= 5)")
+        result = engine.query("B #<=> (3 #= 5), label([B])")
         solutions = list(result)
 
         assert len(solutions) == 1
@@ -133,8 +133,8 @@ class TestReificationEquivalenceBuiltin:
         """Test symmetric contradiction: B=0 with entailed constraint."""
         engine = Engine(program(), trace=False, occurs_check=False)
 
-        # B = 0 contradicts entailed constraint (3 #= 3)
-        result = engine.query("B #<=> (3 #= 3), B = 0")
+        # B #= 0 contradicts entailed constraint (3 #= 3)
+        result = engine.query("B #<=> (3 #= 3), B #= 0")
         solutions = list(result)
 
         assert len(solutions) == 0  # Should fail
@@ -147,8 +147,8 @@ class TestReificationImplicationBuiltin:
         """Test that B = 1 forces constraint to hold."""
         engine = Engine(program(), trace=False, occurs_check=False)
 
-        # B = 1 should force X = 3
-        result = engine.query("B #==> (X #= 3), X in 1..5, B = 1")
+        # B #= 1 should force X = 3
+        result = engine.query("B #==> (X #= 3), X in 1..5, B #= 1, label([B, X])")
         solutions = list(result)
 
         assert len(solutions) == 1
@@ -160,8 +160,8 @@ class TestReificationImplicationBuiltin:
         """Test that B = 0 doesn't constrain C."""
         engine = Engine(program(), trace=False, occurs_check=False)
 
-        # B = 0 allows X to be anything in 1..5
-        result = engine.query("B #==> (X #= 3), X in 1..5, B = 0")
+        # B #= 0 allows X to be anything in 1..5
+        result = engine.query("B #==> (X #= 3), X in 1..5, B #= 0")
         solutions = list(result)
 
         assert len(solutions) == 1
@@ -171,8 +171,8 @@ class TestReificationImplicationBuiltin:
         """Test that constraint being false forces B = 0."""
         engine = Engine(program(), trace=False, occurs_check=False)
 
-        # X = 5 makes (X #= 3) false, so B must be 0 (contrapositive)
-        result = engine.query("B #==> (X #= 3), X = 5")
+        # X #= 5 makes (X #= 3) false, so B must be 0 (contrapositive)
+        result = engine.query("B #==> (X #= 3), X #= 5, label([B, X])")
         solutions = list(result)
 
         assert len(solutions) == 1
@@ -184,8 +184,8 @@ class TestReificationImplicationBuiltin:
         """Test that constraint being true allows B to be 0 or 1."""
         engine = Engine(program(), trace=False, occurs_check=False)
 
-        # X = 3 makes constraint true, B can be 0 or 1
-        result = engine.query("B #==> (X #= 3), X = 3")
+        # X #= 3 makes constraint true, B can be 0 or 1
+        result = engine.query("B #==> (X #= 3), X #= 3")
         solutions = list(result)
 
         assert len(solutions) == 1
@@ -195,8 +195,8 @@ class TestReificationImplicationBuiltin:
         """Test that B = 1 with false constraint fails."""
         engine = Engine(program(), trace=False, occurs_check=False)
 
-        # B = 1 requires X = 3, but X = 5 contradicts
-        result = engine.query("B #==> (X #= 3), B = 1, X = 5")
+        # B #= 1 requires X = 3, but X #= 5 contradicts
+        result = engine.query("B #==> (X #= 3), B #= 1, X #= 5")
         solutions = list(result)
 
         assert len(solutions) == 0
@@ -220,8 +220,8 @@ class TestReificationBackwardImplicationBuiltin:
         """Test that constraint being true forces B = 1."""
         engine = Engine(program(), trace=False, occurs_check=False)
 
-        # X = 3 makes constraint true, so B must be 1
-        result = engine.query("B #<== (X #= 3), X = 3")
+        # X #= 3 makes constraint true, so B must be 1
+        result = engine.query("B #<== (X #= 3), X #= 3, label([B, X])")
         solutions = list(result)
 
         assert len(solutions) == 1
@@ -233,8 +233,8 @@ class TestReificationBackwardImplicationBuiltin:
         """Test that constraint being false allows B to be 0 or 1."""
         engine = Engine(program(), trace=False, occurs_check=False)
 
-        # X = 5 makes constraint false, B can be 0 or 1
-        result = engine.query("B #<== (X #= 3), X = 5")
+        # X #= 5 makes constraint false, B can be 0 or 1
+        result = engine.query("B #<== (X #= 3), X #= 5")
         solutions = list(result)
 
         assert len(solutions) == 1
@@ -244,8 +244,8 @@ class TestReificationBackwardImplicationBuiltin:
         """Test that B = 0 doesn't force constraint."""
         engine = Engine(program(), trace=False, occurs_check=False)
 
-        # B = 0 allows X to be anything
-        result = engine.query("B #<== (X #= 3), X in 1..5, B = 0")
+        # B #= 0 allows X to be anything
+        result = engine.query("B #<== (X #= 3), X in 1..5, B #= 0")
         solutions = list(result)
 
         assert len(solutions) == 1
@@ -255,8 +255,8 @@ class TestReificationBackwardImplicationBuiltin:
         """Test that B = 0 with true constraint fails."""
         engine = Engine(program(), trace=False, occurs_check=False)
 
-        # X = 3 requires B = 1, but B = 0 contradicts
-        result = engine.query("B #<== (X #= 3), B = 0, X = 3")
+        # X #= 3 requires B #= 1, but B #= 0 contradicts
+        result = engine.query("B #<== (X #= 3), B #= 0, X #= 3")
         solutions = list(result)
 
         assert len(solutions) == 0
@@ -269,8 +269,8 @@ class TestReificationWithDifferentConstraints:
         """Test reification with #=< constraint."""
         engine = Engine(program(), trace=False, occurs_check=False)
 
-        # B = 1 should force X =< 5
-        result = engine.query("B #<=> (X #=< 5), X in 1..10, B = 1")
+        # B #= 1 should force X =< 5
+        result = engine.query("B #<=> (X #=< 5), X in 1..10, B #= 1")
         solutions = list(result)
 
         assert len(solutions) == 1
@@ -280,8 +280,8 @@ class TestReificationWithDifferentConstraints:
         """Test reification with #> constraint."""
         engine = Engine(program(), trace=False, occurs_check=False)
 
-        # B = 0 should force X =< 5 (negation of X > 5)
-        result = engine.query("B #<=> (X #> 5), X in 1..10, B = 0")
+        # B #= 0 should force X =< 5 (negation of X > 5)
+        result = engine.query("B #<=> (X #> 5), X in 1..10, B #= 0")
         solutions = list(result)
 
         assert len(solutions) == 1
@@ -291,8 +291,8 @@ class TestReificationWithDifferentConstraints:
         """Test reification with #>= constraint."""
         engine = Engine(program(), trace=False, occurs_check=False)
 
-        # B = 1 should force X >= 5
-        result = engine.query("B #<=> (X #>= 5), X in 1..10, B = 1")
+        # B #= 1 should force X >= 5
+        result = engine.query("B #<=> (X #>= 5), X in 1..10, B #= 1")
         solutions = list(result)
 
         assert len(solutions) == 1
@@ -348,7 +348,8 @@ class TestReificationIntegration:
             B1 #<=> (X #= 3),
             B2 #<=> (X #< 5),
             X in 1..10,
-            B1 = 1.
+            B1 #= 1,
+            label([B1, B2, X]).
         """
         )
         solutions = list(result)
@@ -388,13 +389,14 @@ class TestReificationIntegration:
         """Test chained reification relationships."""
         engine = Engine(program(), trace=False, occurs_check=False)
 
-        # B1 implies B2, B2 implies constraint
+        # B1 implies B2=1, B2 implies constraint
         result = engine.query(
             """
-            B1 #==> B2,
+            B1 #==> (B2 #= 1),
             B2 #==> (X #= 3),
             X in 1..5,
-            B1 = 1.
+            B1 #= 1,
+            label([B1, B2, X]).
         """
         )
         solutions = list(result)
@@ -419,7 +421,8 @@ class TestReificationComplexCases:
             Y = X,
             B #<=> (Y #= 3),
             X in 1..5,
-            B = 1.
+            B #= 1,
+            label([B, X, Y]).
         """
         )
         solutions = list(result)
@@ -439,7 +442,8 @@ class TestReificationComplexCases:
             """
             B1 #<=> (B2 #= 1),
             B2 in 0..1,
-            B1 = 1.
+            B1 #= 1,
+            label([B1, B2]).
         """
         )
         solutions = list(result)
@@ -457,7 +461,8 @@ class TestReificationComplexCases:
         result = engine.query(
             """
             B #<=> (X #= 3),
-            X = 3.
+            X #= 3,
+            label([B, X]).
         """
         )
         solutions = list(result)
@@ -470,7 +475,7 @@ class TestReificationComplexCases:
             """
             B #<=> (X #= 3),
             X in 1..5,
-            B = 0,
+            B #= 0,
             X = 4.
         """
         )
@@ -487,7 +492,8 @@ class TestReificationComplexCases:
             """
             B #<=> (X #= 3),
             X in 1..5,
-            (B = 1 ; B = 0).
+            (B #= 1 ; B #= 0),
+            label([B]).
         """
         )
         solutions = list(result)

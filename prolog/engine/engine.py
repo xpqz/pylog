@@ -364,6 +364,23 @@ class Engine:
         self._builtins[("#=<", 2)] = lambda eng, args: _builtin_fd_le(eng, *args)
         self._builtins[("#>", 2)] = lambda eng, args: _builtin_fd_gt(eng, *args)
         self._builtins[("#>=", 2)] = lambda eng, args: _builtin_fd_ge(eng, *args)
+
+        # Reification builtins
+        from prolog.engine.builtins_clpfd import (
+            _builtin_fd_reif_equiv,
+            _builtin_fd_reif_implies,
+            _builtin_fd_reif_implied,
+        )
+
+        self._builtins[("#<=>", 2)] = lambda eng, args: _builtin_fd_reif_equiv(
+            eng, *args
+        )
+        self._builtins[("#==>", 2)] = lambda eng, args: _builtin_fd_reif_implies(
+            eng, *args
+        )
+        self._builtins[("#<==", 2)] = lambda eng, args: _builtin_fd_reif_implied(
+            eng, *args
+        )
         self._builtins[("fd_var", 1)] = lambda eng, args: _builtin_fd_var(eng, *args)
         self._builtins[("fd_inf", 2)] = lambda eng, args: _builtin_fd_inf(eng, *args)
         self._builtins[("fd_sup", 2)] = lambda eng, args: _builtin_fd_sup(eng, *args)
@@ -1087,7 +1104,7 @@ class Engine:
 
             self._emit_fail_port(pred_id, term, depth_override=call_depth)
             return False
-        except (ValueError, TypeError) as e:
+        except (ValueError, TypeError):
             # Expected failures from arithmetic or type errors
             self._emit_fail_port(pred_id, term, depth_override=call_depth)
             return False
@@ -1740,15 +1757,13 @@ class Engine:
                     # The continuation was already on the goal stack
                     if self.trace:
                         self._trace_log.append(
-                            f"CATCH CP (RECOVERY) - continuing backtrack"
+                            "CATCH CP (RECOVERY) - continuing backtrack"
                         )
                     continue
                 else:
                     # GOAL phase CATCH choicepoints are never resumed
                     if self.trace:
-                        self._trace_log.append(
-                            f"CATCH CP (GOAL) - continuing backtrack"
-                        )
+                        self._trace_log.append("CATCH CP (GOAL) - continuing backtrack")
                     continue
 
             elif cp.kind == ChoicepointKind.IF_THEN_ELSE:

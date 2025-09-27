@@ -3,6 +3,7 @@
 Implements domain posting and constraint builtins that integrate
 with the engine via attributed variables.
 """
+
 from prolog.ast.terms import Atom, Int, Var, Struct, List
 from prolog.clpfd.api import get_domain, set_domain, add_watcher, iter_watchers
 from prolog.clpfd.domain import Domain
@@ -10,13 +11,30 @@ from prolog.clpfd.queue import PropagationQueue, Priority
 from prolog.clpfd.hooks import clpfd_unify_hook
 from prolog.clpfd.props.equality import create_equality_propagator
 from prolog.clpfd.props.neq import create_not_equal_propagator
-from prolog.clpfd.props.comparison import create_less_than_propagator, create_less_equal_propagator
+from prolog.clpfd.props.comparison import (
+    create_less_than_propagator,
+    create_less_equal_propagator,
+)
 from prolog.clpfd.props.alldiff import create_all_different_propagator
 from prolog.clpfd.props.sum_const import create_sum_const_propagator
 from prolog.clpfd.props.sum import create_sum_propagator
 from prolog.clpfd.expr import parse_linear_expression
 from prolog.clpfd.props.linear import create_linear_propagator
+from prolog.clpfd.props.reif import (
+    create_reification_propagator,
+    create_implication_propagator,
+)
+from prolog.clpfd.entailment import (
+    check_equality_entailment,
+    check_not_equal_entailment,
+    check_less_than_entailment,
+    check_less_equal_entailment,
+    check_greater_than_entailment,
+    check_greater_equal_entailment,
+)
+from prolog.clpfd.boolean import ensure_boolean_var
 from prolog.unify.unify import unify
+
 
 def _builtin_in(engine, x_term, domain_term):
     """X in Domain - set domain for variable X.
@@ -84,6 +102,7 @@ def _builtin_in(engine, x_term, domain_term):
 
     return True
 
+
 def parse_domain_term(term):
     """Parse domain specification into Domain object.
 
@@ -130,11 +149,13 @@ def parse_domain_term(term):
 
     raise ValueError(f"Invalid domain term: {term}")
 
+
 def _ensure_queue(engine):
     """Ensure engine has a CLP(FD) propagation queue."""
     if not hasattr(engine, "clpfd_queue"):
         engine.clpfd_queue = PropagationQueue()
     return engine.clpfd_queue
+
 
 def _post_constraint_propagator(
     engine, x_term, y_term, create_propagator_func, priority=None
@@ -239,6 +260,7 @@ def _post_constraint_propagator(
         # We'll handle this in specific builtins
         return True
 
+
 def _builtin_fd_eq(engine, x_term, y_term):
     """X #= Y - constrain X and Y to be equal.
 
@@ -282,7 +304,7 @@ def _builtin_fd_eq(engine, x_term, y_term):
             prop = create_sum_propagator(list(combined_coeffs.keys()), -combined_const)
         else:
             # Linear propagator expects negated constant
-            prop = create_linear_propagator(combined_coeffs, combined_const, '=')
+            prop = create_linear_propagator(combined_coeffs, combined_const, "=")
 
         # Ensure variables have domains
         for var_id in combined_coeffs:
@@ -397,6 +419,7 @@ def _builtin_fd_eq(engine, x_term, y_term):
         engine, x_term, y_term, create_equality_propagator
     )
 
+
 def _builtin_fd_neq(engine, x_term, y_term):
     r"""X #\= Y - constrain X and Y to be different.
 
@@ -448,6 +471,7 @@ def _builtin_fd_neq(engine, x_term, y_term):
     return _post_constraint_propagator(
         engine, x_term, y_term, create_not_equal_propagator, priority=Priority.MED
     )
+
 
 def _builtin_fd_lt(engine, x_term, y_term):
     """X #< Y - constrain X to be less than Y.
@@ -537,6 +561,7 @@ def _builtin_fd_lt(engine, x_term, y_term):
         engine, x_term, y_term, create_less_than_propagator
     )
 
+
 def _builtin_fd_le(engine, x_term, y_term):
     """X #=< Y - constrain X to be less than or equal to Y.
 
@@ -625,6 +650,7 @@ def _builtin_fd_le(engine, x_term, y_term):
         engine, x_term, y_term, create_less_equal_propagator
     )
 
+
 def _builtin_fd_gt(engine, x_term, y_term):
     """X #> Y - constrain X to be greater than Y.
 
@@ -640,6 +666,7 @@ def _builtin_fd_gt(engine, x_term, y_term):
     """
     return _builtin_fd_lt(engine, y_term, x_term)
 
+
 def _builtin_fd_ge(engine, x_term, y_term):
     """X #>= Y - constrain X to be greater than or equal to Y.
 
@@ -654,6 +681,7 @@ def _builtin_fd_ge(engine, x_term, y_term):
         True if constraint succeeded, False if failed
     """
     return _builtin_fd_le(engine, y_term, x_term)
+
 
 def _builtin_fd_var(engine, term):
     """Check if term is a finite domain variable.
@@ -679,6 +707,7 @@ def _builtin_fd_var(engine, term):
     varid = deref[1]
     domain = get_domain(engine.store, varid)
     return domain is not None
+
 
 def _builtin_fd_inf(engine, x_term, inf_term):
     """Get the infimum (minimum) of an FD variable's domain.
@@ -722,6 +751,7 @@ def _builtin_fd_inf(engine, x_term, inf_term):
         inf_term, Int(min_val), engine.store, engine.trail, engine.occurs_check
     )
 
+
 def _builtin_fd_sup(engine, x_term, sup_term):
     """Get the supremum (maximum) of an FD variable's domain.
 
@@ -763,6 +793,7 @@ def _builtin_fd_sup(engine, x_term, sup_term):
     return unify(
         sup_term, Int(max_val), engine.store, engine.trail, engine.occurs_check
     )
+
 
 def _builtin_fd_dom(engine, x_term, dom_term):
     """Get the domain of an FD variable as a term.
@@ -806,6 +837,7 @@ def _builtin_fd_dom(engine, x_term, dom_term):
     domain_term = domain_to_term(domain)
 
     return unify(dom_term, domain_term, engine.store, engine.trail, engine.occurs_check)
+
 
 def domain_to_term(domain):
     """Convert a Domain object to a Prolog term representation.
@@ -854,6 +886,7 @@ def domain_to_term(domain):
             return Struct("\\/", (first_term, rest_term))
 
     return build_union(intervals)
+
 
 def _builtin_all_different(engine, list_term):
     """Post all_different constraint on a list of variables.
@@ -936,3 +969,362 @@ def _builtin_all_different(engine, list_term):
             success = queue.run_to_fixpoint(store, trail, engine)
 
     return success
+
+
+def _builtin_fd_reif_equiv(engine, b_term, constraint_term):
+    """B #<=> C - Boolean B is equivalent to constraint C holding.
+
+    Args:
+        engine: Engine instance
+        b_term: Boolean variable or Int(0|1)
+        constraint_term: Constraint to reify
+
+    Returns:
+        True if reification succeeded, False if failed
+    """
+    store = engine.store
+    trail = engine.trail
+
+    # Parse Boolean variable
+    b_id = None
+    b_value = None
+
+    if isinstance(b_term, Int):
+        if b_term.value not in (0, 1):
+            return False  # Not a Boolean value
+        b_value = b_term.value
+    elif isinstance(b_term, Var):
+        b_deref = store.deref(b_term.id)
+        if b_deref[0] == "BOUND":
+            if isinstance(b_deref[2], Int) and b_deref[2].value in (0, 1):
+                b_value = b_deref[2].value
+            else:
+                return False  # Bound to non-Boolean
+        else:
+            b_id = b_deref[1]
+    elif isinstance(b_term, Atom):
+        # Atoms are not valid Booleans
+        return False
+    else:
+        return False  # Invalid Boolean term
+
+    # Parse constraint
+    if not isinstance(constraint_term, Struct) or len(constraint_term.args) != 2:
+        return False  # Not a binary constraint
+
+    constraint_type = constraint_term.functor
+    x_arg, y_arg = constraint_term.args
+
+    # Convert arguments for constraint handling
+    x_arg = _convert_arg_for_constraint(store, x_arg)
+    y_arg = _convert_arg_for_constraint(store, y_arg)
+
+    if x_arg is None or y_arg is None:
+        return False  # Invalid arguments
+
+    # Get appropriate entailment checker and constraint posters
+    entailment_checker = None
+    post_constraint = None
+    post_negation = None
+
+    if constraint_type == "#=":
+        entailment_checker = check_equality_entailment
+        post_constraint = lambda eng, st, tr, x, y: _post_constraint_directly(
+            eng, st, tr, x, y, _builtin_fd_eq
+        )
+        post_negation = lambda eng, st, tr, x, y: _post_constraint_directly(
+            eng, st, tr, x, y, _builtin_fd_neq
+        )
+    elif constraint_type == "#\\=":
+        entailment_checker = check_not_equal_entailment
+        post_constraint = lambda eng, st, tr, x, y: _post_constraint_directly(
+            eng, st, tr, x, y, _builtin_fd_neq
+        )
+        post_negation = lambda eng, st, tr, x, y: _post_constraint_directly(
+            eng, st, tr, x, y, _builtin_fd_eq
+        )
+    elif constraint_type == "#<":
+        entailment_checker = check_less_than_entailment
+        post_constraint = lambda eng, st, tr, x, y: _post_constraint_directly(
+            eng, st, tr, x, y, _builtin_fd_lt
+        )
+        post_negation = lambda eng, st, tr, x, y: _post_constraint_directly(
+            eng, st, tr, x, y, _builtin_fd_ge
+        )
+    elif constraint_type == "#=<":
+        entailment_checker = check_less_equal_entailment
+        post_constraint = lambda eng, st, tr, x, y: _post_constraint_directly(
+            eng, st, tr, x, y, _builtin_fd_le
+        )
+        post_negation = lambda eng, st, tr, x, y: _post_constraint_directly(
+            eng, st, tr, x, y, _builtin_fd_gt
+        )
+    elif constraint_type == "#>":
+        entailment_checker = check_greater_than_entailment
+        post_constraint = lambda eng, st, tr, x, y: _post_constraint_directly(
+            eng, st, tr, x, y, _builtin_fd_gt
+        )
+        post_negation = lambda eng, st, tr, x, y: _post_constraint_directly(
+            eng, st, tr, x, y, _builtin_fd_le
+        )
+    elif constraint_type == "#>=":
+        entailment_checker = check_greater_equal_entailment
+        post_constraint = lambda eng, st, tr, x, y: _post_constraint_directly(
+            eng, st, tr, x, y, _builtin_fd_ge
+        )
+        post_negation = lambda eng, st, tr, x, y: _post_constraint_directly(
+            eng, st, tr, x, y, _builtin_fd_lt
+        )
+    else:
+        return False  # Unsupported constraint type
+
+    # Handle cases where B is already determined
+    if b_value is not None:
+        if b_value == 1:
+            # B = 1, post the constraint
+            return post_constraint(engine, store, trail, x_arg, y_arg)
+        else:
+            # B = 0, post the negation
+            return post_negation(engine, store, trail, x_arg, y_arg)
+
+    # B is unbound - create reification propagator
+    ensure_boolean_var(store, b_id, trail)
+
+    prop = create_reification_propagator(
+        b_id,
+        constraint_type,
+        (x_arg, y_arg),
+        entailment_checker,
+        post_constraint,
+        post_negation,
+    )
+
+    queue = _ensure_queue(engine)
+    pid = queue.register(prop)
+
+    # Add watchers for B and constraint arguments
+    add_watcher(store, b_id, pid, Priority.HIGH, trail)
+
+    # Add watchers for constraint arguments if they're variables
+    if isinstance(x_arg, int):  # Variable ID
+        add_watcher(store, x_arg, pid, Priority.HIGH, trail)
+    if isinstance(y_arg, int):  # Variable ID
+        add_watcher(store, y_arg, pid, Priority.HIGH, trail)
+
+    # Schedule and run
+    queue.schedule(pid, Priority.HIGH)
+    return queue.run_to_fixpoint(store, trail, engine)
+
+
+def _builtin_fd_reif_implies(engine, b_term, constraint_term):
+    """B #==> C - If Boolean B is 1, then constraint C must hold.
+
+    Args:
+        engine: Engine instance
+        b_term: Boolean variable or Int(0|1)
+        constraint_term: Constraint to enforce when B=1
+
+    Returns:
+        True if implication succeeded, False if failed
+    """
+    return _builtin_fd_reif_implication_impl(
+        engine, b_term, constraint_term, forward=True
+    )
+
+
+def _builtin_fd_reif_implied(engine, b_term, constraint_term):
+    """B #<== C - If constraint C holds, then Boolean B must be 1.
+
+    Args:
+        engine: Engine instance
+        b_term: Boolean variable or Int(0|1)
+        constraint_term: Constraint that implies B=1
+
+    Returns:
+        True if implication succeeded, False if failed
+    """
+    return _builtin_fd_reif_implication_impl(
+        engine, b_term, constraint_term, forward=False
+    )
+
+
+def _builtin_fd_reif_implication_impl(engine, b_term, constraint_term, forward):
+    """Implementation for both forward and backward implication.
+
+    Args:
+        engine: Engine instance
+        b_term: Boolean variable or Int(0|1)
+        constraint_term: Constraint involved in implication
+        forward: True for B #==> C, False for B #<== C
+
+    Returns:
+        True if implication succeeded, False if failed
+    """
+    store = engine.store
+    trail = engine.trail
+
+    # Parse Boolean variable
+    b_id = None
+    b_value = None
+
+    if isinstance(b_term, Int):
+        if b_term.value not in (0, 1):
+            return False  # Not a Boolean value
+        b_value = b_term.value
+    elif isinstance(b_term, Var):
+        b_deref = store.deref(b_term.id)
+        if b_deref[0] == "BOUND":
+            if isinstance(b_deref[2], Int) and b_deref[2].value in (0, 1):
+                b_value = b_deref[2].value
+            else:
+                return False  # Bound to non-Boolean
+        else:
+            b_id = b_deref[1]
+    elif isinstance(b_term, Atom):
+        return False  # Atoms are not valid Booleans
+    else:
+        return False  # Invalid Boolean term
+
+    # Parse constraint
+    if not isinstance(constraint_term, Struct) or len(constraint_term.args) != 2:
+        return False  # Not a binary constraint
+
+    constraint_type = constraint_term.functor
+    x_arg, y_arg = constraint_term.args
+
+    # Convert arguments for constraint handling
+    x_arg = _convert_arg_for_constraint(store, x_arg)
+    y_arg = _convert_arg_for_constraint(store, y_arg)
+
+    if x_arg is None or y_arg is None:
+        return False  # Invalid arguments
+
+    # Get appropriate entailment checker and constraint poster
+    entailment_checker = None
+    post_constraint = None
+
+    if constraint_type == "#=":
+        entailment_checker = check_equality_entailment
+        post_constraint = lambda eng, st, tr, x, y: _post_constraint_directly(
+            eng, st, tr, x, y, _builtin_fd_eq
+        )
+    elif constraint_type == "#\\=":
+        entailment_checker = check_not_equal_entailment
+        post_constraint = lambda eng, st, tr, x, y: _post_constraint_directly(
+            eng, st, tr, x, y, _builtin_fd_neq
+        )
+    elif constraint_type == "#<":
+        entailment_checker = check_less_than_entailment
+        post_constraint = lambda eng, st, tr, x, y: _post_constraint_directly(
+            eng, st, tr, x, y, _builtin_fd_lt
+        )
+    elif constraint_type == "#=<":
+        entailment_checker = check_less_equal_entailment
+        post_constraint = lambda eng, st, tr, x, y: _post_constraint_directly(
+            eng, st, tr, x, y, _builtin_fd_le
+        )
+    elif constraint_type == "#>":
+        entailment_checker = check_greater_than_entailment
+        post_constraint = lambda eng, st, tr, x, y: _post_constraint_directly(
+            eng, st, tr, x, y, _builtin_fd_gt
+        )
+    elif constraint_type == "#>=":
+        entailment_checker = check_greater_equal_entailment
+        post_constraint = lambda eng, st, tr, x, y: _post_constraint_directly(
+            eng, st, tr, x, y, _builtin_fd_ge
+        )
+    else:
+        return False  # Unsupported constraint type
+
+    # Handle cases where B is already determined
+    if b_value is not None:
+        if forward:
+            # Forward: B #==> C
+            if b_value == 1:
+                # B = 1, post the constraint
+                return post_constraint(engine, store, trail, x_arg, y_arg)
+            else:
+                # B = 0, no constraint needed
+                return True
+        else:
+            # Backward: B #<== C
+            if b_value == 0:
+                # B = 0, check that constraint is not entailed
+                from prolog.clpfd.entailment import Entailment
+
+                ent = entailment_checker(store, x_arg, y_arg)
+                return ent != Entailment.TRUE
+            else:
+                # B = 1, no additional constraint
+                return True
+
+    # B is unbound - create implication propagator
+    ensure_boolean_var(store, b_id, trail)
+
+    prop = create_implication_propagator(
+        b_id,
+        constraint_type,
+        (x_arg, y_arg),
+        entailment_checker,
+        post_constraint,
+        forward=forward,
+    )
+
+    queue = _ensure_queue(engine)
+    pid = queue.register(prop)
+
+    # Add watchers
+    add_watcher(store, b_id, pid, Priority.HIGH, trail)
+
+    # Add watchers for constraint arguments if they're variables
+    if isinstance(x_arg, int):  # Variable ID
+        add_watcher(store, x_arg, pid, Priority.HIGH, trail)
+    if isinstance(y_arg, int):  # Variable ID
+        add_watcher(store, y_arg, pid, Priority.HIGH, trail)
+
+    # Schedule and run
+    queue.schedule(pid, Priority.HIGH)
+    return queue.run_to_fixpoint(store, trail, engine)
+
+
+def _convert_arg_for_constraint(store, arg):
+    """Convert a term to a constraint argument format.
+
+    Returns either:
+    - var_id (int) for variables
+    - (None, value) for integer constants
+    - None for invalid arguments
+    """
+    if isinstance(arg, Int):
+        return (None, arg.value)
+    elif isinstance(arg, Var):
+        deref = store.deref(arg.id)
+        if deref[0] == "BOUND":
+            if isinstance(deref[2], Int):
+                return (None, deref[2].value)
+            else:
+                return None  # Bound to non-integer
+        else:
+            return deref[1]  # Return variable ID
+    else:
+        return None  # Invalid argument type
+
+
+def _post_constraint_directly(engine, store, trail, x_arg, y_arg, constraint_builtin):
+    """Helper to post a constraint using its builtin.
+
+    Converts arguments back to terms and calls the constraint builtin.
+    """
+    # Convert arguments back to terms
+    if isinstance(x_arg, tuple) and x_arg[0] is None:
+        x_term = Int(x_arg[1])
+    else:
+        # Create a Var with the ID (a bit hacky but works)
+        x_term = Var(x_arg, "X")
+
+    if isinstance(y_arg, tuple) and y_arg[0] is None:
+        y_term = Int(y_arg[1])
+    else:
+        y_term = Var(y_arg, "Y")
+
+    return constraint_builtin(engine, x_term, y_term)
