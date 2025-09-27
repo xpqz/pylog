@@ -39,13 +39,28 @@ nav:
       - Introduction: clpfd/intro.md
       - Domains and in/2: clpfd/domains-and-in.md
       - Linear Constraints: clpfd/linear-constraints.md
+      - Reification (preview): clpfd/reification.md
       - Sum Constraints: clpfd/sum-constraints.md
       - all_different/1: clpfd/all-different.md
       - Labelling: clpfd/labeling.md
       - Examples: clpfd/examples.md
   - Cookbook:
+      - List processing: cookbook/list-processing.md
+      - List utilities: cookbook/list-utilities.md
+      - Flatten: cookbook/flatten.md
+      - Sorting (quicksort): cookbook/sorting-quicksort.md
+      - Sorting (mergesort): cookbook/mergesort.md
+      - Permutations: cookbook/permutations.md
       - Family relations: cookbook/family-relations.md
       - Graph reachability: cookbook/graph-reachability.md
+      - Path with visited: cookbook/path-with-visited.md
+      - Difference lists: cookbook/difference-lists.md
+      - Towers of Hanoi: cookbook/hanoi.md
+      - Binary trees: cookbook/binary-trees.md
+      - Primes: cookbook/primes.md
+      - Peano arithmetic: cookbook/peano-arithmetic.md
+      - Map coloring: cookbook/map-coloring.md
+      - Subset sum: cookbook/subset-sum.md
       - SEND+MORE=MONEY: cookbook/send-more-money.md
       - Sudoku row: cookbook/sudoku-row.md
       - N‑queens: cookbook/n-queens.md
@@ -53,11 +68,13 @@ nav:
   - Reference:
       - Built-ins: reference/builtins-reference.md
       - Operators table: reference/operators-table.md
+      - Operators cheat sheet: reference/operators-cheatsheet.md
       - Grammar summary: reference/grammar-summary.md
+      - Trace format: reference/trace-format.md
       - Errors: reference/errors.md
   - Guides:
       - Tracing and debugging: guides/tracing-and-debugging.md
+      - Control gotchas: guides/control-gotchas.md
       - Performance and limits: guides/performance-and-limits.md
       - ISO compatibility: guides/compatibility-iso.md
   - FAQ: faq.md
-

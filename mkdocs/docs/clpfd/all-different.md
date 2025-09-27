@@ -1,10 +1,14 @@
 # all_different/1
 
-`all_different(List)` enforces that all variables in `List` take distinct values.
+`all_different(List)` enforces pairwise distinctness of all variables in `List`.
 
-Propagation uses value elimination and Hall‑interval pruning.
+Propagation
+-----------
 
-Example:
+The propagator prunes values using value elimination and Hall‑interval reasoning. This often fixes variables early when domains are tight.
+
+Examples
+--------
 
 ```text
 ?- X in 1..2, Y in 1..2, Z in 1..3, all_different([X,Y,Z]).
@@ -13,10 +17,18 @@ true.
 DZ = 3..3.
 ```
 
-Pigeonhole conflicts fail early:
+Pigeonhole principle
+--------------------
+
+If you have more variables than available values, failure is detected without search.
 
 ```text
 ?- X in 1..2, Y in 1..2, Z in 1..2, all_different([X,Y,Z]).
 false.
 ```
 
+Tips
+----
+
+- Combine with sum/ordering constraints for stronger propagation.
+- Avoid redundant `#\=` pairs when `all_different/1` is present; let the global constraint propagate.
