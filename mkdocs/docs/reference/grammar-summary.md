@@ -15,4 +15,4 @@ Queries:
 - `?- goal.`
 
 Operators follow standard Prolog precedence and associativity used by the reader.
-The reader also recognizes CLP(FD) reification operators `#<=>`, `#==>`, `#<==` (preview).
+The reader also recognizes CLP(FD) reification operators `#<=>`, `#==>`, `#<=`.

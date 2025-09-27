@@ -10,7 +10,7 @@ Main categories
 - Term equality/identity: `=`, `\=`, `==`, `\==`, `=..`
 - Control: `,` (conjunction), `;` (disjunction), `->/2` (if‑then)
 - Negation: `\+/1` (prefix)
-- CLP(FD): `#=`, `#\=`, `#<`, `#=<`, `#>`, `#>=` and reification (preview) `#<=>`, `#==>`, `#<==`
+- CLP(FD): `#=`, `#\=`, `#<`, `#=<`, `#>`, `#>=` and reification `#<=>`, `#==>`, `#<==`
 
 Precedence and associativity
 ----------------------------
@@ -66,10 +66,10 @@ Quoting operator atoms
 
 Operators are atoms in canonical form and can be used as functors when quoted: `'+'(1,2)` is the same as `1 + 2`. This is rarely needed but useful for meta‑programming.
 
-CLP(FD) reification (preview)
------------------------------
+CLP(FD) reification
+-------------------
 
-The reader supports `#<=>`, `#==>`, `#<==` as non‑associative (xfx) at precedence 900. See CLP(FD) → Reification (preview) for details.
+The reader supports `#<=>`, `#==>`, `#<==` as non‑associative (xfx) at precedence 900. See CLP(FD) → Reification for details.
 
 See also
 --------
