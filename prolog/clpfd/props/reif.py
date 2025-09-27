@@ -1,6 +1,6 @@
 """Reification propagator for CLP(FD) constraints."""
 
-from typing import Tuple, Optional, List, Callable
+from typing import Tuple, Optional, List, Callable, Protocol, Any
 
 from prolog.clpfd.boolean import get_boolean_value, ensure_boolean_var
 from prolog.clpfd.entailment import Entailment
@@ -8,14 +8,38 @@ from prolog.clpfd.api import get_domain, set_domain
 from prolog.clpfd.domain import Domain
 
 
+class Store(Protocol):
+    """Protocol for variable store operations."""
+
+    def deref(self, varid: int) -> Tuple[str, int, Any]: ...
+
+
+class Trail(Protocol):
+    """Protocol for trail operations."""
+
+    def push(self, entry: tuple) -> None: ...
+
+
+class Engine(Protocol):
+    """Protocol for engine operations."""
+
+    pass  # Engine protocol methods if needed
+
+
+# Type alias for propagator function signature
+Propagator = Callable[
+    [Store, Trail, Engine, Optional[int]], Tuple[str, Optional[List[int]]]
+]
+
+
 def create_reification_propagator(
     b_id: int,
     constraint_type: str,
     constraint_args: tuple,
-    check_entailment: Callable,
-    post_constraint: Callable,
-    post_negation: Callable,
-):
+    check_entailment: Callable[[Store, ...], Entailment],
+    post_constraint: Callable[[Engine, Store, Trail, ...], bool],
+    post_negation: Callable[[Engine, Store, Trail, ...], bool],
+) -> Propagator:
     """Create a reification propagator for B #<==> Constraint.
 
     Args:
@@ -30,11 +54,18 @@ def create_reification_propagator(
         Propagator function
     """
     # Track if we've already posted to prevent loops
+    # Note: These flags are not trailed, which means they persist across
+    # backtracking. This is intentional - once a constraint is posted to
+    # the propagation network, it remains posted even if we backtrack.
+    # The constraint itself will be undone via the propagation queue's
+    # backtracking mechanism, not by re-posting.
+    # If different semantics are needed (e.g., re-posting after backtrack),
+    # these flags would need to be trailed.
     posted_true = [False]
     posted_false = [False]
 
     def reification_propagator(
-        store, trail, engine, cause
+        store: Store, trail: Trail, engine: Engine, cause: Optional[int]
     ) -> Tuple[str, Optional[List[int]]]:
         """Propagate reification constraint B #<==> C.
 
@@ -106,19 +137,21 @@ def create_implication_propagator(
     b_id: int,
     constraint_type: str,
     constraint_args: tuple,
-    check_entailment: Callable,
-    post_constraint: Callable,
+    check_entailment: Callable[[Store, ...], Entailment],
+    post_constraint: Callable[[Engine, Store, Trail, ...], bool],
     forward: bool = True,
-):
+) -> Propagator:
     """Create propagator for B #==> C (forward) or B #<== C (backward).
 
     Forward (B #==> C): If B=1 then C must hold
     Backward (B #<== C): If C holds then B=1
     """
+    # Track if constraint has been posted (see reification_propagator for
+    # explanation of why this is not trailed)
     posted = [False]
 
     def implication_propagator(
-        store, trail, engine, cause
+        store: Store, trail: Trail, engine: Engine, cause: Optional[int]
     ) -> Tuple[str, Optional[List[int]]]:
         changed = []
 
