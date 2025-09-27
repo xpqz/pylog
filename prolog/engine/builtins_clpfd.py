@@ -13,6 +13,7 @@ from prolog.clpfd.props.neq import create_not_equal_propagator
 from prolog.clpfd.props.comparison import create_less_than_propagator, create_less_equal_propagator
 from prolog.clpfd.props.alldiff import create_all_different_propagator
 from prolog.clpfd.props.sum_const import create_sum_const_propagator
+from prolog.clpfd.props.sum import create_sum_propagator
 from prolog.clpfd.expr import parse_linear_expression
 from prolog.clpfd.props.linear import create_linear_propagator
 from prolog.unify.unify import unify
@@ -273,8 +274,15 @@ def _builtin_fd_eq(engine, x_term, y_term):
         if not combined_coeffs:
             return combined_const == 0
 
-        # Create and post the linear constraint propagator
-        prop = create_linear_propagator(combined_coeffs, -combined_const, '=')
+        # Create and post the constraint propagator
+        # Optimize: use sum propagator when all coefficients are 1
+        # Note: propagators expect the negated RHS constant
+        if all(c == 1 for c in combined_coeffs.values()):
+            # Sum propagator expects target value (not negated)
+            prop = create_sum_propagator(list(combined_coeffs.keys()), -combined_const)
+        else:
+            # Linear propagator expects negated constant
+            prop = create_linear_propagator(combined_coeffs, combined_const, '=')
 
         # Ensure variables have domains
         for var_id in combined_coeffs:
@@ -287,19 +295,17 @@ def _builtin_fd_eq(engine, x_term, y_term):
 
         # Run the propagator
         queue = _ensure_queue(engine)
-        prop_id = queue.add_propagator(prop)
+        pid = queue.register(prop)
 
         # Register propagator with all variables
         for var_id in combined_coeffs:
             deref = store.deref(var_id)
             if deref[0] == "UNBOUND":
-                add_watcher(store, deref[1], prop_id, 0)  # Priority 0 for linear
+                add_watcher(store, deref[1], pid, Priority.HIGH, trail)
 
         # Schedule and run
-        queue.schedule(prop_id, 0)
-        result = queue.run_to_fixpoint(store, trail, engine)
-
-        return result != "fail"
+        queue.schedule(pid, Priority.HIGH)
+        return queue.run_to_fixpoint(store, trail, engine)
 
     except (ValueError, AttributeError):
         # Fall back to old implementation for non-linear or special cases

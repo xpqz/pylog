@@ -4,7 +4,10 @@ You are tasked with implementing an approved technical plan either from `docs/pl
 
 ## Getting Started
 
+**CRITICAL**: review coderules.md in its entirety. 
+
 When given a plan path or GitHub Epic issue ID:
+
 - Read the plan completely and check for any existing checkmarks (- [x])
 - Read the issues and all files mentioned in the plan
 - **Read files fully** - never use limit/offset parameters, you need complete context
@@ -21,7 +24,7 @@ If no plan path or GitHub issue ID provided, ask for one.
 Plans are carefully designed, but reality can be messy. Your job is to:
 - Follow the plan's intent while adapting to what you find
 - Implement each phase fully before moving to the next
-- **CRITICAL**: always begin with implementing the unit tests for a task, and ALWAYS pause for review of tests before proceeding to implementation. We practice TDD.
+- **CRITICAL**: always begin with implementing the unit tests for a task. We practice TDD.
 - Verify your work makes sense in the broader codebase context
 - Update checkboxes in the plan as you complete sections
 
@@ -42,12 +45,11 @@ If you encounter a mismatch:
 ## Verification Approach
 
 After implementing a phase:
-- Run the success criteria checks (usually `uv run pytest` covers everything)
+- **CRITICAL**: Run the FULL TEST SUITE (usually `uv run pytest` covers everything). Regressions are NOT tolerated
 - Fix any issues before proceeding
 - Update your progress in both the plan and your todos
 - Check off completed items in the plan file itself using Edit
-
-Don't let verification interrupt your flow - batch it at natural stopping points.
+- If working against a GitHub issue, ensure you maintain the issue by ticking boxes
 
 ## If You Get Stuck
 

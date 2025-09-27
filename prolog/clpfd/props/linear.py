@@ -32,6 +32,10 @@ def create_linear_propagator(coeffs: Dict[int, int], const: int, op: str):
             ('ok', changed_vars) if propagation succeeds
             ('fail', None) if constraint is violated
         """
+        # DEBUG
+        import sys
+        print(f"DEBUG linear propagator: coeffs={coeffs}, const={const}, op={op}", file=sys.stderr)
+
         # Handle empty constraint (no variables)
         if not coeffs:
             # Evaluate constant constraint
@@ -73,9 +77,11 @@ def create_linear_propagator(coeffs: Dict[int, int], const: int, op: str):
                 dom = get_domain(store, root_id)
                 if dom is None:
                     # No domain yet, skip this variable
+                    print(f"DEBUG: Variable {var_id} (root {root_id}) has no domain", file=sys.stderr)
                     continue
 
                 active_vars[root_id] = (coeff, dom)
+                print(f"DEBUG: Variable {var_id} (root {root_id}) has domain {dom}", file=sys.stderr)
 
                 if coeff > 0:
                     min_val += coeff * dom.min()
@@ -87,10 +93,14 @@ def create_linear_propagator(coeffs: Dict[int, int], const: int, op: str):
 
         # Add constant term (remember it's negated)
         target = -const
+        print(f"DEBUG: min_val={min_val}, max_val={max_val}, target={target}", file=sys.stderr)
 
         # Check feasibility based on operator
         if op == '=':
             if max_val < target or min_val > target:
+                # DEBUG
+                import sys
+                print(f"DEBUG linear: min_val={min_val}, max_val={max_val}, target={target}, FAIL", file=sys.stderr)
                 return ("fail", None)
         elif op == '!=':
             if min_val == max_val == target:
@@ -112,6 +122,7 @@ def create_linear_propagator(coeffs: Dict[int, int], const: int, op: str):
         changed = []
 
         for var_id, (coeff, dom) in active_vars.items():
+            print(f"DEBUG: Processing var {var_id} with coeff={coeff}, dom={dom}", file=sys.stderr)
             # Calculate bounds for this variable based on others
             # Sum of others (excluding this variable)
             other_min = min_val
@@ -148,12 +159,16 @@ def create_linear_propagator(coeffs: Dict[int, int], const: int, op: str):
                     # Min when others is at min: X >= (target - other_min) / c
                     # But since c < 0, this becomes X <= (target - other_min) / c (floor)
                     val = target - other_min
+                    print(f"DEBUG: neg coeff: target={target}, other_min={other_min}, val={val}, coeff={coeff}", file=sys.stderr)
                     new_max = min(new_max, val // coeff)  # Floor division with negative
+                    print(f"DEBUG: neg coeff: new_max={new_max}", file=sys.stderr)
                     # Max when others is at max: X <= (target - other_max) / c
                     # But since c < 0, this becomes X >= (target - other_max) / c (ceiling)
                     val = target - other_max
+                    print(f"DEBUG: neg coeff: other_max={other_max}, val={val}", file=sys.stderr)
                     # Ceiling division with negative divisor
                     new_min = max(new_min, -((-val - 1) // -coeff))
+                    print(f"DEBUG: neg coeff: new_min={new_min}", file=sys.stderr)
 
             elif op == '!=':
                 # Special case: if domain is singleton and equals forbidden value
@@ -227,6 +242,7 @@ def create_linear_propagator(coeffs: Dict[int, int], const: int, op: str):
 
             # Apply new bounds
             if new_min > new_max:
+                print(f"DEBUG: Variable {var_id}: new_min={new_min} > new_max={new_max}, FAIL", file=sys.stderr)
                 return ("fail", None)
 
             if new_min > dom.min() or new_max < dom.max():
