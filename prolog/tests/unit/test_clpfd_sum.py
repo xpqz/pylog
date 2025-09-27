@@ -5,6 +5,7 @@ from prolog.ast.terms import Var, Int
 from prolog.engine.engine import Engine, Program
 from prolog.clpfd.api import set_domain, get_domain
 from prolog.clpfd.domain import Domain
+from prolog.clpfd.props.sum import create_sum_propagator
 
 
 class TestSumPropagator:
@@ -16,7 +17,6 @@ class TestSumPropagator:
 
     def test_simple_sum_two_vars(self):
         """Test X + Y = 10."""
-        from prolog.clpfd.props.sum import create_sum_propagator
 
         # Create variables X, Y in 1..10
         x_id = self.engine.store.new_var()
@@ -43,7 +43,6 @@ class TestSumPropagator:
 
     def test_sum_with_singleton(self):
         """Test sum with one variable fixed."""
-        from prolog.clpfd.props.sum import create_sum_propagator
 
         # Create variables
         x_id = self.engine.store.new_var()
@@ -65,7 +64,6 @@ class TestSumPropagator:
 
     def test_sum_three_variables(self):
         """Test X + Y + Z = 15."""
-        from prolog.clpfd.props.sum import create_sum_propagator
 
         # Create variables in 1..10
         x_id = self.engine.store.new_var()
@@ -97,7 +95,6 @@ class TestSumPropagator:
 
     def test_sum_failure(self):
         """Test impossible sum constraint."""
-        from prolog.clpfd.props.sum import create_sum_propagator
 
         # Create variables in 1..3
         x_id = self.engine.store.new_var()
@@ -115,7 +112,6 @@ class TestSumPropagator:
 
     def test_sum_single_variable(self):
         """Test sum with single variable."""
-        from prolog.clpfd.props.sum import create_sum_propagator
 
         # Create variable X in 1..10
         x_id = self.engine.store.new_var()
@@ -136,7 +132,6 @@ class TestSumPropagator:
 
     def test_sum_empty_list(self):
         """Test sum with no variables."""
-        from prolog.clpfd.props.sum import create_sum_propagator
 
         # Create propagator for 0 = 0 (trivially true)
         prop = create_sum_propagator([], 0)
@@ -157,7 +152,6 @@ class TestSumPropagator:
 
     def test_sum_with_bound_variables(self):
         """Test sum with some variables already bound."""
-        from prolog.clpfd.props.sum import create_sum_propagator
 
         # Create variables
         x_id = self.engine.store.new_var()
@@ -190,7 +184,6 @@ class TestSumPropagator:
 
     def test_sum_large_number_of_variables(self):
         """Test sum with many variables."""
-        from prolog.clpfd.props.sum import create_sum_propagator
 
         # Create 10 variables in 1..5
         var_ids = []
@@ -212,7 +205,6 @@ class TestSumPropagator:
 
     def test_sum_idempotence(self):
         """Test that running sum propagator twice doesn't change domains."""
-        from prolog.clpfd.props.sum import create_sum_propagator
 
         # Create variables
         x_id = self.engine.store.new_var()
@@ -245,7 +237,6 @@ class TestSumPropagator:
 
     def test_sum_with_negative_target(self):
         """Test sum with negative target value."""
-        from prolog.clpfd.props.sum import create_sum_propagator
 
         # Create variables in -5..5
         x_id = self.engine.store.new_var()
@@ -264,7 +255,6 @@ class TestSumPropagator:
 
     def test_sum_tight_constraint(self):
         """Test sum where constraint forces exact values."""
-        from prolog.clpfd.props.sum import create_sum_propagator
 
         # Create 3 variables in 1..2
         x_id = self.engine.store.new_var()

@@ -6,6 +6,8 @@ More efficient than general linear propagator for this common case.
 
 from typing import List, Tuple, Optional
 from prolog.clpfd.api import get_domain, set_domain
+from prolog.clpfd.domain import Domain
+from prolog.ast.terms import Int
 
 
 def create_sum_propagator(var_ids: List[int], target: int):
@@ -40,7 +42,6 @@ def create_sum_propagator(var_ids: List[int], target: int):
             deref = store.deref(var_id)
             if deref[0] == "BOUND":
                 # Variable is bound to a value
-                from prolog.ast.terms import Int
                 val = deref[2]
                 if isinstance(val, Int):
                     min_sum += val.value
@@ -85,7 +86,6 @@ def create_sum_propagator(var_ids: List[int], target: int):
                 return ("fail", None)
 
             if new_min > dom.min() or new_max < dom.max():
-                from prolog.clpfd.domain import Domain
                 new_dom = Domain(((new_min, new_max),))
 
                 if new_dom.is_empty():

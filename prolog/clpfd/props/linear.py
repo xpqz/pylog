@@ -7,6 +7,8 @@ where op is one of: =, !=, <, >, =<, >=
 
 from typing import Dict, Tuple, Optional, List
 from prolog.clpfd.api import get_domain, set_domain
+from prolog.clpfd.domain import Domain
+from prolog.ast.terms import Int
 
 
 def create_linear_propagator(coeffs: Dict[int, int], const: int, op: str):
@@ -58,7 +60,6 @@ def create_linear_propagator(coeffs: Dict[int, int], const: int, op: str):
             deref = store.deref(var_id)
             if deref[0] == "BOUND":
                 # Variable is bound to a value
-                from prolog.ast.terms import Int
                 val = deref[2]
                 if isinstance(val, Int):
                     min_val += coeff * val.value
@@ -229,7 +230,6 @@ def create_linear_propagator(coeffs: Dict[int, int], const: int, op: str):
                 return ("fail", None)
 
             if new_min > dom.min() or new_max < dom.max():
-                from prolog.clpfd.domain import Domain
                 new_dom = dom
                 if new_min > dom.min():
                     new_dom = Domain(((new_min, new_dom.max()),))

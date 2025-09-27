@@ -5,6 +5,7 @@ from prolog.ast.terms import Var, Int, Struct
 from prolog.engine.engine import Engine, Program
 from prolog.clpfd.api import set_domain, get_domain
 from prolog.clpfd.domain import Domain
+from prolog.clpfd.props.linear import create_linear_propagator
 
 
 class TestLinearPropagator:
@@ -16,7 +17,6 @@ class TestLinearPropagator:
 
     def test_simple_equality_x_eq_5(self):
         """Test X = 5 constraint."""
-        from prolog.clpfd.props.linear import create_linear_propagator
 
         # Create variable X in 1..10
         x_id = self.engine.store.new_var()
@@ -37,7 +37,6 @@ class TestLinearPropagator:
 
     def test_simple_inequality_x_leq_5(self):
         """Test X =< 5 constraint."""
-        from prolog.clpfd.props.linear import create_linear_propagator
 
         # Create variable X in 1..10
         x_id = self.engine.store.new_var()
@@ -58,7 +57,6 @@ class TestLinearPropagator:
 
     def test_two_variable_equality(self):
         """Test X + Y = 10 constraint."""
-        from prolog.clpfd.props.linear import create_linear_propagator
 
         # Create variables X, Y in 1..10
         x_id = self.engine.store.new_var()
@@ -86,7 +84,6 @@ class TestLinearPropagator:
 
     def test_weighted_constraint(self):
         """Test 2*X + 3*Y =< 20 constraint."""
-        from prolog.clpfd.props.linear import create_linear_propagator
 
         # Create variables X, Y in 1..10
         x_id = self.engine.store.new_var()
@@ -115,7 +112,6 @@ class TestLinearPropagator:
 
     def test_negative_coefficients(self):
         """Test X - Y >= 3 constraint."""
-        from prolog.clpfd.props.linear import create_linear_propagator
 
         # Create variables X, Y in 1..10
         x_id = self.engine.store.new_var()
@@ -142,7 +138,6 @@ class TestLinearPropagator:
 
     def test_failure_case(self):
         """Test constraint that leads to failure."""
-        from prolog.clpfd.props.linear import create_linear_propagator
 
         # Create variable X in 1..5
         x_id = self.engine.store.new_var()
@@ -158,7 +153,6 @@ class TestLinearPropagator:
 
     def test_already_satisfied(self):
         """Test constraint that is already satisfied."""
-        from prolog.clpfd.props.linear import create_linear_propagator
 
         # Create variable X in 5..5 (singleton)
         x_id = self.engine.store.new_var()
@@ -175,7 +169,6 @@ class TestLinearPropagator:
 
     def test_bound_variable_in_constraint(self):
         """Test constraint with a bound variable."""
-        from prolog.clpfd.props.linear import create_linear_propagator
 
         # Create variables X, Y
         x_id = self.engine.store.new_var()
@@ -202,7 +195,6 @@ class TestLinearPropagator:
 
     def test_disequality_constraint(self):
         """Test X != 5 constraint."""
-        from prolog.clpfd.props.linear import create_linear_propagator
 
         # Create variable X in 4..6
         x_id = self.engine.store.new_var()
@@ -225,7 +217,6 @@ class TestLinearPropagator:
 
     def test_multiple_variables_sum(self):
         """Test A + B + C + D = 10 constraint."""
-        from prolog.clpfd.props.linear import create_linear_propagator
 
         # Create variables A, B, C, D in 1..5
         a_id = self.engine.store.new_var()
@@ -255,7 +246,6 @@ class TestLinearPropagator:
 
     def test_zero_coefficient_ignored(self):
         """Test that zero coefficients are ignored."""
-        from prolog.clpfd.props.linear import create_linear_propagator
 
         # Create variable X in 1..10
         x_id = self.engine.store.new_var()
@@ -272,7 +262,6 @@ class TestLinearPropagator:
 
     def test_empty_constraint(self):
         """Test constraint with no variables."""
-        from prolog.clpfd.props.linear import create_linear_propagator
 
         # Create propagator for 0 = 0 (trivially true)
         prop = create_linear_propagator({}, 0, '=')
@@ -293,7 +282,6 @@ class TestLinearPropagator:
 
     def test_large_coefficients(self):
         """Test constraint with large coefficients."""
-        from prolog.clpfd.props.linear import create_linear_propagator
 
         # Create variables X, Y in appropriate ranges
         x_id = self.engine.store.new_var()
@@ -321,7 +309,6 @@ class TestLinearPropagator:
 
     def test_propagator_idempotence(self):
         """Test that running propagator twice doesn't change domains."""
-        from prolog.clpfd.props.linear import create_linear_propagator
 
         # Create variables
         x_id = self.engine.store.new_var()
