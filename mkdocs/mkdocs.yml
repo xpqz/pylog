@@ -1,0 +1,63 @@
+site_name: PyLog User Guide
+site_description: User documentation for the PyLog Prolog interpreter with CLP(FD)
+site_dir: site
+theme:
+  name: material
+  language: en
+  features:
+    - navigation.tabs
+    - content.code.copy
+    - content.code.annotate
+    - toc.integrate
+markdown_extensions:
+  - admonition
+  - attr_list
+  - toc:
+      permalink: true
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - pymdownx.tabbed
+  - pymdownx.critic
+extra:
+  generator: false
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Installation: getting-started/install.md
+      - REPL: getting-started/repl.md
+      - Hello Prolog: getting-started/hello-prolog.md
+  - Prolog Basics:
+      - Terms: basics/terms.md
+      - Facts and Rules: basics/facts-and-rules.md
+      - Queries and Unification: basics/queries-and-unification.md
+      - Lists and Structures: basics/lists-and-structures.md
+      - Control: basics/control.md
+      - Arithmetic: basics/arithmetic.md
+      - Operators: basics/operators.md
+      - Core Built-ins: basics/builtins.md
+  - CLP(FD):
+      - Introduction: clpfd/intro.md
+      - Domains and in/2: clpfd/domains-and-in.md
+      - Linear Constraints: clpfd/linear-constraints.md
+      - Sum Constraints: clpfd/sum-constraints.md
+      - all_different/1: clpfd/all-different.md
+      - Labelling: clpfd/labeling.md
+      - Examples: clpfd/examples.md
+  - Cookbook:
+      - Family relations: cookbook/family-relations.md
+      - Graph reachability: cookbook/graph-reachability.md
+      - SEND+MORE=MONEY: cookbook/send-more-money.md
+      - Sudoku row: cookbook/sudoku-row.md
+      - N‑queens: cookbook/n-queens.md
+      - Scheduling: cookbook/scheduling.md
+  - Reference:
+      - Built-ins: reference/builtins-reference.md
+      - Operators table: reference/operators-table.md
+      - Grammar summary: reference/grammar-summary.md
+      - Errors: reference/errors.md
+  - Guides:
+      - Tracing and debugging: guides/tracing-and-debugging.md
+      - Performance and limits: guides/performance-and-limits.md
+      - ISO compatibility: guides/compatibility-iso.md
+  - FAQ: faq.md
+
