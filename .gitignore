@@ -61,3 +61,6 @@ traces/
 
 # Claude local settings
 .claude/settings.local.json
+
+# MkDocs generated site
+mkdocs/site/

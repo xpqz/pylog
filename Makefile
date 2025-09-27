@@ -1,4 +1,4 @@
-.PHONY: help test coverage coverage-html coverage-report clean format lint all
+.PHONY: help test coverage coverage-html coverage-report clean format lint docs docs-serve docs-clean all
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -45,3 +45,12 @@ lint:  ## Run linters
 	uv run black --check .
 
 all: format lint test  ## Format, lint, and test
+
+docs: ## Build MkDocs site (output to mkdocs/site)
+	uv run --extra docs mkdocs build -f mkdocs/mkdocs.yml
+
+docs-serve: ## Serve MkDocs site locally with live reload
+	uv run --extra docs mkdocs serve -f mkdocs/mkdocs.yml -a 127.0.0.1:8000
+
+docs-clean: ## Clean built MkDocs site
+	rm -rf mkdocs/site/

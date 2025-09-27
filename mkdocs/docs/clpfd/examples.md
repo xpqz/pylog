@@ -16,3 +16,9 @@ Distinct choices:
 X = 1, Y = 2 ; X = 1, Y = 3 ; ...
 ```
 
+Reification (parsing example):
+
+```text
+?- B in 0..1, B #==> (X #< 10).
+```
+See CLP(FD) → Reification (preview) for details.
