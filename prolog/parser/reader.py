@@ -181,6 +181,9 @@ def _operator_to_token_name(op):
         '#>': 'HASH_GT',
         '#=<': 'HASH_EQ_LT',
         '#>=': 'HASH_GT_EQ',
+        '#<=>': 'HASH_LT_EQ_GT',
+        '#==>': 'HASH_EQ_EQ_GT',
+        '#<==': 'HASH_LT_EQ_EQ',
     }
 
     return special_names.get(op, op.upper())
@@ -739,7 +742,8 @@ class PrattParser:
                           'AT_EQ_LT', 'AT_GT_EQ', 'EQ_LT', 'GT_EQ',
                           'DOUBLE_EQ', 'DOUBLE_STAR', 'MOD', 'IS', 'IN', 'DOT_DOT',
                           'HASH_EQ', 'HASH_BACKSLASH_EQ', 'HASH_LT', 'HASH_GT',
-                          'HASH_EQ_LT', 'HASH_GT_EQ']:
+                          'HASH_EQ_LT', 'HASH_GT_EQ', 'HASH_LT_EQ_GT', 'HASH_EQ_EQ_GT',
+                          'HASH_LT_EQ_EQ']:
             return get_operator_info(token.value, 'infix')
         return None
     

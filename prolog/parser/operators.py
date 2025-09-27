@@ -66,6 +66,11 @@ _OPERATOR_TABLE_MUTABLE: Dict[Tuple[str, str], OperatorInfo] = {
     ('#>', 'infix'): (700, 'xfx', "'#>'"),     # FD greater than
     ('#=<', 'infix'): (700, 'xfx', "'#=<'"),   # FD less or equal
     ('#>=', 'infix'): (700, 'xfx', "'#>='"),   # FD greater or equal
+
+    # CLP(FD) reification operators
+    ('#<=>', 'infix'): (900, 'xfx', "'#<=>'"), # Equivalence (B iff C)
+    ('#==>', 'infix'): (900, 'xfx', "'#==>'"), # Forward implication (B implies C)
+    ('#<==', 'infix'): (900, 'xfx', "'#<=='"), # Backward implication (C implies B)
 }
 
 # Read-only view of the operator table to prevent accidental mutation
