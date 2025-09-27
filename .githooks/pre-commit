@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Pre-commit hook to block conditional or late imports in Python files.
+# Enforces project policy: no conditional imports; all imports at file top only.
+
+# Collect staged Python files (added/copied/modified/renamed)
+py_files=()
+while IFS= read -r -d '' f; do
+  if [[ "$f" == *.py ]]; then
+    py_files+=("$f")
+  fi
+done < <(git diff --cached --name-only --diff-filter=ACMR -z)
+
+if [[ ${#py_files[@]} -eq 0 ]]; then
+  exit 0
+fi
+
+# Run checker on staged files
+python3 scripts/check_no_conditional_imports.py "${py_files[@]}" || {
+  echo
+  echo "Commit aborted: conditional or late imports detected."
+  echo "Fix the issues above and re-stage your changes."
+  exit 1
+}
+
+exit 0
