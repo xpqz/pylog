@@ -11,6 +11,7 @@ from prolog.engine.engine import Engine, Program
 class TestSimpleConstraintProblems:
     """Test simple but realistic constraint problems."""
 
+    @pytest.mark.slow
     def test_send_more_money_digits(self):
         """Classic SEND + MORE = MONEY cryptarithmetic (simplified to just digits)."""
         engine = Engine(Program([]))
