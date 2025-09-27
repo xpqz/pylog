@@ -25,6 +25,7 @@ from prolog.clpfd.props.reif import (
     create_implication_propagator,
 )
 from prolog.clpfd.entailment import (
+    Entailment,
     check_equality_entailment,
     check_not_equal_entailment,
     check_less_than_entailment,
@@ -1029,52 +1030,58 @@ def _builtin_fd_reif_equiv(engine, b_term, constraint_term):
 
     if constraint_type == "#=":
         entailment_checker = check_equality_entailment
-        post_constraint = lambda eng, st, tr, x, y: _post_constraint_directly(
-            eng, st, tr, x, y, _builtin_fd_eq
-        )
-        post_negation = lambda eng, st, tr, x, y: _post_constraint_directly(
-            eng, st, tr, x, y, _builtin_fd_neq
-        )
+
+        def post_constraint(eng, st, tr, x, y):
+            return _post_constraint_directly(eng, st, tr, x, y, _builtin_fd_eq)
+
+        def post_negation(eng, st, tr, x, y):
+            return _post_constraint_directly(eng, st, tr, x, y, _builtin_fd_neq)
+
     elif constraint_type == "#\\=":
         entailment_checker = check_not_equal_entailment
-        post_constraint = lambda eng, st, tr, x, y: _post_constraint_directly(
-            eng, st, tr, x, y, _builtin_fd_neq
-        )
-        post_negation = lambda eng, st, tr, x, y: _post_constraint_directly(
-            eng, st, tr, x, y, _builtin_fd_eq
-        )
+
+        def post_constraint(eng, st, tr, x, y):
+            return _post_constraint_directly(eng, st, tr, x, y, _builtin_fd_neq)
+
+        def post_negation(eng, st, tr, x, y):
+            return _post_constraint_directly(eng, st, tr, x, y, _builtin_fd_eq)
+
     elif constraint_type == "#<":
         entailment_checker = check_less_than_entailment
-        post_constraint = lambda eng, st, tr, x, y: _post_constraint_directly(
-            eng, st, tr, x, y, _builtin_fd_lt
-        )
-        post_negation = lambda eng, st, tr, x, y: _post_constraint_directly(
-            eng, st, tr, x, y, _builtin_fd_ge
-        )
+
+        def post_constraint(eng, st, tr, x, y):
+            return _post_constraint_directly(eng, st, tr, x, y, _builtin_fd_lt)
+
+        def post_negation(eng, st, tr, x, y):
+            return _post_constraint_directly(eng, st, tr, x, y, _builtin_fd_ge)
+
     elif constraint_type == "#=<":
         entailment_checker = check_less_equal_entailment
-        post_constraint = lambda eng, st, tr, x, y: _post_constraint_directly(
-            eng, st, tr, x, y, _builtin_fd_le
-        )
-        post_negation = lambda eng, st, tr, x, y: _post_constraint_directly(
-            eng, st, tr, x, y, _builtin_fd_gt
-        )
+
+        def post_constraint(eng, st, tr, x, y):
+            return _post_constraint_directly(eng, st, tr, x, y, _builtin_fd_le)
+
+        def post_negation(eng, st, tr, x, y):
+            return _post_constraint_directly(eng, st, tr, x, y, _builtin_fd_gt)
+
     elif constraint_type == "#>":
         entailment_checker = check_greater_than_entailment
-        post_constraint = lambda eng, st, tr, x, y: _post_constraint_directly(
-            eng, st, tr, x, y, _builtin_fd_gt
-        )
-        post_negation = lambda eng, st, tr, x, y: _post_constraint_directly(
-            eng, st, tr, x, y, _builtin_fd_le
-        )
+
+        def post_constraint(eng, st, tr, x, y):
+            return _post_constraint_directly(eng, st, tr, x, y, _builtin_fd_gt)
+
+        def post_negation(eng, st, tr, x, y):
+            return _post_constraint_directly(eng, st, tr, x, y, _builtin_fd_le)
+
     elif constraint_type == "#>=":
         entailment_checker = check_greater_equal_entailment
-        post_constraint = lambda eng, st, tr, x, y: _post_constraint_directly(
-            eng, st, tr, x, y, _builtin_fd_ge
-        )
-        post_negation = lambda eng, st, tr, x, y: _post_constraint_directly(
-            eng, st, tr, x, y, _builtin_fd_lt
-        )
+
+        def post_constraint(eng, st, tr, x, y):
+            return _post_constraint_directly(eng, st, tr, x, y, _builtin_fd_ge)
+
+        def post_negation(eng, st, tr, x, y):
+            return _post_constraint_directly(eng, st, tr, x, y, _builtin_fd_lt)
+
     else:
         return False  # Unsupported constraint type
 
@@ -1205,34 +1212,40 @@ def _builtin_fd_reif_implication_impl(engine, b_term, constraint_term, forward):
 
     if constraint_type == "#=":
         entailment_checker = check_equality_entailment
-        post_constraint = lambda eng, st, tr, x, y: _post_constraint_directly(
-            eng, st, tr, x, y, _builtin_fd_eq
-        )
+
+        def post_constraint(eng, st, tr, x, y):
+            return _post_constraint_directly(eng, st, tr, x, y, _builtin_fd_eq)
+
     elif constraint_type == "#\\=":
         entailment_checker = check_not_equal_entailment
-        post_constraint = lambda eng, st, tr, x, y: _post_constraint_directly(
-            eng, st, tr, x, y, _builtin_fd_neq
-        )
+
+        def post_constraint(eng, st, tr, x, y):
+            return _post_constraint_directly(eng, st, tr, x, y, _builtin_fd_neq)
+
     elif constraint_type == "#<":
         entailment_checker = check_less_than_entailment
-        post_constraint = lambda eng, st, tr, x, y: _post_constraint_directly(
-            eng, st, tr, x, y, _builtin_fd_lt
-        )
+
+        def post_constraint(eng, st, tr, x, y):
+            return _post_constraint_directly(eng, st, tr, x, y, _builtin_fd_lt)
+
     elif constraint_type == "#=<":
         entailment_checker = check_less_equal_entailment
-        post_constraint = lambda eng, st, tr, x, y: _post_constraint_directly(
-            eng, st, tr, x, y, _builtin_fd_le
-        )
+
+        def post_constraint(eng, st, tr, x, y):
+            return _post_constraint_directly(eng, st, tr, x, y, _builtin_fd_le)
+
     elif constraint_type == "#>":
         entailment_checker = check_greater_than_entailment
-        post_constraint = lambda eng, st, tr, x, y: _post_constraint_directly(
-            eng, st, tr, x, y, _builtin_fd_gt
-        )
+
+        def post_constraint(eng, st, tr, x, y):
+            return _post_constraint_directly(eng, st, tr, x, y, _builtin_fd_gt)
+
     elif constraint_type == "#>=":
         entailment_checker = check_greater_equal_entailment
-        post_constraint = lambda eng, st, tr, x, y: _post_constraint_directly(
-            eng, st, tr, x, y, _builtin_fd_ge
-        )
+
+        def post_constraint(eng, st, tr, x, y):
+            return _post_constraint_directly(eng, st, tr, x, y, _builtin_fd_ge)
+
     else:
         return False  # Unsupported constraint type
 
@@ -1250,8 +1263,6 @@ def _builtin_fd_reif_implication_impl(engine, b_term, constraint_term, forward):
             # Backward: B #<== C
             if b_value == 0:
                 # B = 0, check that constraint is not entailed
-                from prolog.clpfd.entailment import Entailment
-
                 ent = entailment_checker(store, x_arg, y_arg)
                 return ent != Entailment.TRUE
             else:
