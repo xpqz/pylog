@@ -366,19 +366,19 @@ def parse_domain_term(term):
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] Unit tests pass: `uv run pytest prolog/tests/unit/test_clpfd_domain.py`
-- [ ] Unit tests pass: `uv run pytest prolog/tests/unit/test_clpfd_in.py`
-- [ ] Domain operations maintain sorted intervals
-- [ ] Revision counter increments only on actual changes
-- [ ] Empty domain detection works
-- [ ] `X in 1..10` sets correct domain
-- [ ] `X in {1,3,5}` creates enumerated domain
-- [ ] Watcher storage and retrieval works
+- [x] Unit tests pass: `uv run pytest prolog/tests/unit/test_clpfd_domain.py`
+- [x] Unit tests pass: `uv run pytest prolog/tests/unit/test_clpfd_in.py`
+- [x] Domain operations maintain sorted intervals
+- [x] Revision counter increments only on actual changes
+- [x] Empty domain detection works
+- [x] `X in 1..10` sets correct domain
+- [x] `X in {1,3,5}` creates enumerated domain
+- [x] Watcher storage and retrieval works
 
 #### Manual Verification:
-- [ ] Domain operations are efficient for large intervals
-- [ ] Memory usage reasonable for sparse domains
-- [ ] Parser handles all specified forms
+- [x] Domain operations are efficient for large intervals
+- [x] Memory usage reasonable for sparse domains
+- [x] Parser handles all specified forms
 
 ---
 
@@ -492,15 +492,15 @@ class PropagationQueue:
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] Unit tests pass: `uv run pytest prolog/tests/unit/test_clpfd_queue.py`
-- [ ] Priority ordering maintained
-- [ ] Priority escalation works correctly
-- [ ] Self-requeue guard prevents infinite loops
-- [ ] Failure propagation stops fixpoint computation
+- [x] Unit tests pass: `uv run pytest prolog/tests/unit/test_clpfd_queue.py`
+- [x] Priority ordering maintained
+- [x] Priority escalation works correctly
+- [x] Self-requeue guard prevents infinite loops
+- [x] Failure propagation stops fixpoint computation
 
 #### Manual Verification:
-- [ ] Queue drains efficiently for large propagator sets
-- [ ] Memory usage bounded by number of propagators
+- [x] Queue drains efficiently for large propagator sets
+- [x] Memory usage bounded by number of propagators
 
 ---
 
@@ -651,14 +651,14 @@ def post_constraint(engine, constraint_type, x_var, y_var):
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] Unit tests pass: `uv run pytest prolog/tests/unit/test_clpfd_propagators.py`
-- [ ] Interval tightening: `X in 1..10, X #> 5` => `X in 6..10`
-- [ ] Chain propagation works correctly
-- [ ] Failure detection on inconsistency
+- [x] Unit tests pass: `uv run pytest prolog/tests/unit/test_clpfd_propagators.py`
+- [x] Interval tightening: `X in 1..10, X #> 5` => `X in 6..10`
+- [x] Chain propagation works correctly
+- [x] Failure detection on inconsistency
 
 #### Manual Verification:
-- [ ] Propagation reaches fixpoint efficiently
-- [ ] No unnecessary re-propagation
+- [x] Propagation reaches fixpoint efficiently
+- [x] No unnecessary re-propagation
 
 ---
 
@@ -727,14 +727,14 @@ def _builtin_constraint_lt(engine, x_term, y_term):
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] Unit tests pass: `uv run pytest prolog/tests/unit/test_clpfd_builtins.py`
-- [ ] Constraints register and propagate correctly
-- [ ] Queue initialization works on demand
-- [ ] Builtins integrate with engine properly
+- [x] Unit tests pass: `uv run pytest prolog/tests/unit/test_clpfd_builtins.py`
+- [x] Constraints register and propagate correctly
+- [x] Queue initialization works on demand
+- [x] Builtins integrate with engine properly
 
 #### Manual Verification:
-- [ ] Constraint posting from Prolog queries works
-- [ ] Multiple constraints interact correctly
+- [x] Constraint posting from Prolog queries works
+- [x] Multiple constraints interact correctly
 
 ---
 
@@ -1108,16 +1108,16 @@ except (ValueError, ImportError):
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] Unit tests pass: `uv run pytest prolog/tests/unit/test_clpfd_linear.py`
-- [ ] Expression parser handles: `1000*S + 100*E + 10*N + D`
-- [ ] Linear propagator correctly prunes domains
-- [ ] Sum propagator optimizes unit-coefficient cases
-- [ ] SEND+MORE completes in <1 second
+- [x] Unit tests pass: `uv run pytest prolog/tests/unit/test_clpfd_linear.py`
+- [x] Expression parser handles: `1000*S + 100*E + 10*N + D`
+- [x] Linear propagator correctly prunes domains
+- [x] Sum propagator optimizes unit-coefficient cases
+- [ ] SEND+MORE completes in <1 second (needs further optimization)
 
 #### Manual Verification:
-- [ ] Complex arithmetic expressions parse correctly
-- [ ] Bounds propagation is tight and efficient
-- [ ] No regression in existing CLP(FD) tests
+- [x] Complex arithmetic expressions parse correctly
+- [x] Bounds propagation is tight and efficient
+- [x] No regression in existing CLP(FD) tests
 
 ---
 
@@ -1271,16 +1271,16 @@ def bisect_values(domain):
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] Unit tests pass: `uv run pytest prolog/tests/unit/test_clpfd_label.py`
-- [ ] `label([X,Y])` enumerates all solutions via goal stack
-- [ ] Variable selection strategies work correctly
-- [ ] Value selection strategies work correctly
-- [ ] No Python recursion in labeling
+- [x] Unit tests pass: `uv run pytest prolog/tests/unit/test_clpfd_label.py`
+- [x] `label([X,Y])` enumerates all solutions via goal stack
+- [x] Variable selection strategies work correctly
+- [x] Value selection strategies work correctly
+- [x] No Python recursion in labeling
 
 #### Manual Verification:
-- [ ] Labeling performance acceptable for small problems
-- [ ] Backtracking integrates correctly with propagation
-- [ ] Choice points created properly on goal stack
+- [x] Labeling performance acceptable for small problems
+- [x] Backtracking integrates correctly with propagation
+- [x] Choice points created properly on goal stack
 
 ---
 
@@ -1383,16 +1383,16 @@ def clpfd_unify_hook(engine, varid, other):
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] Unit tests pass: `uv run pytest prolog/tests/unit/test_clpfd_hooks.py`
-- [ ] `X in 1..10, Y in 5..15, X = Y` => both in `5..10`
-- [ ] Domain incompatibility causes unification failure
-- [ ] Watchers correctly merged on aliasing
-- [ ] Grounding triggers propagation correctly
+- [x] Unit tests pass: `uv run pytest prolog/tests/unit/test_clpfd_hooks.py`
+- [x] `X in 1..10, Y in 5..15, X = Y` => both in `5..10`
+- [x] Domain incompatibility causes unification failure
+- [x] Watchers correctly merged on aliasing
+- [x] Grounding triggers propagation correctly
 
 #### Manual Verification:
-- [ ] Hook doesn't interfere with non-CLP(FD) unification
-- [ ] Performance impact minimal when CLP(FD) not used
-- [ ] Proper cleanup after unification rollback
+- [x] Hook doesn't interfere with non-CLP(FD) unification
+- [x] Performance impact minimal when CLP(FD) not used
+- [x] Proper cleanup after unification rollback
 
 ---
 
