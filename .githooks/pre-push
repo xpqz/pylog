@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Pre-push hook: run fast unit suite as a gate.
+# Uses uv if available, falls back to pytest directly.
+
+echo "Running fast unit tests before push (skip with --no-verify)..."
+
+if command -v uv >/dev/null 2>&1; then
+  uv run pytest -m "not slow and not stress"
+else
+  pytest -m "not slow and not stress"
+fi
+
+echo "Fast unit tests passed. Proceeding with push."
+exit 0
+

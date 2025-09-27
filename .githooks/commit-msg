@@ -1,26 +1,19 @@
-#!/bin/sh
-#
-# commit-msg hook to prevent AI attribution in commit messages
-# This hook is invoked with one argument: the path to the commit message file
+#!/usr/bin/env bash
+set -euo pipefail
 
-COMMIT_MSG_FILE="$1"
+# Commit message policy enforcement
+# - Do not mention Claude, Anthropic, or AI assistance (coderules.md)
 
-# Check for prohibited patterns in commit message
-if grep -qE "Claude|Anthropic|AI assistance|noreply@anthropic|🤖|Co-Authored-By: Claude" "$COMMIT_MSG_FILE"; then
-    echo "❌ ERROR: Commit message contains AI attribution"
-    echo ""
-    echo "Please remove these lines from your commit message:"
-    echo "  - 🤖 Generated with [Claude Code](https://claude.com/claude-code)"
-    echo "  - Co-Authored-By: Claude <noreply@anthropic.com>"
-    echo "  - Any mention of Claude, Anthropic, or AI assistance"
-    echo ""
-    echo "Per project rules: NO AI attribution in commits"
-    echo ""
-    echo "Your commit message:"
-    echo "-------------------"
-    cat "$COMMIT_MSG_FILE"
-    echo "-------------------"
-    exit 1
+msg_file=$1
+msg=$(cat "$msg_file")
+
+# Case-insensitive grep for prohibited terms
+if echo "$msg" | grep -E -i -q "(claude|anthropic|ai assistance|ai-assisted|ai[- ]generated|co-authored-by:.*claude|co-authored-by:.*anthropic)"; then
+  echo "\nCommit message contains prohibited AI attribution terms." >&2
+  echo "Blocked terms: Claude, Anthropic, 'AI assistance' (and variants)." >&2
+  echo "Please remove AI references from the commit message per coderules.md." >&2
+  exit 1
 fi
 
 exit 0
+

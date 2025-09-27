@@ -1,4 +1,4 @@
-.PHONY: help test coverage coverage-html coverage-report clean format lint docs docs-serve docs-clean all install-git-hooks
+.PHONY: help test test-fast test-prepush coverage coverage-html coverage-report clean format lint docs docs-serve docs-clean all install-git-hooks
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -7,6 +7,9 @@ test:  ## Run all tests
 	uv run pytest
 
 test-fast:  ## Run tests excluding slow/stress tests
+	uv run pytest -m "not slow and not stress"
+
+test-prepush:  ## Run the same fast suite as the pre-push hook
 	uv run pytest -m "not slow and not stress"
 
 coverage:  ## Run tests with coverage
@@ -55,9 +58,13 @@ docs-serve: ## Serve MkDocs site locally with live reload
 docs-clean: ## Clean built MkDocs site
 	rm -rf mkdocs/site/
 
-install-git-hooks: ## Install project git hooks (pre-commit)
+install-git-hooks: ## Install project git hooks (pre-commit, commit-msg, pre-push)
 	chmod +x .githooks/pre-commit || true
+	chmod +x .githooks/commit-msg || true
+	chmod +x .githooks/pre-push || true
 	chmod +x scripts/check_no_conditional_imports.py || true
 	mkdir -p .git/hooks
 	ln -sf "$(PWD)/.githooks/pre-commit" .git/hooks/pre-commit
-	@echo "Installed pre-commit hook to enforce no conditional imports."
+	ln -sf "$(PWD)/.githooks/commit-msg" .git/hooks/commit-msg
+	ln -sf "$(PWD)/.githooks/pre-push" .git/hooks/pre-push
+	@echo "Installed hooks: pre-commit (black, ruff, conditional imports), commit-msg (no AI mentions), pre-push (fast tests)."

@@ -16,6 +16,25 @@ if [[ ${#py_files[@]} -eq 0 ]]; then
   exit 0
 fi
 
+# 1) Auto-format with black and re-stage
+if command -v uv >/dev/null 2>&1; then
+  uv run black "${py_files[@]}"
+else
+  black "${py_files[@]}"
+fi
+git add -- "${py_files[@]}"
+
+# 2) Ruff lint: auto-fix then enforce clean
+if command -v uv >/dev/null 2>&1; then
+  uv run ruff check --fix "${py_files[@]}"
+  git add -- "${py_files[@]}"
+  uv run ruff check "${py_files[@]}"
+else
+  ruff check --fix "${py_files[@]}"
+  git add -- "${py_files[@]}"
+  ruff check "${py_files[@]}"
+fi
+
 # Run checker on staged files
 python3 scripts/check_no_conditional_imports.py "${py_files[@]}" || {
   echo
