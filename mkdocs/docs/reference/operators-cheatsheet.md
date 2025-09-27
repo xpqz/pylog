@@ -8,7 +8,7 @@ Precedence (higher binds tighter)
 - 1100 xfy: `;`
 - 1050 xfy: `->`
 - 1000 xfy: `,`
-- 900  xfx: CLP(FD) reification `#<=>`, `#==>`, `#<==` (preview)
+- 900  xfx: CLP(FD) reification `#<=>`, `#==>`, `#<==`
 - 700  xfx: `=`, `\=`, `==`, `\==`, `=..`, `is`, `=:=`, `=\=`, `<`, `=<`, `>`, `>=`, `in`
 - 500  yfx: `+`, `-`
 - 400  yfx: `*`, `/`, `//`, `mod`
@@ -52,6 +52,6 @@ CLP(FD)
 -------
 
 - Comparisons: `#=`, `#\=`, `#<`, `#=<`, `#>`, `#>=`
-- Reification (preview): `#<=>`, `#==>`, `#<==` (xfx at 900)
+- Reification: `#<=>`, `#==>`, `#<==` (xfx at 900)
 
 See also: Basics → Operators, Reference → Operators table
