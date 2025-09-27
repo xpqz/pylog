@@ -245,9 +245,10 @@ def create_linear_propagator(coeffs: Dict[int, int], const: int, op: str):
             if new_min > dom.min() or new_max < dom.max():
                 new_dom = dom
                 if new_min > dom.min():
-                    new_dom = Domain(((new_min, new_dom.max()),))
+                    new_dom = Domain(((new_min, new_dom.max()),), dom.rev + 1)
                 if new_max < new_dom.max():
-                    new_dom = Domain(((new_dom.min(), new_max),))
+                    # Use the potentially updated new_dom's rev
+                    new_dom = Domain(((new_dom.min(), new_max),), new_dom.rev if new_dom != dom else dom.rev + 1)
 
                 if new_dom.is_empty():
                     return ("fail", None)

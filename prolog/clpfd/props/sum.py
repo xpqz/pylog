@@ -86,7 +86,7 @@ def create_sum_propagator(var_ids: List[int], target: int):
                 return ("fail", None)
 
             if new_min > dom.min() or new_max < dom.max():
-                new_dom = Domain(((new_min, new_max),))
+                new_dom = Domain(((new_min, new_max),), dom.rev + 1)
 
                 if new_dom.is_empty():
                     return ("fail", None)
