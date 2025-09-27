@@ -12,14 +12,14 @@
 ## Developing in Python 
 
 - Never do "fallback" programming in terms of requirements: if you expect module A, fail immediately if it's not present.
-- All imports at the top of files only.
+- **CRITICAL**: No conditional imports. All imports at the top of files only.
 - Use up-to-date Python syntax, version 3.10 and onwards. 
 - Backwards compatibility is NOT a goal.
 - Use modern type hinting (dict, not Dict)
 
 ## Debugging
 
-- Always identify root causes of failures. Do NOT treat the symptoms of failures.
+- **CRITICAL**: Always identify root causes of failures. Do NOT treat the symptoms of failures.
 
 ## Process
 - Don't back files up by copying! We use git for versioning.

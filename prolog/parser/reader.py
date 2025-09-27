@@ -1034,6 +1034,13 @@ class Reader:
             elif char == ']':
                 bracket_depth -= 1
             elif char == '.' and paren_depth == 0 and bracket_depth == 0:
+                # Check if this is part of a .. operator
+                if i + 1 < len(text) and text[i + 1] == '.':
+                    # It's a .. operator, not a clause terminator
+                    current_clause.append(char)  # Add first .
+                    current_clause.append(text[i + 1])  # Add second .
+                    i += 2  # Skip both dots
+                    continue
                 # Found a clause terminator at top level
                 current_clause.append(char)
                 clause_text = ''.join(current_clause).strip()

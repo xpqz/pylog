@@ -1,1 +1,1 @@
-Merge this GitHub PR, cleaning up local and remote branches. Close relevant issues, and maintain issue tick boxes. Verify that tests succeed in CI.
+Instruct the git-github-operator to merge this GitHub PR, cleaning up local and remote branches. In doing so, it should also close relevant issues, maintaining issue tick boxes.
