@@ -100,6 +100,27 @@ class TestReificationOperatorParsing:
         assert "#==>" in operators_found
         assert "#<==" in operators_found
 
+    def test_precedence_with_prefix_negation(self):
+        """Test precedence interaction with prefix \\+ operator."""
+        reader = Reader()
+
+        # \\+ has precedence 900, same as reification operators
+        # Should parse as B #==> (\\+ (X #= Y))
+        term = reader.read_term("B #==> \\+ (X #= Y)")
+        assert term.functor == "#==>"
+        assert len(term.args) == 2
+
+        # Second arg should be \\+ with X #= Y inside
+        negation = term.args[1]
+        assert isinstance(negation, Struct)
+        assert negation.functor == "\\+"
+        assert len(negation.args) == 1
+
+        # Inside negation should be X #= Y
+        inner = negation.args[0]
+        assert isinstance(inner, Struct)
+        assert inner.functor == "#="
+
     def test_operator_associativity(self):
         """Test that operators are non-associative (xfx)."""
         reader = Reader()
