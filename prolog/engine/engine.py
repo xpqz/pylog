@@ -23,6 +23,34 @@ from prolog.engine.trail_adapter import TrailAdapter
 from prolog.engine.errors import PrologThrow
 from prolog.engine.cursors import StreamingClauseCursor
 
+# Debug imports (conditional imports moved here)
+from prolog.debug.tracer import PortsTracer
+from prolog.debug.metrics import EngineMetrics
+
+# CLP(FD) imports (conditional imports moved here)
+from prolog.engine.builtins_clpfd import (
+    _builtin_in,
+    _builtin_fd_eq,
+    _builtin_fd_neq,
+    _builtin_fd_lt,
+    _builtin_fd_le,
+    _builtin_fd_gt,
+    _builtin_fd_ge,
+    _builtin_fd_var,
+    _builtin_fd_inf,
+    _builtin_fd_sup,
+    _builtin_fd_dom,
+    _builtin_all_different,
+    _builtin_fd_reif_equiv,
+    _builtin_fd_reif_implies,
+    _builtin_fd_reif_implied,
+)
+from prolog.clpfd.label import _builtin_label, _builtin_labeling, push_labeling_choices
+
+# Parser imports (conditional imports moved here)
+from prolog.parser.parser import parse_program, parse_query
+from prolog.ast.clauses import Program as ProgramClass
+
 
 class Engine:
     """Prolog inference engine with explicit stacks (no Python recursion)."""
@@ -140,8 +168,6 @@ class Engine:
 
         # Initialize tracer if trace=True
         if trace:
-            from prolog.debug.tracer import PortsTracer
-
             self.tracer = PortsTracer(self)
         else:
             self.tracer = None
@@ -151,8 +177,6 @@ class Engine:
 
         # Initialize metrics if metrics=True
         if metrics:
-            from prolog.debug.metrics import EngineMetrics
-
             self.metrics = EngineMetrics()
         else:
             self.metrics = None
@@ -339,31 +363,28 @@ class Engine:
         self._builtins[("del_attr", 2)] = lambda eng, args: eng._builtin_del_attr(args)
 
         # CLP(FD) builtins
-        from prolog.engine.builtins_clpfd import (
-            _builtin_in,
-            _builtin_fd_eq,
-            _builtin_fd_lt,
-            _builtin_fd_le,
-            _builtin_fd_gt,
-            _builtin_fd_ge,
-            _builtin_fd_var,
-            _builtin_fd_inf,
-            _builtin_fd_sup,
-            _builtin_fd_dom,
-            _builtin_all_different,
-        )
-        from prolog.clpfd.label import _builtin_label, _builtin_labeling
 
         self._builtins[("in", 2)] = lambda eng, args: _builtin_in(eng, *args)
         self._builtins[("#=", 2)] = lambda eng, args: _builtin_fd_eq(eng, *args)
         # FD inequality
-        from prolog.engine.builtins_clpfd import _builtin_fd_neq
 
         self._builtins[("#\\=", 2)] = lambda eng, args: _builtin_fd_neq(eng, *args)
         self._builtins[("#<", 2)] = lambda eng, args: _builtin_fd_lt(eng, *args)
         self._builtins[("#=<", 2)] = lambda eng, args: _builtin_fd_le(eng, *args)
         self._builtins[("#>", 2)] = lambda eng, args: _builtin_fd_gt(eng, *args)
         self._builtins[("#>=", 2)] = lambda eng, args: _builtin_fd_ge(eng, *args)
+
+        # Reification builtins
+
+        self._builtins[("#<=>", 2)] = lambda eng, args: _builtin_fd_reif_equiv(
+            eng, *args
+        )
+        self._builtins[("#==>", 2)] = lambda eng, args: _builtin_fd_reif_implies(
+            eng, *args
+        )
+        self._builtins[("#<==", 2)] = lambda eng, args: _builtin_fd_reif_implied(
+            eng, *args
+        )
         self._builtins[("fd_var", 1)] = lambda eng, args: _builtin_fd_var(eng, *args)
         self._builtins[("fd_inf", 2)] = lambda eng, args: _builtin_fd_inf(eng, *args)
         self._builtins[("fd_sup", 2)] = lambda eng, args: _builtin_fd_sup(eng, *args)
@@ -559,9 +580,7 @@ class Engine:
         if self.solutions:
             for sol in self.solutions:
                 for v in sol.values():
-                    from prolog.ast.terms import Var as _Var
-
-                    if isinstance(v, _Var):
+                    if isinstance(v, Var):
                         # Check if variable ID is valid before dereferencing
                         if v.id < len(self.store.cells):
                             # Deref to current root
@@ -651,7 +670,7 @@ class Engine:
         saved_stamp = self.trail.current_stamp
 
         # Create a temporary stamp for the trial
-        trial_stamp = self.trail.next_stamp()
+        self.trail.next_stamp()
 
         # Do trial unification
         result = self._unify(term1, term2)
@@ -1087,7 +1106,7 @@ class Engine:
 
             self._emit_fail_port(pred_id, term, depth_override=call_depth)
             return False
-        except (ValueError, TypeError) as e:
+        except (ValueError, TypeError):
             # Expected failures from arithmetic or type errors
             self._emit_fail_port(pred_id, term, depth_override=call_depth)
             return False
@@ -1384,8 +1403,6 @@ class Engine:
             self._push_goal(then_goal, depth=then_depth)
         elif op == "LABEL_CONTINUE":
             # Continue labeling after binding a variable
-            from prolog.clpfd.label import push_labeling_choices
-
             vars = goal.payload["vars"]
             var_select = goal.payload["var_select"]
             val_select = goal.payload["val_select"]
@@ -1462,7 +1479,6 @@ class Engine:
             # Remove catch frames that are now out of scope
             # When we backtrack past a catch's window, remove its frame
             # A catch frame is out of scope if we've backtracked BELOW its goal height
-            new_goal_height = self.goal_stack.height()
             # Catch frames are now managed via CATCH choicepoints
 
             # Pop frames above checkpoint
@@ -1720,7 +1736,6 @@ class Engine:
                             )
 
                 # Remove catch frames that are now out of scope
-                new_goal_height = self.goal_stack.height()
                 # Catch frames are now managed via CATCH choicepoints
 
                 # Increment stamp before trying alternative branch
@@ -1740,15 +1755,13 @@ class Engine:
                     # The continuation was already on the goal stack
                     if self.trace:
                         self._trace_log.append(
-                            f"CATCH CP (RECOVERY) - continuing backtrack"
+                            "CATCH CP (RECOVERY) - continuing backtrack"
                         )
                     continue
                 else:
                     # GOAL phase CATCH choicepoints are never resumed
                     if self.trace:
-                        self._trace_log.append(
-                            f"CATCH CP (GOAL) - continuing backtrack"
-                        )
+                        self._trace_log.append("CATCH CP (GOAL) - continuing backtrack")
                     continue
 
             elif cp.kind == ChoicepointKind.IF_THEN_ELSE:
@@ -3191,9 +3204,6 @@ class Engine:
         Args:
             text: Prolog program text to parse and load
         """
-        from prolog.parser.parser import parse_program
-        from prolog.ast.clauses import Program as ProgramClass
-
         clauses = parse_program(text)
         # Create new program with existing clauses plus new ones
         all_clauses = list(self.program.clauses) + clauses
@@ -3208,8 +3218,6 @@ class Engine:
         Returns:
             List of solution dictionaries
         """
-        from prolog.parser.parser import parse_query
-
         # Add ?- and . if not present
         if not query_text.strip().startswith("?-"):
             query_text = "?- " + query_text

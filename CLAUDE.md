@@ -204,14 +204,15 @@ This is useful for verifying that PyLog's backtracking and unification behavior 
 ### Process
 - Don't back files up by copying! We use git for versioning.
 - For each new development stage, create a new git branch first.
-- We practice TDD: 
+- We practice TDD:
     - write tests first that demonstrate the desired behaviour
     - pause for human review of the tests
-    - progress the implementation until the tests succeed. 
+    - progress the implementation until the tests succeed.
     - NEVER tweak a test to "fit" the behaviour, unless the test is demonstrably broken.
 - Maintain progress in docs/TODO.md
 - NEVER EVER CHANGE THE DEFAULT BRANCH ON GIT OR GITHUB!
 - When creating PRs or commits, DO NOT mention Claude, Anthropic, or AI assistance in the message
+- NEVER use --no-verify when committing! Always let pre-commit hooks run and fix any issues they find
 
 ### GitHub Issue Workflow
 Follow this process for each GitHub issue:
