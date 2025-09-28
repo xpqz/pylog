@@ -1,5 +1,10 @@
 # Tracing and debugging
 
+See also:
+
+- Getting Started → [REPL](../getting-started/repl.md#tracing-from-the-repl)
+- Reference → [REPL commands](../reference/repl-commands.md)
+
 PyLog includes a 4‑port tracer (CALL/EXIT/REDO/FAIL) with multiple output formats. This guide shows how to enable tracing, choose an output sink, and analyze traces.
 
 Quick tips for debugging logic:
@@ -38,6 +43,45 @@ solutions = list(engine.run(your_goals))
 # Close any file sinks when done
 file_sink.close()
 ```
+
+Using the tracer from the REPL
+------------------------------
+
+You can control tracing interactively without writing any Python. From the REPL:
+
+- `trace on` — enable pretty trace to stdout
+- `trace off` — disable tracing
+- `trace pretty FILE` — pretty trace to file
+- `trace json FILE` — JSON Lines trace to file
+- `trace sample N` — sample 1 in N events (reduces volume)
+
+Spypoints (filter which predicates are traced):
+
+- `spy name/arity` — add a spypoint (e.g. `spy member/2`)
+- `unspy name/arity` — remove a spypoint
+- `spys` — list active spypoints
+- `untrace` — clear all spypoints
+
+Example session:
+
+```text
+?- trace on.
+Tracing enabled (pretty format to stdout)
+true.
+
+?- spy append/3.
+Spypoint added: append/3
+true.
+
+?- append([1],[2],X).
+CALL append/3 ...
+EXIT append/3 ...
+X = [1,2]
+ .
+```
+
+See Getting Started → REPL and Guides → REPL tips & shortcuts for a fuller tour
+of interactive commands.
 
 Trace sinks
 -----------

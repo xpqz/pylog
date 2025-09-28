@@ -357,19 +357,25 @@ Aim: See the machine at work and make failures reproducible.
 
 ---
 
-## Stage 6 — **Global constraints**
+## Stage 6 — **Global Constraints**
 
-**Aim:** Practical scalability for common patterns.
+Aim: Add standard global constraints for expressive modeling and stronger pruning.
 
-**Deliverables**
-- `all_different/1`:
-  - Stage 6.0: pairwise `#\=/2` for N≤6.
-  - Stage 6.5: bounds-consistent Hall intervals (O(n log n)).
-- `global_cardinality/2` (relaxed).
+Plan: See detailed plan: docs/plans/2025-09-27-stage-6-global-constraints.md
 
-**Acceptance criteria**
-- Pigeonhole failures detected early.
-- Hall interval tests prune mins/maxes as expected.
+Status checklist
+- [x] all_different/1 (Hall-interval pruning, performance baselines)
+- [ ] 6.0 Foundations & helpers (vector parsing, watcher helpers)
+- [ ] 6.1 element/3 (BC: index/value pruning)
+- [ ] 6.2 global_cardinality/2 and nvalue/2 (BC counts + N bounds)
+- [ ] 6.3 cumulative/1 (time-table bounds consistency, unary resource)
+- [ ] 6.4 lex_chain/1 (pairwise lex ordering, bounds-based)
+- [ ] 6.5 table/2 (optional positive table, simple supports)
+
+Acceptance criteria
+- Each added global has unit tests (edge cases, pruning) and scenario validation
+- Demonstrable pruning vs naive decompositions on existing scenario tests
+- No regressions in existing CLP(FD) and reification suites
 
 ---
 
