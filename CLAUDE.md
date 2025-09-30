@@ -200,7 +200,7 @@ The project follows a staged development plan where each stage builds on stable 
 
 ### Project Rules
 1. **No workarounds** - Fix root causes, not symptoms
-2. **Dependencies at top** - All imports at file top, no conditional imports, fail fast on missing dependencies
+2. **🚨 CRITICAL: All imports at file top** - NO conditional imports anywhere, including tests. Import everything needed upfront, fail fast on missing dependencies
 3. **No backwards compatibility** - Focus on clean design for new features
 4. **No backup files** - Git handles versioning, no suffixes or backup copies
 5. **Direct communication** - No unnecessary affirmations or compliments

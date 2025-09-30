@@ -598,9 +598,11 @@ class Engine:
                                     mod_attrs = self.store.attrs[root]
                                     if "clpfd" in mod_attrs:
                                         fd = mod_attrs["clpfd"]
-                                        dom = fd.get("domain")
-                                        if dom is not None:
-                                            persist_domains[root] = dom
+                                        # Only process if fd is a dict (proper CLP(FD) attribute)
+                                        if isinstance(fd, dict):
+                                            dom = fd.get("domain")
+                                            if dom is not None:
+                                                persist_domains[root] = dom
 
         # Clean up all state before returning
         self.trail.unwind_to(0, self.store)
