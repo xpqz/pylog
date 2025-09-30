@@ -340,9 +340,6 @@ class TestAllDifferentBasic:
         result = unify(x, y, store, trail)
         assert result is False  # all_different forbids aliasing
 
-    @pytest.mark.xfail(
-        reason="Requires hook integration for automatic propagation on unification"
-    )
     def test_unify_to_int_propagation(self):
         """Unifying a variable to an integer should trigger propagation automatically."""
         engine = Engine(Program([]))
@@ -547,6 +544,7 @@ class TestHallIntervalPruning:
 
         # Post all_different([X1, X2, X3])
         from prolog.engine.builtins_clpfd import _builtin_all_different
+
         result = _builtin_all_different(engine, List([x1, x2, x3]))
         assert result is True
 
@@ -581,6 +579,7 @@ class TestHallIntervalPruning:
 
         # Post all_different
         from prolog.engine.builtins_clpfd import _builtin_all_different
+
         result = _builtin_all_different(engine, List(vars))
         assert result is True
 
@@ -605,6 +604,7 @@ class TestHallIntervalPruning:
 
         # Post all_different - should fail (3 vars, only 2 values)
         from prolog.engine.builtins_clpfd import _builtin_all_different
+
         result = _builtin_all_different(engine, List(vars))
 
         # Should fail immediately with Hall-interval detection
@@ -632,6 +632,7 @@ class TestHallIntervalPruning:
 
         # Post all_different
         from prolog.engine.builtins_clpfd import _builtin_all_different
+
         result = _builtin_all_different(engine, List([x1, x2, x3, x4]))
         assert result is True
 
@@ -666,6 +667,7 @@ class TestHallIntervalPruning:
 
         # Post all_different
         from prolog.engine.builtins_clpfd import _builtin_all_different
+
         result = _builtin_all_different(engine, List([x1, x2, x3, x4]))
         assert result is True
 
@@ -694,6 +696,7 @@ class TestHallIntervalPruning:
 
         # Post all_different
         from prolog.engine.builtins_clpfd import _builtin_all_different
+
         result = _builtin_all_different(engine, List([x1, x2, x3]))
         assert result is True
 
@@ -729,6 +732,7 @@ class TestHallIntervalPruning:
 
         # Post all_different
         from prolog.engine.builtins_clpfd import _builtin_all_different
+
         result = _builtin_all_different(engine, List(vars))
         assert result is True
 
@@ -758,6 +762,7 @@ class TestHallIntervalPruning:
 
         # Post all_different
         from prolog.engine.builtins_clpfd import _builtin_all_different
+
         result = _builtin_all_different(engine, List([x1, x2, x3]))
         assert result is True
 
@@ -790,6 +795,7 @@ class TestHallIntervalPruning:
 
         # Post all_different
         from prolog.engine.builtins_clpfd import _builtin_all_different
+
         result = _builtin_all_different(engine, List([x1, x2, x3, x4]))
         assert result is True
 
@@ -802,6 +808,7 @@ class TestHallIntervalPruning:
 
         # Trigger propagation (simulating what would happen via watchers)
         from prolog.clpfd.api import iter_watchers
+
         queue = engine.clpfd_queue
 
         # Wake watchers for X1
@@ -834,6 +841,7 @@ class TestHallIntervalPruning:
 
         # Post all_different with X appearing twice - should fail
         from prolog.engine.builtins_clpfd import _builtin_all_different
+
         result = _builtin_all_different(engine, List([x, x, y]))
         assert result is False
 
@@ -859,17 +867,20 @@ class TestHallIntervalPruning:
 
         # Post all_different
         from prolog.engine.builtins_clpfd import _builtin_all_different
+
         result = _builtin_all_different(engine, List([x1, x2, x3]))
         assert result is True
 
         # Unify X1 with 1
         from prolog.unify.unify import unify
+
         result = unify(x1, Int(1), store, trail, occurs_check=False)
         assert result is True
 
         # NOTE: Without hooks, we need manual propagation
         # This test documents expected behavior with hooks
         from prolog.clpfd.api import iter_watchers
+
         queue = engine.clpfd_queue
 
         # In Phase 2, we manually trigger; Phase 3 hooks will automate

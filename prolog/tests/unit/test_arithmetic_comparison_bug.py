@@ -171,7 +171,6 @@ class TestArithmeticComparisonBug:
         assert set(true_solutions) == expected_true
 
 
-@pytest.mark.xfail(reason="Issue #180: Direct arithmetic comparison constraints broken")
 class TestArithmeticComparisonFixed:
     """Test cases for what should work once issue #180 is fixed."""
 

@@ -44,6 +44,7 @@ from prolog.engine.builtins_clpfd import (
     _builtin_fd_reif_equiv,
     _builtin_fd_reif_implies,
     _builtin_fd_reif_implied,
+    _builtin_fd_disj,
 )
 from prolog.clpfd.label import _builtin_label, _builtin_labeling, push_labeling_choices
 
@@ -400,6 +401,7 @@ class Engine:
         self._builtins[("all_different", 1)] = lambda eng, args: _builtin_all_different(
             eng, *args
         )
+        self._builtins[("#\\/", 2)] = lambda eng, args: _builtin_fd_disj(eng, *args)
 
     def solve(
         self, goal: Term, max_solutions: Optional[int] = None
