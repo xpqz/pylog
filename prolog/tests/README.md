@@ -4,7 +4,10 @@ This directory contains the comprehensive test suite for PyLog, the tree-walking
 
 ## ⚠️ CRITICAL: Test Integrity Rules
 
-**TESTS ARE SACRED - DO NOT MODIFY TO MAKE THEM PASS**
+- **TESTS ARE SACRED - DO NOT MODIFY TO MAKE THEM PASS.**
+- **DO NOT MARK AS XFAIL WITHOUT EXPLICIT CONFIRMATION**
+
+See docs/xfail.md
 
 ### Quick Reference - When Tests Fail:
 

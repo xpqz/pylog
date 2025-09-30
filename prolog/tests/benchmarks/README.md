@@ -1,6 +1,9 @@
 # Performance Benchmarks
 
-This directory contains performance benchmarks for PyLog's tracing infrastructure.
+This directory contains performance benchmarks for PyLog's core systems:
+- **Tracing Infrastructure**: Call/exit/redo/fail port tracing overhead
+- **Indexing Performance**: First-argument and type indexing optimization
+- **Reification Performance**: CLP(FD) reification constraint overhead
 
 ## Running Benchmarks
 
@@ -33,6 +36,8 @@ PYTHONHASHSEED=0 CI_ENFORCE_PERF=1 uv run pytest prolog/tests/benchmarks/ -v
 - `CI_ENFORCE_PERF`: Enable performance assertions (values: `1`, `true`, `yes`, `on`)
 
 #### Configurable Thresholds
+
+**Tracing Thresholds:**
 - `PERF_INFRASTRUCTURE_MAX`: Max overhead for trace infrastructure (default: 5.0%)
 - `PERF_PRETTY_MAX`: Max overhead for pretty tracing (default: 25.0%)
 - `PERF_JSONL_MAX`: Max overhead for JSONL tracing (default: 35.0%)
@@ -41,6 +46,15 @@ PYTHONHASHSEED=0 CI_ENFORCE_PERF=1 uv run pytest prolog/tests/benchmarks/ -v
 - `PERF_SCALING_MAX`: Max scaling factor large/small (default: 3.0x)
 - `PERF_FIRST_EVENT_MAX`: Max overhead for first event (default: 5.0x)
 - `PERF_EVENT_RATE_MIN`: Min events per second (default: 1000)
+
+**Reification Thresholds:**
+- `PERF_REIF_MODULE_MAX`: Max module loading overhead (default: 5.0%)
+- `PERF_REIF_SIMPLE_MAX`: Max simple reification overhead (default: 20.0%)
+- `PERF_REIF_CONSTRAINT_TYPES_MAX`: Max overhead per constraint type (default: 30.0%)
+- `PERF_REIF_POSTING_MAX`: Max constraint posting overhead (default: 15.0%)
+- `PERF_REIF_SCALING_MAX`: Max scaling factor for chain constraints (default: calculated)
+- `PERF_REIF_NETWORK_SCALING_MAX`: Max scaling factor for network constraints (default: calculated)
+- `PERF_REIF_MEMORY_MAX`: Max memory overhead (default: 50.0%)
 
 Example with custom thresholds:
 ```bash
@@ -62,17 +76,26 @@ When `CI_ENFORCE_PERF=1` is set, the following targets are enforced:
 
 ## Benchmark Categories
 
-### Overhead Tests
+### Tracing Performance (`test_trace_performance_overhead.py`)
 - `TestTracingOverhead`: Basic overhead measurements for different sink types
 - `TestScalabilityOverhead`: How overhead scales with program size
 - `TestTracingWithBacktracking`: Overhead with heavy backtracking
-
-### Micro Benchmarks
-- `TestMicroBenchmarks.test_time_to_first_event`: Overhead for the first trace event
-- `TestMicroBenchmarks.test_event_creation_rate`: Raw event creation throughput
-
-### Comparison Tests
+- `TestMicroBenchmarks`: Time to first event and event creation rate
 - `test_sink_performance_comparison`: Side-by-side comparison of sink types
+
+### Indexing Performance (`test_indexing_performance.py`)
+- First-argument indexing optimization benchmarks
+- Type-based indexing performance tests
+- Clause selection scaling tests
+
+### Reification Performance (`test_reification_performance.py`)
+- `TestReificationPerformance`: Comprehensive reification overhead analysis
+  - **Baseline Tests**: Ensure reification doesn't slow down non-reified constraints
+  - **Overhead Tests**: Measure reification vs direct constraint posting
+  - **Scaling Tests**: Chain and network constraint scaling behavior
+  - **Pathological Cases**: Infinite loop prevention and deep nesting
+  - **Memory Tests**: Memory overhead measurement
+  - **Scenario Tests**: Boolean circuits and conditional scheduling
 
 ## Implementation Notes
 
