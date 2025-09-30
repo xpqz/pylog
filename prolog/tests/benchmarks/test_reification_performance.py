@@ -9,6 +9,7 @@ import gc
 import os
 import pytest
 import statistics
+import sys
 import time
 import tracemalloc
 from typing import Tuple
@@ -27,7 +28,14 @@ class TestReificationPerformance:
         return os.environ.get("CI_ENFORCE_PERF", "").lower() in ("1", "true", "yes")
 
     def get_threshold(self, name: str, default: float) -> float:
-        """Get performance threshold from environment or default."""
+        """
+        Get performance threshold from environment or default.
+
+        Note: Current default thresholds represent optimization targets rather
+        than current performance. Current reification overhead is ~10,800% for
+        simple cases. Use CI_ENFORCE_PERF=0 for baseline establishment without
+        enforcement.
+        """
         env_var = f"PERF_REIF_{name.upper()}_MAX"
         return float(os.environ.get(env_var, str(default)))
 
@@ -346,6 +354,54 @@ class TestReificationPerformance:
                 assert (
                     overhead <= threshold
                 ), f"{name} overhead {overhead:.1f}% exceeds threshold {threshold}%"
+
+    def test_reification_posting_overhead(self):
+        """Measure just the constraint posting overhead without solving."""
+
+        reader = Reader()
+
+        # Direct constraint posting only
+        direct_code = """
+        test_direct_posting(X, Y) :-
+            X in 1..10, Y in 1..10,
+            X #= Y.
+        """
+        direct_clauses = reader.read_program(direct_code)
+        direct_program = Program(tuple(direct_clauses))
+
+        # Reified constraint posting only
+        reified_code = """
+        test_reified_posting(X, Y, B) :-
+            X in 1..10, Y in 1..10,
+            B #<=> (X #= Y).
+        """
+        reified_clauses = reader.read_program(reified_code)
+        reified_program = Program(tuple(reified_clauses))
+
+        # Measure just posting time (no labeling/solving)
+        engine_direct = Engine(direct_program)
+        direct_time, direct_iqr = self.measure_execution_time(
+            engine_direct, "?- test_direct_posting(X, Y).", iterations=10
+        )
+
+        engine_reified = Engine(reified_program)
+        reified_time, reified_iqr = self.measure_execution_time(
+            engine_reified, "?- test_reified_posting(X, Y, B).", iterations=10
+        )
+
+        overhead = (
+            ((reified_time - direct_time) / direct_time) * 100 if direct_time > 0 else 0
+        )
+
+        print(f"\nReification posting overhead: {overhead:.1f}%")
+        print(f"  Direct posting: {direct_time:.4f}s (IQR: {direct_iqr:.4f}s)")
+        print(f"  Reified posting: {reified_time:.4f}s (IQR: {reified_iqr:.4f}s)")
+
+        if self.should_enforce():
+            threshold = self.get_threshold("posting", 15.0)
+            assert (
+                overhead <= threshold
+            ), f"Posting overhead {overhead:.1f}% exceeds threshold {threshold}%"
 
     # ========== SCALING TESTS ==========
 
@@ -746,12 +802,33 @@ if __name__ == "__main__":
     print("Running reification performance benchmarks...")
     print("=" * 60)
 
-    # Run key tests
-    test.test_baseline_clpfd_no_regression()
-    test.test_reification_overhead_simple()
-    test.test_reification_chain_scaling()
-    test.test_no_infinite_propagation_loops()
-    test.test_memory_overhead()
+    # Run key tests with error handling
+    tests = [
+        ("Baseline CLP(FD) regression", test.test_baseline_clpfd_no_regression),
+        ("Simple reification overhead", test.test_reification_overhead_simple),
+        ("Reification posting overhead", test.test_reification_posting_overhead),
+        ("Chain scaling", test.test_reification_chain_scaling),
+        ("Infinite loop prevention", test.test_no_infinite_propagation_loops),
+        ("Memory overhead", test.test_memory_overhead),
+    ]
+
+    failed_tests = []
+
+    for test_name, test_func in tests:
+        try:
+            print(f"\n🧪 Running: {test_name}")
+            test_func()
+            print(f"✅ Passed: {test_name}")
+        except Exception as e:
+            print(f"❌ Failed: {test_name} - {e}")
+            failed_tests.append((test_name, str(e)))
 
     print("=" * 60)
-    print("Benchmarks complete!")
+    if failed_tests:
+        print(f"❌ {len(failed_tests)} test(s) failed:")
+        for name, error in failed_tests:
+            print(f"  - {name}: {error}")
+        sys.exit(1)
+    else:
+        print("✅ All benchmarks completed successfully!")
+        sys.exit(0)
