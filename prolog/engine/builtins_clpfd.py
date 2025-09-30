@@ -657,7 +657,7 @@ def _builtin_fd_lt(engine, x_term, y_term):
 
         # Create and post the constraint propagator
         # X < Y is equivalent to X <= Y - 1, so we adjust the constant
-        prop = create_linear_propagator(combined_coeffs, combined_const + 1, "<=")
+        prop = create_linear_propagator(combined_coeffs, combined_const + 1, "=<")
 
         # Ensure variables have domains
         for var_id in combined_coeffs:
@@ -803,7 +803,7 @@ def _builtin_fd_le(engine, x_term, y_term):
             return combined_const <= 0
 
         # Create and post the constraint propagator
-        prop = create_linear_propagator(combined_coeffs, combined_const, "<=")
+        prop = create_linear_propagator(combined_coeffs, combined_const, "=<")
 
         # Ensure variables have domains
         for var_id in combined_coeffs:
@@ -829,7 +829,6 @@ def _builtin_fd_le(engine, x_term, y_term):
         return queue.run_to_fixpoint(store, trail, engine)
 
     except (ValueError, AttributeError):
-        # Fall back to old implementation for non-linear or special cases
         return _post_constraint_propagator(
             engine, x_term, y_term, create_less_equal_propagator
         )
