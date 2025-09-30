@@ -95,7 +95,6 @@ class TestAllDifferentBenchmarks:
         assert elapsed < 1.0, f"SEND+MORE took {elapsed:.3f}s (target: <1s)"
 
     @pytest.mark.slow
-    @pytest.mark.skip(reason="Pairwise comparison test has parsing issues with disequality operators")
     @pytest.mark.timeout(10)
     def test_sendmore_with_pairwise_comparison(self):
         """Compare performance: all_different vs pairwise disequality constraints."""
@@ -118,13 +117,13 @@ class TestAllDifferentBenchmarks:
         sendmore_pairwise(S,E,N,D,M,O,R,Y) :-
             S in 0..9, E in 0..9, N in 0..9, D in 0..9,
             M in 0..9, O in 0..9, R in 0..9, Y in 0..9,
-            S #\\\\= E, S #\\\\= N, S #\\\\= D, S #\\\\= M, S #\\\\= O, S #\\\\= R, S #\\\\= Y,
-            E #\\\\= N, E #\\\\= D, E #\\\\= M, E #\\\\= O, E #\\\\= R, E #\\\\= Y,
-            N #\\\\= D, N #\\\\= M, N #\\\\= O, N #\\\\= R, N #\\\\= Y,
-            D #\\\\= M, D #\\\\= O, D #\\\\= R, D #\\\\= Y,
-            M #\\\\= O, M #\\\\= R, M #\\\\= Y,
-            O #\\\\= R, O #\\\\= Y,
-            R #\\\\= Y,
+            S #\\= E, S #\\= N, S #\\= D, S #\\= M, S #\\= O, S #\\= R, S #\\= Y,
+            E #\\= N, E #\\= D, E #\\= M, E #\\= O, E #\\= R, E #\\= Y,
+            N #\\= D, N #\\= M, N #\\= O, N #\\= R, N #\\= Y,
+            D #\\= M, D #\\= O, D #\\= R, D #\\= Y,
+            M #\\= O, M #\\= R, M #\\= Y,
+            O #\\= R, O #\\= Y,
+            R #\\= Y,
             S #> 0, M #> 0,
             1000*S + 100*E + 10*N + D +
             1000*M + 100*O + 10*R + E #=
