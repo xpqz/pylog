@@ -220,8 +220,8 @@ def create_linear_propagator(coeffs: Dict[int, int], const: int, op: str):
                     new_max = min(new_max, (target - other_min) // coeff)  # Floor
                 else:
                     # X >= (target - others) / c (inequality flips due to negative coeff)
-                    # Min when others is at max
-                    val = target - other_max
+                    # Min when others is at min (for negative coeff, we want minimum others)
+                    val = target - other_min
                     # For negative coefficient: ceil(val / coeff) where coeff < 0
                     # Since both val and coeff contribute to the division, we need ceiling division
                     if val % coeff == 0:
