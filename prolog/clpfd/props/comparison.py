@@ -4,7 +4,8 @@ Implements #</2, #=</2, #>/2, #>=/2 constraint propagation.
 """
 
 from typing import Optional, List, Tuple
-from prolog.clpfd.api import get_domain, set_domain
+from prolog.clpfd.api import set_domain
+from prolog.clpfd.entailment import normalize_arg
 
 
 def create_less_than_propagator(x_id: int, y_id: int):
@@ -19,49 +20,52 @@ def create_less_than_propagator(x_id: int, y_id: int):
     Returns:
         Propagator function that enforces X #< Y
     """
-    def less_than_propagator(store, trail, engine, cause) -> Tuple[str, Optional[List[int]]]:
+
+    def less_than_propagator(
+        store, trail, engine, cause
+    ) -> Tuple[str, Optional[List[int]]]:
         """Propagate X #< Y by adjusting domain bounds."""
-        x_dom = get_domain(store, x_id)
-        y_dom = get_domain(store, y_id)
+        x_val, x_dom = normalize_arg(store, x_id)
+        y_val, y_dom = normalize_arg(store, y_id)
 
-        if x_dom is None or y_dom is None:
-            return ('ok', None)
+        changed: List[int] = []
 
-        changed = []
+        # Determine current bounds (treat bound vars as singleton domains)
+        x_min = x_dom.min() if x_dom is not None else x_val
+        y_max = y_dom.max() if y_dom is not None else y_val
 
-        # X #< Y means X < Y for all valid assignments
-        # The strongest form of bounds consistency:
-        # X.max < Y.min must be possible
+        # Inconsistency: minimum possible X >= maximum possible Y
+        if x_min is not None and y_max is not None and x_min >= y_max:
+            return ("fail", None)
 
-        # First check if the constraint can be satisfied at all
-        if x_dom.min() is not None and y_dom.max() is not None:
-            if x_dom.min() >= y_dom.max():
-                return ('fail', None)  # No solution possible
+        # Narrow X: X must be <= (max(Y) - 1)
+        if y_max is not None:
+            bound = y_max - 1
+            if x_dom is not None:
+                new_x_dom = x_dom.remove_gt(bound)
+                if new_x_dom.is_empty():
+                    return ("fail", None)
+                if new_x_dom is not x_dom:
+                    set_domain(store, x_id, new_x_dom, trail)
+                    changed.append(x_id)
+                    x_dom = new_x_dom
+            elif x_val is not None and x_val > bound:
+                return ("fail", None)
 
-        # Update X: must be strictly less than Y
-        # Standard bounds consistency: max(X) < max(Y)
-        # So X can be at most max(Y) - 1
-        if y_dom.max() is not None:
-            new_x_dom = x_dom.remove_gt(y_dom.max() - 1)
-            if new_x_dom.is_empty():
-                return ('fail', None)
-            if new_x_dom is not x_dom:
-                set_domain(store, x_id, new_x_dom, trail)
-                changed.append(x_id)
-                x_dom = new_x_dom
+        # Narrow Y: Y must be >= (min(X) + 1)
+        if x_min is not None:
+            lower = x_min + 1
+            if y_dom is not None:
+                new_y_dom = y_dom.remove_lt(lower)
+                if new_y_dom.is_empty():
+                    return ("fail", None)
+                if new_y_dom is not y_dom:
+                    set_domain(store, y_id, new_y_dom, trail)
+                    changed.append(y_id)
+            elif y_val is not None and y_val < lower:
+                return ("fail", None)
 
-        # Update Y: must be strictly greater than X
-        # Standard bounds consistency: min(Y) > min(X)
-        # So Y must be at least min(X) + 1
-        if x_dom.min() is not None:
-            new_y_dom = y_dom.remove_lt(x_dom.min() + 1)
-            if new_y_dom.is_empty():
-                return ('fail', None)
-            if new_y_dom is not y_dom:
-                set_domain(store, y_id, new_y_dom, trail)
-                changed.append(y_id)
-
-        return ('ok', changed if changed else None)
+        return ("ok", changed if changed else None)
 
     return less_than_propagator
 
@@ -78,38 +82,49 @@ def create_less_equal_propagator(x_id: int, y_id: int):
     Returns:
         Propagator function that enforces X #=< Y
     """
-    def less_equal_propagator(store, trail, engine, cause) -> Tuple[str, Optional[List[int]]]:
+
+    def less_equal_propagator(
+        store, trail, engine, cause
+    ) -> Tuple[str, Optional[List[int]]]:
         """Propagate X #=< Y by adjusting domain bounds."""
-        x_dom = get_domain(store, x_id)
-        y_dom = get_domain(store, y_id)
+        x_val, x_dom = normalize_arg(store, x_id)
+        y_val, y_dom = normalize_arg(store, y_id)
 
-        if x_dom is None or y_dom is None:
-            return ('ok', None)
+        changed: List[int] = []
 
-        changed = []
+        x_min = x_dom.min() if x_dom is not None else x_val
+        y_max = y_dom.max() if y_dom is not None else y_val
 
-        # X must be <= Y, so X.max <= Y.max and Y.min >= X.min
+        # Inconsistency: smallest X greater than largest Y
+        if x_min is not None and y_max is not None and x_min > y_max:
+            return ("fail", None)
 
-        # Narrow X: remove values > Y.max
-        if y_dom.max() is not None:
-            new_x_dom = x_dom.remove_gt(y_dom.max())
-            if new_x_dom.is_empty():
-                return ('fail', None)
-            if new_x_dom is not x_dom:
-                set_domain(store, x_id, new_x_dom, trail)
-                changed.append(x_id)
-                x_dom = new_x_dom
+        # Narrow X: X must be <= max(Y)
+        if y_max is not None:
+            if x_dom is not None:
+                new_x_dom = x_dom.remove_gt(y_max)
+                if new_x_dom.is_empty():
+                    return ("fail", None)
+                if new_x_dom is not x_dom:
+                    set_domain(store, x_id, new_x_dom, trail)
+                    changed.append(x_id)
+                    x_dom = new_x_dom
+            elif x_val is not None and x_val > y_max:
+                return ("fail", None)
 
-        # Narrow Y: remove values < X.min
-        if x_dom.min() is not None:
-            new_y_dom = y_dom.remove_lt(x_dom.min())
-            if new_y_dom.is_empty():
-                return ('fail', None)
-            if new_y_dom is not y_dom:
-                set_domain(store, y_id, new_y_dom, trail)
-                changed.append(y_id)
+        # Narrow Y: Y must be >= min(X)
+        if x_min is not None:
+            if y_dom is not None:
+                new_y_dom = y_dom.remove_lt(x_min)
+                if new_y_dom.is_empty():
+                    return ("fail", None)
+                if new_y_dom is not y_dom:
+                    set_domain(store, y_id, new_y_dom, trail)
+                    changed.append(y_id)
+            elif y_val is not None and y_val < x_min:
+                return ("fail", None)
 
-        return ('ok', changed if changed else None)
+        return ("ok", changed if changed else None)
 
     return less_equal_propagator
 

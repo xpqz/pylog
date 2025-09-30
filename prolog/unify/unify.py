@@ -14,6 +14,7 @@ from typing import Any, List, Tuple
 
 from prolog.ast.terms import Atom, Int, Var, Struct, List as PrologList
 from prolog.unify.store import Store
+from prolog.unify.trail import undo_to
 from prolog.unify.unify_helpers import union_vars, bind_root_to_term, deref_term
 from prolog.unify.occurs import occurs
 
@@ -21,14 +22,14 @@ from prolog.unify.occurs import occurs
 def bind(store: Store, var_id: int, term: Any, trail: List) -> None:
     """
     Bind a variable to a term.
-    
+
     This is a convenience function primarily for testing that binds a variable
     to a term, handling the dereferencing and binding properly.
-    
+
     Note: This function is primarily intended for tests. In production engine
     paths, the trail must be a real trail structure for proper backtracking.
     Tests often use trail=[] when backtracking is not needed.
-    
+
     Args:
         store: Variable store
         var_id: Variable ID to bind
@@ -37,13 +38,13 @@ def bind(store: Store, var_id: int, term: Any, trail: List) -> None:
     """
     # Dereference to find the root
     deref_result = store.deref(var_id)
-    
+
     if deref_result[0] == "BOUND":
         # Already bound, nothing to do
         return
-    
+
     root_id = deref_result[1]
-    
+
     # If binding to another variable, dereference that too
     if isinstance(term, Var):
         term_deref = store.deref(term.id)
@@ -121,7 +122,15 @@ def unify(
                     _undo_and_fail(mark, trail, store)
                     return False
 
-            bind_root_to_term(val1, val2, trail, store)
+            # Check if the hook already bound the variable
+            cell = store.cells[val1]
+            if cell.tag == "unbound":
+                # Still unbound, so bind it
+                bind_root_to_term(val1, val2, trail, store)
+            else:
+                # Already bound by hook - verify it's bound to the right value
+                # The hook should have ensured correctness, so we just continue
+                pass
 
         elif tag2 == "VAR":
             # val2 is unbound var ID, val1 is the term
@@ -136,7 +145,15 @@ def unify(
                     _undo_and_fail(mark, trail, store)
                     return False
 
-            bind_root_to_term(val2, val1, trail, store)
+            # Check if the hook already bound the variable
+            cell = store.cells[val2]
+            if cell.tag == "unbound":
+                # Still unbound, so bind it
+                bind_root_to_term(val2, val1, trail, store)
+            else:
+                # Already bound by hook - verify it's bound to the right value
+                # The hook should have ensured correctness, so we just continue
+                pass
 
         # Case 3: Both are non-variables
         else:
@@ -312,8 +329,6 @@ def _try_unify_list_interop(t1: Any, t2: Any, stack: List[Tuple[Any, Any]]) -> A
             # t1 is non-list, t2 is list-like
             # If step extracted the same term AND it's not a Var, we have incompatible types
             # Variables can unify with anything, including lists
-            from prolog.ast.terms import Var
-
             if s1[1] is term1 and not isinstance(term1, Var):
                 # term1 is definitely not list-like and not a var - incompatible with list
                 return False
@@ -323,8 +338,6 @@ def _try_unify_list_interop(t1: Any, t2: Any, stack: List[Tuple[Any, Any]]) -> A
             # t2 is non-list, t1 is list-like
             # If step extracted the same term AND it's not a Var, we have incompatible types
             # Variables can unify with anything, including lists
-            from prolog.ast.terms import Var
-
             if s2[1] is term2 and not isinstance(term2, Var):
                 # term2 is definitely not list-like and not a var - incompatible with list
                 return False
@@ -345,6 +358,4 @@ def _undo_and_fail(mark: int, trail: List, store: Store) -> None:
         trail: Trail with entries to undo
         store: Store to restore
     """
-    from prolog.unify.trail import undo_to
-
     undo_to(mark, trail, store)

@@ -4,8 +4,11 @@ Implements variable selection and value choice strategies for
 finding solutions to constraint problems.
 """
 
+import random
 from prolog.ast.terms import Atom, Int, Var, List, Struct
-from prolog.clpfd.api import get_domain
+from prolog.ast.terms import List as PrologList
+from prolog.clpfd.api import get_domain, get_fd_attrs
+from prolog.engine.runtime import Goal, GoalType
 
 
 def _builtin_label(engine, vars_term):
@@ -20,11 +23,17 @@ def _builtin_label(engine, vars_term):
     Returns:
         True if labeling goals were pushed successfully
     """
+    # Flush any pending CLP(FD) propagation before making new choices
+    try:
+        if hasattr(engine, "clpfd_queue") and engine.clpfd_queue is not None:
+            if not engine.clpfd_queue.is_empty():
+                engine.clpfd_queue.run_to_fixpoint(engine.store, engine.trail, engine)
+    except Exception:
+        pass
+
     # Use default options: first variable, indomain_min
     return _builtin_labeling(
-        engine,
-        List([Atom("first"), Atom("indomain_min")]),
-        vars_term
+        engine, List([Atom("first"), Atom("indomain_min")]), vars_term
     )
 
 
@@ -42,6 +51,14 @@ def _builtin_labeling(engine, options_term, vars_term):
     Returns:
         True if labeling goals were pushed successfully
     """
+    # Flush any pending CLP(FD) propagation before making new choices
+    try:
+        if hasattr(engine, "clpfd_queue") and engine.clpfd_queue is not None:
+            if not engine.clpfd_queue.is_empty():
+                engine.clpfd_queue.run_to_fixpoint(engine.store, engine.trail, engine)
+    except Exception:
+        pass
+
     # Parse options
     var_select = parse_var_selection(options_term)
     val_select = parse_value_selection(options_term)
@@ -91,8 +108,13 @@ def parse_value_selection(options_term):
         return "indomain_min"
 
     # Look for value selection strategies
-    val_strategies = ["indomain_min", "indomain_max", "indomain_middle",
-                     "indomain_random", "indomain_split"]
+    val_strategies = [
+        "indomain_min",
+        "indomain_max",
+        "indomain_middle",
+        "indomain_random",
+        "indomain_split",
+    ]
 
     for item in options_term.items:
         if isinstance(item, Atom) and item.name in val_strategies:
@@ -155,8 +177,6 @@ def push_labeling_choices(engine, vars, var_select, val_select, rng_seed=None):
         var_select: Variable selection strategy name
         val_select: Value selection strategy name
     """
-    from prolog.engine.runtime import Goal, GoalType, Choicepoint, ChoicepointKind
-
     # Find unbound FD variables
     unbound = []
     for var_id in vars:
@@ -170,6 +190,15 @@ def push_labeling_choices(engine, vars, var_select, val_select, rng_seed=None):
     if not unbound:
         # All variables labeled or no FD variables
         return
+
+    if getattr(engine, "trace", False):
+        try:
+            engine._trace_log.append(
+                "[LABEL] candidates: "
+                + ", ".join(f"_G{vid}:{dom.intervals}" for vid, dom in unbound)
+            )
+        except Exception:
+            pass
 
     # Select next variable to label
     selected_var, selected_domain = select_variable(unbound, var_select, engine)
@@ -186,10 +215,10 @@ def push_labeling_choices(engine, vars, var_select, val_select, rng_seed=None):
 
     # Reconstruct a List term from the provided var IDs for recursive call
     # Preserve original query variable names when available
-    from prolog.ast.terms import List as PrologList
+
     items = []
     for vid in vars:
-        name = getattr(engine, '_qname_by_id', {}).get(vid, f"_G{vid}")
+        name = getattr(engine, "_qname_by_id", {}).get(vid, f"_G{vid}")
         items.append(Var(vid, name))
     vars_term = PrologList(tuple(items))
 
@@ -217,6 +246,11 @@ def push_labeling_choices(engine, vars, var_select, val_select, rng_seed=None):
             return Struct(";", (left, right))
 
         disj_goal = build_disjunction(values)
+        # Ensure a fresh trail stamp for this labeling branch to avoid
+        # cross-branch leakage of FD domain/attr changes when nested.
+        engine._push_goal(
+            Goal(GoalType.CONTROL, None, payload={"op": "LABEL_BRANCH_STAMP"})
+        )
         engine._push_goal(Goal.from_term(disj_goal))
 
 
@@ -250,11 +284,11 @@ def select_variable(unbound, strategy, engine):
         # Select variable with most constraints (most watchers)
         def count_watchers(var_domain_tuple):
             var_id, domain = var_domain_tuple
-            from prolog.clpfd.api import get_fd_attrs
+
             attrs = get_fd_attrs(engine.store, var_id)
-            if attrs and 'watchers' in attrs:
+            if attrs and "watchers" in attrs:
                 total = 0
-                for priority_set in attrs['watchers'].values():
+                for priority_set in attrs["watchers"].values():
                     total += len(priority_set)
                 return total
             return 0
@@ -308,7 +342,6 @@ def select_values(domain, strategy, rng_seed=None):
 
     elif strategy == "indomain_random":
         # Random order
-        import random
         rng = random.Random(rng_seed if rng_seed is not None else 42)
         shuffled = values.copy()
         rng.shuffle(shuffled)
@@ -327,7 +360,7 @@ def select_values(domain, strategy, rng_seed=None):
 
         # Add lower half (reversed) and upper half alternating
         lower = list(reversed(values[:mid_idx]))
-        upper = values[mid_idx + 1:]
+        upper = values[mid_idx + 1 :]
 
         i = 0
         while i < len(lower) or i < len(upper):
@@ -360,8 +393,6 @@ def create_labeling_goals(var_id, values, remaining_vars, var_select, val_select
     Returns:
         List of Goal objects representing alternatives
     """
-    from prolog.engine.runtime import Goal, GoalType
-
     if not values:
         # No values - fail
         return []
@@ -375,12 +406,18 @@ def create_labeling_goals(var_id, values, remaining_vars, var_select, val_select
 
         # After unification, continue labeling
         # We'll handle this by pushing a special labeling continuation goal
-        goals.append(Goal(GoalType.PREDICATE, unify_goal, {
-            'labeling_continuation': {
-                'vars': remaining_vars,
-                'var_select': var_select,
-                'val_select': val_select
-            }
-        }))
+        goals.append(
+            Goal(
+                GoalType.PREDICATE,
+                unify_goal,
+                {
+                    "labeling_continuation": {
+                        "vars": remaining_vars,
+                        "var_select": var_select,
+                        "val_select": val_select,
+                    }
+                },
+            )
+        )
 
     return goals

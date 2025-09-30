@@ -2,10 +2,12 @@
 
 from typing import Tuple, Optional, List, Callable, Protocol, Any
 
+from prolog.ast.terms import Int
 from prolog.clpfd.boolean import get_boolean_value, ensure_boolean_var
 from prolog.clpfd.entailment import Entailment
-from prolog.clpfd.api import get_domain, set_domain
+from prolog.clpfd.api import get_domain, set_domain, get_fd_attrs
 from prolog.clpfd.domain import Domain
+from prolog.unify.unify_helpers import bind_root_to_term
 
 
 class Store(Protocol):
@@ -53,16 +55,8 @@ def create_reification_propagator(
     Returns:
         Propagator function
     """
-    # Track if we've already posted to prevent loops
-    # Note: These flags are not trailed, which means they persist across
-    # backtracking. This is intentional - once a constraint is posted to
-    # the propagation network, it remains posted even if we backtrack.
-    # The constraint itself will be undone via the propagation queue's
-    # backtracking mechanism, not by re-posting.
-    # If different semantics are needed (e.g., re-posting after backtrack),
-    # these flags would need to be trailed.
-    posted_true = [False]
-    posted_false = [False]
+    # No persistent state needed - idempotent posting is handled via
+    # attributes on the Boolean variable that are trailed
 
     def reification_propagator(
         store: Store, trail: Trail, engine: Engine, cause: Optional[int]
@@ -94,10 +88,18 @@ def create_reification_propagator(
             b_dom = get_domain(store, b_id)
             if b_dom and not b_dom.contains(1):
                 return ("fail", None)
+            if b_dom is None:
+                deref = store.deref(b_id)
+                if deref[0] == "BOUND" and isinstance(deref[2], Int):
+                    if deref[2].value != 1:
+                        return ("fail", None)
 
             if b_value != 1:
                 new_dom = Domain(((1, 1),))
                 set_domain(store, b_id, new_dom, trail)
+                queue = getattr(engine, "clpfd_queue", None)
+                if queue is None or getattr(queue, "running", None) is None:
+                    bind_root_to_term(b_id, Int(1), trail, store)
                 changed.append(b_id)
                 b_value = 1
 
@@ -106,27 +108,61 @@ def create_reification_propagator(
             b_dom = get_domain(store, b_id)
             if b_dom and not b_dom.contains(0):
                 return ("fail", None)
+            if b_dom is None:
+                deref = store.deref(b_id)
+                if deref[0] == "BOUND" and isinstance(deref[2], Int):
+                    if deref[2].value != 0:
+                        return ("fail", None)
 
             if b_value != 0:
                 new_dom = Domain(((0, 0),))
                 set_domain(store, b_id, new_dom, trail)
+                queue = getattr(engine, "clpfd_queue", None)
+                if queue is None or getattr(queue, "running", None) is None:
+                    bind_root_to_term(b_id, Int(0), trail, store)
                 changed.append(b_id)
                 b_value = 0
 
         # Rule 3: Post constraint based on B's value
-        if b_value == 1 and not posted_true[0]:
-            # B = 1: Post the constraint
-            posted_true[0] = True
-            success = post_constraint(engine, store, trail, *constraint_args)
-            if not success:
-                return ("fail", None)
+        # Only post if entailment is UNKNOWN (not already determined)
+        if entailment == Entailment.UNKNOWN:
+            # Get or create reification posting tracking on the Boolean variable
+            # IMPORTANT: Never mutate the stored attrs dict in-place.
+            # Always copy before updating so backtracking can restore state.
+            current_attrs = get_fd_attrs(store, b_id) or {}
+            attrs = dict(current_attrs) if current_attrs else {}
+            reif_posts = set(attrs.get("reif_posts", set()))
 
-        elif b_value == 0 and not posted_false[0]:
-            # B = 0: Post the constraint's negation
-            posted_false[0] = True
-            success = post_negation(engine, store, trail, *constraint_args)
-            if not success:
-                return ("fail", None)
+            # Create a stable key for what we're about to post
+            # Args are already normalized from the builtin:
+            # - (None, value) for integer constants
+            # - var_id for variables
+            # No further normalization needed
+            normalized_args = constraint_args
+
+            if b_value == 1:
+                # B = 1: Post the constraint if not already posted
+                post_key = ("reif", b_id, constraint_type, normalized_args, "C")
+                if post_key not in reif_posts:
+                    success = post_constraint(engine, store, trail, *constraint_args)
+                    if not success:
+                        return ("fail", None)
+                    # Record that we posted this constraint
+                    new_posts = reif_posts | {post_key}
+                    attrs["reif_posts"] = new_posts
+                    store.put_attr(b_id, "clpfd", attrs, trail)
+
+            elif b_value == 0:
+                # B = 0: Post the constraint's negation if not already posted
+                post_key = ("reif", b_id, constraint_type, normalized_args, "¬C")
+                if post_key not in reif_posts:
+                    success = post_negation(engine, store, trail, *constraint_args)
+                    if not success:
+                        return ("fail", None)
+                    # Record that we posted this negation
+                    new_posts = reif_posts | {post_key}
+                    attrs["reif_posts"] = new_posts
+                    store.put_attr(b_id, "clpfd", attrs, trail)
 
         return ("ok", changed if changed else None)
 
@@ -146,9 +182,8 @@ def create_implication_propagator(
     Forward (B #==> C): If B=1 then C must hold
     Backward (B #<== C): If C holds then B=1
     """
-    # Track if constraint has been posted (see reification_propagator for
-    # explanation of why this is not trailed)
-    posted = [False]
+    # No persistent state needed - idempotent posting is handled via
+    # attributes on the Boolean variable that are trailed
 
     def implication_propagator(
         store: Store, trail: Trail, engine: Engine, cause: Optional[int]
@@ -164,11 +199,27 @@ def create_implication_propagator(
 
         if forward:
             # B #==> C: B=1 implies C
-            if b_value == 1 and not posted[0]:
-                posted[0] = True
-                success = post_constraint(engine, store, trail, *constraint_args)
-                if not success:
-                    return ("fail", None)
+            # Only post constraint if entailment is unknown
+            if b_value == 1 and entailment == Entailment.UNKNOWN:
+                # Get or create implication posting tracking on the Boolean variable
+                # Copy attrs before updating to ensure proper trailing
+                current_attrs = get_fd_attrs(store, b_id) or {}
+                attrs = dict(current_attrs) if current_attrs else {}
+                impl_posts = set(attrs.get("impl_posts", set()))
+
+                # Create a stable key for what we're about to post
+                # Args already normalized - no change needed
+                normalized_args = constraint_args
+                post_key = ("impl_forward", b_id, constraint_type, normalized_args, "C")
+
+                if post_key not in impl_posts:
+                    success = post_constraint(engine, store, trail, *constraint_args)
+                    if not success:
+                        return ("fail", None)
+                    # Record that we posted this implication
+                    new_posts = impl_posts | {post_key}
+                    attrs["impl_posts"] = new_posts
+                    store.put_attr(b_id, "clpfd", attrs, trail)
 
             # If C is false, B must be 0
             if entailment == Entailment.FALSE:
@@ -176,8 +227,16 @@ def create_implication_propagator(
                     b_dom = get_domain(store, b_id)
                     if b_dom and not b_dom.contains(0):
                         return ("fail", None)
+                    if b_dom is None:
+                        deref = store.deref(b_id)
+                        if deref[0] == "BOUND" and isinstance(deref[2], Int):
+                            if deref[2].value != 0:
+                                return ("fail", None)
                     new_dom = Domain(((0, 0),))
                     set_domain(store, b_id, new_dom, trail)
+                    queue = getattr(engine, "clpfd_queue", None)
+                    if queue is None or getattr(queue, "running", None) is None:
+                        bind_root_to_term(b_id, Int(0), trail, store)
                     changed.append(b_id)
         else:
             # B #<== C: C implies B=1
@@ -186,13 +245,20 @@ def create_implication_propagator(
                     b_dom = get_domain(store, b_id)
                     if b_dom and not b_dom.contains(1):
                         return ("fail", None)
+                    if b_dom is None:
+                        deref = store.deref(b_id)
+                        if deref[0] == "BOUND" and isinstance(deref[2], Int):
+                            if deref[2].value != 1:
+                                return ("fail", None)
                     new_dom = Domain(((1, 1),))
                     set_domain(store, b_id, new_dom, trail)
+                    queue = getattr(engine, "clpfd_queue", None)
+                    if queue is None or getattr(queue, "running", None) is None:
+                        bind_root_to_term(b_id, Int(1), trail, store)
                     changed.append(b_id)
 
             # If B=0, C must be false (contrapositive)
-            if b_value == 0 and not posted[0]:
-                posted[0] = True
+            if b_value == 0:
                 # For backward implication with B=0, we can't directly
                 # post ¬C in general. This is weaker than equivalence.
                 # We just fail if C is already entailed

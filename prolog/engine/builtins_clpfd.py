@@ -7,7 +7,8 @@ with the engine via attributed variables.
 from prolog.ast.terms import Atom, Int, Var, Struct, List
 from prolog.clpfd.api import get_domain, set_domain, add_watcher, iter_watchers
 from prolog.clpfd.domain import Domain
-from prolog.clpfd.queue import PropagationQueue, Priority
+from prolog.clpfd.queue import PropagationQueue
+from prolog.clpfd.priority import Priority
 from prolog.clpfd.hooks import clpfd_unify_hook
 from prolog.clpfd.props.equality import create_equality_propagator
 from prolog.clpfd.props.neq import create_not_equal_propagator
@@ -20,6 +21,7 @@ from prolog.clpfd.props.sum_const import create_sum_const_propagator
 from prolog.clpfd.props.sum import create_sum_propagator
 from prolog.clpfd.expr import parse_linear_expression
 from prolog.clpfd.props.linear import create_linear_propagator
+from prolog.clpfd.boolean import is_boolean_domain
 from prolog.clpfd.props.reif import (
     create_reification_propagator,
     create_implication_propagator,
@@ -35,6 +37,7 @@ from prolog.clpfd.entailment import (
 )
 from prolog.clpfd.boolean import ensure_boolean_var
 from prolog.unify.unify import unify
+from prolog.clpfd.safe_bind import safe_bind_singleton
 
 
 def _builtin_in(engine, x_term, domain_term):
@@ -93,7 +96,8 @@ def _builtin_in(engine, x_term, domain_term):
     for pid, priority in iter_watchers(engine.store, x_var):
         queue.schedule(pid, priority)
     if not queue.is_empty():
-        queue.run_to_fixpoint(engine.store, engine.trail, engine)
+        if not queue.run_to_fixpoint(engine.store, engine.trail, engine):
+            return False
 
     # Register unification hook if first CLP(FD) constraint
     if not hasattr(engine, "_clpfd_inited") or not engine._clpfd_inited:
@@ -156,6 +160,21 @@ def _ensure_queue(engine):
     if not hasattr(engine, "clpfd_queue"):
         engine.clpfd_queue = PropagationQueue()
     return engine.clpfd_queue
+
+
+def _flush_queue(engine):
+    """Run CLP(FD) queue to fixpoint if safe to do so."""
+    queue = getattr(engine, "clpfd_queue", None)
+    if not queue:
+        return True
+    if queue.running is not None:
+        # Already running inside propagation; defer
+        return True
+    if queue.is_empty():
+        return True
+
+    # Run propagation (which now includes singleton binding)
+    return queue.run_to_fixpoint(engine.store, engine.trail, engine)
 
 
 def _post_constraint_propagator(
@@ -276,9 +295,82 @@ def _builtin_fd_eq(engine, x_term, y_term):
     store = engine.store
     trail = engine.trail
 
-    # Try to parse as linear expressions
-    try:
+    # Deref any bound variables to Ints for fast-path detection
+    if isinstance(x_term, Var):
+        xd = store.deref(x_term.id)
+        if xd[0] == "BOUND" and isinstance(xd[2], Int):
+            x_term = xd[2]
+    if isinstance(y_term, Var):
+        yd = store.deref(y_term.id)
+        if yd[0] == "BOUND" and isinstance(yd[2], Int):
+            y_term = yd[2]
 
+    # Fast-path: simple var-int or int-var cases first (enables immediate binding)
+    if isinstance(x_term, Int) and isinstance(y_term, Var):
+        y_deref = store.deref(y_term.id)
+        if y_deref[0] == "BOUND":
+            return isinstance(y_deref[2], Int) and x_term.value == y_deref[2].value
+        else:
+            y_var = y_deref[1]
+            new_dom = Domain(((x_term.value, x_term.value),))
+            existing = get_domain(store, y_var)
+            if existing:
+                new_dom = existing.intersect(new_dom)
+                if new_dom.is_empty():
+                    return False
+            set_domain(store, y_var, new_dom, trail)
+
+            # Wake watchers and propagate
+            queue = _ensure_queue(engine)
+            for pid, priority in iter_watchers(store, y_var):
+                queue.schedule(pid, priority)
+            if not queue.is_empty() and not queue.run_to_fixpoint(store, trail, engine):
+                return False
+
+            # Then bind since singleton
+            if new_dom.is_singleton():
+                safe_bind_singleton(y_var, new_dom.min(), trail, store)
+            return True
+    if isinstance(x_term, Var) and isinstance(y_term, Int):
+        x_deref = store.deref(x_term.id)
+        if x_deref[0] == "BOUND":
+            return isinstance(x_deref[2], Int) and x_deref[2].value == y_term.value
+        else:
+            x_var = x_deref[1]
+            new_dom = Domain(((y_term.value, y_term.value),))
+            existing = get_domain(store, x_var)
+            if existing:
+                new_dom = existing.intersect(new_dom)
+                if new_dom.is_empty():
+                    return False
+            set_domain(store, x_var, new_dom, trail)
+            # Wake watchers and propagate
+            queue = _ensure_queue(engine)
+            for pid, priority in iter_watchers(store, x_var):
+                queue.schedule(pid, priority)
+            if not queue.is_empty() and not queue.run_to_fixpoint(store, trail, engine):
+                return False
+
+            # Bind Booleans immediately when singleton
+            try:
+                if new_dom.is_singleton() and is_boolean_domain(new_dom):
+                    safe_bind_singleton(x_var, new_dom.min(), trail, store)
+            except Exception:
+                pass
+
+            return True
+
+    if isinstance(x_term, Int) and isinstance(y_term, Var):
+        return _builtin_fd_eq(engine, y_term, x_term)
+
+    # Special case for simple var-var equality: use equality propagator
+    if isinstance(x_term, Var) and isinstance(y_term, Var):
+        return _post_constraint_propagator(
+            engine, x_term, y_term, create_equality_propagator
+        )
+
+    # Try to parse as linear expressions for general cases
+    try:
         # Parse left side
         left_coeffs, left_const = parse_linear_expression(x_term, engine)
         # Parse right side
@@ -338,34 +430,7 @@ def _builtin_fd_eq(engine, x_term, y_term):
     if isinstance(x_term, Int) and isinstance(y_term, Int):
         return x_term.value == y_term.value
 
-    # Handle var-int and int-var cases specially for equality
-    if isinstance(x_term, Var) and isinstance(y_term, Int):
-        x_deref = store.deref(x_term.id)
-        if x_deref[0] == "BOUND":
-            return isinstance(x_deref[2], Int) and x_deref[2].value == y_term.value
-        else:
-            # Set domain to singleton
-            x_var = x_deref[1]
-            new_dom = Domain(((y_term.value, y_term.value),))
-            existing = get_domain(store, x_var)
-            if existing:
-                new_dom = existing.intersect(new_dom)
-                if new_dom.is_empty():
-                    return False
-            set_domain(store, x_var, new_dom, trail)
-
-            # Wake watchers and propagate
-            queue = _ensure_queue(engine)
-
-            for pid, priority in iter_watchers(store, x_var):
-                queue.schedule(pid, priority)
-            if not queue.is_empty():
-                queue.run_to_fixpoint(store, trail, engine)
-
-            return True
-
-    if isinstance(x_term, Int) and isinstance(y_term, Var):
-        return _builtin_fd_eq(engine, y_term, x_term)
+    # (var-int and int-var already handled above)
 
     # Handle arithmetic form: Z #= X + K or Z #= K + X (K integer)
     if (
@@ -460,8 +525,10 @@ def _builtin_fd_neq(engine, x_term, y_term):
 
                 for pid, priority in iter_watchers(store, x_var):
                     queue.schedule(pid, priority)
-                if not queue.is_empty():
-                    queue.run_to_fixpoint(store, trail, engine)
+                if not queue.is_empty() and not queue.run_to_fixpoint(
+                    store, trail, engine
+                ):
+                    return False
             return True
 
     if isinstance(x_term, Int) and isinstance(y_term, Var):
@@ -521,11 +588,12 @@ def _builtin_fd_lt(engine, x_term, y_term):
 
                 # Wake watchers and propagate
                 queue = _ensure_queue(engine)
-
                 for pid, priority in iter_watchers(store, x_var):
                     queue.schedule(pid, priority)
-                if not queue.is_empty():
-                    queue.run_to_fixpoint(store, trail, engine)
+                if not queue.is_empty() and not queue.run_to_fixpoint(
+                    store, trail, engine
+                ):
+                    return False
 
             return True
 
@@ -551,8 +619,10 @@ def _builtin_fd_lt(engine, x_term, y_term):
 
                 for pid, priority in iter_watchers(store, y_var):
                     queue.schedule(pid, priority)
-                if not queue.is_empty():
-                    queue.run_to_fixpoint(store, trail, engine)
+                if not queue.is_empty() and not queue.run_to_fixpoint(
+                    store, trail, engine
+                ):
+                    return False
 
             return True
 
@@ -613,8 +683,10 @@ def _builtin_fd_le(engine, x_term, y_term):
 
                 for pid, priority in iter_watchers(store, x_var):
                     queue.schedule(pid, priority)
-                if not queue.is_empty():
-                    queue.run_to_fixpoint(store, trail, engine)
+                if not queue.is_empty() and not queue.run_to_fixpoint(
+                    store, trail, engine
+                ):
+                    return False
 
             return True
 
@@ -640,8 +712,10 @@ def _builtin_fd_le(engine, x_term, y_term):
 
                 for pid, priority in iter_watchers(store, y_var):
                     queue.schedule(pid, priority)
-                if not queue.is_empty():
-                    queue.run_to_fixpoint(store, trail, engine)
+                if not queue.is_empty() and not queue.run_to_fixpoint(
+                    store, trail, engine
+                ):
+                    return False
 
             return True
 
@@ -1003,6 +1077,8 @@ def _builtin_fd_reif_equiv(engine, b_term, constraint_term):
                 return False  # Bound to non-Boolean
         else:
             b_id = b_deref[1]
+            # Ensure Boolean domain immediately so label/1 can see it
+            ensure_boolean_var(store, b_id, trail)
     elif isinstance(b_term, Atom):
         # Atoms are not valid Booleans
         return False
@@ -1032,55 +1108,55 @@ def _builtin_fd_reif_equiv(engine, b_term, constraint_term):
         entailment_checker = check_equality_entailment
 
         def post_constraint(eng, st, tr, x, y):
-            return _post_constraint_directly(eng, st, tr, x, y, _builtin_fd_eq)
+            return _post_constraint_with_flush(eng, st, tr, x, y, _builtin_fd_eq)
 
         def post_negation(eng, st, tr, x, y):
-            return _post_constraint_directly(eng, st, tr, x, y, _builtin_fd_neq)
+            return _post_constraint_with_flush(eng, st, tr, x, y, _builtin_fd_neq)
 
     elif constraint_type == "#\\=":
         entailment_checker = check_not_equal_entailment
 
         def post_constraint(eng, st, tr, x, y):
-            return _post_constraint_directly(eng, st, tr, x, y, _builtin_fd_neq)
+            return _post_constraint_with_flush(eng, st, tr, x, y, _builtin_fd_neq)
 
         def post_negation(eng, st, tr, x, y):
-            return _post_constraint_directly(eng, st, tr, x, y, _builtin_fd_eq)
+            return _post_constraint_with_flush(eng, st, tr, x, y, _builtin_fd_eq)
 
     elif constraint_type == "#<":
         entailment_checker = check_less_than_entailment
 
         def post_constraint(eng, st, tr, x, y):
-            return _post_constraint_directly(eng, st, tr, x, y, _builtin_fd_lt)
+            return _post_constraint_with_flush(eng, st, tr, x, y, _builtin_fd_lt)
 
         def post_negation(eng, st, tr, x, y):
-            return _post_constraint_directly(eng, st, tr, x, y, _builtin_fd_ge)
+            return _post_constraint_with_flush(eng, st, tr, x, y, _builtin_fd_ge)
 
     elif constraint_type == "#=<":
         entailment_checker = check_less_equal_entailment
 
         def post_constraint(eng, st, tr, x, y):
-            return _post_constraint_directly(eng, st, tr, x, y, _builtin_fd_le)
+            return _post_constraint_with_flush(eng, st, tr, x, y, _builtin_fd_le)
 
         def post_negation(eng, st, tr, x, y):
-            return _post_constraint_directly(eng, st, tr, x, y, _builtin_fd_gt)
+            return _post_constraint_with_flush(eng, st, tr, x, y, _builtin_fd_gt)
 
     elif constraint_type == "#>":
         entailment_checker = check_greater_than_entailment
 
         def post_constraint(eng, st, tr, x, y):
-            return _post_constraint_directly(eng, st, tr, x, y, _builtin_fd_gt)
+            return _post_constraint_with_flush(eng, st, tr, x, y, _builtin_fd_gt)
 
         def post_negation(eng, st, tr, x, y):
-            return _post_constraint_directly(eng, st, tr, x, y, _builtin_fd_le)
+            return _post_constraint_with_flush(eng, st, tr, x, y, _builtin_fd_le)
 
     elif constraint_type == "#>=":
         entailment_checker = check_greater_equal_entailment
 
         def post_constraint(eng, st, tr, x, y):
-            return _post_constraint_directly(eng, st, tr, x, y, _builtin_fd_ge)
+            return _post_constraint_with_flush(eng, st, tr, x, y, _builtin_fd_ge)
 
         def post_negation(eng, st, tr, x, y):
-            return _post_constraint_directly(eng, st, tr, x, y, _builtin_fd_lt)
+            return _post_constraint_with_flush(eng, st, tr, x, y, _builtin_fd_lt)
 
     else:
         return False  # Unsupported constraint type
@@ -1088,10 +1164,10 @@ def _builtin_fd_reif_equiv(engine, b_term, constraint_term):
     # Handle cases where B is already determined
     if b_value is not None:
         if b_value == 1:
-            # B = 1, post the constraint
+            # B = 1, post the constraint and flush propagation
             return post_constraint(engine, store, trail, x_arg, y_arg)
         else:
-            # B = 0, post the negation
+            # B = 0, post the negation and flush propagation
             return post_negation(engine, store, trail, x_arg, y_arg)
 
     # B is unbound - create reification propagator
@@ -1109,6 +1185,11 @@ def _builtin_fd_reif_equiv(engine, b_term, constraint_term):
     queue = _ensure_queue(engine)
     pid = queue.register(prop)
 
+    # Register CLP(FD) unification hook if first constraint
+    if not hasattr(engine, "_clpfd_inited") or not engine._clpfd_inited:
+        engine.register_attr_hook("clpfd", clpfd_unify_hook)
+        engine._clpfd_inited = True
+
     # Add watchers for B and constraint arguments
     add_watcher(store, b_id, pid, Priority.HIGH, trail)
 
@@ -1120,7 +1201,18 @@ def _builtin_fd_reif_equiv(engine, b_term, constraint_term):
 
     # Schedule and run
     queue.schedule(pid, Priority.HIGH)
-    return queue.run_to_fixpoint(store, trail, engine)
+    if not queue.run_to_fixpoint(store, trail, engine):
+        return False
+
+    # Bind Boolean variable if it has singleton domain after propagation
+    if b_id is not None:
+        b_dom = get_domain(store, b_id)
+        if b_dom and b_dom.is_singleton():
+            deref = store.deref(b_id)
+            if deref[0] == "UNBOUND":
+                safe_bind_singleton(deref[1], b_dom.min(), trail, store)
+
+    return True
 
 
 def _builtin_fd_reif_implies(engine, b_term, constraint_term):
@@ -1214,37 +1306,37 @@ def _builtin_fd_reif_implication_impl(engine, b_term, constraint_term, forward):
         entailment_checker = check_equality_entailment
 
         def post_constraint(eng, st, tr, x, y):
-            return _post_constraint_directly(eng, st, tr, x, y, _builtin_fd_eq)
+            return _post_constraint_with_flush(eng, st, tr, x, y, _builtin_fd_eq)
 
     elif constraint_type == "#\\=":
         entailment_checker = check_not_equal_entailment
 
         def post_constraint(eng, st, tr, x, y):
-            return _post_constraint_directly(eng, st, tr, x, y, _builtin_fd_neq)
+            return _post_constraint_with_flush(eng, st, tr, x, y, _builtin_fd_neq)
 
     elif constraint_type == "#<":
         entailment_checker = check_less_than_entailment
 
         def post_constraint(eng, st, tr, x, y):
-            return _post_constraint_directly(eng, st, tr, x, y, _builtin_fd_lt)
+            return _post_constraint_with_flush(eng, st, tr, x, y, _builtin_fd_lt)
 
     elif constraint_type == "#=<":
         entailment_checker = check_less_equal_entailment
 
         def post_constraint(eng, st, tr, x, y):
-            return _post_constraint_directly(eng, st, tr, x, y, _builtin_fd_le)
+            return _post_constraint_with_flush(eng, st, tr, x, y, _builtin_fd_le)
 
     elif constraint_type == "#>":
         entailment_checker = check_greater_than_entailment
 
         def post_constraint(eng, st, tr, x, y):
-            return _post_constraint_directly(eng, st, tr, x, y, _builtin_fd_gt)
+            return _post_constraint_with_flush(eng, st, tr, x, y, _builtin_fd_gt)
 
     elif constraint_type == "#>=":
         entailment_checker = check_greater_equal_entailment
 
         def post_constraint(eng, st, tr, x, y):
-            return _post_constraint_directly(eng, st, tr, x, y, _builtin_fd_ge)
+            return _post_constraint_with_flush(eng, st, tr, x, y, _builtin_fd_ge)
 
     else:
         return False  # Unsupported constraint type
@@ -1284,6 +1376,11 @@ def _builtin_fd_reif_implication_impl(engine, b_term, constraint_term, forward):
     queue = _ensure_queue(engine)
     pid = queue.register(prop)
 
+    # Register CLP(FD) unification hook if first constraint
+    if not hasattr(engine, "_clpfd_inited") or not engine._clpfd_inited:
+        engine.register_attr_hook("clpfd", clpfd_unify_hook)
+        engine._clpfd_inited = True
+
     # Add watchers
     add_watcher(store, b_id, pid, Priority.HIGH, trail)
 
@@ -1295,7 +1392,18 @@ def _builtin_fd_reif_implication_impl(engine, b_term, constraint_term, forward):
 
     # Schedule and run
     queue.schedule(pid, Priority.HIGH)
-    return queue.run_to_fixpoint(store, trail, engine)
+    if not queue.run_to_fixpoint(store, trail, engine):
+        return False
+
+    # Bind Boolean variable if it has singleton domain after propagation
+    if b_id is not None:
+        b_dom = get_domain(store, b_id)
+        if b_dom and b_dom.is_singleton():
+            deref = store.deref(b_id)
+            if deref[0] == "UNBOUND":
+                safe_bind_singleton(deref[1], b_dom.min(), trail, store)
+
+    return True
 
 
 def _convert_arg_for_constraint(store, arg):
@@ -1338,4 +1446,43 @@ def _post_constraint_directly(engine, store, trail, x_arg, y_arg, constraint_bui
     else:
         y_term = Var(y_arg, "Y")
 
-    return constraint_builtin(engine, x_term, y_term)
+    ok = constraint_builtin(engine, x_term, y_term)
+    if not ok:
+        return False
+
+    # Don't bind singleton domains here - let the propagation queue handle it
+    # Premature binding can interfere with constraint propagation ordering
+    return True
+
+
+def _post_constraint_with_flush(engine, store, trail, x_arg, y_arg, constraint_builtin):
+    """Post a constraint via builtin and flush pending propagation."""
+
+    if not _post_constraint_directly(
+        engine, store, trail, x_arg, y_arg, constraint_builtin
+    ):
+        return False
+
+    if not _flush_queue(engine):
+        return False
+
+    # After propagation, bind any variables that now have singleton domains
+    # This is needed for ground boolean reification (e.g., 1 #<=> (X #= 5))
+
+    # Check X if it's a variable
+    if isinstance(x_arg, int):
+        xd = store.deref(x_arg)
+        if xd[0] == "UNBOUND":
+            dom = get_domain(store, xd[1])
+            if dom is not None and dom.is_singleton():
+                safe_bind_singleton(xd[1], dom.min(), trail, store)
+
+    # Check Y if it's a variable
+    if isinstance(y_arg, int):
+        yd = store.deref(y_arg)
+        if yd[0] == "UNBOUND":
+            dom = get_domain(store, yd[1])
+            if dom is not None and dom.is_singleton():
+                safe_bind_singleton(yd[1], dom.min(), trail, store)
+
+    return True
