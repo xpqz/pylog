@@ -556,6 +556,7 @@ def _builtin_fd_lt(engine, x_term, y_term):
     store = engine.store
     trail = engine.trail
 
+    # Try simple cases first (compatibility with existing code)
     # Deref any bound variables to Ints
     if isinstance(x_term, Var):
         xd = store.deref(x_term.id)
@@ -627,11 +628,65 @@ def _builtin_fd_lt(engine, x_term, y_term):
 
             return True
 
-    # Var-var case
+    # Simple var-var case
+    if isinstance(x_term, Var) and isinstance(y_term, Var):
+        return _post_constraint_propagator(
+            engine, x_term, y_term, create_less_than_propagator
+        )
 
-    return _post_constraint_propagator(
-        engine, x_term, y_term, create_less_than_propagator
-    )
+    # Try to parse as linear expressions for arithmetic cases
+    try:
+        # Parse left side
+        left_coeffs, left_const = parse_linear_expression(x_term, engine)
+        # Parse right side
+        right_coeffs, right_const = parse_linear_expression(y_term, engine)
+
+        # Combine into single constraint: left - right < 0
+        # Which is equivalent to: left - right <= -1
+        combined_coeffs = {}
+        for var_id, coeff in left_coeffs.items():
+            combined_coeffs[var_id] = combined_coeffs.get(var_id, 0) + coeff
+        for var_id, coeff in right_coeffs.items():
+            combined_coeffs[var_id] = combined_coeffs.get(var_id, 0) - coeff
+
+        combined_const = left_const - right_const
+
+        # If no variables, just check constant constraint
+        if not combined_coeffs:
+            return combined_const < 0
+
+        # Create and post the constraint propagator
+        # X < Y is equivalent to X <= Y - 1, so we adjust the constant
+        prop = create_linear_propagator(combined_coeffs, combined_const + 1, "<=")
+
+        # Ensure variables have domains
+        for var_id in combined_coeffs:
+            deref = store.deref(var_id)
+            if deref[0] == "UNBOUND":
+                root = deref[1]
+                if get_domain(store, root) is None:
+                    # Set default domain
+                    set_domain(store, root, Domain(((-(2**31), 2**31 - 1),)), trail)
+
+        # Run the propagator
+        queue = _ensure_queue(engine)
+        pid = queue.register(prop)
+
+        # Register propagator with all variables
+        for var_id in combined_coeffs:
+            deref = store.deref(var_id)
+            if deref[0] == "UNBOUND":
+                add_watcher(store, deref[1], pid, Priority.HIGH, trail)
+
+        # Schedule and run
+        queue.schedule(pid, Priority.HIGH)
+        return queue.run_to_fixpoint(store, trail, engine)
+
+    except (ValueError, AttributeError):
+        # Fall back to old implementation for non-linear or special cases
+        return _post_constraint_propagator(
+            engine, x_term, y_term, create_less_than_propagator
+        )
 
 
 def _builtin_fd_le(engine, x_term, y_term):
@@ -648,6 +703,7 @@ def _builtin_fd_le(engine, x_term, y_term):
     store = engine.store
     trail = engine.trail
 
+    # Try simple cases first (compatibility with existing code)
     # Deref any bound variables to Ints
     if isinstance(x_term, Var):
         xd = store.deref(x_term.id)
@@ -720,11 +776,63 @@ def _builtin_fd_le(engine, x_term, y_term):
 
             return True
 
-    # Var-var case
+    # Simple var-var case
+    if isinstance(x_term, Var) and isinstance(y_term, Var):
+        return _post_constraint_propagator(
+            engine, x_term, y_term, create_less_equal_propagator
+        )
 
-    return _post_constraint_propagator(
-        engine, x_term, y_term, create_less_equal_propagator
-    )
+    # Try to parse as linear expressions for arithmetic cases
+    try:
+        # Parse left side
+        left_coeffs, left_const = parse_linear_expression(x_term, engine)
+        # Parse right side
+        right_coeffs, right_const = parse_linear_expression(y_term, engine)
+
+        # Combine into single constraint: left - right <= 0
+        combined_coeffs = {}
+        for var_id, coeff in left_coeffs.items():
+            combined_coeffs[var_id] = combined_coeffs.get(var_id, 0) + coeff
+        for var_id, coeff in right_coeffs.items():
+            combined_coeffs[var_id] = combined_coeffs.get(var_id, 0) - coeff
+
+        combined_const = left_const - right_const
+
+        # If no variables, just check constant constraint
+        if not combined_coeffs:
+            return combined_const <= 0
+
+        # Create and post the constraint propagator
+        prop = create_linear_propagator(combined_coeffs, combined_const, "<=")
+
+        # Ensure variables have domains
+        for var_id in combined_coeffs:
+            deref = store.deref(var_id)
+            if deref[0] == "UNBOUND":
+                root = deref[1]
+                if get_domain(store, root) is None:
+                    # Set default domain
+                    set_domain(store, root, Domain(((-(2**31), 2**31 - 1),)), trail)
+
+        # Run the propagator
+        queue = _ensure_queue(engine)
+        pid = queue.register(prop)
+
+        # Register propagator with all variables
+        for var_id in combined_coeffs:
+            deref = store.deref(var_id)
+            if deref[0] == "UNBOUND":
+                add_watcher(store, deref[1], pid, Priority.HIGH, trail)
+
+        # Schedule and run
+        queue.schedule(pid, Priority.HIGH)
+        return queue.run_to_fixpoint(store, trail, engine)
+
+    except (ValueError, AttributeError):
+        # Fall back to old implementation for non-linear or special cases
+        return _post_constraint_propagator(
+            engine, x_term, y_term, create_less_equal_propagator
+        )
 
 
 def _builtin_fd_gt(engine, x_term, y_term):

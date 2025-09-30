@@ -25,7 +25,9 @@ def create_linear_propagator(coeffs: Dict[int, int], const: int, op: str):
     # Remove zero coefficients
     coeffs = {k: v for k, v in coeffs.items() if v != 0}
 
-    def linear_propagator(store, trail, engine, cause) -> Tuple[str, Optional[List[int]]]:
+    def linear_propagator(
+        store, trail, engine, cause
+    ) -> Tuple[str, Optional[List[int]]]:
         """Propagate the linear constraint.
 
         Returns:
@@ -35,17 +37,17 @@ def create_linear_propagator(coeffs: Dict[int, int], const: int, op: str):
         # Handle empty constraint (no variables)
         if not coeffs:
             # Evaluate constant constraint
-            if op == '=':
+            if op == "=":
                 return ("ok", None) if const == 0 else ("fail", None)
-            elif op == '!=':
+            elif op == "!=":
                 return ("ok", None) if const != 0 else ("fail", None)
-            elif op == '<':
+            elif op == "<":
                 return ("ok", None) if 0 < -const else ("fail", None)
-            elif op == '>':
+            elif op == ">":
                 return ("ok", None) if 0 > -const else ("fail", None)
-            elif op == '=<':
+            elif op == "=<":
                 return ("ok", None) if 0 <= -const else ("fail", None)
-            elif op == '>=':
+            elif op == ">=":
                 return ("ok", None) if 0 >= -const else ("fail", None)
             else:
                 raise ValueError(f"Unknown operator: {op}")
@@ -89,22 +91,22 @@ def create_linear_propagator(coeffs: Dict[int, int], const: int, op: str):
         target = -const
 
         # Check feasibility based on operator
-        if op == '=':
+        if op == "=":
             if max_val < target or min_val > target:
                 return ("fail", None)
-        elif op == '!=':
+        elif op == "!=":
             if min_val == max_val == target:
                 return ("fail", None)
-        elif op == '<':
+        elif op == "<":
             if min_val >= target:
                 return ("fail", None)
-        elif op == '>':
+        elif op == ">":
             if max_val <= target:
                 return ("fail", None)
-        elif op == '=<':
+        elif op == "=<":
             if min_val > target:
                 return ("fail", None)
-        elif op == '>=':
+        elif op == ">=":
             if max_val < target:
                 return ("fail", None)
 
@@ -128,7 +130,7 @@ def create_linear_propagator(coeffs: Dict[int, int], const: int, op: str):
             new_min = dom.min()
             new_max = dom.max()
 
-            if op == '=':
+            if op == "=":
                 # c*X + others = target
                 # c*X = target - others
                 if coeff > 0:
@@ -136,7 +138,9 @@ def create_linear_propagator(coeffs: Dict[int, int], const: int, op: str):
                     # Min when others is at max: X >= (target - other_max) / c
                     val_min = target - other_max
                     if val_min >= 0:
-                        new_min = max(new_min, (val_min + coeff - 1) // coeff)  # Ceiling
+                        new_min = max(
+                            new_min, (val_min + coeff - 1) // coeff
+                        )  # Ceiling
                     else:
                         new_min = max(new_min, val_min // coeff)  # Floor of negative
                     # Max when others is at min: X <= (target - other_min) / c
@@ -168,7 +172,7 @@ def create_linear_propagator(coeffs: Dict[int, int], const: int, op: str):
                         # For max, we need floor when dividing negative
                         new_max = min(new_max, val // coeff)
 
-            elif op == '!=':
+            elif op == "!=":
                 # Special case: if domain is singleton and equals forbidden value
                 if dom.is_singleton():
                     if coeff * dom.min() + other_min == target:
@@ -186,7 +190,7 @@ def create_linear_propagator(coeffs: Dict[int, int], const: int, op: str):
                                 changed.append(var_id)
                 continue  # Skip normal bounds update for disequality
 
-            elif op == '<':
+            elif op == "<":
                 # c*X + others < target
                 if coeff > 0:
                     # X < (target - others) / c
@@ -197,7 +201,7 @@ def create_linear_propagator(coeffs: Dict[int, int], const: int, op: str):
                     # Min when others is at max
                     new_min = max(new_min, -((-target + other_max) // -coeff) + 1)
 
-            elif op == '>':
+            elif op == ">":
                 # c*X + others > target
                 if coeff > 0:
                     # X > (target - others) / c
@@ -208,7 +212,7 @@ def create_linear_propagator(coeffs: Dict[int, int], const: int, op: str):
                     # Max when others is at min
                     new_max = min(new_max, -((other_min - target) // -coeff) - 1)
 
-            elif op == '=<':
+            elif op == "=<":
                 # c*X + others =< target
                 if coeff > 0:
                     # X =< (target - others) / c
@@ -218,17 +222,23 @@ def create_linear_propagator(coeffs: Dict[int, int], const: int, op: str):
                     # X >= (target - others) / c (inequality flips due to negative coeff)
                     # Min when others is at max
                     val = target - other_max
-                    # Ceiling division with negative divisor
-                    new_min = max(new_min, -((-val - 1) // -coeff))
+                    # For negative coefficient: ceil(val / coeff) where coeff < 0
+                    # Since both val and coeff contribute to the division, we need ceiling division
+                    if val % coeff == 0:
+                        new_min = max(new_min, val // coeff)
+                    else:
+                        new_min = max(new_min, val // coeff + 1)
 
-            elif op == '>=':
+            elif op == ">=":
                 # c*X + others >= target
                 if coeff > 0:
                     # X >= (target - others) / c
                     # Min when others is at max
                     val_min = target - other_max
                     if val_min >= 0:
-                        new_min = max(new_min, (val_min + coeff - 1) // coeff)  # Ceiling
+                        new_min = max(
+                            new_min, (val_min + coeff - 1) // coeff
+                        )  # Ceiling
                     else:
                         new_min = max(new_min, val_min // coeff)  # Floor of negative
                 else:
@@ -248,7 +258,10 @@ def create_linear_propagator(coeffs: Dict[int, int], const: int, op: str):
                     new_dom = Domain(((new_min, new_dom.max()),), dom.rev + 1)
                 if new_max < new_dom.max():
                     # Use the potentially updated new_dom's rev
-                    new_dom = Domain(((new_dom.min(), new_max),), new_dom.rev if new_dom != dom else dom.rev + 1)
+                    new_dom = Domain(
+                        ((new_dom.min(), new_max),),
+                        new_dom.rev if new_dom != dom else dom.rev + 1,
+                    )
 
                 if new_dom.is_empty():
                     return ("fail", None)
