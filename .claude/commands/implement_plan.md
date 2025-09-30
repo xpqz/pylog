@@ -6,9 +6,13 @@ You are tasked with implementing an approved technical plan either from `docs/pl
 
 uv run pytest -m "not slow" -q --tb=short
 
-## Getting Started
+**CRITICAL**: **NEVER** use the `--no-verify` flag with git!
+
+**CRITICAL**: **NEVER** write to `/tmp`. If you need to generate temporary test files, do so in the repository root, and ensure you remove them after you've finished with them and never commit them to git,
 
 **CRITICAL**: review and accept coderules.md in its entirety. 
+
+## Getting Started
 
 When given a plan path or GitHub Epic issue ID:
 
