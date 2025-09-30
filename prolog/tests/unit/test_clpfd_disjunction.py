@@ -1,4 +1,4 @@
-"""Tests for CLP(FD) disjunction operator (#\/).
+r"""Tests for CLP(FD) disjunction operator (#\/).
 
 Tests the #\/ operator for constraint disjunction where A #\/ B
 means at least one of constraints A or B must be satisfied.
@@ -13,7 +13,7 @@ class TestDisjunctionBasic:
     """Basic tests for disjunction operator."""
 
     def test_parser_recognizes_disjunction(self):
-        """Test that parser recognizes #\/ operator."""
+        r"""Test that parser recognizes #\/ operator."""
         reader = Reader()
 
         # Should not throw ReaderError
@@ -24,7 +24,7 @@ class TestDisjunctionBasic:
         assert len(query.args) == 2
 
     def test_simple_disjunction_with_domain(self):
-        """Test simple disjunction: (X #= 1) #\/ (X #= 2) with X in 0..5."""
+        r"""Test simple disjunction: (X #= 1) #\/ (X #= 2) with X in 0..5."""
         reader = Reader()
         program = Program(())
         engine = Engine(program)
@@ -41,7 +41,7 @@ class TestDisjunctionBasic:
         reason="Current disjunction implementation only supports same-variable equality patterns"
     )
     def test_disjunction_both_sides_possible(self):
-        """Test disjunction where both sides are possible.
+        r"""Test disjunction where both sides are possible.
 
         NOTE: This test is skipped because the current disjunction implementation
         only handles the special case of (X #= V1) #\/ (X #= V2) for the same variable.
@@ -101,7 +101,7 @@ class TestDisjunctionComparison:
         reason="Inequality disjunctions require advanced propagation not yet implemented"
     )
     def test_disjunction_with_inequalities(self):
-        """Test disjunction with inequality constraints.
+        r"""Test disjunction with inequality constraints.
 
         NOTE: This test is skipped because disjunctions with inequality constraints
         like (X #=< 2) #\/ (X #>= 8) require sophisticated constraint propagation
@@ -125,7 +125,7 @@ class TestDisjunctionComparison:
         reason="Direct non-overlap disjunctions require full propagation not yet implemented"
     )
     def test_disjunction_no_overlap_constraint(self):
-        """Test disjunction for non-overlapping intervals.
+        r"""Test disjunction for non-overlapping intervals.
 
         NOTE: This test is skipped because while the current implementation
         enables disjunction to be used in complex scheduling scenarios
@@ -161,7 +161,7 @@ class TestDisjunctionWithReification:
     """Tests for disjunction combined with reification."""
 
     def test_reified_disjunction(self):
-        """Test B #<==> ((X #= 1) #\/ (X #= 2))."""
+        r"""Test B #<==> ((X #= 1) #\/ (X #= 2))."""
         reader = Reader()
         program = Program(())
         engine = Engine(program)
@@ -188,7 +188,7 @@ class TestDisjunctionWithReification:
             assert sol["X"].value not in {1, 2}
 
     def test_conditional_disjunction(self):
-        """Test B #==> ((X #= 1) #\/ (X #= 2))."""
+        r"""Test B #==> ((X #= 1) #\/ (X #= 2))."""
         reader = Reader()
         program = Program(())
         engine = Engine(program)
