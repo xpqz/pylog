@@ -4,8 +4,21 @@ Tests priority-based propagation queue with deduplication,
 priority escalation, and self-requeue handling.
 """
 
-import pytest
-from prolog.clpfd.queue import PropagationQueue, Priority
+import prolog.clpfd.queue as queue_module
+from prolog.clpfd.api import add_watcher
+from prolog.clpfd.queue import PropagationQueue
+from prolog.clpfd.priority import Priority
+
+
+class MockStore:
+    """Mock store for testing that provides required methods."""
+
+    def __init__(self):
+        self.attrs = {}
+
+    def get_attrs(self, varid):
+        """Return attrs dict for testing."""
+        return self.attrs.get(varid, {})
 
 
 class TestQueueBasics:
@@ -22,10 +35,10 @@ class TestQueueBasics:
         queue = PropagationQueue()
 
         def prop1(store, trail, engine, cause):
-            return ('ok', None)
+            return ("ok", None)
 
         def prop2(store, trail, engine, cause):
-            return ('ok', None)
+            return ("ok", None)
 
         pid1 = queue.register(prop1)
         pid2 = queue.register(prop2)
@@ -41,7 +54,7 @@ class TestQueueBasics:
         queue = PropagationQueue()
 
         def prop(store, trail, engine, cause):
-            return ('ok', None)
+            return ("ok", None)
 
         pid = queue.register(prop)
         queue.schedule(pid, Priority.HIGH)
@@ -55,9 +68,14 @@ class TestQueueBasics:
         queue = PropagationQueue()
 
         # Register propagators
-        prop_high = lambda s, t, e, c: ('ok', None)
-        prop_med = lambda s, t, e, c: ('ok', None)
-        prop_low = lambda s, t, e, c: ('ok', None)
+        def prop_high(s, t, e, c):
+            return ("ok", None)
+
+        def prop_med(s, t, e, c):
+            return ("ok", None)
+
+        def prop_low(s, t, e, c):
+            return ("ok", None)
 
         pid_high = queue.register(prop_high)
         pid_med = queue.register(prop_med)
@@ -90,7 +108,9 @@ class TestDeduplication:
         """Scheduling same propagator twice doesn't create duplicate."""
         queue = PropagationQueue()
 
-        prop = lambda s, t, e, c: ('ok', None)
+        def prop(s, t, e, c):
+            return ("ok", None)
+
         pid = queue.register(prop)
 
         # Schedule twice at same priority
@@ -112,20 +132,22 @@ class TestDeduplication:
         """Already queued propagator is not added again at same priority."""
         queue = PropagationQueue()
 
-        prop = lambda s, t, e, c: ('ok', None)
+        def prop(s, t, e, c):
+            return ("ok", None)
+
         pid = queue.register(prop)
 
         # Schedule with cause
-        queue.schedule(pid, Priority.MED, cause=('domain_changed', 1))
+        queue.schedule(pid, Priority.MED, cause=("domain_changed", 1))
 
         # Schedule again with different cause but same priority
-        queue.schedule(pid, Priority.MED, cause=('domain_changed', 2))
+        queue.schedule(pid, Priority.MED, cause=("domain_changed", 2))
 
         # Should still only be queued once
         item = queue.pop()
         assert item[0] == pid
         # First cause should be preserved
-        assert item[1] == ('domain_changed', 1)
+        assert item[1] == ("domain_changed", 1)
 
         assert queue.is_empty()
 
@@ -137,7 +159,9 @@ class TestPriorityEscalation:
         """Escalate propagator from LOW to HIGH priority."""
         queue = PropagationQueue()
 
-        prop = lambda s, t, e, c: ('ok', None)
+        def prop(s, t, e, c):
+            return ("ok", None)
+
         pid = queue.register(prop)
 
         # Initially schedule at LOW
@@ -157,7 +181,9 @@ class TestPriorityEscalation:
         """Escalate propagator from MED to HIGH priority."""
         queue = PropagationQueue()
 
-        prop = lambda s, t, e, c: ('ok', None)
+        def prop(s, t, e, c):
+            return ("ok", None)
+
         pid = queue.register(prop)
 
         # Schedule at MED
@@ -173,7 +199,9 @@ class TestPriorityEscalation:
         """Cannot downgrade priority once scheduled higher."""
         queue = PropagationQueue()
 
-        prop = lambda s, t, e, c: ('ok', None)
+        def prop(s, t, e, c):
+            return ("ok", None)
+
         pid = queue.register(prop)
 
         # Schedule at HIGH
@@ -193,7 +221,9 @@ class TestSelfRequeue:
         """Running propagator cannot directly requeue itself."""
         queue = PropagationQueue()
 
-        prop = lambda s, t, e, c: ('ok', None)
+        def prop(s, t, e, c):
+            return ("ok", None)
+
         pid = queue.register(prop)
 
         # Set as running
@@ -210,7 +240,9 @@ class TestSelfRequeue:
         """Reschedule set is processed after propagator finishes."""
         queue = PropagationQueue()
 
-        prop = lambda s, t, e, c: ('ok', None)
+        def prop(s, t, e, c):
+            return ("ok", None)
+
         pid = queue.register(prop)
 
         # Simulate self-requeue during execution
@@ -257,17 +289,17 @@ class TestRunToFixpoint:
 
         def prop(store, trail, engine, cause):
             executions.append(cause)
-            return ('ok', None)
+            return ("ok", None)
 
         pid = queue.register(prop)
-        queue.schedule(pid, Priority.HIGH, cause='initial')
+        queue.schedule(pid, Priority.HIGH, cause="initial")
 
         # Run to fixpoint
         result = queue.run_to_fixpoint({}, [], None)
 
         assert result is True
         assert len(executions) == 1
-        assert executions[0] == 'initial'
+        assert executions[0] == "initial"
 
     def test_propagator_failure_stops_queue(self):
         """Propagator returning 'fail' stops queue execution."""
@@ -277,11 +309,11 @@ class TestRunToFixpoint:
 
         def prop1(store, trail, engine, cause):
             executed.append(1)
-            return ('fail', None)
+            return ("fail", None)
 
         def prop2(store, trail, engine, cause):
             executed.append(2)
-            return ('ok', None)
+            return ("ok", None)
 
         pid1 = queue.register(prop1)
         pid2 = queue.register(prop2)
@@ -302,42 +334,52 @@ class TestRunToFixpoint:
         executions = []
 
         def prop1(store, trail, engine, cause):
-            executions.append(('prop1', cause))
+            executions.append(("prop1", cause))
             # Returns changed variables
-            return ('ok', [1, 2])
+            return ("ok", [1, 2])
 
         def prop2(store, trail, engine, cause):
-            executions.append(('prop2', cause))
-            return ('ok', None)
+            executions.append(("prop2", cause))
+            return ("ok", None)
 
         pid1 = queue.register(prop1)
         pid2 = queue.register(prop2)
 
-        # Set up mock watchers
-        def mock_iter_watchers(store, varid):
-            if varid == 1:
-                yield (pid2, Priority.MED)
-            # varid 2 has no watchers
+        # Create a proper test store with attributes
+        class TestStore:
+            def __init__(self):
+                self.attrs = {}
 
-        # Monkey-patch iter_watchers for test
-        import prolog.clpfd.api
-        original_iter_watchers = getattr(prolog.clpfd.api, 'iter_watchers', None)
-        prolog.clpfd.api.iter_watchers = mock_iter_watchers
+            def get_attrs(self, varid):
+                return self.attrs.get(varid, {})
 
-        try:
-            queue.schedule(pid1, Priority.HIGH, cause='initial')
-            result = queue.run_to_fixpoint({}, [], None)
+            def set_attrs(self, varid, attrs):
+                self.attrs[varid] = attrs
 
-            assert result is True
-            assert len(executions) == 2
-            assert executions[0] == ('prop1', 'initial')
-            assert executions[1] == ('prop2', ('domain_changed', 1))
-        finally:
-            # Restore original
-            if original_iter_watchers:
-                prolog.clpfd.api.iter_watchers = original_iter_watchers
-            elif hasattr(prolog.clpfd.api, 'iter_watchers'):
-                delattr(prolog.clpfd.api, 'iter_watchers')
+            def put_attr(self, varid, module, value, trail):
+                """Put attribute for variable."""
+                if varid not in self.attrs:
+                    self.attrs[varid] = {}
+                # Store old value on trail if needed
+                old_attrs = self.attrs[varid].copy()
+                if module not in old_attrs:
+                    old_attrs[module] = {}
+                old_attrs[module] = value
+                self.attrs[varid] = old_attrs
+
+        store = TestStore()
+        trail = []
+
+        # Add watcher for variable 1
+        add_watcher(store, 1, pid2, Priority.MED, trail)
+
+        queue.schedule(pid1, Priority.HIGH, cause="initial")
+        result = queue.run_to_fixpoint(store, trail, None)
+
+        assert result is True
+        assert len(executions) == 2
+        assert executions[0] == ("prop1", "initial")
+        assert executions[1] == ("prop2", ("domain_changed", 1))
 
 
 class TestQueueCausality:
@@ -352,13 +394,13 @@ class TestQueueCausality:
         def prop(store, trail, engine, cause):
             nonlocal received_cause
             received_cause = cause
-            return ('ok', None)
+            return ("ok", None)
 
         pid = queue.register(prop)
-        test_cause = ('domain_changed', 42)
+        test_cause = ("domain_changed", 42)
         queue.schedule(pid, Priority.HIGH, cause=test_cause)
 
-        queue.run_to_fixpoint({}, [], None)
+        queue.run_to_fixpoint(MockStore(), [], None)
 
         assert received_cause == test_cause
 
@@ -370,35 +412,47 @@ class TestQueueCausality:
 
         def prop_trigger(store, trail, engine, cause):
             # This propagator changes variable 5
-            return ('ok', [5])
+            return ("ok", [5])
 
         def prop_woken(store, trail, engine, cause):
             received_causes.append(cause)
-            return ('ok', None)
+            return ("ok", None)
 
         pid_trigger = queue.register(prop_trigger)
         pid_woken = queue.register(prop_woken)
 
-        # Mock watchers - variable 5 watches pid_woken
-        def mock_iter_watchers(store, varid):
-            if varid == 5:
-                yield (pid_woken, Priority.MED)
+        # Create a proper test store with attributes
+        class TestStore:
+            def __init__(self):
+                self.attrs = {}
 
-        import prolog.clpfd.api
-        original = getattr(prolog.clpfd.api, 'iter_watchers', None)
-        prolog.clpfd.api.iter_watchers = mock_iter_watchers
+            def get_attrs(self, varid):
+                return self.attrs.get(varid, {})
 
-        try:
-            queue.schedule(pid_trigger, Priority.HIGH)
-            queue.run_to_fixpoint({}, [], None)
+            def set_attrs(self, varid, attrs):
+                self.attrs[varid] = attrs
 
-            assert len(received_causes) == 1
-            assert received_causes[0] == ('domain_changed', 5)
-        finally:
-            if original:
-                prolog.clpfd.api.iter_watchers = original
-            elif hasattr(prolog.clpfd.api, 'iter_watchers'):
-                delattr(prolog.clpfd.api, 'iter_watchers')
+            def put_attr(self, varid, module, value, trail):
+                """Put attribute for variable."""
+                if varid not in self.attrs:
+                    self.attrs[varid] = {}
+                old_attrs = self.attrs[varid].copy()
+                if module not in old_attrs:
+                    old_attrs[module] = {}
+                old_attrs[module] = value
+                self.attrs[varid] = old_attrs
+
+        store = TestStore()
+        trail = []
+
+        # Add watcher for variable 5
+        add_watcher(store, 5, pid_woken, Priority.MED, trail)
+
+        queue.schedule(pid_trigger, Priority.HIGH)
+        queue.run_to_fixpoint(store, trail, None)
+
+        assert len(received_causes) == 1
+        assert received_causes[0] == ("domain_changed", 5)
 
 
 class TestQueueIntegration:
@@ -418,10 +472,10 @@ class TestQueueIntegration:
             if execution_count == 1:
                 # This should go to reschedule set
                 queue.schedule(queue.running, Priority.LOW)
-                return ('ok', None)
+                return ("ok", None)
             else:
                 # Second run: just finish
-                return ('ok', None)
+                return ("ok", None)
 
         pid = queue.register(prop)
         queue.schedule(pid, Priority.HIGH)
@@ -440,14 +494,15 @@ class TestQueueIntegration:
         def make_prop(name):
             def prop(store, trail, engine, cause):
                 execution_order.append(name)
-                return ('ok', None)
+                return ("ok", None)
+
             return prop
 
         # Register propagators
-        pid_high1 = queue.register(make_prop('high1'))
-        pid_high2 = queue.register(make_prop('high2'))
-        pid_med = queue.register(make_prop('med'))
-        pid_low = queue.register(make_prop('low'))
+        pid_high1 = queue.register(make_prop("high1"))
+        pid_high2 = queue.register(make_prop("high2"))
+        pid_med = queue.register(make_prop("med"))
+        pid_low = queue.register(make_prop("low"))
 
         # Schedule in mixed order
         queue.schedule(pid_low, Priority.LOW)
@@ -459,12 +514,12 @@ class TestQueueIntegration:
 
         assert result is True
         # High priority should run first (order within priority not guaranteed)
-        assert 'high1' in execution_order[:2]
-        assert 'high2' in execution_order[:2]
+        assert "high1" in execution_order[:2]
+        assert "high2" in execution_order[:2]
         # Then medium
-        assert execution_order[2] == 'med'
+        assert execution_order[2] == "med"
         # Then low
-        assert execution_order[3] == 'low'
+        assert execution_order[3] == "low"
 
 
 class TestQueueEdgeCases:
@@ -478,7 +533,7 @@ class TestQueueEdgeCases:
 
         def prop(store, trail, engine, cause):
             executions.append(cause)
-            return ('ok', None)
+            return ("ok", None)
 
         pid = queue.register(prop)
 
@@ -487,32 +542,29 @@ class TestQueueEdgeCases:
             if varid in [1, 2, 3]:
                 yield (pid, Priority.MED if varid == 1 else Priority.LOW)
 
-        import prolog.clpfd.api
-        original = getattr(prolog.clpfd.api, 'iter_watchers', None)
-        prolog.clpfd.api.iter_watchers = mock_iter_watchers
+        original = queue_module.iter_watchers
+        queue_module.iter_watchers = mock_iter_watchers
 
         try:
             # Wake for multiple variables
-            queue._wake_watchers({}, 1)  # MED priority
-            queue._wake_watchers({}, 2)  # LOW priority
-            queue._wake_watchers({}, 3)  # LOW priority
+            mock_store = MockStore()
+            queue._wake_watchers(mock_store, 1)  # MED priority
+            queue._wake_watchers(mock_store, 2)  # LOW priority
+            queue._wake_watchers(mock_store, 3)  # LOW priority
 
             # Should be queued only once at highest priority (MED)
             assert pid in queue.queued
             assert queue.queued[pid] == Priority.MED
 
             # Run to fixpoint
-            queue.run_to_fixpoint({}, [], None)
+            queue.run_to_fixpoint(MockStore(), [], None)
 
             # Should execute exactly once
             assert len(executions) == 1
             # With the first cause (from highest priority wake)
-            assert executions[0] == ('domain_changed', 1)
+            assert executions[0] == ("domain_changed", 1)
         finally:
-            if original:
-                prolog.clpfd.api.iter_watchers = original
-            elif hasattr(prolog.clpfd.api, 'iter_watchers'):
-                delattr(prolog.clpfd.api, 'iter_watchers')
+            queue_module.iter_watchers = original
 
     def test_cause_overwrite_on_escalation(self):
         """Escalation with new cause overwrites old cause."""
@@ -523,16 +575,16 @@ class TestQueueEdgeCases:
         def prop(store, trail, engine, cause):
             nonlocal received_cause
             received_cause = cause
-            return ('ok', None)
+            return ("ok", None)
 
         pid = queue.register(prop)
 
         # Schedule with cause A at MED
-        cause_a = ('domain_changed', 1)
+        cause_a = ("domain_changed", 1)
         queue.schedule(pid, Priority.MED, cause=cause_a)
 
         # Reschedule with cause B at HIGH (escalation)
-        cause_b = ('domain_changed', 2)
+        cause_b = ("domain_changed", 2)
         queue.schedule(pid, Priority.HIGH, cause=cause_b)
 
         # Pop and check
@@ -544,11 +596,13 @@ class TestQueueEdgeCases:
         """Escalation with None cause preserves existing cause."""
         queue = PropagationQueue()
 
-        prop = lambda s, t, e, c: ('ok', None)
+        def prop(s, t, e, c):
+            return ("ok", None)
+
         pid = queue.register(prop)
 
         # Schedule with cause at MED
-        original_cause = ('domain_changed', 5)
+        original_cause = ("domain_changed", 5)
         queue.schedule(pid, Priority.MED, cause=original_cause)
 
         # Escalate with None cause
@@ -565,7 +619,7 @@ class TestQueueEdgeCases:
 
         # Propagator that returns empty list
         def prop1(store, trail, engine, cause):
-            return ('ok', [])  # Empty list
+            return ("ok", [])  # Empty list
 
         # Watcher that should not be woken
         wake_count = 0
@@ -573,7 +627,7 @@ class TestQueueEdgeCases:
         def prop2(store, trail, engine, cause):
             nonlocal wake_count
             wake_count += 1
-            return ('ok', None)
+            return ("ok", None)
 
         pid1 = queue.register(prop1)
         pid2 = queue.register(prop2)
@@ -582,9 +636,8 @@ class TestQueueEdgeCases:
         def mock_iter_watchers(store, varid):
             yield (pid2, Priority.MED)
 
-        import prolog.clpfd.api
-        original = getattr(prolog.clpfd.api, 'iter_watchers', None)
-        prolog.clpfd.api.iter_watchers = mock_iter_watchers
+        original = queue_module.iter_watchers
+        queue_module.iter_watchers = mock_iter_watchers
 
         try:
             queue.schedule(pid1, Priority.HIGH)
@@ -593,16 +646,15 @@ class TestQueueEdgeCases:
             assert result is True
             assert wake_count == 0  # No wakes should occur
         finally:
-            if original:
-                prolog.clpfd.api.iter_watchers = original
-            elif hasattr(prolog.clpfd.api, 'iter_watchers'):
-                delattr(prolog.clpfd.api, 'iter_watchers')
+            queue_module.iter_watchers = original
 
     def test_stale_skip_on_escalation(self):
         """Stale entries from escalation are skipped on pop."""
         queue = PropagationQueue()
 
-        prop = lambda s, t, e, c: ('ok', None)
+        def prop(s, t, e, c):
+            return ("ok", None)
+
         pid = queue.register(prop)
 
         # Schedule at LOW
@@ -629,17 +681,17 @@ class TestQueueEdgeCases:
             received_causes.append(cause)
             if len(received_causes) == 1:
                 # First run: self-requeue with different cause
-                queue.schedule(queue.running, Priority.LOW, cause='second_cause')
-            return ('ok', None)
+                queue.schedule(queue.running, Priority.LOW, cause="second_cause")
+            return ("ok", None)
 
         pid = queue.register(prop)
 
         # Initial schedule with first cause
-        queue.schedule(pid, Priority.HIGH, cause='first_cause')
+        queue.schedule(pid, Priority.HIGH, cause="first_cause")
 
         result = queue.run_to_fixpoint({}, [], None)
 
         assert result is True
         assert len(received_causes) == 2
-        assert received_causes[0] == 'first_cause'
-        assert received_causes[1] == 'second_cause'  # Self-requeue cause preserved
+        assert received_causes[0] == "first_cause"
+        assert received_causes[1] == "second_cause"  # Self-requeue cause preserved

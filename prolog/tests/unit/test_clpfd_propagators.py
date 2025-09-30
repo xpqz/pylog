@@ -4,14 +4,21 @@ Tests equality and comparison propagators with domain narrowing,
 failure detection, and proper integration with the propagation queue.
 """
 
-import pytest
-from prolog.ast.terms import Atom, Int, Var, Struct
+from prolog.ast.terms import Int, Var, Struct
 from prolog.engine.engine import Engine
 from prolog.ast.clauses import Program
-from prolog.clpfd.domain import Domain
-from prolog.clpfd.api import get_domain, set_domain
-from prolog.clpfd.queue import PropagationQueue, Priority
-from prolog.engine.builtins_clpfd import _builtin_in
+from prolog.clpfd.api import get_domain
+from prolog.clpfd.queue import PropagationQueue
+from prolog.clpfd.priority import Priority
+from prolog.engine.builtins_clpfd import (
+    _builtin_in,
+    _builtin_fd_eq,
+    _builtin_fd_lt,
+    _builtin_fd_le,
+    _builtin_fd_gt,
+    _builtin_fd_ge,
+)
+from prolog.clpfd.props.equality import create_equality_propagator
 
 
 class TestEqualityPropagator:
@@ -21,7 +28,6 @@ class TestEqualityPropagator:
         """X #= Y should make domains equal."""
         engine = Engine(Program([]))
         store = engine.store
-        trail = engine.trail
 
         x = Var(store.new_var(), "X")
         y = Var(store.new_var(), "Y")
@@ -32,7 +38,7 @@ class TestEqualityPropagator:
         _builtin_in(engine, y, Struct("..", (Int(5), Int(15))))
 
         # X #= Y should intersect domains to 5..10
-        from prolog.engine.builtins_clpfd import _builtin_fd_eq
+
         result = _builtin_fd_eq(engine, x, y)
 
         assert result is True
@@ -45,7 +51,6 @@ class TestEqualityPropagator:
         """X #= 5 should narrow domain to singleton."""
         engine = Engine(Program([]))
         store = engine.store
-        trail = engine.trail
 
         x = Var(store.new_var(), "X")
 
@@ -53,7 +58,7 @@ class TestEqualityPropagator:
         _builtin_in(engine, x, Struct("..", (Int(1), Int(10))))
 
         # X #= 5
-        from prolog.engine.builtins_clpfd import _builtin_fd_eq
+
         result = _builtin_fd_eq(engine, x, Int(5))
 
         assert result is True
@@ -65,7 +70,6 @@ class TestEqualityPropagator:
         """X #= Y should fail with disjoint domains."""
         engine = Engine(Program([]))
         store = engine.store
-        trail = engine.trail
 
         x = Var(store.new_var(), "X")
         y = Var(store.new_var(), "Y")
@@ -76,7 +80,7 @@ class TestEqualityPropagator:
         _builtin_in(engine, y, Struct("..", (Int(10), Int(15))))
 
         # X #= Y should fail
-        from prolog.engine.builtins_clpfd import _builtin_fd_eq
+
         result = _builtin_fd_eq(engine, x, y)
 
         assert result is False
@@ -84,8 +88,6 @@ class TestEqualityPropagator:
     def test_equality_int_int(self):
         """5 #= 5 should succeed, 5 #= 6 should fail."""
         engine = Engine(Program([]))
-
-        from prolog.engine.builtins_clpfd import _builtin_fd_eq
 
         # 5 #= 5
         assert _builtin_fd_eq(engine, Int(5), Int(5)) is True
@@ -97,7 +99,6 @@ class TestEqualityPropagator:
         """Equality propagator should wake watchers on domain change."""
         engine = Engine(Program([]))
         store = engine.store
-        trail = engine.trail
 
         x = Var(store.new_var(), "X")
         y = Var(store.new_var(), "Y")
@@ -111,7 +112,7 @@ class TestEqualityPropagator:
         y_rev_before = get_domain(store, y.id).rev
 
         # X #= Y
-        from prolog.engine.builtins_clpfd import _builtin_fd_eq
+
         _builtin_fd_eq(engine, x, y)
 
         # Domains should have changed
@@ -128,7 +129,6 @@ class TestLessThanPropagator:
         """X #< Y should narrow domains appropriately using bounds consistency."""
         engine = Engine(Program([]))
         store = engine.store
-        trail = engine.trail
 
         x = Var(store.new_var(), "X")
         y = Var(store.new_var(), "Y")
@@ -142,7 +142,7 @@ class TestLessThanPropagator:
         # min(Y) > min(X), so Y must be at least 2
         # X in 1..10 stays 1..10 (already <= 14)
         # Y in 5..15 stays 5..15 (already >= 2)
-        from prolog.engine.builtins_clpfd import _builtin_fd_lt
+
         result = _builtin_fd_lt(engine, x, y)
 
         assert result is True
@@ -157,7 +157,6 @@ class TestLessThanPropagator:
         """X #< 5 should remove values >= 5."""
         engine = Engine(Program([]))
         store = engine.store
-        trail = engine.trail
 
         x = Var(store.new_var(), "X")
 
@@ -165,7 +164,7 @@ class TestLessThanPropagator:
         _builtin_in(engine, x, Struct("..", (Int(1), Int(10))))
 
         # X #< 5
-        from prolog.engine.builtins_clpfd import _builtin_fd_lt
+
         result = _builtin_fd_lt(engine, x, Int(5))
 
         assert result is True
@@ -176,7 +175,6 @@ class TestLessThanPropagator:
         """5 #< Y should remove values <= 5."""
         engine = Engine(Program([]))
         store = engine.store
-        trail = engine.trail
 
         y = Var(store.new_var(), "Y")
 
@@ -184,7 +182,7 @@ class TestLessThanPropagator:
         _builtin_in(engine, y, Struct("..", (Int(1), Int(10))))
 
         # 5 #< Y
-        from prolog.engine.builtins_clpfd import _builtin_fd_lt
+
         result = _builtin_fd_lt(engine, Int(5), y)
 
         assert result is True
@@ -195,7 +193,6 @@ class TestLessThanPropagator:
         """X #< Y should fail when X.min >= Y.max."""
         engine = Engine(Program([]))
         store = engine.store
-        trail = engine.trail
 
         x = Var(store.new_var(), "X")
         y = Var(store.new_var(), "Y")
@@ -205,7 +202,7 @@ class TestLessThanPropagator:
         _builtin_in(engine, y, Struct("..", (Int(1), Int(5))))
 
         # X #< Y should fail
-        from prolog.engine.builtins_clpfd import _builtin_fd_lt
+
         result = _builtin_fd_lt(engine, x, y)
 
         assert result is False
@@ -213,8 +210,6 @@ class TestLessThanPropagator:
     def test_less_than_int_int(self):
         """3 #< 5 should succeed, 5 #< 3 should fail."""
         engine = Engine(Program([]))
-
-        from prolog.engine.builtins_clpfd import _builtin_fd_lt
 
         # 3 #< 5
         assert _builtin_fd_lt(engine, Int(3), Int(5)) is True
@@ -233,7 +228,6 @@ class TestLessEqualPropagator:
         """X #=< Y should narrow domains appropriately."""
         engine = Engine(Program([]))
         store = engine.store
-        trail = engine.trail
 
         x = Var(store.new_var(), "X")
         y = Var(store.new_var(), "Y")
@@ -243,7 +237,7 @@ class TestLessEqualPropagator:
         _builtin_in(engine, y, Struct("..", (Int(5), Int(15))))
 
         # X #=< Y should give X in 1..10, Y in 5..15 (X.max <= Y.max ok)
-        from prolog.engine.builtins_clpfd import _builtin_fd_le
+
         result = _builtin_fd_le(engine, x, y)
 
         assert result is True
@@ -257,7 +251,6 @@ class TestLessEqualPropagator:
         """X #=< 5 should remove values > 5."""
         engine = Engine(Program([]))
         store = engine.store
-        trail = engine.trail
 
         x = Var(store.new_var(), "X")
 
@@ -265,7 +258,7 @@ class TestLessEqualPropagator:
         _builtin_in(engine, x, Struct("..", (Int(1), Int(10))))
 
         # X #=< 5
-        from prolog.engine.builtins_clpfd import _builtin_fd_le
+
         result = _builtin_fd_le(engine, x, Int(5))
 
         assert result is True
@@ -276,7 +269,6 @@ class TestLessEqualPropagator:
         """X #=< Y should allow X = Y."""
         engine = Engine(Program([]))
         store = engine.store
-        trail = engine.trail
 
         x = Var(store.new_var(), "X")
         y = Var(store.new_var(), "Y")
@@ -286,7 +278,7 @@ class TestLessEqualPropagator:
         _builtin_in(engine, y, Int(5))
 
         # X #=< Y should succeed
-        from prolog.engine.builtins_clpfd import _builtin_fd_le
+
         result = _builtin_fd_le(engine, x, y)
 
         assert result is True
@@ -299,7 +291,6 @@ class TestGreaterThanPropagator:
         """X #> Y should narrow domains appropriately."""
         engine = Engine(Program([]))
         store = engine.store
-        trail = engine.trail
 
         x = Var(store.new_var(), "X")
         y = Var(store.new_var(), "Y")
@@ -314,7 +305,7 @@ class TestGreaterThanPropagator:
         # min(X) > min(Y), so X must be at least 2
         # X in 5..15 stays 5..15 (already >= 2)
         # Y in 1..10 stays 1..10 (already <= 14)
-        from prolog.engine.builtins_clpfd import _builtin_fd_gt
+
         result = _builtin_fd_gt(engine, x, y)
 
         assert result is True
@@ -327,7 +318,6 @@ class TestGreaterThanPropagator:
         """X #> 5 should remove values <= 5."""
         engine = Engine(Program([]))
         store = engine.store
-        trail = engine.trail
 
         x = Var(store.new_var(), "X")
 
@@ -335,7 +325,7 @@ class TestGreaterThanPropagator:
         _builtin_in(engine, x, Struct("..", (Int(1), Int(10))))
 
         # X #> 5
-        from prolog.engine.builtins_clpfd import _builtin_fd_gt
+
         result = _builtin_fd_gt(engine, x, Int(5))
 
         assert result is True
@@ -350,7 +340,6 @@ class TestGreaterEqualPropagator:
         """X #>= 5 should remove values < 5."""
         engine = Engine(Program([]))
         store = engine.store
-        trail = engine.trail
 
         x = Var(store.new_var(), "X")
 
@@ -358,7 +347,7 @@ class TestGreaterEqualPropagator:
         _builtin_in(engine, x, Struct("..", (Int(1), Int(10))))
 
         # X #>= 5
-        from prolog.engine.builtins_clpfd import _builtin_fd_ge
+
         result = _builtin_fd_ge(engine, x, Int(5))
 
         assert result is True
@@ -369,7 +358,6 @@ class TestGreaterEqualPropagator:
         """X #>= Y should allow X = Y."""
         engine = Engine(Program([]))
         store = engine.store
-        trail = engine.trail
 
         x = Var(store.new_var(), "X")
         y = Var(store.new_var(), "Y")
@@ -379,7 +367,7 @@ class TestGreaterEqualPropagator:
         _builtin_in(engine, y, Int(5))
 
         # X #>= Y should succeed
-        from prolog.engine.builtins_clpfd import _builtin_fd_ge
+
         result = _builtin_fd_ge(engine, x, y)
 
         assert result is True
@@ -392,7 +380,6 @@ class TestPropagatorIntegration:
         """X #< Y, Y #< Z should propagate through chain."""
         engine = Engine(Program([]))
         store = engine.store
-        trail = engine.trail
 
         x = Var(store.new_var(), "X")
         y = Var(store.new_var(), "Y")
@@ -402,8 +389,6 @@ class TestPropagatorIntegration:
         _builtin_in(engine, x, Struct("..", (Int(1), Int(10))))
         _builtin_in(engine, y, Struct("..", (Int(1), Int(10))))
         _builtin_in(engine, z, Struct("..", (Int(1), Int(10))))
-
-        from prolog.engine.builtins_clpfd import _builtin_fd_lt
 
         # X #< Y
         result1 = _builtin_fd_lt(engine, x, y)
@@ -434,10 +419,9 @@ class TestPropagatorIntegration:
         """Equality propagators should schedule at HIGH priority."""
         engine = Engine(Program([]))
         store = engine.store
-        trail = engine.trail
 
         # Initialize propagation queue
-        if not hasattr(engine, 'clpfd_queue'):
+        if not hasattr(engine, "clpfd_queue"):
             engine.clpfd_queue = PropagationQueue()
 
         x = Var(store.new_var(), "X")
@@ -448,7 +432,7 @@ class TestPropagatorIntegration:
         _builtin_in(engine, y, Struct("..", (Int(5), Int(15))))
 
         # Register equality propagator
-        from prolog.clpfd.props.equality import create_equality_propagator
+
         prop = create_equality_propagator(x.id, y.id)
         pid = engine.clpfd_queue.register(prop)
 
@@ -463,7 +447,6 @@ class TestPropagatorIntegration:
         """Propagator failure should stop queue execution."""
         engine = Engine(Program([]))
         store = engine.store
-        trail = engine.trail
 
         x = Var(store.new_var(), "X")
         y = Var(store.new_var(), "Y")
@@ -473,7 +456,7 @@ class TestPropagatorIntegration:
         _builtin_in(engine, y, Struct("..", (Int(10), Int(15))))
 
         # X #= Y should fail
-        from prolog.engine.builtins_clpfd import _builtin_fd_eq
+
         result = _builtin_fd_eq(engine, x, y)
 
         assert result is False

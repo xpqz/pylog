@@ -220,10 +220,10 @@ def get_boolean_value(store, var_id):
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] Unit tests pass: `uv run pytest prolog/tests/unit/test_clpfd_boolean.py`
-- [ ] Boolean domain detection works correctly
-- [ ] ensure_boolean_var properly constrains domains
-- [ ] get_boolean_value returns correct values
+- [x] Unit tests pass: `uv run pytest prolog/tests/unit/test_clpfd_boolean.py`
+- [x] Boolean domain detection works correctly
+- [x] ensure_boolean_var properly constrains domains
+- [x] get_boolean_value returns correct values
 
 #### Manual Verification:
 - [ ] Boolean utilities integrate cleanly with existing domain system
@@ -608,11 +608,11 @@ def create_implication_propagator(
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] Unit tests pass: `pytest prolog/tests/unit/test_clpfd_reif.py`
-- [ ] B #<==> C propagates correctly in both directions
-- [ ] Implication propagators work for #==> and #<==
-- [ ] Self-notification prevention works
-- [ ] Priority levels (HIGH/MED) used consistently
+- [x] Unit tests pass: `pytest prolog/tests/unit/test_clpfd_reif.py`
+- [x] B #<==> C propagates correctly in both directions
+- [x] Implication propagators work for #==> and #<==
+- [x] Self-notification prevention works
+- [x] Priority levels (HIGH/MED) used consistently
 
 #### Manual Verification:
 - [ ] No infinite propagation loops
@@ -879,10 +879,10 @@ self._builtins[("#<==", 2)] = lambda eng, args: _builtin_fd_reif_implied(eng, *a
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] Unit tests pass: `uv run pytest prolog/tests/unit/test_clpfd_reif_builtins.py`
-- [ ] All reification operators parse and execute correctly
-- [ ] Integration with existing constraints works
-- [ ] Proper error handling for invalid arguments
+- [x] Unit tests pass: `uv run pytest prolog/tests/unit/test_clpfd_reif_builtins.py`
+- [x] All reification operators parse and execute correctly
+- [x] Integration with existing constraints works
+- [x] Proper error handling for invalid arguments
 
 #### Manual Verification:
 - [ ] REPL queries with reification work as expected
@@ -1040,11 +1040,11 @@ class TestComplexReification:
 ### Success Criteria:
 
 #### Automated Verification:
-- [ ] All unit tests pass: `pytest prolog/tests/unit/test_clpfd_reification.py`
-- [ ] Integration tests pass: `pytest prolog/tests/unit/test_clpfd*.py`
-- [ ] No regression in existing CLP(FD) tests
-- [ ] Property tests for confluence still pass
-- [ ] Operator parsing tests pass: `pytest prolog/tests/unit/test_operator_reification.py`
+- [x] All unit tests pass: `pytest prolog/tests/unit/test_clpfd_reification.py`
+- [x] Integration tests pass: `pytest prolog/tests/unit/test_clpfd*.py`
+- [x] No regression in existing CLP(FD) tests
+- [x] Property tests for confluence still pass
+- [x] Operator parsing tests pass: `pytest prolog/tests/unit/test_operator_reification.py`
 
 #### Manual Verification:
 - [ ] Complex reified constraint problems solve correctly

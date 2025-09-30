@@ -7,6 +7,7 @@ editing, history, completion, and syntax highlighting) and integrated tracing.
 
 - Tracing commands: [Using the tracer from the REPL](../guides/tracing-and-debugging.md#using-the-tracer-from-the-repl)
 - Tips: [REPL tips & shortcuts](../guides/repl-tips.md#tracing-from-the-repl)
+
 ## Starting
 
 ```bash
@@ -15,7 +16,7 @@ pylog
 python -m prolog.repl
 ```
 
-You’ll see a `?-` prompt. Enter a goal and end with a period `.`
+You'll see a `?-` prompt. Enter a goal and end with a period `.`
 
 ```text
 ?- true.
@@ -52,7 +53,7 @@ The REPL uses `prompt_toolkit` for a pleasant terminal experience:
 - Tab completion for predicate names
   - Includes common built‑ins
   - Updates when you `consult('file.pl')`
-- Single‑line input; unfinished queries (missing final `.`) are detected and kept as “incomplete” until you complete them
+- Single‑line input; unfinished queries (missing final `.`) are detected and kept as "incomplete" until you complete them
 
 Tips:
 - Press Tab to complete a partially typed predicate
@@ -108,6 +109,7 @@ true.
 ```
 
 ### Spypoints
+
 Spypoints control which predicates generate trace events:
 
 - `spy Name/Arity` — add a spypoint

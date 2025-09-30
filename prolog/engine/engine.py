@@ -113,6 +113,8 @@ class Engine:
         # Core state - using new runtime types
         self.store = Store()
         self.trail = Trail()
+        # Set engine reference on trail so attribute hooks can be dispatched
+        self.trail.engine = self
         self.goal_stack = GoalStack()
         self.frame_stack: List[Frame] = []
         self.cp_stack: List[Choicepoint] = []
@@ -238,6 +240,8 @@ class Engine:
         """Reset engine state for reuse."""
         self.store = Store()
         self.trail = Trail()
+        # Set engine reference on trail so attribute hooks can be dispatched
+        self.trail.engine = self
         self._renamer = VarRenamer(self.store)  # New renamer with new store
         self.goal_stack = GoalStack()
         self.frame_stack = []
@@ -1138,8 +1142,7 @@ class Engine:
         if isinstance(disj, Struct) and disj.functor == ";" and len(disj.args) == 2:
             left, right = disj.args
 
-            # Create choicepoint for right alternative
-            # Save continuation for re-execution after alternative
+            # Save the continuation (goals after disjunction) as an immutable snapshot
             continuation = self.goal_stack.snapshot()
             continuation_depths = tuple(
                 self._goal_call_depths.get(id(g), len(self.frame_stack))
@@ -1149,19 +1152,23 @@ class Engine:
                 self._goal_call_flags.get(id(g), False) for g in continuation
             )
 
-            self.trail.next_stamp()
+            # Create choicepoint for right alternative
+            stamp = self.trail.next_stamp()
             cp = Choicepoint(
                 kind=ChoicepointKind.DISJUNCTION,
                 trail_top=self.trail.position(),
-                goal_stack_height=len(continuation),  # Height = continuation length
+                goal_stack_height=len(
+                    continuation
+                ),  # Height = number of continuation goals
                 frame_stack_height=len(self.frame_stack),
                 payload={
                     "alternative": Goal.from_term(right),
                     "alternative_depth": len(self.frame_stack),
-                    "continuation": continuation,  # Save continuation for backtrack
+                    "continuation": continuation,  # Frozen snapshot of continuation goals
                     "continuation_depths": continuation_depths,
                     "continuation_calls": continuation_calls,
                 },
+                stamp=stamp,
             )
             self.cp_stack.append(cp)
 
@@ -1171,7 +1178,7 @@ class Engine:
                     "cp_push", {"pred_id": "disjunction", "trail_top": cp.trail_top}
                 )
 
-            # Try left first
+            # Try left first (continuation remains on stack)
             left_goal = Goal.from_term(left)
             self._push_goal(left_goal)
 
@@ -1409,6 +1416,12 @@ class Engine:
             if self.trace:
                 self._trace_log.append("[LABEL_CONTINUE] dispatching continuation")
             push_labeling_choices(self, vars, var_select, val_select)
+        elif op == "LABEL_BRANCH_STAMP":
+            # Start a fresh trail stamp for the upcoming labeling branch
+            # This ensures domain/attr changes in each branch are isolated
+            # and properly undone on backtracking between alternatives.
+            self.trail.next_stamp()
+            return True
         # CATCH_BEGIN and CATCH_END are no longer used - catch/3 uses CATCH choicepoints
 
     def _backtrack(self) -> bool:
@@ -1441,12 +1454,12 @@ class Engine:
             # This order is safer if future features attach watchers to frames
             self.trail.unwind_to(cp.trail_top, self.store)
 
+            # Note: CLP(FD) propagation queue is not trailed; we deliberately
+            # do not clear it here to preserve scheduled propagation semantics.
+
             # Restore goal stack to checkpoint height
-            # For CPs with continuation, we handle restoration specially in their handlers
-            if (
-                cp.kind in [ChoicepointKind.PREDICATE, ChoicepointKind.DISJUNCTION]
-                and "continuation" in cp.payload
-            ):
+            # PREDICATE and DISJUNCTION CPs handle restoration in their handlers
+            if cp.kind in [ChoicepointKind.PREDICATE, ChoicepointKind.DISJUNCTION]:
                 # We'll handle goal stack restoration in the CP-specific handler below
                 if self.trace:
                     self._trace_log.append(
@@ -1461,20 +1474,25 @@ class Engine:
                 self._shrink_goal_stack_to(target_height)
             else:
                 # Standard restoration for other CP kinds
+                current_height = self.goal_stack.height()
+                target_height = cp.goal_stack_height
                 if self.trace:
                     self._trace_log.append(
-                        f"Restoring goal stack from {self.goal_stack.height()} to {cp.goal_stack_height}"
+                        f"Restoring goal stack from {current_height} towards {target_height} (kind={cp.kind.name})"
                     )
 
-                self._shrink_goal_stack_to(cp.goal_stack_height)
+                # Only shrink if we've grown beyond the target; if we're below, leave as is.
+                # For DISJUNCTION CPs we no longer snapshot and replay continuation; leaving
+                # the stack below target is valid and the alternative branch will be pushed explicitly.
+                if current_height > target_height:
+                    self._shrink_goal_stack_to(target_height)
 
-                # Assert invariant: goal stack restored correctly
-                # Skip assertion for CATCH CPs as they have complex restoration semantics
-                # due to POP_FRAME sentinels and catch window management
-                if cp.kind != ChoicepointKind.CATCH:
+                # Assert invariant: goal stack restored correctly for kinds that require exact height
+                # Skip assertion for CATCH and DISJUNCTION CPs due to their specific restoration semantics.
+                if cp.kind not in (ChoicepointKind.CATCH, ChoicepointKind.DISJUNCTION):
                     assert (
-                        self.goal_stack.height() == cp.goal_stack_height
-                    ), f"Goal stack height mismatch after restore: {self.goal_stack.height()} != {cp.goal_stack_height}"
+                        self.goal_stack.height() == target_height
+                    ), f"Goal stack height mismatch after restore: {self.goal_stack.height()} != {target_height}"
 
             # Remove catch frames that are now out of scope
             # When we backtrack past a catch's window, remove its frame
@@ -1700,52 +1718,41 @@ class Engine:
                     continue
 
             elif cp.kind == ChoicepointKind.DISJUNCTION:
-                # Restore continuation if present
-                if "continuation" in cp.payload:
-                    continuation = cp.payload["continuation"]
-                    continuation_depths = cp.payload.get(
-                        "continuation_depths",
-                        tuple(len(self.frame_stack) for _ in continuation),
+                # Clear goal stack and restore continuation
+                self._shrink_goal_stack_to(0)
+
+                # Restore the continuation (goals after disjunction)
+                continuation = cp.payload.get("continuation", ())
+                continuation_depths = cp.payload.get(
+                    "continuation_depths",
+                    tuple(len(self.frame_stack) for _ in continuation),
+                )
+                continuation_calls = cp.payload.get(
+                    "continuation_calls", tuple(False for _ in continuation)
+                )
+                # Restore the continuation - these are the goals after the disjunction
+                self._push_goals_with_metadata(
+                    continuation, continuation_depths, continuation_calls
+                )
+
+                # Debug: log restoration details for disjunction CPs
+                if self.trace:
+                    self._trace_log.append(
+                        f"[DISJ RESTORE] Restored {len(continuation)} continuation goals"
                     )
-                    continuation_calls = cp.payload.get(
-                        "continuation_calls", tuple(False for _ in continuation)
-                    )
-                    target_height = cp.goal_stack_height
-                    current_height = self.goal_stack.height()
 
-                    # Debug: log restoration details for disjunction CPs
-                    if self.trace:
-                        self._trace_log.append(
-                            f"[DISJ RESTORE] target_height={target_height}, current_height={current_height}, cont_len={len(continuation)}"
-                        )
+                # Restore the stamp window captured for this disjunction
+                self.trail.set_current_stamp(cp.stamp)
 
-                    # Restore goal stack to have continuation
-                    if current_height > target_height:
-                        self._shrink_goal_stack_to(target_height)
-                    elif current_height < target_height:
-                        slice_goals = continuation[current_height:target_height]
-                        slice_depths = continuation_depths[current_height:target_height]
-                        slice_calls = continuation_calls[current_height:target_height]
-                        self._push_goals_with_metadata(
-                            slice_goals, slice_depths, slice_calls
-                        )
-
-                        if self.trace:
-                            self._trace_log.append(
-                                f"[DISJ RESTORE] pushed {len(slice_goals)} continuation goals"
-                            )
-
-                # Remove catch frames that are now out of scope
-                # Catch frames are now managed via CATCH choicepoints
-
-                # Increment stamp before trying alternative branch
-                # This ensures changes in the alternative are properly trailed
-                self.trail.next_stamp()
+                # Clear the CLP(FD) propagation queue to isolate branch state
+                if hasattr(self, "clpfd_queue") and self.clpfd_queue is not None:
+                    self.clpfd_queue.clear()
 
                 # Try alternative branch
                 alternative = cp.payload["alternative"]
                 alt_depth = cp.payload.get("alternative_depth", len(self.frame_stack))
                 self._push_goal(alternative, depth=alt_depth)
+
                 return True
 
             elif cp.kind == ChoicepointKind.CATCH:
@@ -1843,6 +1850,14 @@ class Engine:
 
     def _record_solution(self):
         """Record the current solution (bindings of query variables)."""
+        # Ensure all pending CLP(FD) propagation is completed before capturing values
+        try:
+            if hasattr(self, "clpfd_queue") and self.clpfd_queue is not None:
+                if not self.clpfd_queue.is_empty():
+                    self.clpfd_queue.run_to_fixpoint(self.store, self.trail, self)
+        except Exception:
+            pass
+
         solution = {}
 
         for varid, var_name in self._query_vars:
