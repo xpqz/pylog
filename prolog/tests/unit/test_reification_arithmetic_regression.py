@@ -42,14 +42,14 @@ class TestHistoricalRegressions:
             label([X, Y, B]).
         """
 
-        # Test direct case (should find 28 solutions)
+        # Test direct case (should find 14 solutions where Y >= X + 2)
         clauses = reader.read_program(direct_code)
         program = Program(tuple(clauses))
         engine = Engine(program)
         direct_solutions = list(engine.run(reader.read_query("?- test_direct(X, Y).")))
         assert (
-            len(direct_solutions) == 28
-        ), f"Direct case should find 28 solutions, got {len(direct_solutions)}"
+            len(direct_solutions) == 14
+        ), f"Direct case should find 14 solutions, got {len(direct_solutions)}"
 
         # Test reified case (should now find solutions, was 0 before)
         clauses = reader.read_program(reified_code)

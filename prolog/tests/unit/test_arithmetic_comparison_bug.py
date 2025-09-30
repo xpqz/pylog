@@ -44,25 +44,18 @@ class TestArithmeticComparisonBug:
         assert (2, 1) in solution_set
 
     def test_arithmetic_gte_bug(self):
-        """PARTIALLY FIXED: Y #>= X + 2 now filters but is overly restrictive."""
+        """FIXED: Y #>= X + 2 now works correctly."""
         reader = Reader()
         program = Program(())
         engine = Engine(program)
 
         # Y #>= X + 2 with X in 0..2, Y in 0..4
         # Expected: 6 solutions where constraint is satisfied
-        # Before fix: 15 solutions (ALL combinations) - completely broken
-        # After fix: 3 solutions (overly restrictive but working)
         query = reader.read_term("X in 0..2, Y in 0..4, Y #>= X + 2, label([X, Y])")
         solutions = list(engine.solve(query))
 
-        # Verify the bug is partially fixed - constraint now filters
-        assert (
-            len(solutions) < 15
-        ), f"Bug partially fixed: got {len(solutions)} solutions instead of 15"
-        assert (
-            len(solutions) > 0
-        ), f"Constraint not failing completely: got {len(solutions)} solutions"
+        # Verify the constraint works correctly
+        assert len(solutions) == 6, f"Expected 6 solutions, got {len(solutions)}"
 
         # All solutions should satisfy the constraint
         for sol in solutions:
@@ -72,14 +65,13 @@ class TestArithmeticComparisonBug:
                 y_val >= x_val + 2
             ), f"Solution ({x_val}, {y_val}) violates Y >= X + 2"
 
-        # TODO: Fix linear propagator to get exact 6 solutions
-        # expected_solutions = {(0, 2), (0, 3), (0, 4), (1, 3), (1, 4), (2, 4)}
-        # actual_solutions = {(s.get('X').value, s.get('Y').value) for s in solutions}
-        # assert len(solutions) == 6
-        # assert actual_solutions == expected_solutions
+        # Verify we get exactly the expected solutions
+        expected_solutions = {(0, 2), (0, 3), (0, 4), (1, 3), (1, 4), (2, 4)}
+        actual_solutions = {(s.get("X").value, s.get("Y").value) for s in solutions}
+        assert actual_solutions == expected_solutions
 
     def test_arithmetic_gt_bug(self):
-        """BUG: Y #> X + 1 returns ALL combinations instead of filtering."""
+        """FIXED: Y #> X + 1 now works correctly."""
         reader = Reader()
         program = Program(())
         engine = Engine(program)
@@ -88,14 +80,22 @@ class TestArithmeticComparisonBug:
         query = reader.read_term("X in 0..2, Y in 0..3, Y #> X + 1, label([X, Y])")
         solutions = list(engine.solve(query))
 
-        # Expected: (0,2), (0,3), (1,3) = 3 solutions
-        # Actual: 12 solutions (ALL combinations) - this is the bug
-        assert (
-            len(solutions) == 12
-        ), f"Bug confirmed: got {len(solutions)} solutions instead of 3"
+        # Should return exactly 3 solutions where constraint is satisfied
+        assert len(solutions) == 3, f"Expected 3 solutions, got {len(solutions)}"
+
+        # All solutions should satisfy the constraint
+        for sol in solutions:
+            x_val = sol.get("X").value
+            y_val = sol.get("Y").value
+            assert y_val > x_val + 1, f"Solution ({x_val}, {y_val}) violates Y > X + 1"
+
+        # Verify we get exactly the expected solutions
+        expected_solutions = {(0, 2), (0, 3), (1, 3)}
+        actual_solutions = {(s.get("X").value, s.get("Y").value) for s in solutions}
+        assert actual_solutions == expected_solutions
 
     def test_arithmetic_lt_bug(self):
-        """BUG: X #< Y - 1 returns ALL combinations instead of filtering."""
+        """FIXED: X #< Y - 1 now works correctly."""
         reader = Reader()
         program = Program(())
         engine = Engine(program)
@@ -104,14 +104,22 @@ class TestArithmeticComparisonBug:
         query = reader.read_term("X in 0..2, Y in 1..3, X #< Y - 1, label([X, Y])")
         solutions = list(engine.solve(query))
 
-        # Expected: (0,2), (0,3), (1,3) = 3 solutions
-        # Actual: 9 solutions (ALL combinations) - this is the bug
-        assert (
-            len(solutions) == 9
-        ), f"Bug confirmed: got {len(solutions)} solutions instead of 3"
+        # Should return exactly 3 solutions where constraint is satisfied
+        assert len(solutions) == 3, f"Expected 3 solutions, got {len(solutions)}"
+
+        # All solutions should satisfy the constraint
+        for sol in solutions:
+            x_val = sol.get("X").value
+            y_val = sol.get("Y").value
+            assert x_val < y_val - 1, f"Solution ({x_val}, {y_val}) violates X < Y - 1"
+
+        # Verify we get exactly the expected solutions
+        expected_solutions = {(0, 2), (0, 3), (1, 3)}
+        actual_solutions = {(s.get("X").value, s.get("Y").value) for s in solutions}
+        assert actual_solutions == expected_solutions
 
     def test_arithmetic_le_bug(self):
-        """BUG: X #=< Y - 2 returns ALL combinations instead of filtering."""
+        """FIXED: X #=< Y - 2 now works correctly."""
         reader = Reader()
         program = Program(())
         engine = Engine(program)
@@ -120,11 +128,21 @@ class TestArithmeticComparisonBug:
         query = reader.read_term("X in 0..2, Y in 2..4, X #=< Y - 2, label([X, Y])")
         solutions = list(engine.solve(query))
 
-        # Expected: (0,2), (0,3), (0,4), (1,3), (1,4), (2,4) = 6 solutions
-        # Actual: 9 solutions (ALL combinations) - this is the bug
-        assert (
-            len(solutions) == 9
-        ), f"Bug confirmed: got {len(solutions)} solutions instead of 6"
+        # Should return exactly 6 solutions where constraint is satisfied
+        assert len(solutions) == 6, f"Expected 6 solutions, got {len(solutions)}"
+
+        # All solutions should satisfy the constraint
+        for sol in solutions:
+            x_val = sol.get("X").value
+            y_val = sol.get("Y").value
+            assert (
+                x_val <= y_val - 2
+            ), f"Solution ({x_val}, {y_val}) violates X <= Y - 2"
+
+        # Verify we get exactly the expected solutions
+        expected_solutions = {(0, 2), (0, 3), (0, 4), (1, 3), (1, 4), (2, 4)}
+        actual_solutions = {(s.get("X").value, s.get("Y").value) for s in solutions}
+        assert actual_solutions == expected_solutions
 
     def test_reified_arithmetic_works(self):
         """Baseline: Reified arithmetic constraints work correctly (fixed in #179)."""
