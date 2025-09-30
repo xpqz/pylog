@@ -140,20 +140,30 @@ Common examples:
 
 ```text
 ?- append([1,2], [3], X).
-X = [1,2,3].
+X = [1,2,3]
+.
 
-?- member(X, [a,b,c]).
-X = a
+?- between(1, 3, X).
+X = 1
  ;
-X = b
+X = 2
  ;
-X = c
+X = 3
  .
 ```
 
-## Exit
+## Error messages
 
-- Ctrl‑D (EOF) — cleanly exit
-- Ctrl‑C twice — force quit if stuck
+- Parse errors show a short message; if you accidentally use infix operators before Stage 1.5 is enabled, the REPL includes hints on operator‑free syntax.
+- File loading errors explain encoding issues and file not found.
 
-The session history is saved automatically to `~/.pylog_history`.
+## Exiting
+
+- `quit`, `exit`, or `halt` — or press Ctrl‑D (EOF)
+
+## See also
+
+- Getting Started → Install / Hello Prolog
+- Guides → Tracing and Debugging
+- Basics → Builtins / Operators
+- Reference → Trace format
