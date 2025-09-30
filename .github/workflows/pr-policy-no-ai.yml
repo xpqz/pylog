@@ -72,7 +72,7 @@ jobs:
               data = resp.read()
           commits = json.loads(data.decode('utf-8'))
 
-          pattern = re.compile(r'(
+          pattern = re.compile(r'''(
               claude|
               anthropic|
               chatgpt|
@@ -81,12 +81,12 @@ jobs:
               gpt-3\.5|
               copilot|
               co[ -]?pilot|
-              ai assistance|
+              ai[ ]assistance|
               ai-assisted|
               ai[- ]generated|
-              generated (with|by) ai|
+              generated[ ](with|by)[ ]ai|
               co-?authored-?by:.*(claude|anthropic|chatgpt|openai)
-            )', re.I | re.X)
+            )''', re.I | re.X)
           violations = []
           for c in commits:
               msg = c.get('commit', {}).get('message', '')
@@ -131,7 +131,7 @@ jobs:
           review_comments = gh_get(f'https://api.github.com/repos/{repo}/pulls/{pr_number}/comments')
           reviews = gh_get(f'https://api.github.com/repos/{repo}/pulls/{pr_number}/reviews')
 
-          pattern = re.compile(r'(
+          pattern = re.compile(r'''(
               claude|
               anthropic|
               chatgpt|
@@ -140,12 +140,12 @@ jobs:
               gpt-3\.5|
               copilot|
               co[ -]?pilot|
-              ai assistance|
+              ai[ ]assistance|
               ai-assisted|
               ai[- ]generated|
-              generated (with|by) ai|
+              generated[ ](with|by)[ ]ai|
               co-?authored-?by:.*(claude|anthropic|chatgpt|openai)
-            )', re.I | re.X)
+            )''', re.I | re.X)
 
           violations = []
           for c in issue_comments:
