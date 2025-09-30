@@ -37,6 +37,7 @@ from prolog.clpfd.entailment import (
 )
 from prolog.clpfd.boolean import ensure_boolean_var
 from prolog.unify.unify import unify
+from prolog.unify.unify_helpers import bind_root_to_term
 from prolog.clpfd.safe_bind import safe_bind_singleton
 
 
@@ -1090,14 +1091,69 @@ def _builtin_fd_reif_equiv(engine, b_term, constraint_term):
         return False  # Not a binary constraint
 
     constraint_type = constraint_term.functor
-    x_arg, y_arg = constraint_term.args
+    x_term, y_term = constraint_term.args
 
-    # Convert arguments for constraint handling
-    x_arg = _convert_arg_for_constraint(store, x_arg)
-    y_arg = _convert_arg_for_constraint(store, y_arg)
+    # First try simple conversion for basic cases
+    x_arg = _convert_arg_for_constraint(store, x_term)
+    y_arg = _convert_arg_for_constraint(store, y_term)
 
+    # If simple conversion failed, try to handle arithmetic expressions
     if x_arg is None or y_arg is None:
-        return False  # Invalid arguments
+        # Try to parse as linear expressions and convert to simple variables
+        try:
+            # Handle x_term
+            if x_arg is None:
+                x_coeffs, x_const = parse_linear_expression(x_term, engine)
+                if len(x_coeffs) == 1 and x_const == 0:
+                    # Simple variable case: 1*X + 0
+                    var_id = next(iter(x_coeffs.keys()))
+                    coeff = x_coeffs[var_id]
+                    if coeff == 1:
+                        x_arg = var_id
+                elif len(x_coeffs) == 0:
+                    # Constant case: 0*any + const
+                    x_arg = (None, x_const)
+                else:
+                    # Complex arithmetic expression - need auxiliary variable
+                    aux_var = store.new_var("aux")
+                    # Post auxiliary constraint: aux_var = expression
+                    success = _post_linear_equality_aux(
+                        engine, aux_var, x_coeffs, x_const
+                    )
+                    if not success:
+                        return False
+                    x_arg = aux_var
+
+            # Handle y_term
+            if y_arg is None:
+                y_coeffs, y_const = parse_linear_expression(y_term, engine)
+                if len(y_coeffs) == 1 and y_const == 0:
+                    # Simple variable case: 1*Y + 0
+                    var_id = next(iter(y_coeffs.keys()))
+                    coeff = y_coeffs[var_id]
+                    if coeff == 1:
+                        y_arg = var_id
+                elif len(y_coeffs) == 0:
+                    # Constant case: 0*any + const
+                    y_arg = (None, y_const)
+                else:
+                    # Complex arithmetic expression - need auxiliary variable
+                    aux_var = store.new_var("aux")
+                    # Post auxiliary constraint: aux_var = expression
+                    success = _post_linear_equality_aux(
+                        engine, aux_var, y_coeffs, y_const
+                    )
+                    if not success:
+                        return False
+                    y_arg = aux_var
+
+        except Exception:
+            # If parsing fails, reject the constraint
+            return False
+
+        # Final check after arithmetic expression handling
+        if x_arg is None or y_arg is None:
+            return False
 
     # Get appropriate entailment checker and constraint posters
     entailment_checker = None
@@ -1402,6 +1458,59 @@ def _builtin_fd_reif_implication_impl(engine, b_term, constraint_term, forward):
             deref = store.deref(b_id)
             if deref[0] == "UNBOUND":
                 safe_bind_singleton(deref[1], b_dom.min(), trail, store)
+
+    return True
+
+
+def _post_linear_equality_aux(engine, aux_var, coeffs, const):
+    """Post an auxiliary constraint: aux_var = linear_expression.
+
+    Args:
+        engine: Engine instance
+        aux_var: Variable ID for the auxiliary variable
+        coeffs: Dictionary mapping variable IDs to coefficients
+        const: Constant term
+
+    Returns:
+        True if constraint posted successfully, False otherwise
+    """
+    store = engine.store
+    trail = engine.trail
+
+    # Create constraint: aux_var - (coeffs*vars + const) = 0
+    combined_coeffs = {aux_var: 1}
+    for var_id, coeff in coeffs.items():
+        combined_coeffs[var_id] = combined_coeffs.get(var_id, 0) - coeff
+    combined_const = -const
+
+    # If no variables besides aux_var, just bind aux_var to constant
+    if len(combined_coeffs) == 1:
+        # aux_var = const
+        bind_root_to_term(aux_var, Int(const), trail, store)
+        return True
+
+    # Create and post the linear constraint propagator
+
+    prop = create_linear_propagator(combined_coeffs, combined_const, "=")
+
+    # Ensure all variables have domains
+    for var_id in combined_coeffs:
+        deref = store.deref(var_id)
+        if deref[0] == "UNBOUND":
+            root = deref[1]
+            if get_domain(store, root) is None:
+                # Set default domain
+                set_domain(store, root, Domain(((-(2**31), 2**31 - 1),)), trail)
+
+    # Run the propagator
+    queue = _ensure_queue(engine)
+    pid = queue.register(prop)
+
+    # Register propagator with all variables
+    for var_id in combined_coeffs:
+        deref = store.deref(var_id)
+        if deref[0] == "UNBOUND":
+            add_watcher(store, deref[1], pid, Priority.HIGH, trail)
 
     return True
 

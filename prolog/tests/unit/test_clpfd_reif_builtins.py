@@ -322,17 +322,26 @@ class TestReificationErrorHandling:
 
         assert len(solutions) == 0
 
-    def test_unsupported_constraint_fails(self):
-        """Test that unsupported constraints fail."""
+    def test_arithmetic_expressions_now_supported(self):
+        """Test that arithmetic expressions in reification are now supported."""
         engine = Engine(program(), trace=False, occurs_check=False)
 
-        # Currently we don't support arbitrary expressions in reification
-        # (future enhancement)
-        result = engine.query("B #<=> (X + Y #= 10)")
+        # Arithmetic expressions in reification are now supported (fixed in issue #179)
+        result = engine.query(
+            "X in 1..5, Y in 1..5, B #<=> (X + Y #= 10), label([X, Y, B])"
+        )
         solutions = list(result)
 
-        # This should fail for now (not implemented)
-        assert len(solutions) == 0
+        # Should find solutions where X + Y = 10 makes B = 1, and other cases make B = 0
+        assert len(solutions) > 0
+
+        # Verify the constraint logic
+        for sol in solutions:
+            x = sol["X"].value
+            y = sol["Y"].value
+            b = sol["B"].value
+            expected_b = 1 if x + y == 10 else 0
+            assert b == expected_b, f"X={x}, Y={y}: expected B={expected_b}, got B={b}"
 
 
 class TestReificationIntegration:
