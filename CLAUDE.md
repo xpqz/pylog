@@ -6,6 +6,51 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is PyLog, a tree-walking Prolog interpreter in Python with an eventual CLP(FD) (Constraint Logic Programming over Finite Domains) layer. The system is designed for learning and debuggability first, with stable interfaces that survive later stages.
 
+## ⚠️ CRITICAL: Test Integrity Rules
+
+**NEVER MODIFY TESTS TO MAKE THEM PASS - Period.**
+
+### Ironclad Test Integrity Rules:
+
+1. **Tests are Sacred**: Tests define the expected behavior. If a test fails, the code is wrong, not the test.
+
+2. **Only Three Valid Reasons to Change a Test**:
+   - **Provably incorrect logic**: The test itself contains a mathematical or logical error
+   - **Invalid assumptions**: The test assumes behavior that contradicts the specification
+   - **Typos/syntax errors**: Clear mistakes in test code (like wrong variable names)
+
+3. **Required Evidence for Test Changes**:
+   - **Written justification**: Must document exactly what was wrong with the original test
+   - **Reference to specification**: Show how the test contradicts documented behavior
+   - **Alternative verification**: Demonstrate the correct behavior through independent means
+
+4. **Forbidden "Fixes"**:
+   - ❌ Changing expected values because they don't match actual output
+   - ❌ Reducing test scope because full test fails
+   - ❌ Simplifying test cases because they're "too complex"
+   - ❌ Removing assertions because they fail
+   - ❌ Making tests "more realistic" when they expose bugs
+
+5. **Mandatory Process When Tests Fail**:
+   - **Step 1**: Assume the test is correct and the implementation is wrong
+   - **Step 2**: Investigate why the implementation doesn't meet the test's expectations
+   - **Step 3**: Fix the implementation to satisfy the test
+   - **Step 4**: Only if Step 3 is impossible, then question if the test is wrong
+   - **Step 5**: If changing a test, require explicit approval with written justification
+
+### Red Flag Phrases That Should Trigger Immediate Stop:
+- "Let me simplify this test..."
+- "This test is too complex, let me make it more realistic..."
+- "The test expects X but that's not how it actually works..."
+- "Let me adjust the expected values..."
+- "This test is causing issues, let me fix it..."
+
+### Correct Mindset:
+- **Tests are the specification in executable form**
+- **Failing tests reveal implementation gaps, not test problems**
+- **Complex tests often catch the most important bugs**
+- **Test failures are valuable information about what needs to be built**
+
 ## Project Structure
 
 ```
@@ -108,6 +153,7 @@ uv add --dev <package-name>
 2. **Centralized mutation** - Only `bind()` mutates the store; every backtrackable change is trailed
 3. **Stable interfaces** - Terms, store, trail, and engine hooks remain stable across all stages
 4. **Engine purity** - CLP(FD) integrates via attributed variables, not engine modifications
+5. **Conformance** - don't speculate about Prolog behavior, verify. You have access to the swi-prolog implementation, available as `swipl`. 
 
 ### Key Data Structures
 

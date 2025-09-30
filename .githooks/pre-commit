@@ -43,4 +43,39 @@ python3 scripts/check_no_conditional_imports.py "${py_files[@]}" || {
   exit 1
 }
 
+# Check for test file modifications (test integrity protection)
+test_files=()
+while IFS= read -r -d '' f; do
+  if [[ "$f" == */test_*.py || "$f" == *test*.py ]] && [[ "$f" == prolog/tests/* ]]; then
+    test_files+=("$f")
+  fi
+done < <(git diff --cached --name-only --diff-filter=M -z)
+
+if [[ ${#test_files[@]} -gt 0 ]]; then
+  echo "⚠️  WARNING: Test files are being modified:"
+  printf '  %s\n' "${test_files[@]}"
+  echo
+  echo "🚨 CRITICAL REMINDER: NEVER MODIFY TESTS TO MAKE THEM PASS"
+  echo "   Tests are the specification. If tests fail, fix the implementation."
+  echo "   See CLAUDE.md 'Test Integrity Rules' for complete guidelines."
+  echo
+  echo "   Valid reasons to modify tests:"
+  echo "   ✅ Provably incorrect logic in the test"
+  echo "   ✅ Test contradicts documented specification"
+  echo "   ✅ Clear typos/syntax errors"
+  echo
+  echo "   Invalid reasons (will break the build):"
+  echo "   ❌ Test expects different values than current output"
+  echo "   ❌ Test is 'too complex' or 'unrealistic'"
+  echo "   ❌ Test fails and you want to make it pass"
+  echo
+  read -p "Do you have written justification for these test changes? (y/N): " -n 1 -r
+  echo
+  if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    echo "Commit aborted. Please fix the implementation instead of the tests."
+    exit 1
+  fi
+  echo "Proceeding with test modifications. Ensure you have proper justification."
+fi
+
 exit 0

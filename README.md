@@ -91,6 +91,12 @@ solutions = list(engine.run(goals))
 
 See [docs/ARCH.md](docs/ARCH.md) for architecture details and [docs/PLAN.md](docs/PLAN.md) for the implementation roadmap.
 
+### Contributing
+
+**⚠️ Critical**: Before contributing, read our [Test Integrity Rules](CLAUDE.md#-critical-test-integrity-rules). **Tests are sacred** - never modify tests to make them pass.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines and [prolog/tests/README.md](prolog/tests/README.md) for testing practices.
+
 ## License
 
 MIT
