@@ -18,6 +18,7 @@ from prolog.clpfd.props.comparison import (
 )
 from prolog.clpfd.props.alldiff import create_all_different_propagator
 from prolog.clpfd.props.sum_const import create_sum_const_propagator
+from prolog.clpfd.props.element import create_element_propagator
 from prolog.clpfd.props.sum import create_sum_propagator
 from prolog.clpfd.expr import parse_linear_expression
 from prolog.clpfd.props.linear import create_linear_propagator
@@ -1151,6 +1152,191 @@ def _builtin_all_different(engine, list_term):
                             watcher_pid, priority, cause=("domain_changed", vid)
                         )
             success = queue.run_to_fixpoint(store, trail, engine)
+
+    return success
+
+
+def _builtin_element_3(engine, index_term, list_term, value_term):
+    """element(Index, List, Value) - Value is the Index-th element of List (1-indexed).
+
+    Args:
+        engine: Engine instance
+        index_term: Index variable or integer (1-based)
+        list_term: List of elements (variables or integers)
+        value_term: Value variable or integer
+
+    Returns:
+        True if constraint was posted successfully, False if failed immediately
+    """
+    store = engine.store
+    trail = engine.trail
+
+    # Validate that list_term is actually a list
+    if not isinstance(list_term, List):
+        return False
+
+    # Handle empty list case
+    if len(list_term.items) == 0:
+        return False
+
+    # Parse and dereference all terms
+    index_deref = store.deref(index_term.id) if isinstance(index_term, Var) else None
+    value_deref = store.deref(value_term.id) if isinstance(value_term, Var) else None
+
+    # Extract ground values and variable IDs
+    index_value = None
+    index_var = None
+    if isinstance(index_term, Int):
+        index_value = index_term.value
+    elif index_deref and index_deref[0] == "BOUND" and isinstance(index_deref[2], Int):
+        index_value = index_deref[2].value
+    elif index_deref and index_deref[0] == "UNBOUND":
+        index_var = index_deref[1]
+    else:
+        return False  # Invalid index term
+
+    value_value = None
+    value_var = None
+    if isinstance(value_term, Int):
+        value_value = value_term.value
+    elif value_deref and value_deref[0] == "BOUND" and isinstance(value_deref[2], Int):
+        value_value = value_deref[2].value
+    elif value_deref and value_deref[0] == "UNBOUND":
+        value_var = value_deref[1]
+    else:
+        return False  # Invalid value term
+
+    # Parse list elements - collect variables and ground values
+    list_vars = []  # Variable IDs for unbound variables
+    list_values = []  # Values for ground elements (Int for unbound, value for bound)
+
+    for i, item in enumerate(list_term.items):
+        if isinstance(item, Int):
+            list_vars.append(None)  # No variable
+            list_values.append(item.value)
+        elif isinstance(item, Var):
+            item_deref = store.deref(item.id)
+            if item_deref[0] == "BOUND":
+                val = item_deref[2]
+                if not isinstance(val, Int):
+                    return False  # Non-integer in list
+                list_vars.append(None)
+                list_values.append(val.value)
+            elif item_deref[0] == "UNBOUND":
+                list_vars.append(item_deref[1])  # Variable ID
+                list_values.append(None)  # No value yet
+            else:
+                return False
+        else:
+            return False  # Invalid list element
+
+    # Handle immediate ground cases
+    if index_value is not None:
+        # Index is ground - check bounds
+        if index_value < 1 or index_value > len(list_term.items):
+            return False  # Index out of bounds
+
+        list_index = index_value - 1  # Convert to 0-based
+
+        if value_value is not None:
+            # Both index and value are ground - check consistency
+            if list_values[list_index] is not None:
+                # List element is also ground
+                return list_values[list_index] == value_value
+            else:
+                # List element is variable - constrain it
+                list_var_id = list_vars[list_index]
+                existing_dom = get_domain(store, list_var_id)
+                target_dom = Domain(((value_value, value_value),))
+                if existing_dom:
+                    target_dom = existing_dom.intersect(target_dom)
+                if target_dom.is_empty():
+                    return False
+                set_domain(store, list_var_id, target_dom, trail)
+                return True
+        else:
+            # Index is ground, value is variable
+            if list_values[list_index] is not None:
+                # List element is ground - constrain value
+                existing_dom = get_domain(store, value_var)
+                target_dom = Domain(
+                    ((list_values[list_index], list_values[list_index]),)
+                )
+                if existing_dom:
+                    target_dom = existing_dom.intersect(target_dom)
+                if target_dom.is_empty():
+                    return False
+                set_domain(store, value_var, target_dom, trail)
+                return True
+            else:
+                # Both list element and value are variables - need propagator
+                pass  # Fall through to propagator creation
+
+    elif value_value is not None:
+        # Value is ground, index is variable
+        if index_var is not None:
+            # Find all positions where the value could occur
+            valid_indices = []
+            for i, list_val in enumerate(list_values):
+                if list_val is not None:
+                    # Ground list element
+                    if list_val == value_value:
+                        valid_indices.append(i + 1)  # Convert to 1-based
+                else:
+                    # Variable list element - check if value is possible
+                    list_var_id = list_vars[i]
+                    list_dom = get_domain(store, list_var_id)
+                    if list_dom is None or list_dom.contains(value_value):
+                        valid_indices.append(i + 1)  # Convert to 1-based
+
+            if not valid_indices:
+                return False  # Value cannot occur anywhere
+
+            # Constrain index to valid positions
+            existing_dom = get_domain(store, index_var)
+            intervals = tuple((idx, idx) for idx in valid_indices)
+            target_dom = Domain(intervals)
+            if existing_dom:
+                target_dom = existing_dom.intersect(target_dom)
+            if target_dom.is_empty():
+                return False
+            set_domain(store, index_var, target_dom, trail)
+
+            # If index is now singleton, we can do more immediate pruning
+            if target_dom.is_singleton():
+                final_index = target_dom.min()
+                list_index = final_index - 1
+                if list_vars[list_index] is not None:
+                    # Constrain the corresponding list element
+                    list_var_id = list_vars[list_index]
+                    existing_list_dom = get_domain(store, list_var_id)
+                    value_dom = Domain(((value_value, value_value),))
+                    if existing_list_dom:
+                        value_dom = existing_list_dom.intersect(value_dom)
+                    if value_dom.is_empty():
+                        return False
+                    set_domain(store, list_var_id, value_dom, trail)
+                return True
+
+    # Need propagator for non-trivial cases
+    # Create propagator
+    prop = create_element_propagator(index_var, list_vars, value_var, list_values)
+
+    queue = _ensure_queue(engine)
+    pid = queue.register(prop)
+
+    # Add watchers
+    if index_var is not None:
+        add_watcher(store, index_var, pid, Priority.HIGH, trail)
+    if value_var is not None:
+        add_watcher(store, value_var, pid, Priority.MED, trail)
+    for list_var_id in list_vars:
+        if list_var_id is not None:
+            add_watcher(store, list_var_id, pid, Priority.MED, trail)
+
+    # Schedule initial propagation
+    queue.schedule(pid, Priority.HIGH, cause="initial")
+    success = queue.run_to_fixpoint(store, trail, engine)
 
     return success
 
