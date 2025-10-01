@@ -127,6 +127,10 @@ HASH_LT: "#<"
 HASH_GT: "#>"
 HASH_EQ_LT: "#=<"
 HASH_GT_EQ: "#>="
+HASH_LT_EQ_GT: "#<=>"
+HASH_EQ_EQ_GT: "#==>"
+HASH_LT_EQ_EQ: "#<=="
+HASH_BACKSLASH_SLASH: "#\\/"
 
 // Single-character operators
 COMMA: ","
