@@ -39,6 +39,7 @@ from prolog.clpfd.boolean import ensure_boolean_var
 from prolog.unify.unify import unify
 from prolog.unify.unify_helpers import bind_root_to_term
 from prolog.clpfd.safe_bind import safe_bind_singleton
+from typing import List as TypingList
 
 
 def _builtin_in(engine, x_term, domain_term):
@@ -1860,3 +1861,64 @@ def _post_constraint_with_flush(engine, store, trail, x_arg, y_arg, constraint_b
                 safe_bind_singleton(yd[1], dom.min(), trail, store)
 
     return True
+
+
+# Vector parsing helpers for global constraints
+def parse_var_list(list_term, store) -> TypingList[int]:
+    """Parse a list of variables/integers into constraint-ready format.
+
+    Args:
+        list_term: List term containing variables and/or integers
+        store: Variable store for dereferencing
+
+    Returns:
+        List where each element is either:
+        - int: variable ID for unbound variables
+        - int: integer value for bound variables or Int terms
+
+    Raises:
+        ValueError: If list contains invalid terms
+    """
+    if not isinstance(list_term, List):
+        raise ValueError("Expected List term")
+
+    result = []
+    for item in list_term.items:
+        if isinstance(item, Int):
+            result.append(item.value)
+        elif isinstance(item, Var):
+            deref = store.deref(item.id)
+            if deref[0] == "BOUND":
+                val = deref[2]
+                if isinstance(val, Int):
+                    result.append(val.value)
+                else:
+                    raise ValueError(
+                        "Invalid term in variable list: bound to non-integer"
+                    )
+            else:
+                result.append(deref[1])  # Return root variable ID
+        else:
+            raise ValueError("Invalid term in variable list: must be Var or Int")
+
+    return result
+
+
+def validate_equal_length_vectors(vector_lists):
+    """Validate that all vector lists have equal length.
+
+    Args:
+        vector_lists: List of List terms to validate
+
+    Raises:
+        ValueError: If vectors have different lengths
+    """
+    if not vector_lists:
+        return
+
+    first_length = len(vector_lists[0].items)
+    for i, vec in enumerate(vector_lists[1:], 1):
+        if len(vec.items) != first_length:
+            raise ValueError(
+                f"Vectors must have equal length: vector 0 has {first_length}, vector {i} has {len(vec.items)}"
+            )

@@ -1,8 +1,9 @@
 # Code Rules and Processes for this project
 
-**KEY RULES**: 
-- NEVER CLAIM THAT SOMETHING IS COMPLETE IF THERE ARE REGRESSIONS. RUN THE FULL TEST SUITE BEFORE AND AFTER EACH WORK UNIT. 
+**KEY RULES**:
+- NEVER CLAIM THAT SOMETHING IS COMPLETE IF THERE ARE REGRESSIONS. RUN THE FULL TEST SUITE BEFORE AND AFTER EACH WORK UNIT.
 - NEVER USE --no-verify WITH GIT!
+- **ABSOLUTELY NO CONDITIONAL IMPORTS ANYWHERE** - ALL imports must be at file top, including in tests
 
 ## Test Locations
 - **CRITICAL**: Unit tests MUST be placed in `prolog/tests/unit/` (NOT in `tests/unit/`)
@@ -11,11 +12,14 @@
 - Scenario tests go in `prolog/tests/scenarios/`
 - NEVER create a `tests/` directory at the repository root
 
-## Developing in Python 
+## Developing in Python
 
 - Never do "fallback" programming in terms of requirements: if you expect module A, fail immediately if it's not present.
 - **CRITICAL**: No conditional imports. All imports at the top of files only.
-- Use up-to-date Python syntax, version 3.10 and onwards. 
+  - ❌ WRONG: `from prolog.something import foo` inside a function
+  - ✅ CORRECT: All imports at file top, even if only used in one test method
+  - This applies to ALL files: source code, tests, scripts, everything
+- Use up-to-date Python syntax, version 3.10 and onwards.
 - Backwards compatibility is NOT a goal.
 - Use modern type hinting (dict, not Dict)
 
