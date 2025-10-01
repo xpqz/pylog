@@ -6,6 +6,72 @@ Supports operators: +, -, * (with constants only)
 
 from typing import Dict, Tuple
 from prolog.ast.terms import Term, Var, Int, Struct
+from prolog.clpfd.api import get_domain
+
+
+def _is_ground_arithmetic(expr: Term, engine) -> bool:
+    """Check if an expression contains only ground arithmetic terms.
+
+    Args:
+        expr: Expression to check
+        engine: Engine for dereferencing variables
+
+    Returns:
+        True if expression is ground arithmetic, False otherwise
+    """
+    if isinstance(expr, Int):
+        return True
+    elif isinstance(expr, Var):
+        # Check if variable is bound to a ground term
+        deref = engine.store.deref(expr.id)
+        if deref[0] == "BOUND":
+            return _is_ground_arithmetic(deref[2], engine)
+        else:
+            # Check if variable has a singleton domain (effectively bound)
+            domain = get_domain(engine.store, deref[1])
+            if domain and domain.is_singleton():
+                return True
+            return False
+    elif isinstance(expr, Struct):
+        # Check if it's a supported arithmetic operator and all args are ground
+        if expr.functor in ["+", "-", "*", "//", "mod", "max", "min"]:
+            return all(_is_ground_arithmetic(arg, engine) for arg in expr.args)
+        else:
+            return False
+    else:
+        return False
+
+
+def _convert_to_ground_expr(expr: Term, engine) -> Term:
+    """Convert an expression with singleton domains to ground integers.
+
+    Args:
+        expr: Expression to convert
+        engine: Engine for dereferencing and domain access
+
+    Returns:
+        Expression with singleton domain variables replaced by Int values
+    """
+    if isinstance(expr, Int):
+        return expr
+    elif isinstance(expr, Var):
+        # Check if variable is bound to a ground term
+        deref = engine.store.deref(expr.id)
+        if deref[0] == "BOUND":
+            return _convert_to_ground_expr(deref[2], engine)
+        else:
+            # Check if variable has a singleton domain
+            domain = get_domain(engine.store, deref[1])
+            if domain and domain.is_singleton():
+                return Int(domain.min())
+            else:
+                raise ValueError(f"Variable {expr} is not ground")
+    elif isinstance(expr, Struct):
+        # Convert all arguments
+        new_args = tuple(_convert_to_ground_expr(arg, engine) for arg in expr.args)
+        return Struct(expr.functor, new_args)
+    else:
+        raise ValueError(f"Cannot convert {expr} to ground expression")
 
 
 def parse_linear_expression(expr: Term, engine) -> Tuple[Dict[int, int], int]:
@@ -23,6 +89,17 @@ def parse_linear_expression(expr: Term, engine) -> Tuple[Dict[int, int], int]:
     Raises:
         ValueError: If expression is non-linear or invalid
     """
+    # First, try to evaluate ground arithmetic expressions
+    try:
+        if _is_ground_arithmetic(expr, engine):
+            # Convert singleton domains to Int values for evaluation
+            ground_expr = _convert_to_ground_expr(expr, engine)
+            value = engine._eval_arithmetic(ground_expr)
+            return {}, value
+    except (ValueError, AttributeError):
+        # Not a ground arithmetic expression, continue with linear parsing
+        pass
+
     coeffs = {}
     const = 0
 
@@ -92,7 +169,9 @@ def parse_linear_expression(expr: Term, engine) -> Tuple[Dict[int, int], int]:
                     elif isinstance(right, Var):
                         # Check if right is bound to a constant
                         right_deref = engine.store.deref(right.id)
-                        if right_deref[0] == "BOUND" and isinstance(right_deref[2], Int):
+                        if right_deref[0] == "BOUND" and isinstance(
+                            right_deref[2], Int
+                        ):
                             # Right is bound to constant
                             parse_expr(left, sign * right_deref[2].value)
                         else:

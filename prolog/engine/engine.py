@@ -3140,7 +3140,10 @@ class Engine:
                 if isinstance(t, Int):
                     value_stack.append(t.value)
                 elif isinstance(t, Struct):
-                    if t.functor in ["+", "-", "*", "//", "mod"] and len(t.args) == 2:
+                    if (
+                        t.functor in ["+", "-", "*", "//", "mod", "max", "min"]
+                        and len(t.args) == 2
+                    ):
                         # Binary operator: evaluate args then apply
                         eval_stack.append(("apply", Atom(t.functor)))
                         # Push args in reverse order for correct evaluation
@@ -3181,6 +3184,10 @@ class Engine:
                     if right == 0:
                         raise ValueError("Modulo by zero")
                     value_stack.append(left % right)
+                elif op == "max":
+                    value_stack.append(max(left, right))
+                elif op == "min":
+                    value_stack.append(min(left, right))
 
             elif action == "apply_unary":
                 op_atom = data
