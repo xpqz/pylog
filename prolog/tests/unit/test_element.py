@@ -574,32 +574,32 @@ class TestElementReification:
 
 
 @pytest.mark.swi_baseline
-@pytest.mark.skip(reason="element/3 not available in SWI-Prolog by default")
 class TestElementSWIBaseline:
     """Test element/3 against SWI-Prolog baseline."""
 
     def test_element_basic_swi_comparison(self, swi):
         """Compare basic element/3 behavior with SWI-Prolog."""
+        program = ":- use_module(library(clpfd))."
+
         # Test basic element access
-        count = swi.count("", "element(2, [1,2,3], X)")
+        count = swi.count(program, "element(2, [1,2,3], X)")
         assert count == 1
 
-        values = swi.onevar("", "element(2, [1,2,3], X)", "X")
+        values = swi.onevar(program, "element(2, [1,2,3], X)", "X")
         assert values == ["2"]
 
         # Test with bound index and value - should succeed
-        count = swi.count("", "element(2, [1,2,3], 2)")
+        count = swi.count(program, "element(2, [1,2,3], 2)")
         assert count == 1
 
         # Test failure case
-        count = swi.count("", "element(2, [1,2,3], 5)")
+        count = swi.count(program, "element(2, [1,2,3], 5)")
         assert count == 0
 
     def test_element_domain_propagation_swi_comparison(self, swi):
         """Compare domain propagation with SWI-Prolog CLP(FD)."""
-        # This test requires SWI-Prolog CLP(FD) library
-        program = ""
-        goal = "use_module(library(clpfd)), I in 1..4, element(I, [1,2,3,2], 2), indomain(I)"
+        program = ":- use_module(library(clpfd))."
+        goal = "I in 1..4, element(I, [1,2,3,2], 2), indomain(I)"
 
         # Should get I = 2 and I = 4 (positions where value is 2)
         count = swi.count(program, goal)
