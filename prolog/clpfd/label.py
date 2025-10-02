@@ -251,14 +251,19 @@ def push_labeling_choices(engine, vars, var_select, val_select, rng_seed=None):
         engine._push_goal(Goal(GoalType.BUILTIN, unify_goal))
     else:
         # Non-deterministic: (X=V1, label(Vars)) ; (X=V2, label(Vars)) ; ...
-        def build_disjunction(vals):
+        def build_disjunction_iterative(vals):
+            """Build disjunction iteratively to avoid recursion depth issues."""
             if len(vals) == 1:
                 return branch_struct(vals[0])
-            left = branch_struct(vals[0])
-            right = build_disjunction(vals[1:])
-            return Struct(";", (left, right))
 
-        disj_goal = build_disjunction(values)
+            # Build right-associative disjunction iteratively from right to left
+            result = branch_struct(vals[-1])  # Start with last value
+            for value in reversed(vals[:-1]):  # Work backwards through remaining values
+                left = branch_struct(value)
+                result = Struct(";", (left, result))
+            return result
+
+        disj_goal = build_disjunction_iterative(values)
         # Ensure a fresh trail stamp for this labeling branch to avoid
         # cross-branch leakage of FD domain/attr changes when nested.
         engine._push_goal(
