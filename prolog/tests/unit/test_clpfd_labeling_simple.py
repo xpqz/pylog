@@ -3,6 +3,7 @@
 Basic tests that don't rely on complex strategies.
 """
 
+import pytest
 from prolog.ast.terms import Atom, Int, Var, List
 from prolog.engine.engine import Engine, Program
 from prolog.clpfd.label import (
@@ -300,11 +301,11 @@ class TestVariableSelectionCaching:
     def test_caching_with_domain_changes(self):
         """Test that caching properly invalidates when domains change."""
 
-        # This test will pass after implementing the cached VariableSelector
-        if not hasattr(Engine, "_uses_variable_selection_caching"):
-            return  # Skip if not implemented yet
-
         engine = Engine(Program([]))
+        # Skip test if variable selection caching not implemented
+        if not hasattr(engine, "_uses_variable_selection_caching"):
+            pytest.skip("Variable selection caching not implemented")
+
         selector = VariableSelector()
 
         # Create variables
@@ -335,11 +336,11 @@ class TestVariableSelectionCaching:
     def test_watcher_count_caching_with_invalidation(self):
         """Test that watcher count caching properly invalidates when watchers change."""
 
-        # This test will pass after implementing the cached VariableSelector
-        if not hasattr(Engine, "_uses_variable_selection_caching"):
-            return  # Skip if not implemented yet
-
         engine = Engine(Program([]))
+        # Skip test if variable selection caching not implemented
+        if not hasattr(engine, "_uses_variable_selection_caching"):
+            pytest.skip("Variable selection caching not implemented")
+
         selector = VariableSelector()
 
         # Create variables with same domain size

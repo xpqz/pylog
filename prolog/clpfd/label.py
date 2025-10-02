@@ -281,6 +281,20 @@ def select_variable(unbound, strategy, engine):
     if not unbound:
         return None, None
 
+    # Use cached selector if feature flag is enabled
+    if hasattr(engine, '_uses_variable_selection_caching') and engine._uses_variable_selection_caching:
+        # Create or reuse selector instance
+        if not hasattr(engine, '_variable_selector'):
+            engine._variable_selector = VariableSelector()
+
+        selector = engine._variable_selector
+
+        if strategy == "first_fail" or strategy == "smallest":
+            return selector.select_first_fail(unbound, engine)
+        elif strategy == "most_constrained":
+            return selector.select_most_constrained(unbound, engine)
+
+    # Fallback to original logic for other strategies or when caching disabled
     if strategy == "first":
         # Select first in list
         return unbound[0]
@@ -534,18 +548,25 @@ class VariableSelector:
         Returns:
             Domain size (integer)
         """
-        domain_rev = domain.rev if hasattr(domain, "rev") else 0
-        cache_key = var_id
+        # Use domain object identity for cache invalidation instead of just rev
+        # This prevents issues with different Domain objects having the same rev
+        domain_identity = id(domain)
+        cache_key = (var_id, domain_identity)
 
         if cache_key in self._domain_size_cache:
-            cached_rev, cached_size = self._domain_size_cache[cache_key]
-            if cached_rev == domain_rev:
-                # Cache hit - domain hasn't changed
-                return cached_size
+            # Cache hit - same domain object
+            return self._domain_size_cache[cache_key]
 
-        # Cache miss or invalidated - recompute
+        # Cache miss - compute and cache
         size = domain.size()
-        self._domain_size_cache[cache_key] = (domain_rev, size)
+
+        # Clean up old cache entries for this variable to prevent memory leaks
+        old_keys = [k for k in self._domain_size_cache.keys() if k[0] == var_id]
+        for old_key in old_keys:
+            del self._domain_size_cache[old_key]
+
+        # Cache new value
+        self._domain_size_cache[cache_key] = size
         return size
 
     def _get_cached_watcher_count(self, var_id, engine):
