@@ -695,3 +695,157 @@ class TestQueueEdgeCases:
         assert len(received_causes) == 2
         assert received_causes[0] == "first_cause"
         assert received_causes[1] == "second_cause"  # Self-requeue cause preserved
+
+
+class TestQueueStaleSkipOptimization:
+    """Test optimization of stale-skip behavior (Phase 3.1)."""
+
+    def test_stale_entries_eliminated_by_optimization(self):
+        """Test that optimization eliminates stale entry accumulation."""
+        queue = PropagationQueue()
+
+        def prop(s, t, e, c):
+            return ("ok", None)
+
+        # Create many propagators
+        num_props = 50
+        pids = []
+        for i in range(num_props):
+            pid = queue.register(prop)
+            pids.append(pid)
+
+        # Schedule all at LOW priority
+        for pid in pids:
+            queue.schedule(pid, Priority.LOW)
+
+        # Initially all are in LOW queue
+        assert len(queue.queues[Priority.LOW]) == num_props
+        assert len(queue.queues[Priority.HIGH]) == 0
+
+        # Escalate all to HIGH priority - with optimization, LOW queue should be cleaned
+        for pid in pids:
+            queue.schedule(pid, Priority.HIGH)
+
+        # With eager cleanup optimization:
+        # - LOW queue should be empty (stale entries removed)
+        # - HIGH queue should have all entries
+        assert len(queue.queues[Priority.LOW]) == 0  # No stale entries!
+        assert len(queue.queues[Priority.HIGH]) == num_props  # All valid entries
+
+        # Pop all HIGH priority items
+        for i in range(num_props):
+            item = queue.pop()
+            assert item is not None
+            assert item[0] in pids
+
+        # Verify queue is completely empty
+        assert queue.is_empty()
+        assert len(queue.queues[Priority.LOW]) == 0
+        assert len(queue.queues[Priority.HIGH]) == 0
+
+    def test_mixed_escalation_and_normal_scheduling(self):
+        """Test mixed scenarios with escalation and normal scheduling."""
+        queue = PropagationQueue()
+
+        def prop(s, t, e, c):
+            return ("ok", None)
+
+        # Create propagators
+        num_escalated = 10
+        escalated_pids = []
+        for i in range(num_escalated):
+            pid = queue.register(prop)
+            escalated_pids.append(pid)
+
+        # Create one propagator that stays at LOW
+        stay_low_pid = queue.register(prop)
+
+        # Schedule escalated ones at LOW, then escalate to HIGH
+        for pid in escalated_pids:
+            queue.schedule(pid, Priority.LOW)
+
+        # Schedule the stay-low one at LOW
+        queue.schedule(stay_low_pid, Priority.LOW)
+
+        # Verify initial state: all in LOW queue
+        assert len(queue.queues[Priority.LOW]) == num_escalated + 1
+        assert len(queue.queues[Priority.HIGH]) == 0
+
+        # Now escalate some to HIGH - with optimization, they're removed from LOW
+        for pid in escalated_pids:
+            queue.schedule(pid, Priority.HIGH)
+
+        # With eager cleanup:
+        # - LOW queue should only have the stay-low propagator
+        # - HIGH queue should have all escalated propagators
+        assert len(queue.queues[Priority.LOW]) == 1  # Only stay_low_pid
+        assert len(queue.queues[Priority.HIGH]) == num_escalated
+
+        # Pop HIGH priority items first
+        for i in range(num_escalated):
+            item = queue.pop()
+            assert item is not None
+            assert item[0] in escalated_pids
+
+        # Then pop the LOW priority item
+        item = queue.pop()
+        assert item is not None
+        assert item[0] == stay_low_pid
+
+        # Queue should be completely empty
+        assert queue.is_empty()
+        assert len(queue.queues[Priority.LOW]) == 0
+        assert len(queue.queues[Priority.HIGH]) == 0
+
+    def test_eager_cleanup_eliminates_stale_entries(self):
+        """Test that eager cleanup during escalation eliminates stale entries.
+
+        This test will pass after implementing the optimization.
+        """
+        queue = PropagationQueue()
+
+        def prop(s, t, e, c):
+            return ("ok", None)
+
+        # Create propagators
+        pid1 = queue.register(prop)
+        pid2 = queue.register(prop)
+
+        # Schedule both at LOW
+        queue.schedule(pid1, Priority.LOW)
+        queue.schedule(pid2, Priority.LOW)
+
+        # Verify both are in LOW queue
+        assert len(queue.queues[Priority.LOW]) == 2
+
+        # Escalate pid1 to HIGH - with eager cleanup, LOW queue should shrink
+        queue.schedule(pid1, Priority.HIGH)
+
+        # After optimization, LOW queue should only have pid2
+        # (Current implementation leaves stale entry, optimized removes it)
+        # For now, this test documents the current behavior
+        if hasattr(queue, "_uses_eager_cleanup"):
+            # After optimization
+            assert len(queue.queues[Priority.LOW]) == 1
+        else:
+            # Current behavior - stale entry remains
+            assert len(queue.queues[Priority.LOW]) == 2
+
+        # Escalate pid2 to HIGH as well
+        queue.schedule(pid2, Priority.HIGH)
+
+        # After optimization, LOW queue should be empty
+        if hasattr(queue, "_uses_eager_cleanup"):
+            assert len(queue.queues[Priority.LOW]) == 0
+        else:
+            # Current behavior - both stale entries remain
+            assert len(queue.queues[Priority.LOW]) == 2
+
+        # HIGH queue should have both
+        assert len(queue.queues[Priority.HIGH]) == 2
+
+        # Pop should work correctly regardless
+        item1 = queue.pop()
+        item2 = queue.pop()
+        assert {item1[0], item2[0]} == {pid1, pid2}
+        assert queue.is_empty()

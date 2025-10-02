@@ -282,9 +282,12 @@ def select_variable(unbound, strategy, engine):
         return None, None
 
     # Use cached selector if feature flag is enabled
-    if hasattr(engine, '_uses_variable_selection_caching') and engine._uses_variable_selection_caching:
+    if (
+        hasattr(engine, "_uses_variable_selection_caching")
+        and engine._uses_variable_selection_caching
+    ):
         # Create or reuse selector instance
-        if not hasattr(engine, '_variable_selector'):
+        if not hasattr(engine, "_variable_selector"):
             engine._variable_selector = VariableSelector()
 
         selector = engine._variable_selector
