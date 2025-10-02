@@ -204,8 +204,20 @@ def push_labeling_choices(engine, vars, var_select, val_select, rng_seed=None):
     # Select next variable to label
     selected_var, selected_domain = select_variable(unbound, var_select, engine)
 
-    # Get values to try in order (already limited for large domains)
-    values = select_values(selected_domain, val_select, rng_seed=rng_seed)
+    # Get values to try in order using lazy iteration
+    values_iter = select_values_iter(selected_domain, val_select, rng_seed=rng_seed)
+
+    # Convert to list for the current implementation
+    # TODO: Make the entire labeling lazy to avoid materializing large domains
+    try:
+        values = list(values_iter)
+    except Exception:
+        # If materialization fails due to memory, use limited fallback
+        values = list(
+            itertools.islice(
+                select_values_iter(selected_domain, val_select, rng_seed=rng_seed), 1000
+            )
+        )
 
     if not values:
         # Empty domain - nothing to do, will fail
@@ -299,6 +311,42 @@ def select_variable(unbound, strategy, engine):
     else:
         # Default to first
         return unbound[0]
+
+
+def select_values_iter(domain, strategy, rng_seed=None):
+    """Select values from domain in order based on strategy.
+
+    Returns an iterator to avoid memory explosion with large domains.
+
+    Args:
+        domain: Domain object
+        strategy: Value selection strategy name
+        rng_seed: Random seed for indomain_random strategy
+
+    Returns:
+        Iterator over values to try in order
+    """
+    if domain.is_empty():
+        return iter([])
+
+    if strategy == "indomain_min":
+        return domain.iter_values()
+    elif strategy == "indomain_max":
+        return domain.iter_values_ordered("max_first")
+    elif strategy == "indomain_middle":
+        return domain.iter_values_ordered("middle_out")
+    elif strategy == "indomain_random":
+        # For random, we need to materialize values to shuffle them
+        # Use a reasonable limit to prevent memory explosion
+        max_values = 10000  # Generous limit for random sampling
+        values = list(itertools.islice(domain.iter_values(), max_values))
+        rng = random.Random(rng_seed if rng_seed is not None else 42)
+        rng.shuffle(values)
+        return iter(values)
+    elif strategy == "indomain_split":
+        return domain.iter_values_ordered("split")
+    else:
+        return domain.iter_values()
 
 
 def select_values(domain, strategy, rng_seed=None):

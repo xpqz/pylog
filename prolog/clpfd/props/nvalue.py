@@ -54,8 +54,15 @@ def create_nvalue_propagator(
         elif n_deref[0] == "UNBOUND":
             n_root = n_deref[1]
             n_domain = get_domain(store, n_root)
-            if n_domain is None or n_domain.is_empty():
+            if n_domain is not None and n_domain.is_empty():
                 return ("fail", None)
+            if n_domain is None:
+                # N is unconstrained - create appropriate domain based on problem size
+                # Minimum: 1 distinct value, Maximum: number of variables + fixed values
+                max_distinct = len(var_ids) + len(fixed_ground_values)
+                n_domain = Domain(((1, max_distinct),))
+                # Set the domain for N
+                set_domain(store, n_root, n_domain, trail)
             n_value = None
         else:
             return ("fail", None)
