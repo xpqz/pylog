@@ -5,14 +5,14 @@ Provides the 4-port tracer (call/exit/redo/fail) with minimal overhead
 when disabled and deterministic output for reproducibility.
 """
 
+from __future__ import annotations
+
 import uuid
 from dataclasses import dataclass, replace
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, Callable
 
 from prolog.ast.terms import Term, Atom, Struct, Var
-
-if TYPE_CHECKING:
-    from prolog.engine.engine import Engine
+from prolog.debug.filters import TraceFilters, should_emit_event
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,6 +23,7 @@ class TraceEvent:
     Immutable dataclass with slots for memory efficiency.
     Schema version 1 for JSONL format compatibility.
     """
+
     version: int  # Schema version (currently 1)
     run_id: str  # UUID for this query run
     step_id: int  # Global monotonic counter (post-filter)
@@ -45,7 +46,12 @@ class TraceEvent:
             raise ValueError(f"invalid port: {self.port!r}")
         if self.step_id < 0:
             raise ValueError("step_id must be >= 0")
-        if self.frame_depth < 0 or self.cp_depth < 0 or self.goal_height < 0 or self.write_stamp < 0:
+        if (
+            self.frame_depth < 0
+            or self.cp_depth < 0
+            or self.goal_height < 0
+            or self.write_stamp < 0
+        ):
             raise ValueError("depths/heights/write_stamp must be non-negative")
 
 
@@ -57,6 +63,7 @@ class InternalEvent:
     These events track internal engine operations beyond the standard 4-port model.
     They are OFF by default and add extra events when enabled.
     """
+
     step_id: int  # Global monotonic counter (shared with TraceEvent)
     kind: str  # Event type: 'cp_push'|'cp_pop'|'frame_push'|'frame_pop'|'cut_commit'|'catch_switch'
     details: Dict[str, Any]  # Event-specific details
@@ -73,14 +80,14 @@ class PortsTracer:
     - Default bindings_policy='none'
     """
 
-    def __init__(self, engine: 'Engine'):
+    def __init__(self, engine):
         """Initialize tracer with engine reference."""
         self.engine = engine
         self.step_counter = 0
         self.run_id = str(uuid.uuid4())
         self.sinks: List[Any] = []  # Output sinks
         self.spypoints: set = set()  # Set of (name, arity) tuples
-        self.bindings_policy = 'none'  # 'none'|'names'|'names_values'
+        self.bindings_policy = "none"  # 'none'|'names'|'names_values'
         self.max_term_depth = 4
         self.max_items_per_list = 10
         self.enable_internal_events = False
@@ -88,8 +95,8 @@ class PortsTracer:
         # Predicate ID interning cache (reset per run)
         self._pred_id_cache: Dict[tuple, str] = {}
 
-        # Filters (will be implemented in Phase 5)
-        self._filters = None
+        # Filters (TraceFilters integration)
+        self._filters: Optional[TraceFilters] = None
 
     def _intern_pred_id(self, name: str, arity: int) -> str:
         """
@@ -107,6 +114,17 @@ class PortsTracer:
         self.step_counter = 0
         self.run_id = str(uuid.uuid4())
         self._pred_id_cache.clear()
+
+    def set_filters(self, filters: TraceFilters) -> None:
+        """Set TraceFilters instance for event filtering."""
+        self._filters = filters
+
+    def set_filter(self, filter_func: Callable) -> None:
+        """Set simple filter function (REPL compatibility)."""
+        # Create simple TraceFilters wrapper for REPL
+        simple_filters = TraceFilters()
+        simple_filters._custom_filter = filter_func
+        self._filters = simple_filters
 
     def _create_event(self, port: str, goal: Term) -> TraceEvent:
         """
@@ -139,14 +157,14 @@ class PortsTracer:
         goal_canonical = str(goal)
 
         # Extract stack depths from engine
-        override = getattr(self.engine, '_frame_depth_override', None)
+        override = getattr(self.engine, "_frame_depth_override", None)
         if override is not None:
             frame_depth = override
         else:
             frame_depth = len(self.engine.frame_stack)
-        cp_depth = len(getattr(self.engine, 'cp_stack', []))
-        goal_height = len(getattr(self.engine, 'goal_stack', []))
-        write_stamp = getattr(self.engine, 'write_stamp', 0)
+        cp_depth = len(getattr(self.engine, "cp_stack", []))
+        goal_height = len(getattr(self.engine, "goal_stack", []))
+        write_stamp = getattr(self.engine, "write_stamp", 0)
 
         # Create event with step_id=0 (will be set post-filter)
         return TraceEvent(
@@ -163,17 +181,36 @@ class PortsTracer:
             write_stamp=write_stamp,
             pred_id=pred_id,
             bindings=None,  # Will be added based on policy
-            monotonic_ns=None  # Will be added if timestamps enabled
+            monotonic_ns=None,  # Will be added if timestamps enabled
         )
+
+    def _create_event_with_bindings(
+        self, port: str, goal: Term, bindings: Dict[str, Any]
+    ) -> TraceEvent:
+        """
+        Create a trace event with variable bindings from current engine state.
+
+        Args:
+            port: Trace port ('call'|'exit'|'redo'|'fail')
+            goal: Current goal being traced
+            bindings: Variable bindings dictionary
+
+        Returns:
+            TraceEvent with bindings included
+        """
+        # Create base event without bindings
+        event = self._create_event(port, goal)
+
+        # Return event with bindings included
+        return replace(event, bindings=bindings)
 
     def _should_emit(self, event: TraceEvent) -> bool:
         """
         Apply filters to determine if event should be emitted.
-
-        For Phase 1, always return True (no filters yet).
         """
-        # Phase 5 will implement actual filtering
-        return True
+        if self._filters is None:
+            return True
+        return should_emit_event(event, self._filters)
 
     def emit_event(self, port: str, goal: Term):
         """
@@ -183,6 +220,32 @@ class PortsTracer:
         """
         # Create event
         event = self._create_event(port, goal)
+
+        # Apply filters
+        if not self._should_emit(event):
+            return  # Filtered out, no step_id increment
+
+        # Increment step counter ONLY for emitted events
+        self.step_counter += 1
+
+        # Update event with actual step_id
+        event = replace(event, step_id=self.step_counter)
+
+        # Send to all sinks
+        for sink in self.sinks:
+            sink.write_event(event)
+
+    def emit_event_with_bindings(self, port: str, goal: Term, bindings: Dict[str, Any]):
+        """
+        Emit a trace event with variable bindings through configured sinks.
+
+        Args:
+            port: Trace port ('call'|'exit'|'redo'|'fail')
+            goal: Current goal being traced
+            bindings: Variable bindings dictionary
+        """
+        # Create event with bindings
+        event = self._create_event_with_bindings(port, goal, bindings)
 
         # Apply filters
         if not self._should_emit(event):
@@ -213,11 +276,7 @@ class PortsTracer:
         self.step_counter += 1
 
         # Create internal event
-        event = InternalEvent(
-            step_id=self.step_counter,
-            kind=kind,
-            details=details
-        )
+        event = InternalEvent(step_id=self.step_counter, kind=kind, details=details)
 
         # Send to all sinks
         for sink in self.sinks:

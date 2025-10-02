@@ -57,6 +57,9 @@ from prolog.clpfd.label import _builtin_label, _builtin_labeling, push_labeling_
 from prolog.parser.parser import parse_program, parse_query
 from prolog.ast.clauses import Program as ProgramClass
 
+# Debug imports
+from prolog.debug.filters import TraceFilters
+
 
 class Engine:
     """Prolog inference engine with explicit stacks (no Python recursion)."""
@@ -290,10 +293,76 @@ class Engine:
         try:
             if depth_override is not None:
                 self._frame_depth_override = depth_override
-            self.tracer.emit_event(port, term)
+
+            # Collect current variable bindings for the goal
+            bindings = self._collect_goal_bindings(term)
+
+            # Use emit_event_with_bindings if we have bindings, otherwise use regular emit_event
+            if bindings:
+                self.tracer.emit_event_with_bindings(port, term, bindings)
+            else:
+                self.tracer.emit_event(port, term)
         finally:
             if depth_override is not None:
                 self._frame_depth_override = previous
+
+    def set_trace_filters(self, filters: TraceFilters) -> None:
+        """Set TraceFilters instance on the PortsTracer.
+
+        Args:
+            filters: TraceFilters instance for event filtering
+        """
+        if self.tracer is not None:
+            self.tracer.set_filters(filters)
+
+    def _collect_goal_bindings(self, term: Term) -> Dict[str, Any]:
+        """Collect current variable bindings for all variables in the goal term.
+
+        Args:
+            term: The goal term to collect bindings for
+
+        Returns:
+            Dictionary mapping variable names to their current bindings
+        """
+        bindings = {}
+
+        def collect_vars(t: Term) -> None:
+            """Recursively collect variables from a term."""
+            if isinstance(t, Var):
+                # Get variable name hint for display
+                var_name = t.hint if t.hint else f"_{t.id}"
+
+                # Check if variable ID exists in store before dereferencing
+                if t.id < len(self.store.cells):
+                    # Get current binding from store
+                    deref_result = self.store.deref(t.id)
+                    if deref_result[0] == "BOUND":
+                        # Variable is bound to a value
+                        bound_term = deref_result[2]
+                        bindings[var_name] = str(bound_term)
+                    else:
+                        # Variable is unbound - show its canonical form
+                        bindings[var_name] = var_name
+                else:
+                    # Variable ID doesn't exist in store - likely test data
+                    bindings[var_name] = var_name
+
+            elif isinstance(t, Struct):
+                # Recursively process structure arguments
+                for arg in t.args:
+                    collect_vars(arg)
+
+            elif isinstance(t, PrologList):
+                # Process list items and tail
+                for item in t.items:
+                    collect_vars(item)
+                if t.tail is not None:
+                    collect_vars(t.tail)
+
+            # Atoms and Ints don't contain variables
+
+        collect_vars(term)
+        return bindings
 
     def _register_goal_depth(self, goal: Goal, depth: Optional[int] = None) -> None:
         """Track the logical call depth for a goal."""
