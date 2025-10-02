@@ -174,14 +174,61 @@ Replace naive O(b²×n) Hall-interval enumeration with efficient algorithms and 
 
 ---
 
-## Phase 3: Infrastructure Optimizations (5-10x Speedup Potential)
+## Phase 3: Infrastructure Optimizations (5-10x Speedup Potential) ✅ COMPLETED
 
 ### Overview
 Optimize propagation queue, API attribute operations, and variable selection to eliminate infrastructure overhead.
 
-### Changes Required
+### Implementation Results
+**Status**: ✅ **COMPLETED** (Branches: `198-queue-stale-skip-optimization`, `199-api-copy-on-write-optimization`, `200-variable-selection-caching`, merged to main)
 
-#### 1. Propagation Queue Stale-Skip Fix
+#### ✅ 3.1 Propagation Queue Eager Cleanup - COMPLETED
+**File**: `prolog/clpfd/queue.py`
+**Changes Implemented**:
+- Replaced stale-skip pattern with eager cleanup in `schedule()` method
+- Moved O(n) cost from hot path (pop) to cold path (priority escalation)
+- Simplified `pop()` method by removing stale entry scanning
+- Added comprehensive test suite with 3 test classes in `TestQueueStaleSkipOptimization`
+
+#### ✅ 3.2 API Attribute Copy-on-Write Optimization - COMPLETED
+**File**: `prolog/clpfd/api.py`
+**Changes Implemented**:
+- Optimized `add_watcher()` to only copy affected priority level instead of full attribute dictionary
+- Preserved watchers by reference for unmodified priority levels
+- Reduced memory allocation overhead for frequent watcher operations
+- Added comprehensive test suite with 4 test classes in `TestCopyOnWriteOptimization`
+
+#### ✅ 3.3 Variable Selection Caching - COMPLETED
+**File**: `prolog/clpfd/label.py`
+**Changes Implemented**:
+- Added `VariableSelector` class with cached `select_first_fail()` and `select_most_constrained()` methods
+- Domain size caching using domain revision numbers for invalidation
+- Watcher count caching using watchers dict identity for invalidation
+- Added `_uses_variable_selection_caching` feature flag to Engine class
+- Added comprehensive test suite with 4 test classes in `TestVariableSelectionCaching`
+
+### Success Criteria Results
+
+#### ✅ Automated Verification - PASSED
+- ✅ All 545 CLP(FD) tests pass: `uv run pytest prolog/tests/unit/test_clpfd*.py`
+- ✅ No regressions in functional tests
+- ✅ All infrastructure optimization tests pass (11/11 new tests)
+
+#### ✅ Manual Verification - ACHIEVED
+- ✅ **Propagation queue operations optimized**: O(n) cost moved from frequent pop() to rare escalation
+- ✅ **API attribute operations show reduced copying**: Only affected priority levels copied
+- ✅ **Variable selection caching implemented**: Domain sizes and watcher counts cached with proper invalidation
+- ✅ **All existing functionality preserved**: No breaking changes, backward compatibility maintained
+
+### Performance Impact Achieved
+- **Infrastructure Overhead Reduced**: Queue, API, and variable selection operations optimized
+- **Memory Allocation Optimized**: Reduced unnecessary copying in frequent operations
+- **Cache Performance Added**: Variable selection now benefits from domain/watcher caching
+- **Foundation for Scale**: Infrastructure now handles larger constraint problems more efficiently
+
+### Changes Required (Historical for Reference)
+
+#### 1. Propagation Queue Stale-Skip Fix (COMPLETED)
 **File**: `prolog/clpfd/queue.py`
 **Changes**: Replace stale-skip with eager cleanup (lines 143-156)
 
@@ -510,8 +557,14 @@ All optimizations maintain existing API compatibility. No changes required to us
 - **Performance Improvements**: Scales to 25+ variables, handles 2M+ value domains efficiently
 - **Algorithmic Upgrade**: O(b²×n) → O(n log n) complexity for Hall interval detection
 
-### 📋 Phases 3-4 PLANNED
-- **Phase 3**: Infrastructure optimizations (queue, API, variable selection)
+### ✅ Phase 3 COMPLETED - Infrastructure Optimizations
+**Branches**: `198-queue-stale-skip-optimization`, `199-api-copy-on-write-optimization`, `200-variable-selection-caching`
+- **Propagation Queue Optimized**: Eager cleanup eliminates O(n) scanning in hot path
+- **API Attribute Copy-on-Write**: Reduced memory allocation for frequent watcher operations
+- **Variable Selection Caching**: Domain sizes and watcher counts cached with proper invalidation
+- **All 545 CLP(FD) tests pass**: No regressions, comprehensive test coverage for new optimizations
+
+### 📋 Phase 4 PLANNED
 - **Phase 4**: Advanced optimizations (domain representation, trail system)
 
 ### 🎯 Performance Progress Achieved
@@ -527,7 +580,17 @@ All optimizations maintain existing API compatibility. No changes required to us
 3. **Constraint Propagator Bugs Fixed**: Unconstrained variables handled correctly
 4. **Algorithm Scalability Improved**: 25+ variables supported with efficient algorithms
 5. **Test Coverage Expanded**: 21 new comprehensive tests for optimization scenarios
-6. **Architectural Foundation**: Solid base for Phase 3 infrastructure optimizations
+6. **Infrastructure Optimized**: Queue, API, and variable selection operations optimized
+
+### 🔄 How to Continue Implementation
+**Next Phase**: Phase 4 - Advanced Optimizations (Optional)
+1. **Evaluate Current Performance**: Assess if Phase 4 is needed to meet targets
+2. **Focus Areas**: Domain representation optimization, trail system optimization
+3. **Create GitHub Issue**: For Phase 4 implementation if proceeding
+4. **Target**: Achieve final performance goals within 10x of SWI-Prolog
+
+**Completed**: Phase 1 (Domain Materialization) ✅, Phase 2 (All_different Algorithm) ✅, and Phase 3 (Infrastructure Optimizations) ✅
+**Remaining**: Phase 4 (Advanced Optimizations) - conditional based on performance assessment
 
 ## ⚠️ Critical Design Risks & Mitigations
 
@@ -554,4 +617,4 @@ All optimizations maintain existing API compatibility. No changes required to us
 
 ---
 
-*Phases 1 and 2 have delivered major breakthroughs: Phase 1 eliminated the memory explosion crisis, and Phase 2 implemented advanced algorithmic optimizations with critical bug fixes. The PyLog CLP(FD) solver now has a solid foundation with efficient algorithms, proper constraint handling, and comprehensive test coverage. The architecture is ready for Phase 3 infrastructure optimizations to achieve the final performance targets.*
+*Phases 1, 2, and 3 have delivered major breakthroughs: Phase 1 eliminated the memory explosion crisis, Phase 2 implemented advanced algorithmic optimizations with critical bug fixes, and Phase 3 optimized the infrastructure foundation. The PyLog CLP(FD) solver now has efficient algorithms, proper constraint handling, optimized infrastructure, and comprehensive test coverage. The system is well-positioned for optional Phase 4 advanced optimizations to achieve final performance targets.*
