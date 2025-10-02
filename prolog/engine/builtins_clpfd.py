@@ -2517,16 +2517,14 @@ def _builtin_table(engine, vars_term, tuples_term):
     if not isinstance(tuples_term, List):
         return False
 
-    # Handle empty variables list
+    # Handle empty variables list (align with SWI-Prolog: only accept [[]])
     if len(vars_term.items) == 0:
-        # Empty variables list - check if we have exactly one empty tuple
+        # Empty variables list - must have exactly one empty tuple for SWI alignment
         if len(tuples_term.items) == 1:
             empty_tuple = tuples_term.items[0]
             if isinstance(empty_tuple, List) and len(empty_tuple.items) == 0:
                 return True
-        elif len(tuples_term.items) == 0:
-            return True  # No tuples to satisfy is fine for empty variables
-        return False
+        return False  # Reject empty tuples list or multiple tuples for empty variables
 
     # Parse variables list
     var_ids = []
