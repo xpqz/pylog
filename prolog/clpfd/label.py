@@ -281,6 +281,20 @@ def select_variable(unbound, strategy, engine):
     if not unbound:
         return None, None
 
+    # Use cached selector if feature flag is enabled
+    if hasattr(engine, '_uses_variable_selection_caching') and engine._uses_variable_selection_caching:
+        # Create or reuse selector instance
+        if not hasattr(engine, '_variable_selector'):
+            engine._variable_selector = VariableSelector()
+
+        selector = engine._variable_selector
+
+        if strategy == "first_fail" or strategy == "smallest":
+            return selector.select_first_fail(unbound, engine)
+        elif strategy == "most_constrained":
+            return selector.select_most_constrained(unbound, engine)
+
+    # Fallback to original logic for other strategies or when caching disabled
     if strategy == "first":
         # Select first in list
         return unbound[0]
@@ -455,3 +469,134 @@ def create_labeling_goals(var_id, values, remaining_vars, var_select, val_select
         )
 
     return goals
+
+
+class VariableSelector:
+    """Cached variable selector for improved labeling performance.
+
+    Caches domain sizes and watcher counts to avoid recomputation
+    during repeated variable selection operations.
+    """
+
+    def __init__(self):
+        # Cache for domain sizes: var_id -> (domain_rev, size)
+        self._domain_size_cache = {}
+        # Cache for watcher counts: var_id -> (watchers_version, count)
+        self._watcher_count_cache = {}
+
+    def select_first_fail(self, variables, engine):
+        """Select variable with smallest domain (first_fail strategy).
+
+        Args:
+            variables: List of (var_id, domain) tuples
+            engine: Engine instance
+
+        Returns:
+            Tuple of (selected_var_id, selected_domain)
+        """
+        if not variables:
+            return None, None
+
+        # Find variable with minimum domain size using cached sizes
+        min_var = None
+        min_domain = None
+        min_size = float("inf")
+
+        for var_id, domain in variables:
+            size = self._get_cached_domain_size(var_id, domain)
+            if size < min_size:
+                min_size = size
+                min_var = var_id
+                min_domain = domain
+
+        return min_var, min_domain
+
+    def select_most_constrained(self, variables, engine):
+        """Select variable with most constraints (most watchers).
+
+        Args:
+            variables: List of (var_id, domain) tuples
+            engine: Engine instance
+
+        Returns:
+            Tuple of (selected_var_id, selected_domain)
+        """
+        if not variables:
+            return None, None
+
+        # Find variable with maximum watcher count using cached counts
+        max_var = None
+        max_domain = None
+        max_count = -1
+
+        for var_id, domain in variables:
+            count = self._get_cached_watcher_count(var_id, engine)
+            if count > max_count:
+                max_count = count
+                max_var = var_id
+                max_domain = domain
+
+        return max_var, max_domain
+
+    def _get_cached_domain_size(self, var_id, domain):
+        """Get domain size from cache or compute and cache it.
+
+        Args:
+            var_id: Variable ID
+            domain: Domain object
+
+        Returns:
+            Domain size (integer)
+        """
+        # Use domain object identity for cache invalidation instead of just rev
+        # This prevents issues with different Domain objects having the same rev
+        domain_identity = id(domain)
+        cache_key = (var_id, domain_identity)
+
+        if cache_key in self._domain_size_cache:
+            # Cache hit - same domain object
+            return self._domain_size_cache[cache_key]
+
+        # Cache miss - compute and cache
+        size = domain.size()
+
+        # Clean up old cache entries for this variable to prevent memory leaks
+        old_keys = [k for k in self._domain_size_cache.keys() if k[0] == var_id]
+        for old_key in old_keys:
+            del self._domain_size_cache[old_key]
+
+        # Cache new value
+        self._domain_size_cache[cache_key] = size
+        return size
+
+    def _get_cached_watcher_count(self, var_id, engine):
+        """Get watcher count from cache or compute and cache it.
+
+        Args:
+            var_id: Variable ID
+            engine: Engine instance
+
+        Returns:
+            Total watcher count (integer)
+        """
+        attrs = get_fd_attrs(engine.store, var_id)
+
+        # Use watchers dict itself as version indicator
+        # If watchers dict changes, the object identity changes
+        watchers_version = id(attrs.get("watchers", {})) if attrs else 0
+        cache_key = var_id
+
+        if cache_key in self._watcher_count_cache:
+            cached_version, cached_count = self._watcher_count_cache[cache_key]
+            if cached_version == watchers_version:
+                # Cache hit - watchers haven't changed
+                return cached_count
+
+        # Cache miss or invalidated - recompute
+        count = 0
+        if attrs and "watchers" in attrs:
+            for priority_set in attrs["watchers"].values():
+                count += len(priority_set)
+
+        self._watcher_count_cache[cache_key] = (watchers_version, count)
+        return count
