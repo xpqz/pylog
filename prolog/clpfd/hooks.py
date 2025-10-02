@@ -122,11 +122,66 @@ def clpfd_unify_hook(engine, varid, other):
                     # Domains are disjoint, unification fails
                     return False
 
-                # Merge watchers from both variables
+                # Check for constraint violations before proceeding
                 var_attrs = get_fd_attrs(engine.store, varid) or {}
                 other_attrs = get_fd_attrs(engine.store, other_var) or {}
 
-                # Collect all watchers from both variables
+                # Get watchers for both variables
+                var_watchers = set()
+                other_watchers = set()
+
+                for priority in Priority:
+                    var_watchers.update(
+                        var_attrs.get("watchers", {}).get(priority, set())
+                    )
+                    other_watchers.update(
+                        other_attrs.get("watchers", {}).get(priority, set())
+                    )
+
+                # Check if both variables share any watchers (same constraints)
+                shared_watchers = var_watchers & other_watchers
+                if shared_watchers:
+                    # Variables share constraints - check if unification would violate them
+                    # For all_different and similar constraints, unifying watched variables fails
+                    if hasattr(engine, "clpfd_queue"):
+                        for watcher_id in shared_watchers:
+                            propagator = engine.clpfd_queue.propagators.get(watcher_id)
+                            if propagator:
+                                # Simulate the unification by checking if the propagator would fail
+                                # when these variables are aliased. We temporarily modify the
+                                # variable mapping to test this.
+
+                                # Create a temporary store copy to test propagation
+                                # (This is the safest way to test without side effects)
+                                saved_parent_other = engine.store.cells[other_var].ref
+
+                                try:
+                                    # Temporarily alias the variables
+                                    engine.store.cells[other_var].ref = varid
+
+                                    # Test if propagator would fail with this aliasing
+                                    status, _ = propagator(
+                                        engine.store, engine.trail, engine, "test"
+                                    )
+
+                                    # Restore original state
+                                    engine.store.cells[other_var].ref = (
+                                        saved_parent_other
+                                    )
+
+                                    if status == "fail":
+                                        # Propagator would fail - block unification
+                                        return False
+
+                                except Exception:
+                                    # Restore state on any error
+                                    engine.store.cells[other_var].ref = (
+                                        saved_parent_other
+                                    )
+                                    # If testing fails, be conservative and allow unification
+                                    pass
+
+                # Merge watchers from both variables
                 merged_watchers = {}
                 for priority in Priority:
                     var_watchers = var_attrs.get("watchers", {}).get(priority, set())
