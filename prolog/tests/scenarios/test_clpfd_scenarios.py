@@ -21,13 +21,9 @@ class TestSimpleConstraintProblems:
         ?- S in 1..9, E in 0..9, N in 0..9, D in 0..9,
            M in 1..9, O in 0..9, R in 0..9, Y in 0..9,
            all_different([S, E, N, D, M, O, R, Y]),
-           labeling([first_fail], [S, E, N, D, M, O, R, Y]).
+           once(labeling([first_fail], [S, E, N, D, M, O, R, Y])).
         """
-        # Only get first solution for performance test
-        solutions = []
-        for sol in engine.query(query):
-            solutions.append(sol)
-            break
+        solutions = list(engine.query(query))
 
         # Should find valid assignments where all variables are different
         assert len(solutions) > 0
@@ -76,7 +72,7 @@ class TestSimpleConstraintProblems:
            D in 1..9, E in 1..9, F in 1..9,
            G in 1..9, H in 1..9, I in 1..9,
            all_different([A, B, C, D, E, F, G, H, I]),
-           labeling([first_fail], [A, B, C, D, E, F, G, H, I]).
+           once(labeling([first_fail], [A, B, C, D, E, F, G, H, I])).
         """
         # Only get first solution for performance test
         solutions = []
@@ -376,7 +372,7 @@ class TestComplexScenarios:
            E in 1..9, F in 1..9, G in 1..9, H in 1..9, I in 1..9,
            all_different([A, B, C, D, E, F, G, H, I]),
            A = 5, I = 9,
-           labeling([first_fail], [B, C, D, E, F, G, H]).
+           once(labeling([first_fail], [B, C, D, E, F, G, H])).
         """
         # Only get first solution for performance test
         solutions = []
