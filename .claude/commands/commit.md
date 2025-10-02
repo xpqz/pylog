@@ -2,6 +2,8 @@
 
 You are tasked with creating git commits for the changes made during this session.
 
+**CRITICAL**: study the project's rules: coderules.md
+
 ## Process:
 
 1. **Think about what changed:**

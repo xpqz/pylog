@@ -4,6 +4,7 @@ Implements variable selection and value choice strategies for
 finding solutions to constraint problems.
 """
 
+import itertools
 import random
 from prolog.ast.terms import Atom, Int, Var, List, Struct
 from prolog.ast.terms import List as PrologList
@@ -203,7 +204,7 @@ def push_labeling_choices(engine, vars, var_select, val_select, rng_seed=None):
     # Select next variable to label
     selected_var, selected_domain = select_variable(unbound, var_select, engine)
 
-    # Get values to try in order
+    # Get values to try in order (already limited for large domains)
     values = select_values(selected_domain, val_select, rng_seed=rng_seed)
 
     if not values:
@@ -306,75 +307,60 @@ def select_values(domain, strategy, rng_seed=None):
     Args:
         domain: Domain object
         strategy: Value selection strategy name
+        rng_seed: Random seed for indomain_random strategy
 
     Returns:
-        List of values to try in order
+        List of values to try in order (for compatibility with existing code)
     """
     if domain.is_empty():
         return []
 
-    # Get all values from domain
-    values = []
-    for low, high in domain.intervals:
-        values.extend(range(low, high + 1))
+    # For small domains, use the old behavior to maintain compatibility
+    # For large domains, limit the number of values to prevent memory explosion
+    domain_size = domain.size()
+    max_values = 1000  # Reasonable limit to prevent memory explosion
 
-    if strategy == "indomain_min":
-        # Try minimum value first (already sorted)
-        return values
-
-    elif strategy == "indomain_max":
-        # Try maximum value first
-        return list(reversed(values))
-
-    elif strategy == "indomain_middle":
-        # Try middle value first
-        if len(values) == 1:
+    if domain_size <= max_values:
+        # Small domain - materialize all values for full compatibility
+        if strategy == "indomain_min":
+            return list(domain.iter_values())
+        elif strategy == "indomain_max":
+            return list(domain.iter_values_ordered("max_first"))
+        elif strategy == "indomain_middle":
+            return list(domain.iter_values_ordered("middle_out"))
+        elif strategy == "indomain_random":
+            values = list(domain.iter_values())
+            rng = random.Random(rng_seed if rng_seed is not None else 42)
+            rng.shuffle(values)
             return values
-        middle_idx = len(values) // 2
-        result = [values[middle_idx]]
-        # Add values alternating from middle
-        for i in range(1, max(middle_idx + 1, len(values) - middle_idx)):
-            if middle_idx - i >= 0:
-                result.append(values[middle_idx - i])
-            if middle_idx + i < len(values):
-                result.append(values[middle_idx + i])
-        return result
-
-    elif strategy == "indomain_random":
-        # Random order
-        rng = random.Random(rng_seed if rng_seed is not None else 42)
-        shuffled = values.copy()
-        rng.shuffle(shuffled)
-        return shuffled
-
-    elif strategy == "indomain_split":
-        # Binary search style - split domain in half
-        if len(values) <= 1:
-            return values
-
-        # For bisection, we would ideally split the domain into two ranges
-        # and create constraints X #=< Mid ; X #> Mid
-        # For now, try middle value first, then alternate outward
-        mid_idx = len(values) // 2
-        result = [values[mid_idx]]
-
-        # Add lower half (reversed) and upper half alternating
-        lower = list(reversed(values[:mid_idx]))
-        upper = values[mid_idx + 1 :]
-
-        i = 0
-        while i < len(lower) or i < len(upper):
-            if i < len(upper):
-                result.append(upper[i])
-            if i < len(lower):
-                result.append(lower[i])
-            i += 1
-
-        return result
-
+        elif strategy == "indomain_split":
+            return list(domain.iter_values_ordered("split"))
+        else:
+            return list(domain.iter_values())
     else:
-        # Default to minimum first
-        return values
+        # Large domain - limit values to prevent memory explosion
+        if strategy == "indomain_min":
+            return list(itertools.islice(domain.iter_values(), max_values))
+        elif strategy == "indomain_max":
+            return list(
+                itertools.islice(domain.iter_values_ordered("max_first"), max_values)
+            )
+        elif strategy == "indomain_middle":
+            return list(
+                itertools.islice(domain.iter_values_ordered("middle_out"), max_values)
+            )
+        elif strategy == "indomain_random":
+            # For very large domains, sample random subset
+            values = list(itertools.islice(domain.iter_values(), max_values))
+            rng = random.Random(rng_seed if rng_seed is not None else 42)
+            rng.shuffle(values)
+            return values
+        elif strategy == "indomain_split":
+            return list(
+                itertools.islice(domain.iter_values_ordered("split"), max_values)
+            )
+        else:
+            return list(itertools.islice(domain.iter_values(), max_values))
 
 
 def create_labeling_goals(var_id, values, remaining_vars, var_select, val_select):
