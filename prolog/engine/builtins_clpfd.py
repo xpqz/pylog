@@ -22,6 +22,7 @@ from prolog.clpfd.props.element import create_element_propagator
 from prolog.clpfd.props.gcc import create_global_cardinality_propagator
 from prolog.clpfd.props.nvalue import create_nvalue_propagator
 from prolog.clpfd.props.sum import create_sum_propagator
+from prolog.clpfd.props.lex import create_lex_chain_propagator
 from prolog.clpfd.expr import parse_linear_expression
 from prolog.clpfd.props.linear import create_linear_propagator
 from prolog.clpfd.boolean import is_boolean_domain
@@ -2382,3 +2383,125 @@ def _builtin_nvalue(engine, n_term, vars_term):
         engine._clpfd_inited = True
 
     return success
+
+
+def _builtin_lex_chain(engine, vectors_term):
+    """lex_chain(Vectors) - constrain vectors to be in lexicographic order.
+
+    Args:
+        engine: Engine instance
+        vectors_term: List of vectors (each vector is a List of variables/integers)
+
+    Returns:
+        True if constraint posted successfully, False if failed immediately
+    """
+    store = engine.store
+    trail = engine.trail
+
+    # Validate that vectors_term is a list
+    if not isinstance(vectors_term, List):
+        return False
+
+    # Handle empty list (trivially true)
+    if len(vectors_term.items) == 0:
+        return True
+
+    vectors = vectors_term.items
+
+    # Handle single vector (but still validate it's a List)
+    if len(vectors) == 1:
+        if not isinstance(vectors[0], List):
+            return False
+        return True
+
+    # Validate all vectors are Lists and have equal length
+    try:
+        validate_equal_length_vectors(vectors)
+    except ValueError:
+        return False
+
+    if len(vectors[0].items) == 0:
+        return True  # Empty vectors are trivially ordered
+
+    # Parse each vector into variables and ground values
+    parsed_vectors = []
+    parsed_values = []
+
+    for vector in vectors:
+        if not isinstance(vector, List):
+            return False
+
+        try:
+            # Parse vector elements similar to other global constraints
+            var_ids = []
+            ground_values = []
+
+            for item in vector.items:
+                if isinstance(item, Int):
+                    var_ids.append(None)
+                    ground_values.append(item.value)
+                elif isinstance(item, Var):
+                    deref = store.deref(item.id)
+                    if deref[0] == "BOUND":
+                        val = deref[2]
+                        if not isinstance(val, Int):
+                            return False  # Non-integer
+                        var_ids.append(None)
+                        ground_values.append(val.value)
+                    else:
+                        var_ids.append(deref[1])  # Variable ID
+                        ground_values.append(None)
+                else:
+                    return False  # Invalid element type
+
+            parsed_vectors.append(var_ids)
+            parsed_values.append(ground_values)
+
+        except Exception:
+            return False
+
+    # Check ground vectors for immediate validation
+    all_ground = all(all(val is not None for val in values) for values in parsed_values)
+
+    if all_ground:
+        # All vectors are ground - check lexicographic ordering directly
+        for i in range(len(parsed_values) - 1):
+            vec1 = parsed_values[i]
+            vec2 = parsed_values[i + 1]
+            if not _lex_leq(vec1, vec2):
+                return False
+        return True
+
+    # Need propagation - create lex_chain propagator
+    prop = create_lex_chain_propagator(parsed_vectors, parsed_values)
+
+    queue = _ensure_queue(engine)
+    pid = queue.register(prop)
+
+    # Add watchers for all variables
+    for var_list in parsed_vectors:
+        for var_id in var_list:
+            if var_id is not None:
+                add_watcher(store, var_id, pid, Priority.MED, trail)
+
+    # Schedule and run to fixpoint
+    queue.schedule(pid, Priority.MED)
+    success = queue.run_to_fixpoint(store, trail, engine)
+
+    # Register unification hook if first CLP(FD) constraint
+    if not hasattr(engine, "_clpfd_inited") or not engine._clpfd_inited:
+        engine.register_attr_hook("clpfd", clpfd_unify_hook)
+        engine._clpfd_inited = True
+
+    return success
+
+
+def _lex_leq(vec1, vec2):
+    """Check if vec1 ≤lex vec2 for ground vectors."""
+    for a, b in zip(vec1, vec2):
+        if a < b:
+            return True  # vec1 <lex vec2
+        elif a > b:
+            return False  # vec1 >lex vec2
+        # If a == b, continue to next position
+    return True  # vec1 =lex vec2

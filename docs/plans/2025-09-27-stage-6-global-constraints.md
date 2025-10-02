@@ -192,9 +192,9 @@ Phase 6.4 – lex_chain
 - Scenario tests: symmetry-breaking in small models
 
 TODO (6.4)
-- [ ] Parse list of equal-length vectors (lists of vars/ints)
-- [ ] Enforce pairwise lex ordering with bounds-based filtering
-- [ ] Unit + scenario tests; docs + examples
+- [x] Parse list of equal-length vectors (lists of vars/ints)
+- [x] Enforce pairwise lex ordering with bounds-based filtering
+- [x] Unit + scenario tests; docs + examples
 
 Phase 6.5 – table (optional stretch)
 - Implement `prolog/clpfd/props/table.py` (positive tables only)
