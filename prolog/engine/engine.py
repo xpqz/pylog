@@ -49,6 +49,7 @@ from prolog.engine.builtins_clpfd import (
     _builtin_global_cardinality,
     _builtin_nvalue,
     _builtin_lex_chain,
+    _builtin_table,
 )
 from prolog.clpfd.label import _builtin_label, _builtin_labeling, push_labeling_choices
 
@@ -418,6 +419,7 @@ class Engine:
         self._builtins[("lex_chain", 1)] = lambda eng, args: _builtin_lex_chain(
             eng, *args
         )
+        self._builtins[("table", 2)] = lambda eng, args: _builtin_table(eng, *args)
         self._builtins[("#\\/", 2)] = lambda eng, args: _builtin_fd_disj(eng, *args)
 
     def solve(
