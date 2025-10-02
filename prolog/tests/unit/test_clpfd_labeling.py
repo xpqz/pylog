@@ -366,3 +366,63 @@ class TestSelectValuesOptimization:
         # Domain should be unchanged
         assert domain.intervals == original_intervals
         assert domain.rev == original_rev
+
+
+class TestLabelingRecursionRegression:
+    """Regression tests for Issue #193 - recursion explosion with large domains."""
+
+    def test_large_domain_no_recursion_explosion(self):
+        """Labeling large domains should not hit Python recursion limits.
+
+        Regression test for Issue #193: build_disjunction() used recursive calls
+        that caused RecursionError even with fallback limits.
+        """
+        engine = Engine(Program([]))
+
+        # Test domain large enough to trigger fallback (>1000 values)
+        # but small enough to complete quickly in tests
+        query = """
+        ?- X in 1..2000, label([X]).
+        """
+
+        # Should not raise RecursionError and should find solutions
+        solutions = []
+        count = 0
+        for sol in engine.query(query):
+            solutions.append(sol)
+            count += 1
+            if count >= 3:  # Just test first few solutions
+                break
+
+        # Verify we found solutions without recursion explosion
+        assert len(solutions) == 3
+        assert solutions[0]["X"].value == 1
+        assert solutions[1]["X"].value == 2
+        assert solutions[2]["X"].value == 3
+
+    def test_extremely_large_domain_uses_fallback(self):
+        """Very large domains should use fallback mechanism without explosion.
+
+        Tests that domains much larger than fallback limit (1000) work correctly
+        by using the itertools.islice fallback.
+        """
+        engine = Engine(Program([]))
+
+        # Domain much larger than fallback limit
+        query = """
+        ?- X in 1..100000, label([X]).
+        """
+
+        # Should work via fallback mechanism without memory or recursion explosion
+        solutions = []
+        count = 0
+        for sol in engine.query(query):
+            solutions.append(sol)
+            count += 1
+            if count >= 5:  # Test first few solutions
+                break
+
+        # Verify we found solutions using fallback mechanism
+        assert len(solutions) == 5
+        assert solutions[0]["X"].value == 1
+        assert solutions[4]["X"].value == 5
