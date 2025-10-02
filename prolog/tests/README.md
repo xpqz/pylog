@@ -81,6 +81,7 @@ When adding tests:
 3. **Write clear assertions**: Tests should clearly express expected behavior
 4. **Include edge cases**: Test boundary conditions and error cases
 5. **Document complex tests**: Explain the scenario being tested
+6. **UNDER NO CIRCUMSTANCES ADD IMPORTS ANYWHERE EXCEPT AT THE TOP OF THE FILE**
 
 ## SWI-Prolog Baseline Tests
 
