@@ -187,6 +187,9 @@ class Engine:
         else:
             self.metrics = None
 
+        # Feature flag for variable selection caching optimization
+        self._uses_variable_selection_caching = True
+
     # Public accessor methods for snapshot module
     def store_size(self) -> int:
         """Get the current store size."""

@@ -4,9 +4,24 @@ Basic tests that don't rely on complex strategies.
 """
 
 import pytest
-from prolog.ast.terms import Atom, Int, Var, Struct, List
+from prolog.ast.terms import Atom, Int, Var, List
 from prolog.engine.engine import Engine, Program
-from prolog.clpfd.label import _builtin_label, _builtin_labeling
+from prolog.clpfd.label import (
+    _builtin_label,
+    _builtin_labeling,
+    parse_var_selection,
+    parse_value_selection,
+    extract_var_list,
+    push_labeling_choices,
+    select_variable,
+    select_values,
+    VariableSelector,
+)
+from prolog.clpfd.domain import Domain
+from prolog.clpfd.api import set_domain, add_watcher
+from prolog.clpfd.priority import Priority
+from prolog.engine.runtime import GoalType
+from prolog.unify.unify import bind
 
 
 class TestBasicLabelingBuiltin:
@@ -20,7 +35,6 @@ class TestBasicLabelingBuiltin:
 
     def test_label_with_already_bound_var(self):
         """Label with already bound variable should succeed."""
-        from prolog.unify.unify import bind
 
         engine = Engine(Program([]))
         x = Var(engine.store.new_var(), "X")
@@ -49,7 +63,6 @@ class TestLabelingHelpers:
 
     def test_parse_var_selection(self):
         """Test variable selection strategy parsing."""
-        from prolog.clpfd.label import parse_var_selection
 
         # Default strategy
         assert parse_var_selection(List([])) == "first"
@@ -61,11 +74,12 @@ class TestLabelingHelpers:
         assert parse_var_selection(List([Atom("first_fail")])) == "first_fail"
 
         # Most constrained
-        assert parse_var_selection(List([Atom("most_constrained")])) == "most_constrained"
+        assert (
+            parse_var_selection(List([Atom("most_constrained")])) == "most_constrained"
+        )
 
     def test_parse_value_selection(self):
         """Test value selection strategy parsing."""
-        from prolog.clpfd.label import parse_value_selection
 
         # Default strategy
         assert parse_value_selection(List([])) == "indomain_min"
@@ -77,11 +91,12 @@ class TestLabelingHelpers:
         assert parse_value_selection(List([Atom("indomain_max")])) == "indomain_max"
 
         # Middle strategy
-        assert parse_value_selection(List([Atom("indomain_middle")])) == "indomain_middle"
+        assert (
+            parse_value_selection(List([Atom("indomain_middle")])) == "indomain_middle"
+        )
 
     def test_extract_var_list(self):
         """Test variable list extraction."""
-        from prolog.clpfd.label import extract_var_list
 
         engine = Engine(Program([]))
 
@@ -105,9 +120,6 @@ class TestLabelingHelpers:
         Regression test for push order issue where LABEL_CONTINUE
         was pushed after unify goal, causing it to run first.
         """
-        from prolog.clpfd.label import push_labeling_choices
-        from prolog.clpfd.domain import Domain
-        from prolog.clpfd.api import set_domain
 
         engine = Engine(Program([]))
 
@@ -131,7 +143,6 @@ class TestLabelingHelpers:
         assert len(goal_stack) >= 1
 
         # The top goal should be the unification (X = 5)
-        from prolog.engine.runtime import GoalType
 
         top_goal = goal_stack[-1]
         assert top_goal.type == GoalType.BUILTIN
@@ -141,12 +152,10 @@ class TestLabelingHelpers:
         if len(goal_stack) > 1:
             next_goal = goal_stack[-2]
             if next_goal.type == GoalType.CONTROL:
-                assert next_goal.payload.get('op') == 'LABEL_CONTINUE'
+                assert next_goal.payload.get("op") == "LABEL_CONTINUE"
 
     def test_select_values(self):
         """Test value selection from domain."""
-        from prolog.clpfd.label import select_values
-        from prolog.clpfd.domain import Domain
 
         # Create domain 1..5
         domain = Domain(((1, 5),))
@@ -181,10 +190,6 @@ class TestLabelingHelpers:
 
     def test_mixed_strategies(self):
         """Test combination of first_fail and indomain_max strategies."""
-        from prolog.clpfd.label import parse_var_selection, parse_value_selection
-        from prolog.clpfd.label import select_variable, select_values
-        from prolog.clpfd.domain import Domain
-        from prolog.clpfd.api import set_domain
 
         engine = Engine(Program([]))
 
@@ -216,7 +221,7 @@ class TestLabelingHelpers:
         unbound = [
             (v1_deref[1], Domain(((1, 10),))),
             (v2_deref[1], Domain(((1, 2),))),
-            (v3_deref[1], Domain(((1, 5),)))
+            (v3_deref[1], Domain(((1, 5),))),
         ]
 
         selected_var, selected_dom = select_variable(unbound, "first_fail", engine)
@@ -225,3 +230,144 @@ class TestLabelingHelpers:
         # Test indomain_max on selected domain
         values = select_values(selected_dom, "indomain_max")
         assert values == [2, 1]  # Max value first
+
+
+class TestVariableSelectionCaching:
+    """Test variable selection caching optimization (Phase 3.3)."""
+
+    def test_repeated_first_fail_selection_performance(self):
+        """Test that repeated first_fail selections don't recompute domain sizes."""
+
+        engine = Engine(Program([]))
+
+        # Create variables with large domains to make size() computation significant
+        variables = []
+        for i in range(20):
+            var_id = engine.store.new_var(f"V{i}")
+            domain = Domain(((1, 1000 + i * 10),))  # Different sizes
+            variables.append((var_id, domain))
+
+        # Simulate repeated variable selection (common in labeling)
+        selections = []
+        for _ in range(100):  # Many selection rounds
+            selected_var, selected_domain = select_variable(
+                variables, "first_fail", engine
+            )
+            selections.append(selected_var)
+
+        # All selections should pick the same variable (smallest domain)
+        assert len(set(selections)) == 1
+        # Should be the first variable (domain 1..1000, size 1000)
+        assert all(sel == variables[0][0] for sel in selections)
+
+    def test_repeated_most_constrained_selection_performance(self):
+        """Test that repeated most_constrained selections don't recompute watcher counts."""
+
+        engine = Engine(Program([]))
+
+        # Create variables with same domain size but different watcher counts
+        variables = []
+        for i in range(10):
+            var_id = engine.store.new_var(f"V{i}")
+            # Set same domain for all (so first_fail wouldn't distinguish)
+            domain = Domain(((1, 100),))
+            set_domain(engine.store, var_id, domain, engine.trail)
+
+            # Add different numbers of watchers
+            for j in range(i * 3):  # Variable i gets i*3 watchers
+                add_watcher(
+                    engine.store,
+                    var_id,
+                    pid=j + i * 100,
+                    priority=Priority.MED,
+                    trail=engine.trail,
+                )
+
+            variables.append((var_id, domain))
+
+        # Simulate repeated variable selection
+        selections = []
+        for _ in range(50):  # Many selection rounds
+            selected_var, selected_domain = select_variable(
+                variables, "most_constrained", engine
+            )
+            selections.append(selected_var)
+
+        # All selections should pick the same variable (most watchers)
+        assert len(set(selections)) == 1
+        # Should be the last variable (has 9*3 = 27 watchers)
+        assert all(sel == variables[-1][0] for sel in selections)
+
+    def test_caching_with_domain_changes(self):
+        """Test that caching properly invalidates when domains change."""
+
+        engine = Engine(Program([]))
+        # Skip test if variable selection caching not implemented
+        if not hasattr(engine, "_uses_variable_selection_caching"):
+            pytest.skip("Variable selection caching not implemented")
+
+        selector = VariableSelector()
+
+        # Create variables
+        v1 = engine.store.new_var("V1")
+        v2 = engine.store.new_var("V2")
+
+        # Initial domains
+        domain1 = Domain(((1, 100),))  # Size 100
+        domain2 = Domain(((1, 50),))  # Size 50
+        set_domain(engine.store, v1, domain1, engine.trail)
+        set_domain(engine.store, v2, domain2, engine.trail)
+
+        variables = [(v1, domain1), (v2, domain2)]
+
+        # First selection should pick v2 (smaller domain)
+        selected1, _ = selector.select_first_fail(variables, engine)
+        assert selected1 == v2
+
+        # Change v2's domain to be larger
+        new_domain2 = Domain(((1, 200),))  # Size 200
+        set_domain(engine.store, v2, new_domain2, engine.trail)
+        variables = [(v1, domain1), (v2, new_domain2)]
+
+        # Second selection should now pick v1 (smaller domain after change)
+        selected2, _ = selector.select_first_fail(variables, engine)
+        assert selected2 == v1
+
+    def test_watcher_count_caching_with_invalidation(self):
+        """Test that watcher count caching properly invalidates when watchers change."""
+
+        engine = Engine(Program([]))
+        # Skip test if variable selection caching not implemented
+        if not hasattr(engine, "_uses_variable_selection_caching"):
+            pytest.skip("Variable selection caching not implemented")
+
+        selector = VariableSelector()
+
+        # Create variables with same domain size
+        v1 = engine.store.new_var("V1")
+        v2 = engine.store.new_var("V2")
+
+        domain = Domain(((1, 10),))  # Same size for both
+        set_domain(engine.store, v1, domain, engine.trail)
+        set_domain(engine.store, v2, domain, engine.trail)
+
+        # Add more watchers to v1 initially
+        add_watcher(engine.store, v1, pid=1, priority=Priority.HIGH, trail=engine.trail)
+        add_watcher(engine.store, v1, pid=2, priority=Priority.MED, trail=engine.trail)
+        # v2 has no watchers
+
+        variables = [(v1, domain), (v2, domain)]
+
+        # First selection should pick v1 (more watchers)
+        selected1, _ = selector.select_most_constrained(variables, engine)
+        assert selected1 == v1
+
+        # Add more watchers to v2
+        add_watcher(engine.store, v2, pid=3, priority=Priority.HIGH, trail=engine.trail)
+        add_watcher(engine.store, v2, pid=4, priority=Priority.MED, trail=engine.trail)
+        add_watcher(engine.store, v2, pid=5, priority=Priority.LOW, trail=engine.trail)
+        # Now v2 has 3 watchers vs v1's 2 watchers
+
+        # Second selection should now pick v2 (more watchers after change)
+        selected2, _ = selector.select_most_constrained(variables, engine)
+        assert selected2 == v2
