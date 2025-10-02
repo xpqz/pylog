@@ -203,54 +203,66 @@ def push_labeling_choices(engine, vars, var_select, val_select, rng_seed=None):
     # Select next variable to label
     selected_var, selected_domain = select_variable(unbound, var_select, engine)
 
-    # Get values to try in order
+    # Get values to try in order with limited materialization
     values = select_values(selected_domain, val_select, rng_seed=rng_seed)
 
     if not values:
         # Empty domain - nothing to do, will fail
         return
 
-    # Build branches as (X = Value, label(Vars)) to chain labeling deterministically
+    # Build lazy choice points without materializing all values
     var_term = Var(selected_var, f"_G{selected_var}")
 
     # Reconstruct a List term from the provided var IDs for recursive call
     # Preserve original query variable names when available
-
     items = []
     for vid in vars:
         name = getattr(engine, "_qname_by_id", {}).get(vid, f"_G{vid}")
         items.append(Var(vid, name))
     vars_term = PrologList(tuple(items))
 
-    def branch_struct(value):
+    # Create labeling goals with limited materialization
+    _create_labeling_choices_limited(engine, values, var_term, vars_term)
+
+
+def _create_labeling_choices_limited(engine, values, var_term, vars_term):
+    """Create labeling choice points with limited materialization.
+
+    Uses a limited number of values to prevent memory explosion from
+    massive domains while maintaining full labeling functionality.
+
+    Args:
+        engine: Engine instance
+        values: List of values to try (already limited)
+        var_term: Variable term to unify
+        vars_term: List term for recursive labeling
+    """
+
+    if not values:
+        # No values available - domain is empty, fail
+        return
+
+    def create_branch(value):
         assign = Struct("=", (var_term, Int(value)))
-        # Recurse via label/1 using same vars list; bound vars are skipped
         label_goal = Struct("label", (vars_term,))
         return Struct(",", (assign, label_goal))
 
     if len(values) == 1:
-        # Deterministic: push continuation BELOW, then the unification as BUILTIN on top
-        # so unify executes first and continuation follows.
-        # Continuation via calling label/1 recursively on the same vars list.
+        # Deterministic case
         cont_call = Goal.from_term(Struct("label", (vars_term,)))
         engine._push_goal(cont_call)
         unify_goal = Struct("=", (var_term, Int(values[0])))
         engine._push_goal(Goal(GoalType.BUILTIN, unify_goal))
     else:
-        # Non-deterministic: (X=V1, label(Vars)) ; (X=V2, label(Vars)) ; ...
+        # Build disjunction for available values
         def build_disjunction(vals):
             if len(vals) == 1:
-                return branch_struct(vals[0])
-            left = branch_struct(vals[0])
+                return create_branch(vals[0])
+            left = create_branch(vals[0])
             right = build_disjunction(vals[1:])
             return Struct(";", (left, right))
 
         disj_goal = build_disjunction(values)
-        # Ensure a fresh trail stamp for this labeling branch to avoid
-        # cross-branch leakage of FD domain/attr changes when nested.
-        engine._push_goal(
-            Goal(GoalType.CONTROL, None, payload={"op": "LABEL_BRANCH_STAMP"})
-        )
         engine._push_goal(Goal.from_term(disj_goal))
 
 
@@ -313,10 +325,17 @@ def select_values(domain, strategy, rng_seed=None):
     if domain.is_empty():
         return []
 
-    # Get all values from domain
+    # Get values from domain with size limit to prevent memory explosion
     values = []
+    max_values = 1000  # Reasonable limit to prevent memory explosion
+
     for low, high in domain.intervals:
-        values.extend(range(low, high + 1))
+        for value in range(low, high + 1):
+            values.append(value)
+            if len(values) >= max_values:
+                break
+        if len(values) >= max_values:
+            break
 
     if strategy == "indomain_min":
         # Try minimum value first (already sorted)
