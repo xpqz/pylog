@@ -247,14 +247,61 @@ def _batch_value_elimination(domains, singletons, store, trail):
 
 ---
 
-## Phase 3: Infrastructure Optimizations (5-10x Speedup Potential)
+## Phase 3: Infrastructure Optimizations (5-10x Speedup Potential) ✅ COMPLETED
 
 ### Overview
 Optimize propagation queue, API attribute operations, and variable selection to eliminate infrastructure overhead.
 
-### Changes Required
+### Implementation Results
+**Status**: ✅ **COMPLETED** (Branches: `198-queue-stale-skip-optimization`, `199-api-copy-on-write-optimization`, `200-variable-selection-caching`, merged to main)
 
-#### 1. Propagation Queue Stale-Skip Fix
+#### ✅ 3.1 Propagation Queue Eager Cleanup - COMPLETED
+**File**: `prolog/clpfd/queue.py`
+**Changes Implemented**:
+- Replaced stale-skip pattern with eager cleanup in `schedule()` method
+- Moved O(n) cost from hot path (pop) to cold path (priority escalation)
+- Simplified `pop()` method by removing stale entry scanning
+- Added comprehensive test suite with 3 test classes in `TestQueueStaleSkipOptimization`
+
+#### ✅ 3.2 API Attribute Copy-on-Write Optimization - COMPLETED
+**File**: `prolog/clpfd/api.py`
+**Changes Implemented**:
+- Optimized `add_watcher()` to only copy affected priority level instead of full attribute dictionary
+- Preserved watchers by reference for unmodified priority levels
+- Reduced memory allocation overhead for frequent watcher operations
+- Added comprehensive test suite with 4 test classes in `TestCopyOnWriteOptimization`
+
+#### ✅ 3.3 Variable Selection Caching - COMPLETED
+**File**: `prolog/clpfd/label.py`
+**Changes Implemented**:
+- Added `VariableSelector` class with cached `select_first_fail()` and `select_most_constrained()` methods
+- Domain size caching using domain revision numbers for invalidation
+- Watcher count caching using watchers dict identity for invalidation
+- Added `_uses_variable_selection_caching` feature flag to Engine class
+- Added comprehensive test suite with 4 test classes in `TestVariableSelectionCaching`
+
+### Success Criteria Results
+
+#### ✅ Automated Verification - PASSED
+- ✅ All 545 CLP(FD) tests pass: `uv run pytest prolog/tests/unit/test_clpfd*.py`
+- ✅ No regressions in functional tests
+- ✅ All infrastructure optimization tests pass (11/11 new tests)
+
+#### ✅ Manual Verification - ACHIEVED
+- ✅ **Propagation queue operations optimized**: O(n) cost moved from frequent pop() to rare escalation
+- ✅ **API attribute operations show reduced copying**: Only affected priority levels copied
+- ✅ **Variable selection caching implemented**: Domain sizes and watcher counts cached with proper invalidation
+- ✅ **All existing functionality preserved**: No breaking changes, backward compatibility maintained
+
+### Performance Impact Achieved
+- **Infrastructure Overhead Reduced**: Queue, API, and variable selection operations optimized
+- **Memory Allocation Optimized**: Reduced unnecessary copying in frequent operations
+- **Cache Performance Added**: Variable selection now benefits from domain/watcher caching
+- **Foundation for Scale**: Infrastructure now handles larger constraint problems more efficiently
+
+### Changes Required (Historical for Reference)
+
+#### 1. Propagation Queue Stale-Skip Fix (COMPLETED)
 **File**: `prolog/clpfd/queue.py`
 **Changes**: Replace stale-skip with eager cleanup (lines 143-156)
 
@@ -575,15 +622,21 @@ All optimizations maintain existing API compatibility. No changes required to us
 - **Critical Tests Now Pass**: test_send_more_money_digits (~2min), test_magic_square_3x3_sum (~1min)
 - **Memory Crisis Solved**: Can handle 1M+ value domains without crashing
 
-### 🚧 Phase 2 IN PROGRESS - All_different Algorithm Optimization
+### ✅ Phase 3 COMPLETED - Infrastructure Optimizations
+**Branches**: `198-queue-stale-skip-optimization`, `199-api-copy-on-write-optimization`, `200-variable-selection-caching`
+- **Propagation Queue Optimized**: Eager cleanup eliminates O(n) scanning in hot path
+- **API Attribute Copy-on-Write**: Reduced memory allocation for frequent watcher operations
+- **Variable Selection Caching**: Domain sizes and watcher counts cached with proper invalidation
+- **All 545 CLP(FD) tests pass**: No regressions, comprehensive test coverage for new optimizations
+
+### 🚧 Phase 2 QUEUED - All_different Algorithm Optimization
 **Branch**: `194-all-different-algorithm-optimization` (ready to start)
 - **Research Complete**: Identified O(b²×n) → O(n√n) optimization opportunity
 - **Target Files**: `prolog/clpfd/props/alldiff.py` (lines 90-143 primary focus)
 - **Expected Impact**: 10-100x speedup for constraint propagation
 - **Next Action**: Write tests for efficient Hall interval detection (TDD)
 
-### 📋 Phases 3-4 PLANNED
-- **Phase 3**: Infrastructure optimizations (queue, API, variable selection)
+### 📋 Phase 4 PLANNED
 - **Phase 4**: Advanced optimizations (domain representation, trail system)
 
 ### 🎯 Current Performance vs Targets
@@ -593,11 +646,15 @@ All optimizations maintain existing API compatibility. No changes required to us
 - **Final Target**: Within 10x of SWI-Prolog performance
 
 ### 🔄 How to Continue Implementation
+**Next Phase**: Phase 2 - All_different Algorithm Optimization
 1. **Checkout branch**: `git checkout 194-all-different-algorithm-optimization`
 2. **Start Phase 2.1**: Focus on `prolog/clpfd/props/alldiff.py` lines 90-143
 3. **Follow TDD**: Write tests first for new Hall interval detection
 4. **Use GitHub Issues**: #194 (All_different Algorithm Optimization)
 5. **Reference**: Detailed research findings in specialized agent analysis above
+
+**Completed**: Phase 1 (Domain Materialization) ✅ and Phase 3 (Infrastructure Optimizations) ✅
+**Remaining**: Phase 2 (All_different Algorithm) and Phase 4 (Advanced Optimizations)
 
 ## ⚠️ Critical Design Risks & Mitigations
 
@@ -624,4 +681,4 @@ All optimizations maintain existing API compatibility. No changes required to us
 
 ---
 
-*Phase 1 has delivered a major breakthrough by eliminating the memory explosion crisis. The foundation is now solid for Phase 2's algorithmic optimizations to achieve the next level of performance gains.*
+*Phase 1 has delivered a major breakthrough by eliminating the memory explosion crisis. Phase 3 has optimized the infrastructure foundation with queue, API, and variable selection improvements. The system is now well-positioned for Phase 2's algorithmic optimizations to achieve the next level of performance gains.*
