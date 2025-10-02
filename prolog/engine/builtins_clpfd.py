@@ -23,6 +23,7 @@ from prolog.clpfd.props.gcc import create_global_cardinality_propagator
 from prolog.clpfd.props.nvalue import create_nvalue_propagator
 from prolog.clpfd.props.sum import create_sum_propagator
 from prolog.clpfd.props.lex import create_lex_chain_propagator
+from prolog.clpfd.props.table import create_table_propagator
 from prolog.clpfd.expr import parse_linear_expression
 from prolog.clpfd.props.linear import create_linear_propagator
 from prolog.clpfd.boolean import is_boolean_domain
@@ -2486,6 +2487,134 @@ def _builtin_lex_chain(engine, vectors_term):
 
     # Schedule and run to fixpoint
     queue.schedule(pid, Priority.MED)
+    success = queue.run_to_fixpoint(store, trail, engine)
+
+    # Register unification hook if first CLP(FD) constraint
+    if not hasattr(engine, "_clpfd_inited") or not engine._clpfd_inited:
+        engine.register_attr_hook("clpfd", clpfd_unify_hook)
+        engine._clpfd_inited = True
+
+    return success
+
+
+def _builtin_table(engine, vars_term, tuples_term):
+    """Post table constraint on variables with allowed tuples.
+
+    Args:
+        engine: Engine instance
+        vars_term: List of variables/values participating in the constraint
+        tuples_term: List of allowed tuples (each tuple is a List of integers)
+
+    Returns:
+        True if constraint was posted successfully, False if failed immediately
+    """
+    store = engine.store
+    trail = engine.trail
+
+    # Validate arguments
+    if not isinstance(vars_term, List):
+        return False
+    if not isinstance(tuples_term, List):
+        return False
+
+    # Handle empty variables list
+    if len(vars_term.items) == 0:
+        # Empty variables list - check if we have exactly one empty tuple
+        if len(tuples_term.items) == 1:
+            empty_tuple = tuples_term.items[0]
+            if isinstance(empty_tuple, List) and len(empty_tuple.items) == 0:
+                return True
+        elif len(tuples_term.items) == 0:
+            return True  # No tuples to satisfy is fine for empty variables
+        return False
+
+    # Parse variables list
+    var_ids = []
+    ground_values = []
+
+    for item in vars_term.items:
+        if isinstance(item, Var):
+            # Variable - deref to get root
+            deref = store.deref(item.id)
+            if deref[0] == "BOUND":
+                # Already bound to some value
+                bound_term = deref[2]
+                if isinstance(bound_term, Int):
+                    var_ids.append(None)  # No variable ID for ground value
+                    ground_values.append(bound_term.value)
+                else:
+                    return False  # Bound to non-integer
+            else:
+                # Unbound variable
+                root = deref[1]
+                var_ids.append(root)
+                ground_values.append(None)
+        elif isinstance(item, Int):
+            # Direct integer value
+            var_ids.append(None)
+            ground_values.append(item.value)
+        else:
+            # Other term types not supported
+            return False
+
+    # Parse tuples list
+    tuples = []
+    arity = len(var_ids)
+
+    for tuple_term in tuples_term.items:
+        if not isinstance(tuple_term, List):
+            return False
+
+        # Check arity
+        if len(tuple_term.items) != arity:
+            return False
+
+        # Parse tuple values
+        tuple_values = []
+        for val_term in tuple_term.items:
+            if isinstance(val_term, Int):
+                tuple_values.append(val_term.value)
+            else:
+                return False  # Non-integer in tuple
+
+        tuples.append(tuple(tuple_values))
+
+    # Handle empty tuples list
+    if not tuples:
+        return False  # No valid tuples means constraint is unsatisfiable
+
+    # Check immediate ground value consistency
+    for tuple_vals in tuples:
+        matches = True
+        for i, ground_val in enumerate(ground_values):
+            if ground_val is not None and ground_val != tuple_vals[i]:
+                matches = False
+                break
+        if matches:
+            # At least one tuple matches current ground values
+            break
+    else:
+        # No tuple matches current ground values
+        return False
+
+    # Extract only the variable IDs that correspond to actual variables
+    active_var_ids = [vid for vid in var_ids if vid is not None]
+
+    if not active_var_ids:
+        # All variables are ground - we already checked consistency above
+        return True
+
+    # Create and register propagator
+    prop = create_table_propagator(var_ids, tuples, ground_values)
+    queue = _ensure_queue(engine)
+    pid = queue.register(prop)
+
+    # Add watchers for all unbound variables
+    for vid in active_var_ids:
+        add_watcher(store, vid, pid, Priority.MED, trail)
+
+    # Schedule and run to fixpoint
+    queue.schedule(pid, Priority.MED, cause="initial")
     success = queue.run_to_fixpoint(store, trail, engine)
 
     # Register unification hook if first CLP(FD) constraint

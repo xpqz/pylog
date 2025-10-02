@@ -196,16 +196,20 @@ TODO (6.4)
 - [x] Enforce pairwise lex ordering with bounds-based filtering
 - [x] Unit + scenario tests; docs + examples
 
-Phase 6.5 – table (optional stretch)
+Phase 6.5 – table (optional stretch) ✅ COMPLETE
 - Implement `prolog/clpfd/props/table.py` (positive tables only)
 - Builtin: `table/2`
 - Unit tests: support-based pruning, failure on empty support
 - Scenario tests: CSP instances expressible via extensional constraints
 
-TODO (6.5)
-- [ ] Parse static tuple list; precompute supports
-- [ ] Remove values without any supporting tuple (GAC-lite)
-- [ ] Unit + scenario tests; docs + examples
+COMPLETE (6.5)
+- [x] Parse static tuple list; precompute supports
+- [x] Remove values without any supporting tuple (GAC-lite)
+- [x] Unit + scenario tests; docs + examples
+- [x] GAC-lite filtering with efficient support data structures
+- [x] Mixed variables and ground values support
+- [x] Comprehensive test coverage (22 unit tests, 9 scenario tests)
+- [x] Performance optimization with incremental updates
 
 Documentation & Examples (rolling)
 - MkDocs pages under `mkdocs/docs/clpfd/` for each global
