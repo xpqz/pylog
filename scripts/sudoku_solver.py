@@ -25,9 +25,9 @@ sudoku0(In, Out) :-
 % Core constraints on a 9x9 grid (list of 9 lists of 9 vars/ints)
 sudoku(Rows) :-
     ins_rows(Rows),                     % Domains 1..9
-    rows_all_different(Rows),           % All rows all_different
+    rows_all_different9(Rows),          % All rows all_different (length-9 rows)
     transpose(Rows, Cols),
-    rows_all_different(Cols),           % All cols all_different
+    rows_all_different9(Cols),          % All cols all_different
     all_blocks(Rows),                   % 3x3 blocks all_different
     flatten_rows(Rows, Vars),
     once(label(Vars)).                  % First solution fast
@@ -46,8 +46,13 @@ ins_row([]).
 ins_row([X|Xs]) :- X in 1..9, ins_row(Xs).
 
 % Enforce all_different on each row of a matrix
-rows_all_different([]).
-rows_all_different([R|Rs]) :- all_different(R), rows_all_different(Rs).
+% Enforce all_different on each row with explicit 9-length destructuring to
+% pass a concrete list literal to the builtin (avoids deref-var issue).
+rows_all_different9([]).
+rows_all_different9([R|Rs]) :-
+    R = [A,B,C,D,E,F,G,H,I],
+    all_different([A,B,C,D,E,F,G,H,I]),
+    rows_all_different9(Rs).
 
 % Transpose a matrix
 transpose([[]|_], []).
@@ -63,7 +68,7 @@ heads_tails([[H|T]|Rows], [H|Hs], [T|Ts]) :-
 all_blocks([]).
 all_blocks([R1,R2,R3|Rs]) :-
     row_blocks(R1,R2,R3,Bs),
-    all_different_each(Bs),
+    pairwise_neq_each(Bs),
     all_blocks(Rs).
 
 % Split three rows into 3 blocks each
@@ -72,8 +77,16 @@ row_blocks([A1,A2,A3|AR], [B1,B2,B3|BR], [C1,C2,C3|CR],
            [[A1,A2,A3,B1,B2,B3,C1,C2,C3] | Tail]) :-
     row_blocks(AR, BR, CR, Tail).
 
-all_different_each([]).
-all_different_each([L|Ls]) :- all_different(L), all_different_each(Ls).
+pairwise_neq_each([]).
+pairwise_neq_each([L|Ls]) :- pairwise_neq(L), pairwise_neq_each(Ls).
+
+% Pairwise inequality over a list
+pairwise_neq([]).
+pairwise_neq([_]).
+pairwise_neq([X|Xs]) :- neq_list(X, Xs), pairwise_neq(Xs).
+
+neq_list(_, []).
+neq_list(X, [Y|Ys]) :- X #\= Y, neq_list(X, Ys).
 
 % Flatten matrix to a single list
 flatten_rows([], []).

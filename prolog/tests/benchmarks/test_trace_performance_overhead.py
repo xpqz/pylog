@@ -12,16 +12,13 @@ import time
 import statistics
 import gc
 import os
-from typing import List, Dict, Any, Tuple
-from pathlib import Path
-import tempfile
+from typing import Tuple
 
 import pytest
 
-from prolog.ast.terms import Atom, Int, Var, Struct
+from prolog.ast.terms import Int, Var, Struct
 from prolog.ast.clauses import Clause, Program
 from prolog.engine.engine import Engine
-from prolog.debug.tracer import PortsTracer
 from prolog.debug.sinks import PrettyTraceSink, JSONLTraceSink, CollectorSink
 
 
@@ -64,11 +61,8 @@ def create_test_program(size: str = "medium") -> Program:
                 head=Struct("even", (Var(0, "X"),)),
                 body=(
                     Struct("num", (Var(0, "X"),)),
-                    Struct("=:=", (
-                        Struct("mod", (Var(0, "X"), Int(2))),
-                        Int(0)
-                    )),
-                )
+                    Struct("=:=", (Struct("mod", (Var(0, "X"), Int(2))), Int(0))),
+                ),
             )
         )
     else:  # large
@@ -84,21 +78,26 @@ def create_test_program(size: str = "medium") -> Program:
                     Struct("item", (Var(0, "X"),)),
                     Struct("item", (Var(1, "Y"),)),
                     Struct("<", (Var(0, "X"), Var(1, "Y"))),
-                    Struct("=:=", (
-                        Struct("mod", (
-                            Struct("+", (Var(0, "X"), Var(1, "Y"))),
-                            Int(10)
-                        )),
-                        Int(0)
-                    )),
-                )
+                    Struct(
+                        "=:=",
+                        (
+                            Struct(
+                                "mod",
+                                (Struct("+", (Var(0, "X"), Var(1, "Y"))), Int(10)),
+                            ),
+                            Int(0),
+                        ),
+                    ),
+                ),
             )
         )
 
     return Program(tuple(clauses))
 
 
-def measure_execution_time(engine: Engine, query: str, iterations: int = 5, warmup: int = 1) -> Tuple[float, float]:
+def measure_execution_time(
+    engine: Engine, query: str, iterations: int = 5, warmup: int = 1
+) -> Tuple[float, float]:
     """Measure execution time for a query with warmup and GC control.
 
     Args:
@@ -123,7 +122,7 @@ def measure_execution_time(engine: Engine, query: str, iterations: int = 5, warm
         for _ in range(iterations):
             gc.collect()  # Clean slate before each measurement
             start = time.perf_counter()
-            results = list(engine.query(query))
+            list(engine.query(query))
             end = time.perf_counter()
             times.append(end - start)
     finally:
@@ -151,13 +150,13 @@ class TestTracingOverhead:
     @classmethod
     def should_enforce(cls):
         """Check if performance assertions should be enforced."""
-        enforce_val = os.getenv('CI_ENFORCE_PERF', '').lower()
-        return enforce_val in ('1', 'true', 'yes', 'on')
+        enforce_val = os.getenv("CI_ENFORCE_PERF", "").lower()
+        return enforce_val in ("1", "true", "yes", "on")
 
     @classmethod
     def get_threshold(cls, name: str, default: float) -> float:
         """Get configurable threshold from environment."""
-        env_var = f'PERF_{name.upper()}_MAX'
+        env_var = f"PERF_{name.upper()}_MAX"
         val = os.getenv(env_var)
         if val:
             try:
@@ -176,10 +175,12 @@ class TestTracingOverhead:
 
         # With trace=True but no-op filter (no events emitted)
         engine_traced = Engine(program, trace=True)
+
         # Set a filter that rejects all events - avoid closure overhead
         def reject_all(ev):
             return False
-        if hasattr(engine_traced.tracer, 'set_filter'):
+
+        if hasattr(engine_traced.tracer, "set_filter"):
             engine_traced.tracer.set_filter(reject_all)
         traced_time, traced_iqr = measure_execution_time(engine_traced, "even(X)")
 
@@ -187,12 +188,16 @@ class TestTracingOverhead:
         overhead = ((traced_time - baseline_time) / baseline_time) * 100
 
         # Report results
-        print(f"\nTrace infrastructure overhead: {overhead:.1f}% (median: {traced_time:.3f}s vs {baseline_time:.3f}s)")
+        print(
+            f"\nTrace infrastructure overhead: {overhead:.1f}% (median: {traced_time:.3f}s vs {baseline_time:.3f}s)"
+        )
 
         # Only enforce if requested
         if self.should_enforce():
-            threshold = self.get_threshold('infrastructure', 5.0)
-            assert overhead <= threshold, f"Overhead with trace infrastructure: {overhead:.1f}% (target: ≤{threshold}%)"
+            threshold = self.get_threshold("infrastructure", 5.0)
+            assert (
+                overhead <= threshold
+            ), f"Overhead with trace infrastructure: {overhead:.1f}% (target: ≤{threshold}%)"
 
     def test_overhead_with_pretty_tracing(self, tmp_path):
         """Test overhead with pretty tracing."""
@@ -206,7 +211,7 @@ class TestTracingOverhead:
         trace_file = tmp_path / "trace.txt"
         engine_pretty = Engine(program, trace=True)
 
-        with open(trace_file, 'w') as f:
+        with open(trace_file, "w") as f:
             sink = PrettyTraceSink(f)
             engine_pretty.tracer.add_sink(sink)
             pretty_time, pretty_iqr = measure_execution_time(engine_pretty, "even(X)")
@@ -215,12 +220,16 @@ class TestTracingOverhead:
         overhead = ((pretty_time - baseline_time) / baseline_time) * 100
 
         # Report results
-        print(f"\nPretty tracing overhead: {overhead:.1f}% (median: {pretty_time:.3f}s vs {baseline_time:.3f}s)")
+        print(
+            f"\nPretty tracing overhead: {overhead:.1f}% (median: {pretty_time:.3f}s vs {baseline_time:.3f}s)"
+        )
 
         # Only enforce if requested
         if self.should_enforce():
-            threshold = self.get_threshold('pretty', 25.0)
-            assert overhead <= threshold, f"Overhead with pretty tracing: {overhead:.1f}% (target: ≤{threshold}%)"
+            threshold = self.get_threshold("pretty", 25.0)
+            assert (
+                overhead <= threshold
+            ), f"Overhead with pretty tracing: {overhead:.1f}% (target: ≤{threshold}%)"
 
     def test_overhead_with_jsonl_tracing(self, tmp_path):
         """Test overhead with JSONL tracing."""
@@ -234,7 +243,7 @@ class TestTracingOverhead:
         trace_file = tmp_path / "trace.jsonl"
         engine_jsonl = Engine(program, trace=True)
 
-        with open(trace_file, 'w') as f:
+        with open(trace_file, "w") as f:
             sink = JSONLTraceSink(output=f)
             engine_jsonl.tracer.add_sink(sink)
             jsonl_time, jsonl_iqr = measure_execution_time(engine_jsonl, "even(X)")
@@ -243,12 +252,16 @@ class TestTracingOverhead:
         overhead = ((jsonl_time - baseline_time) / baseline_time) * 100
 
         # Report results
-        print(f"\nJSONL tracing overhead: {overhead:.1f}% (median: {jsonl_time:.3f}s vs {baseline_time:.3f}s)")
+        print(
+            f"\nJSONL tracing overhead: {overhead:.1f}% (median: {jsonl_time:.3f}s vs {baseline_time:.3f}s)"
+        )
 
         # Only enforce if requested
         if self.should_enforce():
-            threshold = self.get_threshold('jsonl', 35.0)
-            assert overhead <= threshold, f"Overhead with JSONL tracing: {overhead:.1f}% (target: ≤{threshold}%)"
+            threshold = self.get_threshold("jsonl", 35.0)
+            assert (
+                overhead <= threshold
+            ), f"Overhead with JSONL tracing: {overhead:.1f}% (target: ≤{threshold}%)"
 
     def test_overhead_with_collector_sink(self):
         """Test overhead with CollectorSink (no I/O)."""
@@ -262,19 +275,24 @@ class TestTracingOverhead:
         engine_collector = Engine(program, trace=True)
         sink = CollectorSink()
         engine_collector.tracer.add_sink(sink)
-        collector_time, collector_iqr = measure_execution_time(engine_collector, "even(X)")
+        collector_time, collector_iqr = measure_execution_time(
+            engine_collector, "even(X)"
+        )
 
         # Calculate overhead
         overhead = ((collector_time - baseline_time) / baseline_time) * 100
 
         # Report results
-        print(f"\nCollectorSink overhead: {overhead:.1f}% (median: {collector_time:.3f}s vs {baseline_time:.3f}s)")
+        print(
+            f"\nCollectorSink overhead: {overhead:.1f}% (median: {collector_time:.3f}s vs {baseline_time:.3f}s)"
+        )
 
         # Only enforce if requested
         if self.should_enforce():
-            threshold = self.get_threshold('collector', 15.0)
-            assert overhead <= threshold, f"Overhead with CollectorSink: {overhead:.1f}% (target: ≤{threshold}%)"
-
+            threshold = self.get_threshold("collector", 15.0)
+            assert (
+                overhead <= threshold
+            ), f"Overhead with CollectorSink: {overhead:.1f}% (target: ≤{threshold}%)"
 
 
 @pytest.mark.perf
@@ -285,13 +303,13 @@ class TestScalabilityOverhead:
     @classmethod
     def should_enforce(cls):
         """Check if performance assertions should be enforced."""
-        enforce_val = os.getenv('CI_ENFORCE_PERF', '').lower()
-        return enforce_val in ('1', 'true', 'yes', 'on')
+        enforce_val = os.getenv("CI_ENFORCE_PERF", "").lower()
+        return enforce_val in ("1", "true", "yes", "on")
 
     @classmethod
     def get_threshold(cls, name: str, default: float) -> float:
         """Get configurable threshold from environment."""
-        env_var = f'PERF_{name.upper()}_MAX'
+        env_var = f"PERF_{name.upper()}_MAX"
         val = os.getenv(env_var)
         if val:
             try:
@@ -320,7 +338,9 @@ class TestScalabilityOverhead:
 
             # Baseline
             engine_baseline = Engine(program, trace=False, max_solutions=max_solutions)
-            baseline_time, _ = measure_execution_time(engine_baseline, query, iterations=3)
+            baseline_time, _ = measure_execution_time(
+                engine_baseline, query, iterations=3
+            )
 
             # With tracing (collector sink for consistent overhead)
             engine_traced = Engine(program, trace=True, max_solutions=max_solutions)
@@ -331,19 +351,22 @@ class TestScalabilityOverhead:
             overheads[size] = overhead
 
         # Report results
-        print(f"\nOverhead scaling: small={overheads['small']:.1f}%, "
-              f"medium={overheads['medium']:.1f}%, large={overheads['large']:.1f}%")
+        print(
+            f"\nOverhead scaling: small={overheads['small']:.1f}%, "
+            f"medium={overheads['medium']:.1f}%, large={overheads['large']:.1f}%"
+        )
 
         # Calculate ratio of ratios
-        if overheads['small'] > 0:
-            scaling_factor = overheads['large'] / overheads['small']
+        if overheads["small"] > 0:
+            scaling_factor = overheads["large"] / overheads["small"]
             print(f"Scaling factor (large/small): {scaling_factor:.2f}x")
 
             # Only enforce if requested
             if self.should_enforce():
-                threshold = self.get_threshold('scaling', 3.0)
-                assert scaling_factor <= threshold, \
-                    f"Overhead scaling too high: {scaling_factor:.2f}x (target: ≤{threshold}x)"
+                threshold = self.get_threshold("scaling", 3.0)
+                assert (
+                    scaling_factor <= threshold
+                ), f"Overhead scaling too high: {scaling_factor:.2f}x (target: ≤{threshold}x)"
 
 
 @pytest.mark.perf
@@ -357,31 +380,33 @@ class TestFilteringOverhead:
 
         # Baseline
         engine_baseline = Engine(program, trace=False)
-        baseline_time = measure_execution_time(engine_baseline, "even(X)")
+        baseline_time, _ = measure_execution_time(engine_baseline, "even(X)")
 
         # Full tracing (no filter)
         engine_full = Engine(program, trace=True)
         engine_full.tracer.add_sink(CollectorSink())
-        full_time = measure_execution_time(engine_full, "even(X)")
+        full_time, _ = measure_execution_time(engine_full, "even(X)")
 
         # Filtered tracing (only capture 'even' predicates)
         engine_filtered = Engine(program, trace=True)
-        engine_filtered.tracer.set_filter(lambda ev: 'even' in ev.pred_id if ev.pred_id else False)
+        engine_filtered.tracer.set_filter(
+            lambda ev: "even" in ev.pred_id if ev.pred_id else False
+        )
         engine_filtered.tracer.add_sink(CollectorSink())
-        filtered_time = measure_execution_time(engine_filtered, "even(X)")
+        filtered_time, _ = measure_execution_time(engine_filtered, "even(X)")
 
         # Filtered should be faster than full
-        assert filtered_time < full_time, \
-            "Filtering did not reduce execution time"
+        assert filtered_time < full_time, "Filtering did not reduce execution time"
 
         # Calculate overheads
         full_overhead = ((full_time - baseline_time) / baseline_time) * 100
         filtered_overhead = ((filtered_time - baseline_time) / baseline_time) * 100
 
         # Filtering should reduce overhead noticeably
-        assert filtered_overhead < full_overhead * 0.8, \
-            f"Filtering didn't reduce overhead enough: " \
+        assert filtered_overhead < full_overhead * 0.8, (
+            f"Filtering didn't reduce overhead enough: "
             f"full={full_overhead:.1f}%, filtered={filtered_overhead:.1f}%"
+        )
 
 
 @pytest.mark.perf
@@ -392,13 +417,13 @@ class TestTracingWithBacktracking:
     @classmethod
     def should_enforce(cls):
         """Check if performance assertions should be enforced."""
-        enforce_val = os.getenv('CI_ENFORCE_PERF', '').lower()
-        return enforce_val in ('1', 'true', 'yes', 'on')
+        enforce_val = os.getenv("CI_ENFORCE_PERF", "").lower()
+        return enforce_val in ("1", "true", "yes", "on")
 
     @classmethod
     def get_threshold(cls, name: str, default: float) -> float:
         """Get configurable threshold from environment."""
-        env_var = f'PERF_{name.upper()}_MAX'
+        env_var = f"PERF_{name.upper()}_MAX"
         val = os.getenv(env_var)
         if val:
             try:
@@ -424,19 +449,23 @@ class TestTracingWithBacktracking:
                     Struct("choice", (Var(2, "C"),)),
                     Struct("<", (Var(0, "A"), Var(1, "B"))),
                     Struct("<", (Var(1, "B"), Var(2, "C"))),
-                )
+                ),
             )
         )
         program = Program(tuple(clauses))
 
         # Baseline
         engine_baseline = Engine(program, trace=False, max_solutions=10)
-        baseline_time, _ = measure_execution_time(engine_baseline, "test(A, B, C)", iterations=3)
+        baseline_time, _ = measure_execution_time(
+            engine_baseline, "test(A, B, C)", iterations=3
+        )
 
         # With tracing
         engine_traced = Engine(program, trace=True, max_solutions=10)
         engine_traced.tracer.add_sink(CollectorSink())
-        traced_time, _ = measure_execution_time(engine_traced, "test(A, B, C)", iterations=3)
+        traced_time, _ = measure_execution_time(
+            engine_traced, "test(A, B, C)", iterations=3
+        )
 
         # Calculate overhead
         overhead = ((traced_time - baseline_time) / baseline_time) * 100
@@ -446,9 +475,10 @@ class TestTracingWithBacktracking:
 
         # Only enforce if requested
         if self.should_enforce():
-            threshold = self.get_threshold('backtracking', 45.0)
-            assert overhead <= threshold, \
-                f"Overhead with heavy backtracking: {overhead:.1f}% (target: ≤{threshold}%)"
+            threshold = self.get_threshold("backtracking", 45.0)
+            assert (
+                overhead <= threshold
+            ), f"Overhead with heavy backtracking: {overhead:.1f}% (target: ≤{threshold}%)"
 
 
 @pytest.mark.perf
@@ -460,11 +490,11 @@ def test_sink_performance_comparison(sink_type, tmp_path):
     # Create appropriate sink
     if sink_type == "pretty":
         trace_file = tmp_path / "trace.txt"
-        f = open(trace_file, 'w')
+        f = open(trace_file, "w")
         sink = PrettyTraceSink(f)
     elif sink_type == "jsonl":
         trace_file = tmp_path / "trace.jsonl"
-        f = open(trace_file, 'w')
+        f = open(trace_file, "w")
         sink = JSONLTraceSink(output=f)
     else:  # collector
         sink = CollectorSink()
@@ -476,7 +506,7 @@ def test_sink_performance_comparison(sink_type, tmp_path):
 
     try:
         start = time.perf_counter()
-        results = list(engine.query("even(X)"))
+        list(engine.query("even(X)"))
         end = time.perf_counter()
 
         execution_time = end - start
@@ -485,7 +515,9 @@ def test_sink_performance_comparison(sink_type, tmp_path):
         print(f"\n{sink_type} sink: {execution_time:.3f}s")
 
         # Basic sanity check
-        assert execution_time < 5.0, f"{sink_type} sink took too long: {execution_time:.3f}s"
+        assert (
+            execution_time < 5.0
+        ), f"{sink_type} sink took too long: {execution_time:.3f}s"
     finally:
         # Close file handles
         if f:
@@ -499,13 +531,13 @@ class TestMicroBenchmarks:
     @classmethod
     def should_enforce(cls):
         """Check if performance assertions should be enforced."""
-        enforce_val = os.getenv('CI_ENFORCE_PERF', '').lower()
-        return enforce_val in ('1', 'true', 'yes', 'on')
+        enforce_val = os.getenv("CI_ENFORCE_PERF", "").lower()
+        return enforce_val in ("1", "true", "yes", "on")
 
     @classmethod
     def get_threshold(cls, name: str, default: float) -> float:
         """Get configurable threshold from environment."""
-        env_var = f'PERF_{name.upper()}_MAX'
+        env_var = f"PERF_{name.upper()}_MAX"
         val = os.getenv(env_var)
         if val:
             try:
@@ -527,7 +559,7 @@ class TestMicroBenchmarks:
         gc.disable()
         try:
             start = time.perf_counter()
-            results = list(engine_baseline.query("fact(1)"))
+            list(engine_baseline.query("fact(1)"))
             baseline_time = time.perf_counter() - start
         finally:
             gc.enable()
@@ -541,7 +573,7 @@ class TestMicroBenchmarks:
         gc.disable()
         try:
             start = time.perf_counter()
-            results = list(engine_traced.query("fact(1)"))
+            list(engine_traced.query("fact(1)"))
             traced_time = time.perf_counter() - start
         finally:
             gc.enable()
@@ -551,21 +583,24 @@ class TestMicroBenchmarks:
             overhead_ratio = traced_time / baseline_time
             overhead_pct = (overhead_ratio - 1) * 100
         else:
-            overhead_ratio = float('inf')
-            overhead_pct = float('inf')
+            overhead_ratio = float("inf")
+            overhead_pct = float("inf")
 
         # Report results
-        print(f"\nTime to first event: baseline={baseline_time*1000:.3f}ms, "
-              f"traced={traced_time*1000:.3f}ms, "
-              f"overhead={overhead_pct:.1f}% ({overhead_ratio:.2f}x)")
+        print(
+            f"\nTime to first event: baseline={baseline_time*1000:.3f}ms, "
+            f"traced={traced_time*1000:.3f}ms, "
+            f"overhead={overhead_pct:.1f}% ({overhead_ratio:.2f}x)"
+        )
 
         # Only enforce if requested
         if self.should_enforce():
             # We expect higher overhead on tiny operations due to fixed setup costs
             # but it should still be bounded
-            threshold = self.get_threshold('first_event', 5.0)
-            assert overhead_ratio <= threshold, \
-                f"Time-to-first-event overhead too high: {overhead_ratio:.2f}x (target: ≤{threshold}x)"
+            threshold = self.get_threshold("first_event", 5.0)
+            assert (
+                overhead_ratio <= threshold
+            ), f"Time-to-first-event overhead too high: {overhead_ratio:.2f}x (target: ≤{threshold}x)"
 
     def test_event_creation_rate(self):
         """Test rate of trace event creation without I/O."""
@@ -578,7 +613,7 @@ class TestMicroBenchmarks:
         clauses.append(
             Clause(
                 head=Struct("all_tests", (Var(0, "X"),)),
-                body=(Struct("test", (Var(0, "X"),)),)
+                body=(Struct("test", (Var(0, "X"),)),),
             )
         )
         program = Program(tuple(clauses))
@@ -592,27 +627,30 @@ class TestMicroBenchmarks:
         gc.disable()
         try:
             start = time.perf_counter()
-            results = list(engine.query("all_tests(X)"))
+            list(engine.query("all_tests(X)"))
             elapsed = time.perf_counter() - start
         finally:
             gc.enable()
 
         # Calculate event rate
-        num_events = len(sink.events) if hasattr(sink, 'events') else 0
+        num_events = len(sink.events) if hasattr(sink, "events") else 0
         if elapsed > 0:
             events_per_second = num_events / elapsed
         else:
-            events_per_second = float('inf')
+            events_per_second = float("inf")
 
-        print(f"\nEvent creation rate (CollectorSink): {num_events} events in {elapsed:.3f}s "
-              f"= {events_per_second:.0f} events/sec")
+        print(
+            f"\nEvent creation rate (CollectorSink): {num_events} events in {elapsed:.3f}s "
+            f"= {events_per_second:.0f} events/sec"
+        )
 
         # Only enforce if requested
         if self.should_enforce():
             # Basic sanity check - should handle at least 1000 events/sec
-            min_rate = float(os.getenv('PERF_EVENT_RATE_MIN', '1000'))
-            assert events_per_second >= min_rate, \
-                f"Event creation rate too slow: {events_per_second:.0f} events/sec (target: ≥{min_rate})"
+            min_rate = float(os.getenv("PERF_EVENT_RATE_MIN", "1000"))
+            assert (
+                events_per_second >= min_rate
+            ), f"Event creation rate too slow: {events_per_second:.0f} events/sec (target: ≥{min_rate})"
 
     def test_pure_event_creation_rate(self):
         """Test pure event creation rate with NullSink (no append overhead)."""
@@ -624,7 +662,7 @@ class TestMicroBenchmarks:
         clauses.append(
             Clause(
                 head=Struct("all_tests", (Var(0, "X"),)),
-                body=(Struct("test", (Var(0, "X"),)),)
+                body=(Struct("test", (Var(0, "X"),)),),
             )
         )
         program = Program(tuple(clauses))
@@ -649,9 +687,11 @@ class TestMicroBenchmarks:
         if elapsed > 0:
             events_per_second = estimated_events / elapsed
         else:
-            events_per_second = float('inf')
+            events_per_second = float("inf")
 
-        print(f"\nPure event creation rate (NullSink): ~{estimated_events} events in {elapsed:.3f}s "
-              f"= {events_per_second:.0f} events/sec")
+        print(
+            f"\nPure event creation rate (NullSink): ~{estimated_events} events in {elapsed:.3f}s "
+            f"= {events_per_second:.0f} events/sec"
+        )
 
         # This test is purely informational, no assertions

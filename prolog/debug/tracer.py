@@ -97,6 +97,7 @@ class PortsTracer:
 
         # Filters (TraceFilters integration)
         self._filters: Optional[TraceFilters] = None
+        self._custom_filter: Optional[Callable] = None
 
     def _intern_pred_id(self, name: str, arity: int) -> str:
         """
@@ -121,10 +122,10 @@ class PortsTracer:
 
     def set_filter(self, filter_func: Callable) -> None:
         """Set simple filter function (REPL compatibility)."""
-        # Create simple TraceFilters wrapper for REPL
-        simple_filters = TraceFilters()
-        simple_filters._custom_filter = filter_func
-        self._filters = simple_filters
+        # Store custom filter function separately
+        self._custom_filter = filter_func
+        # Clear TraceFilters to avoid conflicts
+        self._filters = None
 
     def _create_event(self, port: str, goal: Term) -> TraceEvent:
         """
@@ -208,9 +209,16 @@ class PortsTracer:
         """
         Apply filters to determine if event should be emitted.
         """
-        if self._filters is None:
-            return True
-        return should_emit_event(event, self._filters)
+        # Check custom filter first (for backwards compatibility)
+        if self._custom_filter is not None:
+            return self._custom_filter(event)
+
+        # Use TraceFilters if available
+        if self._filters is not None:
+            return should_emit_event(event, self._filters)
+
+        # No filters - emit all events
+        return True
 
     def emit_event(self, port: str, goal: Term):
         """
