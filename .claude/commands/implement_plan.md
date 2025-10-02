@@ -12,6 +12,11 @@ uv run pytest -m "not slow" -q --tb=short
 
 **CRITICAL**: review and accept coderules.md in its entirety. 
 
+To save both tokens and time:
+
+**Review coderules.md now, and stick closely to that.**
+
+
 ## Getting Started
 
 When given a plan path or GitHub Epic issue ID:

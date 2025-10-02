@@ -4,7 +4,7 @@ Immutable finite domains as sorted disjoint intervals with revision tracking.
 """
 
 from dataclasses import dataclass
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Iterator
 
 
 def normalize_intervals(
@@ -34,6 +34,62 @@ def normalize_intervals(
     result.append((current_start, current_end))
 
     return tuple(result)
+
+
+def _middle_out_order(values: list[int]) -> list[int]:
+    """Reorder values starting from middle and alternating outward.
+
+    Args:
+        values: List of values in ascending order
+
+    Returns:
+        List reordered starting from middle, alternating left/right
+    """
+    if not values:
+        return []
+
+    if len(values) == 1:
+        return values
+
+    middle_idx = len(values) // 2
+    result = [values[middle_idx]]
+
+    # Add values alternating from middle outward (lower first)
+    for i in range(1, max(middle_idx + 1, len(values) - middle_idx)):
+        if middle_idx - i >= 0:
+            result.append(values[middle_idx - i])
+        if middle_idx + i < len(values):
+            result.append(values[middle_idx + i])
+
+    return result
+
+
+def _split_order(values: list[int]) -> list[int]:
+    """Reorder values for indomain_split strategy.
+
+    Args:
+        values: List of values in ascending order
+
+    Returns:
+        List reordered starting from middle, alternating with upper values first
+    """
+    if not values:
+        return []
+
+    if len(values) == 1:
+        return values
+
+    middle_idx = len(values) // 2
+    result = [values[middle_idx]]
+
+    # Add values alternating from middle outward (upper first)
+    for i in range(1, max(middle_idx + 1, len(values) - middle_idx)):
+        if middle_idx + i < len(values):
+            result.append(values[middle_idx + i])
+        if middle_idx - i >= 0:
+            result.append(values[middle_idx - i])
+
+    return result
 
 
 @dataclass(frozen=True)
@@ -240,3 +296,42 @@ class Domain:
             return self  # No change
 
         return Domain(new_intervals, self.rev + 1)
+
+    def iter_values(self) -> Iterator[int]:
+        """Iterate over domain values lazily without materialization.
+
+        Yields values in ascending order across all intervals.
+
+        Returns:
+            Iterator yielding domain values one at a time
+        """
+        for low, high in self.intervals:
+            yield from range(low, high + 1)
+
+    def iter_values_ordered(self, strategy: str) -> Iterator[int]:
+        """Iterate values in specified order without full materialization.
+
+        Args:
+            strategy: Ordering strategy - "min_first", "max_first", "middle_out", or "split"
+
+        Returns:
+            Iterator yielding values in the specified order
+        """
+        if strategy == "min_first":
+            yield from self.iter_values()
+        elif strategy == "max_first":
+            # Iterate intervals in reverse, values in reverse within each
+            for low, high in reversed(self.intervals):
+                yield from range(high, low - 1, -1)
+        elif strategy == "middle_out":
+            # For middle_out, we need to materialize (only this strategy)
+            # This is acceptable since middle_out is rarely used for huge domains
+            values = list(self.iter_values())
+            yield from _middle_out_order(values)
+        elif strategy == "split":
+            # For split ordering, we need to materialize
+            values = list(self.iter_values())
+            yield from _split_order(values)
+        else:
+            # Unknown strategy defaults to min_first
+            yield from self.iter_values()

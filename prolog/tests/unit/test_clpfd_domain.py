@@ -5,6 +5,7 @@ revision tracking, and proper semantics.
 """
 
 import pytest
+import types
 from prolog.clpfd.domain import Domain
 
 
@@ -364,11 +365,11 @@ class TestDomainContains:
     def test_contains_many_intervals(self):
         """Binary search efficiency with many intervals."""
         # Create domain with 10 intervals
-        intervals = tuple((i*10, i*10+5) for i in range(10))
+        intervals = tuple((i * 10, i * 10 + 5) for i in range(10))
         d = Domain(intervals)
 
         # Should find values efficiently via binary search
-        assert d.contains(5)   # In first interval
+        assert d.contains(5)  # In first interval
         assert d.contains(45)  # In middle interval
         assert d.contains(95)  # In last interval
 
@@ -648,3 +649,155 @@ class TestDomainRemoveInterval:
         result4 = d.remove_interval(100, 200)
         assert result4 is d
         assert result4.rev == 2
+
+
+class TestDomainIteration:
+    """Test lazy domain iteration methods (Phase 1 optimization)."""
+
+    def test_iter_values_empty_domain(self):
+        """Empty domain should yield no values."""
+        d = Domain(())
+        values = list(d.iter_values())
+        assert values == []
+
+    def test_iter_values_singleton_domain(self):
+        """Singleton domain should yield single value."""
+        d = Domain(((5, 5),))
+        values = list(d.iter_values())
+        assert values == [5]
+
+    def test_iter_values_single_interval(self):
+        """Single interval should yield all values in order."""
+        d = Domain(((1, 5),))
+        values = list(d.iter_values())
+        assert values == [1, 2, 3, 4, 5]
+
+    def test_iter_values_multiple_intervals(self):
+        """Multiple intervals should yield values in order."""
+        d = Domain(((1, 3), (7, 9)))
+        values = list(d.iter_values())
+        assert values == [1, 2, 3, 7, 8, 9]
+
+    def test_iter_values_large_interval(self):
+        """Large interval iteration should be memory efficient."""
+        d = Domain(((1, 1000),))
+        # Should be able to iterate without materializing full list
+        iterator = d.iter_values()
+
+        # Test first few values
+        assert next(iterator) == 1
+        assert next(iterator) == 2
+        assert next(iterator) == 3
+
+        # Should be lazy - can't easily test memory without profiling
+        # but we can verify it's an iterator
+        assert isinstance(iterator, types.GeneratorType)
+
+    def test_iter_values_negative_values(self):
+        """Should handle negative values correctly."""
+        d = Domain(((-3, -1), (2, 4)))
+        values = list(d.iter_values())
+        assert values == [-3, -2, -1, 2, 3, 4]
+
+    def test_iter_values_zero_crossing(self):
+        """Should handle intervals crossing zero."""
+        d = Domain(((-2, 2),))
+        values = list(d.iter_values())
+        assert values == [-2, -1, 0, 1, 2]
+
+    def test_iter_values_ordered_min_first(self):
+        """min_first strategy should iterate from minimum values."""
+        d = Domain(((1, 3), (7, 9)))
+        values = list(d.iter_values_ordered("min_first"))
+        assert values == [1, 2, 3, 7, 8, 9]
+
+    def test_iter_values_ordered_max_first(self):
+        """max_first strategy should iterate from maximum values."""
+        d = Domain(((1, 3), (7, 9)))
+        values = list(d.iter_values_ordered("max_first"))
+        assert values == [9, 8, 7, 3, 2, 1]
+
+    def test_iter_values_ordered_middle_out(self):
+        """middle_out strategy should start from middle and alternate."""
+        d = Domain(((1, 5),))
+        values = list(d.iter_values_ordered("middle_out"))
+        # Middle value is 3, should be: 3, 2, 4, 1, 5
+        assert values[0] == 3  # First should be middle value
+        assert set(values) == {1, 2, 3, 4, 5}  # All values present
+        assert len(values) == 5
+
+    def test_iter_values_ordered_middle_out_even_count(self):
+        """middle_out with even count should pick reasonable middle."""
+        d = Domain(((1, 4),))
+        values = list(d.iter_values_ordered("middle_out"))
+        # For [1,2,3,4], middle could be 2 or 3
+        assert values[0] in [2, 3]  # First should be middle value
+        assert set(values) == {1, 2, 3, 4}  # All values present
+        assert len(values) == 4
+
+    def test_iter_values_ordered_empty_domain(self):
+        """All strategies should handle empty domains."""
+        d = Domain(())
+        assert list(d.iter_values_ordered("min_first")) == []
+        assert list(d.iter_values_ordered("max_first")) == []
+        assert list(d.iter_values_ordered("middle_out")) == []
+
+    def test_iter_values_ordered_singleton(self):
+        """All strategies should handle singleton domains."""
+        d = Domain(((7, 7),))
+        assert list(d.iter_values_ordered("min_first")) == [7]
+        assert list(d.iter_values_ordered("max_first")) == [7]
+        assert list(d.iter_values_ordered("middle_out")) == [7]
+
+    def test_iter_values_ordered_unknown_strategy(self):
+        """Unknown strategy should default to min_first."""
+        d = Domain(((1, 3),))
+        values = list(d.iter_values_ordered("unknown_strategy"))
+        assert values == [1, 2, 3]  # Default to min_first
+
+    def test_iter_values_preserves_domain_immutability(self):
+        """Iteration should not modify the domain."""
+        d = Domain(((1, 5),), rev=10)
+        original_intervals = d.intervals
+        original_rev = d.rev
+
+        # Iterate multiple times
+        list(d.iter_values())
+        list(d.iter_values_ordered("max_first"))
+        list(d.iter_values_ordered("middle_out"))
+
+        # Domain should be unchanged
+        assert d.intervals == original_intervals
+        assert d.rev == original_rev
+
+    def test_iter_values_memory_efficiency_large_domain(self):
+        """Test that large domain iteration is memory efficient."""
+        # Create domain with potentially millions of values
+        d = Domain(((1, 1000000),))
+
+        # Should be able to get first few values without memory explosion
+        iterator = d.iter_values()
+        first_values = [next(iterator) for _ in range(100)]
+        assert first_values == list(range(1, 101))
+
+        # Iterator should still be active
+        next_value = next(iterator)
+        assert next_value == 101
+
+    def test_iter_values_multiple_large_intervals(self):
+        """Test iteration over multiple large intervals."""
+        d = Domain(((1, 1000), (10000, 11000)))
+        iterator = d.iter_values()
+
+        # First interval values
+        first_values = [next(iterator) for _ in range(5)]
+        assert first_values == [1, 2, 3, 4, 5]
+
+        # Skip to end of first interval and start of second
+        # We know first interval has 1000 values, so skip 995 more
+        for _ in range(995):
+            next(iterator)
+
+        # Now we should be at second interval
+        second_interval_start = next(iterator)
+        assert second_interval_start == 10000

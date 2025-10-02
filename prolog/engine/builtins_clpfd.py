@@ -19,6 +19,8 @@ from prolog.clpfd.props.comparison import (
 from prolog.clpfd.props.alldiff import create_all_different_propagator
 from prolog.clpfd.props.sum_const import create_sum_const_propagator
 from prolog.clpfd.props.element import create_element_propagator
+from prolog.clpfd.props.gcc import create_global_cardinality_propagator
+from prolog.clpfd.props.nvalue import create_nvalue_propagator
 from prolog.clpfd.props.sum import create_sum_propagator
 from prolog.clpfd.expr import parse_linear_expression
 from prolog.clpfd.props.linear import create_linear_propagator
@@ -2108,3 +2110,275 @@ def validate_equal_length_vectors(vector_lists):
             raise ValueError(
                 f"Vectors must have equal length: vector 0 has {first_length}, vector {i} has {len(vec.items)}"
             )
+
+
+def _builtin_global_cardinality(engine, vars_term, counts_term):
+    """global_cardinality(Vars, Counts) - constrain value occurrences.
+
+    Args:
+        engine: Engine instance
+        vars_term: List of variables whose values are constrained
+        counts_term: List of Value-Count pairs (Value-Count or Value-(Min..Max))
+
+    Returns:
+        True if constraint posted successfully, False if failed immediately
+    """
+    store = engine.store
+    trail = engine.trail
+
+    # Validate arguments
+    if not isinstance(vars_term, List):
+        return False
+    if not isinstance(counts_term, List):
+        return False
+
+    # Parse variable list directly (following all_different pattern)
+    var_ids = []
+    ground_value_counts = {}  # Track ground values for count checking
+
+    for item in vars_term.items:
+        if isinstance(item, Int):
+            # Direct integer value
+            value = item.value
+            ground_value_counts[value] = ground_value_counts.get(value, 0) + 1
+        elif isinstance(item, Var):
+            # Variable - need to deref
+            deref = store.deref(item.id)
+            if deref[0] == "BOUND":
+                val = deref[2]  # Bound term is at index 2
+                if not isinstance(val, Int):
+                    return False  # Non-integer ground term
+                value = val.value
+                ground_value_counts[value] = ground_value_counts.get(value, 0) + 1
+            elif deref[0] == "UNBOUND":
+                # Check if this variable has a singleton domain
+                var_domain = get_domain(store, deref[1])
+                if var_domain and var_domain.is_singleton():
+                    # Treat singleton domain variables as ground values
+                    value = var_domain.min()
+                    ground_value_counts[value] = ground_value_counts.get(value, 0) + 1
+                else:
+                    # Only add non-singleton variables to the var_ids list
+                    var_ids.append(deref[1])  # Root variable ID
+        else:
+            # Other term types - fail for CLP(FD)
+            return False
+
+    # Parse count constraints
+    value_counts = {}  # value -> (min_count, max_count)
+
+    for count_term in counts_term.items:
+        if (
+            not isinstance(count_term, Struct)
+            or count_term.functor != "-"
+            or len(count_term.args) != 2
+        ):
+            return False  # Invalid count format
+
+        value_arg, count_arg = count_term.args
+
+        # Parse value
+        if isinstance(value_arg, Int):
+            value = value_arg.value
+        else:
+            return False  # Value must be integer
+
+        # Parse count (can be integer or range)
+        if isinstance(count_arg, Int):
+            # Exact count
+            if count_arg.value < 0:
+                return False  # Negative count invalid
+            min_count = max_count = count_arg.value
+        elif (
+            isinstance(count_arg, Struct)
+            and count_arg.functor == ".."
+            and len(count_arg.args) == 2
+        ):
+            # Range: Min..Max
+            if isinstance(count_arg.args[0], Int) and isinstance(
+                count_arg.args[1], Int
+            ):
+                min_count = count_arg.args[0].value
+                max_count = count_arg.args[1].value
+                if min_count < 0 or max_count < 0 or min_count > max_count:
+                    return False  # Invalid range
+            else:
+                return False
+        else:
+            return False  # Invalid count specification
+
+        value_counts[value] = (min_count, max_count)
+
+    # Check ground values against count constraints
+    for value, actual_count in ground_value_counts.items():
+        if value in value_counts:
+            min_count, max_count = value_counts[value]
+            if actual_count > max_count:
+                return False  # Too many ground occurrences
+            # Adjust required counts for remaining variables
+            remaining_min = max(0, min_count - actual_count)
+            remaining_max = max_count - actual_count
+            if remaining_max < 0:
+                return False  # Impossible
+            value_counts[value] = (remaining_min, remaining_max)
+
+    # If no variable constraints, just check ground values
+    if not var_ids:
+        return True
+
+    # If no count constraints, nothing to enforce
+    if not value_counts:
+        return True
+
+    # Create and register propagator
+    prop = create_global_cardinality_propagator(var_ids, value_counts)
+
+    queue = _ensure_queue(engine)
+    pid = queue.register(prop)
+
+    # Add watchers for all variables
+    for var_id in var_ids:
+        add_watcher(store, var_id, pid, Priority.MED, trail)
+
+    # Schedule and run to fixpoint
+    queue.schedule(pid, Priority.MED)
+    success = queue.run_to_fixpoint(store, trail, engine)
+
+    # Register unification hook if first CLP(FD) constraint
+    if not hasattr(engine, "_clpfd_inited") or not engine._clpfd_inited:
+        engine.register_attr_hook("clpfd", clpfd_unify_hook)
+        engine._clpfd_inited = True
+
+    return success
+
+
+def _builtin_nvalue(engine, n_term, vars_term):
+    """nvalue(N, Vars) - N equals the number of distinct values in Vars.
+
+    Args:
+        engine: Engine instance
+        n_term: Variable or integer for the count of distinct values
+        vars_term: List of variables whose distinct values are counted
+
+    Returns:
+        True if constraint posted successfully, False if failed immediately
+    """
+    store = engine.store
+    trail = engine.trail
+
+    # Validate arguments
+    if not isinstance(vars_term, List):
+        return False
+
+    # Parse N
+    n_var = None
+    n_value = None
+    if isinstance(n_term, Int):
+        if n_term.value < 0:
+            return False  # Negative count invalid
+        n_value = n_term.value
+    elif isinstance(n_term, Var):
+        n_deref = store.deref(n_term.id)
+        if n_deref[0] == "BOUND":
+            if isinstance(n_deref[2], Int):
+                if n_deref[2].value < 0:
+                    return False
+                n_value = n_deref[2].value
+            else:
+                return False  # Bound to non-integer
+        else:
+            n_var = n_deref[1]
+    else:
+        return False  # Invalid N
+
+    # Handle empty list
+    if not vars_term.items:
+        if n_value is not None:
+            return n_value == 0
+        else:
+            # N must be 0
+            singleton_domain = Domain(((0, 0),))
+            existing = get_domain(store, n_var)
+            if existing:
+                singleton_domain = existing.intersect(singleton_domain)
+                if singleton_domain.is_empty():
+                    return False
+            set_domain(store, n_var, singleton_domain, trail)
+            return True
+
+    # Parse variable list directly (following all_different pattern)
+    var_ids = []
+    ground_values = set()
+
+    for item in vars_term.items:
+        if isinstance(item, Int):
+            # Direct integer value
+            ground_values.add(item.value)
+        elif isinstance(item, Var):
+            # Variable - need to deref
+            deref = store.deref(item.id)
+            if deref[0] == "BOUND":
+                val = deref[2]  # Bound term is at index 2
+                if not isinstance(val, Int):
+                    return False  # Non-integer ground term
+                ground_values.add(val.value)
+            elif deref[0] == "UNBOUND":
+                # Check if this variable has a singleton domain
+                var_domain = get_domain(store, deref[1])
+                if var_domain and var_domain.is_singleton():
+                    # Treat singleton domain variables as ground values
+                    ground_values.add(var_domain.min())
+                else:
+                    # Only add non-singleton variables to the var_ids list
+                    var_ids.append(deref[1])  # Root variable ID
+        else:
+            # Other term types - fail for CLP(FD)
+            return False
+
+    # Quick feasibility check for ground case
+    if not var_ids:
+        # All values are ground
+        distinct_count = len(ground_values)
+        if n_value is not None:
+            return n_value == distinct_count
+        else:
+            # Constrain N to exact count
+            singleton_domain = Domain(((distinct_count, distinct_count),))
+            existing = get_domain(store, n_var)
+            if existing:
+                singleton_domain = existing.intersect(singleton_domain)
+                if singleton_domain.is_empty():
+                    return False
+            set_domain(store, n_var, singleton_domain, trail)
+            return True
+
+    # Mixed case: some variables, some ground values
+    # Need to use propagator
+
+    if n_var is None:
+        # N is ground, create a temporary variable for the propagator
+        n_var = store.new_var()
+        singleton_domain = Domain(((n_value, n_value),))
+        set_domain(store, n_var, singleton_domain, trail)
+
+    # Create and register propagator
+    prop = create_nvalue_propagator(n_var, var_ids, ground_values)
+
+    queue = _ensure_queue(engine)
+    pid = queue.register(prop)
+
+    # Add watchers
+    add_watcher(store, n_var, pid, Priority.MED, trail)
+    for var_id in var_ids:
+        add_watcher(store, var_id, pid, Priority.MED, trail)
+
+    # Schedule and run to fixpoint
+    queue.schedule(pid, Priority.MED)
+    success = queue.run_to_fixpoint(store, trail, engine)
+
+    # Register unification hook if first CLP(FD) constraint
+    if not hasattr(engine, "_clpfd_inited") or not engine._clpfd_inited:
+        engine.register_attr_hook("clpfd", clpfd_unify_hook)
+        engine._clpfd_inited = True
+
+    return success

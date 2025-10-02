@@ -69,7 +69,6 @@ class TestSchedulingScenarios:
             if b3 == 1 and s3 is not None and d3 is not None:
                 assert s3 >= s1 + d1 or s3 + d3 <= s1
 
-    @pytest.mark.xfail(reason="Requires #\/ (disjunction) operator not yet implemented")
     def test_resource_constrained_scheduling(self):
         """Schedule tasks with resource constraints that apply only when active."""
         reader = Reader()
