@@ -54,6 +54,9 @@ class PropagationQueue:
         # Maps propagator_id -> cause
         self.causes: Dict[int, Any] = {}
 
+        # Optimization flag to indicate eager cleanup is enabled
+        self._uses_eager_cleanup = True
+
     def register(self, propagator: Callable) -> int:
         """Register a propagator and return its unique ID.
 
@@ -96,15 +99,16 @@ class PropagationQueue:
             current_priority = self.queued[propagator_id]
 
             # Priority escalation: move to higher priority if needed
-            # Uses stale-skip pattern: O(1) escalation by leaving stale entry
             if priority < current_priority:
-                # Just update the priority mapping and add to new queue
-                # Old entry becomes stale and will be skipped on pop
-                self.queued[propagator_id] = priority
-                self.queues[priority].append(propagator_id)
-                # Update cause if provided
-                if cause is not None:
-                    self.causes[propagator_id] = cause
+                # OPTIMIZATION: Eager cleanup - remove from old queue
+                # This moves O(n) cost from hot path (pop) to cold path (escalation)
+
+                # Preserve existing cause if new cause is None
+                if cause is None:
+                    cause = self.causes.get(propagator_id)
+
+                self._remove_from_queue(propagator_id, current_priority)
+                self._add_to_queue(propagator_id, priority, cause)
             # else: already at same or higher priority, no-op
         else:
             # Not queued, add it
@@ -120,9 +124,9 @@ class PropagationQueue:
     def _remove_from_queue(self, propagator_id: int, priority: Priority) -> None:
         """Remove propagator from specified priority queue.
 
-        Note: This method is no longer used due to stale-skip optimization.
-        Kept for potential future use or if we need to revert to eager removal.
+        Used for eager cleanup during priority escalation.
         Expected queue sizes are small (10s-100s of propagators) so O(n) is acceptable.
+        This moves O(n) cost from hot path (pop) to cold path (escalation).
         """
         queue = self.queues[priority]
         try:
@@ -130,11 +134,17 @@ class PropagationQueue:
         except ValueError:
             pass  # Not in queue (shouldn't happen but be defensive)
 
+        # Also remove from tracking structures
+        if propagator_id in self.queued and self.queued[propagator_id] == priority:
+            del self.queued[propagator_id]
+        if propagator_id in self.causes:
+            del self.causes[propagator_id]
+
     def pop(self) -> Optional[Tuple[int, Any]]:
         """Pop highest priority propagator from queue.
 
-        Uses stale-skip: ignores entries that have been escalated to a different
-        priority queue (stale entries from priority escalation).
+        With eager cleanup optimization, all entries in queues are valid.
+        No stale-skip logic needed.
 
         Returns:
             Tuple of (propagator_id, cause) or None if queue is empty
@@ -142,15 +152,10 @@ class PropagationQueue:
         # Try priorities in order (HIGH -> MED -> LOW)
         for priority in Priority:
             queue = self.queues[priority]
-            while queue:
+            if queue:
                 pid = queue.popleft()
 
-                # Stale-skip: check if this entry is stale (escalated elsewhere)
-                if pid not in self.queued or self.queued[pid] != priority:
-                    # Stale entry from escalation, skip it
-                    continue
-
-                # Valid entry, return it
+                # Remove from tracking structures
                 del self.queued[pid]
                 cause = self.causes.pop(pid, None)
                 return (pid, cause)
