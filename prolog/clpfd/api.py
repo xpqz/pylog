@@ -7,6 +7,9 @@ via the Stage 4 attributed variables mechanism.
 from typing import Optional, Iterator, Tuple
 from prolog.clpfd.priority import Priority
 
+# Optimization flag to indicate copy-on-write is enabled
+_uses_copy_on_write = True
+
 
 def get_fd_attrs(store, varid: int) -> Optional[dict]:
     """Get CLP(FD) attributes for a variable.
@@ -84,7 +87,7 @@ def add_watcher(store, varid: int, pid: int, priority: Priority, trail):
     # Get or create clpfd attrs (immutable update)
     fd_attrs = attrs.get("clpfd", {}).copy() if "clpfd" in attrs else {}
 
-    # Initialize or copy watchers for immutable update
+    # Initialize or copy watchers for immutable update with copy-on-write optimization
     if "watchers" not in fd_attrs:
         fd_attrs["watchers"] = {
             Priority.HIGH: set(),
@@ -92,13 +95,22 @@ def add_watcher(store, varid: int, pid: int, priority: Priority, trail):
             Priority.LOW: set(),
         }
     else:
-        # Copy watchers for immutable update, ensuring all priorities exist
+        # OPTIMIZATION: Copy-on-write - only copy the affected priority level
         old_watchers = fd_attrs["watchers"]
-        fd_attrs["watchers"] = {
-            Priority.HIGH: old_watchers.get(Priority.HIGH, set()).copy(),
-            Priority.MED: old_watchers.get(Priority.MED, set()).copy(),
-            Priority.LOW: old_watchers.get(Priority.LOW, set()).copy(),
-        }
+
+        # Start with the old watcher structure
+        new_watchers = {}
+
+        # For each priority level, only copy if it's the one being modified
+        for prio in Priority:
+            if prio == priority:
+                # Copy this priority level since we're modifying it
+                new_watchers[prio] = old_watchers.get(prio, set()).copy()
+            else:
+                # Preserve by reference - no copy needed
+                new_watchers[prio] = old_watchers.get(prio, set())
+
+        fd_attrs["watchers"] = new_watchers
 
     # Add to appropriate priority set
     fd_attrs["watchers"][priority].add(pid)
