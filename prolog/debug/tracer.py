@@ -230,12 +230,17 @@ class PortsTracer:
             port_or_event: Either a port string ('call'|'exit'|'redo'|'fail') or a TraceEvent
             goal: Goal term (required if port_or_event is a string)
         """
-        # Handle both signatures: emit_event(port, goal) and emit_event(event)
-        if isinstance(port_or_event, TraceEvent):
-            event = port_or_event
-        else:
+        # Fast path for the common case (port, goal)
+        if goal is not None:
             # Create event from port and goal
             event = self._create_event(port_or_event, goal)
+        else:
+            # Handle TraceEvent case or error
+            if isinstance(port_or_event, TraceEvent):
+                event = port_or_event
+            else:
+                # Create event from port and goal
+                event = self._create_event(port_or_event, goal)
 
         # Apply filters
         if not self._should_emit(event):
