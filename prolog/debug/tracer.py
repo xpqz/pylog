@@ -210,9 +210,9 @@ class PortsTracer:
         Check if the current custom filter can be optimized by predicate-based pre-filtering.
         This is a heuristic to identify common filter patterns that only check pred_id.
         """
-        # For now, assume any custom filter might benefit from pre-filtering
-        # In the future, we could analyze the filter function or use attributes
-        return True
+        # Conservative approach: Only enable pre-filtering for simple cases
+        # Disable pre-filtering temporarily to avoid performance regressions
+        return False
 
     def _prefilter_by_predicate(self, port: str, goal: Term) -> bool:
         """
@@ -237,28 +237,31 @@ class PortsTracer:
 
         pred_id = f"{pred_name}/{pred_arity}"
 
-        # Create a minimal pseudo-event for the filter
+        # Create a minimal pseudo-event using a simple object with __dict__
         # Performance: This avoids expensive _create_event operations like:
         # - String conversion of goal (str(goal))
         # - Stack depth calculation (len(frame_stack), len(cp_stack), etc.)
         # - Engine state extraction (write_stamp, frame overrides)
         # For filters that only check pred_id, this can provide significant speedup.
-        class MinimalEvent:
-            def __init__(self, port, pred_id):
-                self.port = port
-                self.pred_id = pred_id
-                # Add other commonly used attributes as None/defaults
-                self.step_id = 0
-                self.frame_depth = 0
-                self.goal_pretty = None
-                self.goal_canonical = None
-                self.bindings = None
-                self.cp_depth = 0
-                self.goal_height = 0
-                self.run_id = ""
-                self.write_stamp = 0
 
-        minimal_event = MinimalEvent(port, pred_id)
+        # Use a simple object that's faster to create than a class instance
+        minimal_event = type(
+            "MinimalEvent",
+            (),
+            {
+                "port": port,
+                "pred_id": pred_id,
+                "step_id": 0,
+                "frame_depth": 0,
+                "goal_pretty": None,
+                "goal_canonical": None,
+                "bindings": None,
+                "cp_depth": 0,
+                "goal_height": 0,
+                "run_id": self.run_id,
+                "write_stamp": 0,
+            },
+        )()
 
         try:
             # Test the filter with minimal event
