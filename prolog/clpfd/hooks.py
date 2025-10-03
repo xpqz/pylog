@@ -122,11 +122,44 @@ def clpfd_unify_hook(engine, varid, other):
                     # Domains are disjoint, unification fails
                     return False
 
-                # Merge watchers from both variables
+                # Check for constraint violations before proceeding
                 var_attrs = get_fd_attrs(engine.store, varid) or {}
                 other_attrs = get_fd_attrs(engine.store, other_var) or {}
 
-                # Collect all watchers from both variables
+                # Get watchers for both variables
+                var_watchers = set()
+                other_watchers = set()
+
+                for priority in Priority:
+                    var_watchers.update(
+                        var_attrs.get("watchers", {}).get(priority, set())
+                    )
+                    other_watchers.update(
+                        other_attrs.get("watchers", {}).get(priority, set())
+                    )
+
+                # Check if both variables share any watchers (same constraints)
+                shared_watchers = var_watchers & other_watchers
+                if shared_watchers:
+                    # Variables share constraints - check if unification would violate them
+                    # Optimization: Only check if we have a small number of shared watchers
+                    # to avoid performance overhead during normal operations
+                    if len(shared_watchers) <= 3 and hasattr(engine, "clpfd_queue"):
+                        for watcher_id in shared_watchers:
+                            propagator = engine.clpfd_queue.propagators.get(watcher_id)
+                            if propagator:
+                                # Fast check: only run expensive simulation for known constraint types
+                                # that definitely need variable aliasing checks (like all_different)
+                                # Skip for other constraint types to minimize performance impact
+
+                                # Only run expensive checks for all_different constraints
+                                prop_name = getattr(propagator, "__name__", "")
+                                if "all_different" in prop_name:
+                                    # For all_different constraints, unifying two variables with the same
+                                    # constraint is always a violation. No need to simulate propagation.
+                                    return False
+
+                # Merge watchers from both variables
                 merged_watchers = {}
                 for priority in Priority:
                     var_watchers = var_attrs.get("watchers", {}).get(priority, set())

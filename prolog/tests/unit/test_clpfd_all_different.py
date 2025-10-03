@@ -1,6 +1,5 @@
 """Unit tests for all_different/1 global constraint."""
 
-import pytest
 from prolog.engine.engine import Engine, Program
 from prolog.ast.terms import Var, Int, List, Struct, Atom
 from prolog.clpfd.api import get_domain, set_domain, iter_watchers
@@ -296,7 +295,6 @@ class TestAllDifferentBasic:
         result = _builtin_all_different(engine, List([x, x]))
         assert result is False
 
-    @pytest.mark.xfail(reason="Requires hook integration for all_different constraint")
     def test_unification_after_posting(self):
         """Unifying variables after posting all_different should fail."""
         engine = Engine(Program([]))
@@ -403,7 +401,6 @@ class TestAllDifferentBasic:
         # For now, we'll stick with List objects in Phase 1
         # This test documents the expected future behavior
 
-    @pytest.mark.xfail(reason="Requires hook integration for all_different constraint")
     def test_aliasing_after_posting(self):
         """Test constraint fails when variables are aliased after posting."""
         engine = Engine(Program([]))
