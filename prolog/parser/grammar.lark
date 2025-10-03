@@ -12,6 +12,7 @@ term: atom
     | variable
     | list
     | structure
+    | parenthesized
 
 atom_only: atom  // For testing atoms specifically
 
@@ -59,6 +60,9 @@ term_list: term (COMMA term)*
 structure: atom LPAREN term_list RPAREN
 // Note: foo/2 predicate indicators removed from general terms
 // Will add pred_indicator rule if/when needed in specific contexts
+
+// Parenthesized expressions (for complex goals)
+parenthesized: LPAREN goal_list RPAREN
 
 // ====================
 // Lexer rules (terminals)

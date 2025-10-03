@@ -12,7 +12,9 @@ from prolog.parser.reader import Reader
 class TestSchedulingScenarios:
     """Test scheduling problems with optional tasks using reification."""
 
-    @pytest.mark.xfail(reason="Requires #\/ (disjunction) operator not yet implemented")
+    @pytest.mark.xfail(
+        reason="Complex reification with disjunction (#==> with #\\/) not fully working"
+    )
     def test_optional_task_scheduling(self):
         """Schedule tasks where some are optional based on conditions."""
         reader = Reader()
@@ -36,7 +38,7 @@ class TestSchedulingScenarios:
             (B1 #= 1, B2 #= 1) #==> (S2 #>= S1 + D1),
 
             % Task 3 is optional - if scheduled, can't overlap with Task 1
-            B3 #==> ((S3 #>= S1 + D1) #\/ (S3 + D3 #=< S1)),
+            B3 #==> ((S3 #>= S1 + D1) #\\/ (S3 + D3 #=< S1)),
 
             % Minimize total time (latest end time)
             E1 #= S1 + D1,
@@ -92,11 +94,11 @@ class TestSchedulingScenarios:
 
             % If two tasks use same worker and both scheduled, no overlap
             (B1 #= 1, B2 #= 1, W1 #= W2) #==>
-                ((S1 + D1 #=< S2) #\/ (S2 + D2 #=< S1)),
+                ((S1 + D1 #=< S2) #\\/ (S2 + D2 #=< S1)),
             (B1 #= 1, B3 #= 1, W1 #= W3) #==>
-                ((S1 + D1 #=< S3) #\/ (S3 + D3 #=< S1)),
+                ((S1 + D1 #=< S3) #\\/ (S3 + D3 #=< S1)),
             (B2 #= 1, B3 #= 1, W2 #= W3) #==>
-                ((S2 + D2 #=< S3) #\/ (S3 + D3 #=< S2)),
+                ((S2 + D2 #=< S3) #\\/ (S3 + D3 #=< S2)),
 
             % At least 2 tasks must be scheduled
             B1 + B2 + B3 #>= 2,
@@ -373,7 +375,9 @@ class TestOptimizationScenarios:
 class TestGraphProblems:
     """Test graph problems with conditional edges."""
 
-    @pytest.mark.xfail(reason="Complex path constraints not fully working")
+    @pytest.mark.xfail(
+        reason="Complex reification with disjunction (#==> with #\\/) not fully working"
+    )
     def test_path_with_optional_edges(self):
         """Find path in graph with optional edges."""
         reader = Reader()

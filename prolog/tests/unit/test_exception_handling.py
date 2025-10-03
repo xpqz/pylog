@@ -58,15 +58,10 @@ class TestExceptionHandling:
             """
             test(X, Y) :-
                 catch(
-                    test_goal(X, Y),
+                    (member(X, [1,2,3]), check(X), '='(Y, ok)),
                     error(E),
                     '='(Y, caught(E))
                 ).
-
-            test_goal(X, Y) :-
-                member(X, [1,2,3]),
-                check(X),
-                '='(Y, ok).
 
             member(X, [X|_]).
             member(X, [_|T]) :- member(X, T).
