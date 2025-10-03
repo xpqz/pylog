@@ -548,7 +548,6 @@ class TestElementIntegration:
 class TestElementReification:
     """Test element/3 with reification (when available)."""
 
-    @pytest.mark.xfail(reason="Reification support not yet implemented")
     def test_element_reification_basic(self):
         """Test B #<=> element(I, List, V) reification."""
         engine = Engine(Program([]))
@@ -565,7 +564,6 @@ class TestElementReification:
         # result = _builtin_reify(engine, b, element_constraint)
         # assert result is True
 
-    @pytest.mark.xfail(reason="Reification support not yet implemented")
     def test_element_reification_failure_case(self):
         """Test reification when element constraint fails."""
         # Test reified element constraint that should fail
