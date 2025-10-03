@@ -10,6 +10,7 @@ This loads a Prolog program that models Sudoku with all_different/1 and solves
 an example puzzle (0 = blank), then prints the solved grid.
 """
 
+import time
 from prolog.engine.engine import Engine, Program
 
 
@@ -30,7 +31,7 @@ sudoku(Rows) :-
     rows_all_different9(Cols),          % All cols all_different
     all_blocks(Rows),                   % 3x3 blocks all_different
     flatten_rows(Rows, Vars),
-    once(label(Vars)).                  % First solution fast
+    once(labeling([first_fail], Vars)). % First solution with MRV-like heuristic
 
 % Replace 0s with fresh variables
 copy_rows([], []).
@@ -129,15 +130,22 @@ def main() -> None:
     engine.consult_string(SUDOKU_PROLOG)
 
     query = "?- puzzle(P), sudoku0(P, Sol)."
-    sols = list(engine.query(query))
-    if not sols:
+    start = time.perf_counter()
+    first = None
+    for sol in engine.query(query):
+        first = sol
+        break
+    elapsed = time.perf_counter() - start
+
+    if not first:
         print("No solution found")
         return
 
-    sol_rows = sols[0]["Sol"]
+    sol_rows = first["Sol"]
     pretty = _format_solution(sol_rows)
     for row in pretty:
         print(" ".join(str(x) for x in row))
+    print(f"Elapsed: {elapsed:.3f}s (once(labeling([first_fail], ...)))")
 
 
 if __name__ == "__main__":
