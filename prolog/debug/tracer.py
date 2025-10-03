@@ -80,8 +80,8 @@ class PortsTracer:
     - Default bindings_policy='none'
     """
 
-    def __init__(self, engine):
-        """Initialize tracer with engine reference."""
+    def __init__(self, engine, filters: Optional[TraceFilters] = None):
+        """Initialize tracer with engine reference and optional filters."""
         self.engine = engine
         self.step_counter = 0
         self.run_id = str(uuid.uuid4())
@@ -96,7 +96,7 @@ class PortsTracer:
         self._pred_id_cache: Dict[tuple, str] = {}
 
         # Filters (TraceFilters integration)
-        self._filters: Optional[TraceFilters] = None
+        self._filters: Optional[TraceFilters] = filters
         self._custom_filter: Optional[Callable] = None
 
     def _intern_pred_id(self, name: str, arity: int) -> str:
@@ -220,14 +220,22 @@ class PortsTracer:
         # No filters - emit all events
         return True
 
-    def emit_event(self, port: str, goal: Term):
+    def emit_event(self, port_or_event, goal: Term = None):
         """
         Emit a trace event through configured sinks.
 
         Key policy: step_id increments ONLY for emitted events (post-filter).
+
+        Args:
+            port_or_event: Either a port string ('call'|'exit'|'redo'|'fail') or a TraceEvent
+            goal: Goal term (required if port_or_event is a string)
         """
-        # Create event
-        event = self._create_event(port, goal)
+        # Handle both signatures: emit_event(port, goal) and emit_event(event)
+        if isinstance(port_or_event, TraceEvent):
+            event = port_or_event
+        else:
+            # Create event from port and goal
+            event = self._create_event(port_or_event, goal)
 
         # Apply filters
         if not self._should_emit(event):

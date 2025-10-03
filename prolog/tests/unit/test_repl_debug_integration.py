@@ -7,7 +7,6 @@ NOTE: These tests require full implementation of trace/spy/metrics functionality
 They are marked to skip until implementation is complete.
 """
 
-import pytest
 import tempfile
 import json
 from pathlib import Path
@@ -96,7 +95,6 @@ class TestTraceIntegration:
         finally:
             Path(temp_file).unlink(missing_ok=True)
 
-    @pytest.mark.xfail(reason="Requires full trace implementation")
     def test_trace_sampling(self):
         """Test trace sampling reduces output."""
         repl = PrologREPL()
@@ -169,7 +167,6 @@ class TestSpyIntegration:
         # Parent should appear more than grandparent
         assert len(parent_lines) > len(grandparent_lines)
 
-    @pytest.mark.xfail(reason="Requires full spy implementation")
     def test_multiple_spypoints(self):
         """Test multiple spypoints work together."""
         repl = PrologREPL()
