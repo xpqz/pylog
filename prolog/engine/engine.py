@@ -1995,14 +1995,17 @@ class Engine:
         self._update_catch_frames_after_pop()
 
     def _update_catch_frames_after_pop(self) -> None:
-        """Adjust CATCH CP goal heights after a frame pop."""
+        """Adjust CATCH CP goal and frame heights after a frame pop."""
         current_goal_height = self.goal_stack.height()
+        current_frame_height = len(self.frame_stack)
         for cp in self.cp_stack:
-            if (
-                cp.kind == ChoicepointKind.CATCH
-                and cp.goal_stack_height > current_goal_height
-            ):
-                cp.goal_stack_height = current_goal_height
+            if cp.kind == ChoicepointKind.CATCH:
+                # Update goal height if it's now too high
+                if cp.goal_stack_height > current_goal_height:
+                    cp.goal_stack_height = current_goal_height
+                # Update frame height if it's now too high
+                if cp.frame_stack_height > current_frame_height:
+                    cp.frame_stack_height = current_frame_height
 
     def _record_solution(self):
         """Record the current solution (bindings of query variables)."""
