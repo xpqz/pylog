@@ -643,6 +643,7 @@ class Engine:
                     if self.metrics:
                         self.metrics.record_exception_caught()
                     continue
+
                 # No handler found - clean up and re-raise
                 self.trail.unwind_to(0, self.store)
                 self._shrink_goal_stack_to(0)
@@ -786,6 +787,7 @@ class Engine:
         Returns:
             True if exception was caught and handled, False otherwise
         """
+
         # Search from inner to outer
         i = len(self.cp_stack) - 1
         while i >= 0:
@@ -796,6 +798,7 @@ class Engine:
                 continue
             if cp.payload.get("phase") != "GOAL":
                 continue
+
             # Scope guard: only catch if cp window encloses current point
             cp_height = cp.payload.get("cp_height", 0)
             if cp_height > len(self.cp_stack) - 1:
