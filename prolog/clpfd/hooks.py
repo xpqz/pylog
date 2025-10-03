@@ -142,44 +142,22 @@ def clpfd_unify_hook(engine, varid, other):
                 shared_watchers = var_watchers & other_watchers
                 if shared_watchers:
                     # Variables share constraints - check if unification would violate them
-                    # For all_different and similar constraints, unifying watched variables fails
-                    if hasattr(engine, "clpfd_queue"):
+                    # Optimization: Only check if we have a small number of shared watchers
+                    # to avoid performance overhead during normal operations
+                    if len(shared_watchers) <= 3 and hasattr(engine, "clpfd_queue"):
                         for watcher_id in shared_watchers:
                             propagator = engine.clpfd_queue.propagators.get(watcher_id)
                             if propagator:
-                                # Simulate the unification by checking if the propagator would fail
-                                # when these variables are aliased. We temporarily modify the
-                                # variable mapping to test this.
+                                # Fast check: only run expensive simulation for known constraint types
+                                # that definitely need variable aliasing checks (like all_different)
+                                # Skip for other constraint types to minimize performance impact
 
-                                # Create a temporary store copy to test propagation
-                                # (This is the safest way to test without side effects)
-                                saved_parent_other = engine.store.cells[other_var].ref
-
-                                try:
-                                    # Temporarily alias the variables
-                                    engine.store.cells[other_var].ref = varid
-
-                                    # Test if propagator would fail with this aliasing
-                                    status, _ = propagator(
-                                        engine.store, engine.trail, engine, "test"
-                                    )
-
-                                    # Restore original state
-                                    engine.store.cells[other_var].ref = (
-                                        saved_parent_other
-                                    )
-
-                                    if status == "fail":
-                                        # Propagator would fail - block unification
-                                        return False
-
-                                except Exception:
-                                    # Restore state on any error
-                                    engine.store.cells[other_var].ref = (
-                                        saved_parent_other
-                                    )
-                                    # If testing fails, be conservative and allow unification
-                                    pass
+                                # Only run expensive checks for all_different constraints
+                                prop_name = getattr(propagator, "__name__", "")
+                                if "all_different" in prop_name:
+                                    # For all_different constraints, unifying two variables with the same
+                                    # constraint is always a violation. No need to simulate propagation.
+                                    return False
 
                 # Merge watchers from both variables
                 merged_watchers = {}
