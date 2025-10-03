@@ -1,9 +1,10 @@
 """Core runtime types for the single-loop VM (Stage 0)."""
 
-from dataclasses import dataclass, field
-from typing import Optional, Any, Dict, List, Tuple, Union
+from dataclasses import dataclass
+from typing import Optional, Any, Dict, List, Tuple
 from enum import IntEnum
-from prolog.ast.terms import Term, Struct
+from prolog.ast.terms import Term, Struct, Atom
+from prolog.unify.store import Store
 
 
 class GoalType(IntEnum):
@@ -153,6 +154,10 @@ class GoalStack:
         """Pop the next goal or None if empty."""
         return self._stack.pop() if self._stack else None
 
+    def peek(self) -> Optional[Goal]:
+        """Return the top goal without removing it, or None if empty."""
+        return self._stack[-1] if self._stack else None
+
     def is_empty(self) -> bool:
         """Check if the stack is empty."""
         return len(self._stack) == 0
@@ -274,7 +279,7 @@ class Trail:
         stamp = self._write_stamp
         self._write_stamp += 1
         return stamp
-    
+
     def set_current_stamp(self, stamp: int) -> None:
         """Set the current write stamp.
 
@@ -287,7 +292,7 @@ class Trail:
             # "already trailed" false positives from newer stamps
             self._var_stamps.clear()
         self._write_stamp = stamp
-    
+
     @property
     def current_stamp(self) -> int:
         """Get the current write stamp."""
@@ -351,8 +356,6 @@ class Trail:
 # Tests for Trail unwind_to
 def test_trail_unwind():
     """Test that trail correctly restores state."""
-    from prolog.unify.store import Store
-    from prolog.ast.terms import Var, Atom
 
     store = Store()
     trail = Trail()
@@ -392,8 +395,6 @@ if __name__ == "__main__":
     test_trail_unwind()
 
     # Test goal creation
-    from prolog.ast.terms import Struct, Atom
-
     # Test predicate goal
     pred = Struct("foo", (Atom("a"),))
     goal = Goal.from_term(pred)
