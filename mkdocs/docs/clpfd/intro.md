@@ -13,6 +13,6 @@ X = 1, Y = 9 ;
 X = 9, Y = 1.
 ```
 
-PyLog also parses CLP(FD) reification operators that relate a Boolean to a
+PyLog also supports CLP(FD) reification operators that relate a Boolean to a
 constraint's truth, for example `B #<=> (X #= Y)` or `B #==> (X #< 5)`.
-See CLP(FD) → Reification (preview).
+See CLP(FD) → Reification.

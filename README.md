@@ -5,61 +5,23 @@
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 
-A tree-walking Prolog interpreter in Python with CLP(FD) (Constraint Logic Programming over Finite Domains).
+PyLog is a Prolog interpreter implemented in Python with CLP(FD) support. It focuses on correctness, transparency, and observability: explicit stacks (no Python recursion), robust catch/throw semantics, and a 4‑port tracer with machine‑readable output.
 
-## Overview
+## Highlights
 
-PyLog is designed for learning and debuggability first, with stable interfaces that survive later implementation stages. The system uses explicit stacks (no Python recursion), centralized mutation via `bind()`, and includes built-in observability features.
-
-## Features
-
-### Core Engine
-- Pure Prolog core with ISO builtins
-- Explicit stack-based execution (no recursion limits)
-- First-argument and type-based indexing for performance
-- Exception handling with catch/throw
-- Cut (!) operator with proper scope barriers
-
-### Debug & Observability (Stage 3)
-- **4-Port Tracer**: Full debugging with CALL, EXIT, REDO, FAIL ports
-- **Spypoints**: Selective predicate tracing
-- **Trace Formats**:
-  - JSONL format for machine processing (see [docs/TRACE_FORMAT.md](docs/TRACE_FORMAT.md))
-  - Pretty format for human reading with indentation
-- **Trace Sinks**: Pluggable output handlers (file, memory, network)
-- **Determinism Control**: Configurable bindings, timestamps, internal events
-- **Performance Profiling**: Event counters and timing support
-
-### Extensions
-- Attributed variables for extensibility
-- CLP(FD) solver with propagation and reification
-- Constraint graph visualization
-
-## Quick Start
-
-```python
-from prolog.parser import parser
-from prolog.engine.engine import Engine
-from prolog.ast.clauses import Program
-
-# Parse a Prolog program
-clauses = parser.parse_program("""
-    parent(tom, bob).
-    parent(bob, pat).
-    grandparent(X, Z) :- parent(X, Y), parent(Y, Z).
-""")
-
-# Create engine and run query
-engine = Engine(Program(tuple(clauses)))
-goals = parser.parse_query("?- grandparent(tom, Z).")
-solutions = list(engine.run(goals))
-print(solutions)  # [{'Z': Atom('pat')}]
-```
+- Prolog engine with ISO‑style core and proper cut `!/0` and exception handling
+- Parser + reader with operator support (including CLP(FD) operators)
+- CLP(FD) over integers: domains, linear constraints, reification, labeling strategies
+- 4‑port tracer (CALL, EXIT, REDO, FAIL), spypoints, and JSONL/pretty sinks
+- Interactive REPL with history, completion, and tracing controls
+- Command‑line runner to consult files and execute goals
 
 ## Installation
 
+PyLog targets Python 3.11+ and uses `uv` for dependency management.
+
 ```bash
-# Install uv package manager
+# Install uv
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Install project and dependencies
@@ -69,33 +31,91 @@ uv sync
 uv run pytest
 ```
 
-## Debugging
+## Usage
 
-Enable tracing to see execution details:
+### REPL
+
+Start the REPL:
+
+```bash
+pylog
+# or
+python -m prolog.repl
+```
+
+Consult files and query:
+
+```text
+?- consult('prolog/examples/hanoi.pl').
+Loaded: prolog/examples/hanoi.pl
+true.
+
+?- hanoi(3, left, right, middle, Moves).
+Moves = [move(left,right),move(left,middle),move(right,middle),
+         move(left,right),move(middle,left),move(middle,right),
+         move(left,right)]
+ .
+```
+
+### Command‑line
+
+Run a goal without entering the REPL:
+
+```bash
+# Consult a file, run a goal, print first answer, exit
+pylog prolog/examples/hanoi.pl -g "hanoi(3,left,right,middle,Moves)" --once --noninteractive
+
+# Run a goal and print all answers
+pylog -g "member(X,[a,b])" --all --noninteractive
+
+# Enable pretty tracing while running
+pylog -g "append([1],[2],X)" --once --trace --noninteractive
+```
+
+`-g/--goal` takes the query without the `?-` prefix and without the trailing period. Use `--once` (default) or `--all`. `--noninteractive` prevents the REPL from starting after the run.
+
+### Python API
 
 ```python
-# Create engine with tracing enabled
-engine = Engine(Program(tuple(clauses)), trace=True)
+from prolog.parser import parser
+from prolog.engine.engine import Engine
+from prolog.ast.clauses import Program
 
-# Add a sink to capture trace events
-from prolog.debug.sinks import PrettyTraceSink
-import sys
-sink = PrettyTraceSink(sys.stdout)
-engine.tracer.add_sink(sink)
+clauses = parser.parse_program("""
+    parent(tom, bob).
+    parent(bob, pat).
+    grandparent(X, Z) :- parent(X, Y), parent(Y, Z).
+""")
 
-# Run query - will output trace to stdout
+engine = Engine(Program(tuple(clauses)))
+goals = parser.parse_query("?- grandparent(tom, Z).")
 solutions = list(engine.run(goals))
 ```
 
-## Development
+Enable tracing:
 
-See [docs/ARCH.md](docs/ARCH.md) for architecture details and [docs/PLAN.md](docs/PLAN.md) for the implementation roadmap.
+```python
+from prolog.debug.sinks import PrettyTraceSink
+import sys
 
-### Contributing
+engine = Engine(Program(tuple(clauses)), trace=True)
+engine.tracer.add_sink(PrettyTraceSink(sys.stdout))
+solutions = list(engine.run(goals))
+```
 
-**⚠️ Critical**: Before contributing, read our [Test Integrity Rules](CLAUDE.md#-critical-test-integrity-rules). **Tests are sacred** - never modify tests to make them pass.
+## Documentation
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines and [prolog/tests/README.md](prolog/tests/README.md) for testing practices.
+User documentation lives under `mkdocs/docs/`:
+
+- Getting Started → REPL: `mkdocs/docs/getting-started/repl.md`
+- Guides → Tracing and Debugging: `mkdocs/docs/guides/tracing-and-debugging.md`
+- CLP(FD) → Labeling and Reification: `mkdocs/docs/clpfd/`
+- Cookbook examples (Sudoku, SEND+MORE, N‑queens): `mkdocs/docs/cookbook/`
+ - Reference → CLI: `mkdocs/docs/reference/cli.md`
+
+## Contributing
+
+Before contributing, please read the test integrity rules in [CLAUDE.md](CLAUDE.md). Tests define the specification; do not change them to make code pass. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines and [prolog/tests/README.md](prolog/tests/README.md) for test organization.
 
 ## License
 

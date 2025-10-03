@@ -42,6 +42,34 @@ X = b
 
 Type `;` for the next solution, `.` to stop.
 
+## Command‑line usage
+
+You can consult files and run a goal directly from the shell without entering the REPL.
+
+Basics:
+
+```bash
+# Consult one or more files, then start the REPL
+pylog prolog/examples/hanoi.pl
+
+# Run a goal and exit after the first solution
+pylog prolog/examples/hanoi.pl -g "hanoi(3,left,right,middle,Moves)" --once --noninteractive
+
+# Run a goal and print all solutions
+pylog -g "member(X,[a,b])" --all --noninteractive
+
+# Enable pretty tracing while running
+pylog -g "append([1],[2],X)" --once --trace --noninteractive
+```
+
+Notes:
+
+- `-g/--goal` takes a query without the `?-` prefix and without the trailing `.`
+- `--once` prints the first solution (default if `--all` is not given)
+- `--all` prints all solutions separated by newlines
+- `--noninteractive` prevents the REPL from starting after running the goal
+- `--trace` enables pretty tracing to stdout for the command‑line run
+
 ## Editing, history, and completion
 
 The REPL uses `prompt_toolkit` for a pleasant terminal experience:
@@ -70,6 +98,20 @@ true.
 ```
 
 On load, the completer is refreshed with newly defined predicate names.
+
+## Listing loaded clauses
+
+Use `listing.` to print all currently loaded user clauses, or `listing(name/N).` to restrict to a predicate indicator.
+
+```text
+?- consult('prolog/examples/hanoi.pl').
+Loaded: prolog/examples/hanoi.pl
+true.
+
+?- listing(hanoi/5).
+hanoi(0, _, _, _, ...).
+hanoi(N, From, To, Aux, Moves) :- ...
+```
 
 ## Tracing from the REPL
 

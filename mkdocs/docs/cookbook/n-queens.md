@@ -26,3 +26,15 @@ safe_from(Q, [R|Rs], D) :-
 Qs = [1,5,8,6,3,7,2,4] ; ...
 ```
 
+Faster search
+-------------
+
+Use `labeling([first_fail], Qs)` to pick the most constrained queen first, which typically reduces backtracking:
+
+```text
+?- Qs = [Q1,Q2,Q3,Q4,Q5,Q6,Q7,Q8],
+   Q1 in 1..8, Q2 in 1..8, Q3 in 1..8, Q4 in 1..8,
+   Q5 in 1..8, Q6 in 1..8, Q7 in 1..8, Q8 in 1..8,
+   all_different(Qs), safe(Qs),
+   labeling([first_fail], Qs).
+```

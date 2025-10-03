@@ -609,6 +609,17 @@ class PrologREPL:
         if consult_match:
             return {"type": "consult", "file": consult_match.group(1)}
 
+        # Program listing: listing. or listing(Name/Arity). Also accept 'list'.
+        list_match = re.match(
+            r"^(?:listing|list)\s*(?:\(\s*([a-z][a-zA-Z0-9_]*)\s*/\s*(\d+)\s*\))?\s*$",
+            input_text,
+        )
+        if list_match:
+            pred_name = list_match.group(1)
+            pred_arity_str = list_match.group(2)
+            pred_arity = int(pred_arity_str) if pred_arity_str else None
+            return {"type": "listing", "name": pred_name, "arity": pred_arity}
+
         # Check for query (with or without ?- prefix)
         query_text = original_input
         if query_text.startswith("?-"):
@@ -898,6 +909,8 @@ class PrologREPL:
 PyLog REPL Commands:
     ?- <query>.          Execute a Prolog query
     consult('file.pl').  Load a Prolog file
+    listing.             List all loaded clauses
+    listing(name/N).     List clauses for name/N
     help.                Show this help message
     quit.                Exit the REPL
 
@@ -980,6 +993,9 @@ Examples:
                 elif cmd["type"] == "debug":
                     self.execute_debug_command(cmd)
 
+                elif cmd["type"] == "listing":
+                    self.execute_listing_command(cmd)
+
                 elif cmd["type"] == "query":
                     self._handle_query(cmd["content"])
 
@@ -1050,6 +1066,51 @@ Examples:
         finally:
             self._cleanup_query_state()
 
+    def execute_listing_command(self, cmd: dict) -> bool:
+        """List loaded clauses, optionally for a specific predicate.
+
+        Args:
+            cmd: Dict with optional keys 'name' and 'arity'.
+
+        Returns:
+            True if executed.
+        """
+        try:
+            program = getattr(self, "program", None) or getattr(
+                self.engine, "program", None
+            )
+            clauses = list(program.clauses) if program and program.clauses else []
+
+            if not clauses:
+                print("% No user-defined clauses loaded.")
+                return True
+
+            name = cmd.get("name")
+            arity = cmd.get("arity")
+
+            def head_id(cl):
+                h = cl.head
+                if isinstance(h, Atom):
+                    return (h.name, 0)
+                elif isinstance(h, Struct):
+                    return (h.functor, len(h.args))
+                return (None, None)
+
+            if name is not None and arity is not None:
+                clauses = [cl for cl in clauses if head_id(cl) == (name, arity)]
+                if not clauses:
+                    print(f"% No clauses for {name}/{arity}.")
+                    return True
+
+            from prolog.ast.pretty import pretty_clause
+
+            for cl in clauses:
+                print(pretty_clause(cl))
+            return True
+        except Exception as e:
+            print(f"Error: {e}")
+            return False
+
     def add_to_history(self, command: str):
         """Add a command to history.
 
@@ -1093,8 +1154,104 @@ Examples:
 
 
 def main():
-    """Main entry point for the REPL."""
+    """Main entry point for the REPL and simple CLI.
+
+    Usage examples:
+      - Interactive REPL:              pylog
+      - Consult file then REPL:        pylog path/to/file.pl
+      - Run a goal and exit:           pylog path/to/file.pl -g "member(X,[1,2])" --once --noninteractive
+      - Run with tracing to stdout:    pylog -g "append([1],[2],X)" --once --trace --noninteractive
+    """
+    import argparse
+    import sys
+    from prolog.ast.pretty import pretty
+
+    parser = argparse.ArgumentParser(prog="pylog", add_help=True)
+    parser.add_argument(
+        "files", nargs="*", help="Prolog files to consult before starting"
+    )
+    parser.add_argument(
+        "-g",
+        "--goal",
+        dest="goal",
+        help="Query to run (omit ?- and trailing .)",
+    )
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
+        "--once", action="store_true", help="Return only the first solution"
+    )
+    group.add_argument("--all", action="store_true", help="Print all solutions")
+    parser.add_argument(
+        "--noninteractive",
+        action="store_true",
+        help="Do not start the REPL after running the goal",
+    )
+    parser.add_argument(
+        "--trace", action="store_true", help="Enable pretty tracing to stdout"
+    )
+
+    # If no CLI args other than the program name, drop into REPL
+    if len(sys.argv) == 1:
+        repl = PrologREPL()
+        repl.run_session()
+        return
+
+    args = parser.parse_args()
+
     repl = PrologREPL()
+
+    # Optional tracing
+    if args.trace:
+        try:
+            repl.execute_trace_command({"action": "on"})
+        except Exception:
+            pass
+
+    # Consult files (if any)
+    for file_path in args.files:
+        repl.load_file(file_path)
+
+    # Execute goal if provided
+    if args.goal:
+        if args.all:
+            results = repl.execute_query_all(args.goal)
+            printed_any = False
+            for res in results:
+                if res.get("success"):
+                    bindings = res.get("bindings", {})
+                    if bindings:
+                        line = ", ".join(
+                            f"{k} = {pretty(v)}" for k, v in bindings.items()
+                        )
+                        print(line)
+                    else:
+                        print("true.")
+                    printed_any = True
+                else:
+                    print(f"Error: {res.get('error', 'unknown error')}")
+                    printed_any = True
+            if not printed_any:
+                print("false.")
+        else:
+            # Default to once if --all not set
+            res = repl.execute_query(args.goal)
+            if res.get("success"):
+                bindings = res.get("bindings", {})
+                if bindings:
+                    print(", ".join(f"{k} = {pretty(v)}" for k, v in bindings.items()))
+                else:
+                    print("true.")
+            else:
+                err = res.get("error")
+                if err:
+                    print(f"Error: {err}")
+                else:
+                    print("false.")
+
+        if args.noninteractive:
+            return
+
+    # Fall back to interactive session
     repl.run_session()
 
 

@@ -65,11 +65,13 @@ nav:
       - Subset sum: cookbook/subset-sum.md
       - SEND+MORE=MONEY: cookbook/send-more-money.md
       - Sudoku row: cookbook/sudoku-row.md
+      - Sudoku (9x9): cookbook/sudoku.md
       - N‑queens: cookbook/n-queens.md
       - Scheduling: cookbook/scheduling.md
   - Reference:
       - Built-ins: reference/builtins-reference.md
       - REPL commands: reference/repl-commands.md
+      - CLI: reference/cli.md
       - Operators table: reference/operators-table.md
       - Operators cheat sheet: reference/operators-cheatsheet.md
       - Grammar summary: reference/grammar-summary.md
@@ -78,6 +80,7 @@ nav:
   - Guides:
       - REPL tips & shortcuts: guides/repl-tips.md
       - Tracing and debugging: guides/tracing-and-debugging.md
+      - Fast CLP(FD) in REPL: guides/fast-clpfd-repl.md
       - Control gotchas: guides/control-gotchas.md
       - Performance and limits: guides/performance-and-limits.md
       - ISO compatibility: guides/compatibility-iso.md

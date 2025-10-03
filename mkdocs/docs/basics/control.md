@@ -67,6 +67,20 @@ Y = 3.
 
 Remember: `A, B -> C ; D` parses as `((A, B) -> C) ; D`.
 
+Parentheses for grouping
+------------------------
+
+You can group sub‑goals in clause bodies, queries, and directives using parentheses. This improves readability and clarifies precedence when mixing `,`, `;`, and `->`.
+
+```prolog
+% Equivalent forms
+p :- (a, b).
+p :- a, b.
+
+% Grouping helps when combining with disjunction or if–then–else
+q :- (a, b -> c ; d).
+```
+
 once/1
 ------
 
@@ -107,6 +121,11 @@ R = error(division_by_zero).
 ?- catch(safe_div(10, 2, R), error(_), fail).
 R = 5.0.
 ```
+
+Notes:
+
+- The catcher pattern unifies with the thrown term; any bindings (e.g. variables in the pattern) are visible to the recovery goal.
+- Prefer specific catcher patterns (e.g. `error(division_by_zero)`) to avoid masking unrelated errors.
 
 Disjunction and commitment
 --------------------------
