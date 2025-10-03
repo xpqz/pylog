@@ -3,6 +3,7 @@
 Terms are the building blocks of Prolog programs:
 - Atom: Named constants (e.g., 'foo', '[]')
 - Int: Integer values
+- Float: Floating-point values
 - Var: Logic variables with unique IDs
 - Struct: Compound terms with functor and arguments
 - List: Prolog lists with items and optional tail
@@ -13,7 +14,7 @@ from typing import Tuple, Optional, Union
 
 
 # Type alias for any term
-Term = Union["Atom", "Int", "Var", "Struct", "List"]
+Term = Union["Atom", "Int", "Float", "Var", "Struct", "List"]
 
 
 @dataclass(frozen=True)
@@ -34,6 +35,16 @@ class Int:
     """
 
     value: int
+
+
+@dataclass(frozen=True)
+class Float:
+    """A floating-point value in Prolog.
+
+    Floats are immutable and can be used as dict keys or in sets.
+    """
+
+    value: float
 
 
 @dataclass

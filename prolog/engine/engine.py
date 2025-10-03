@@ -1,8 +1,8 @@
 """Prolog Engine with Explicit Stacks (Stage 0) - Fixed Implementation."""
 
 import os
-from typing import Dict, List, Optional, Any, Tuple
-from prolog.ast.terms import Term, Atom, Int, Var, Struct, List as PrologList
+from typing import Dict, List, Optional, Any, Tuple, Union
+from prolog.ast.terms import Term, Atom, Int, Float, Var, Struct, List as PrologList
 from prolog.ast.clauses import Program, ClauseCursor
 from prolog.engine.rename import VarRenamer
 from prolog.unify.store import Store, Cell
@@ -443,6 +443,13 @@ class Engine:
         self._builtins[("var", 1)] = lambda eng, args: eng._builtin_var(args)
         self._builtins[("nonvar", 1)] = lambda eng, args: eng._builtin_nonvar(args)
         self._builtins[("atom", 1)] = lambda eng, args: eng._builtin_atom(args)
+        self._builtins[("integer", 1)] = lambda eng, args: eng._builtin_integer(args)
+        self._builtins[("float", 1)] = lambda eng, args: eng._builtin_float(args)
+        self._builtins[("number", 1)] = lambda eng, args: eng._builtin_number(args)
+        self._builtins[("atomic", 1)] = lambda eng, args: eng._builtin_atomic(args)
+        self._builtins[("compound", 1)] = lambda eng, args: eng._builtin_compound(args)
+        self._builtins[("callable", 1)] = lambda eng, args: eng._builtin_callable(args)
+        self._builtins[("ground", 1)] = lambda eng, args: eng._builtin_ground(args)
         self._builtins[("is", 2)] = lambda eng, args: eng._builtin_is(args)
         self._builtins[(">", 2)] = lambda eng, args: eng._builtin_gt(args)
         self._builtins[("<", 2)] = lambda eng, args: eng._builtin_lt(args)
@@ -973,7 +980,7 @@ class Engine:
                     result = Var(varid, var_name)
                 processed[id(current)] = result
 
-            elif isinstance(current, (Atom, Int)):
+            elif isinstance(current, (Atom, Int, Float)):
                 processed[id(current)] = current
 
             elif isinstance(current, Struct):
@@ -2149,7 +2156,7 @@ class Engine:
                 else:
                     raise ValueError(f"Unknown cell tag: {result[0]}")
 
-            elif isinstance(current, (Atom, Int)):
+            elif isinstance(current, (Atom, Int, Float)):
                 reified[term_id] = current
 
             elif isinstance(current, Struct):
@@ -2388,6 +2395,109 @@ class Engine:
                 return isinstance(bound_term, Atom)
             return False
         return isinstance(term, Atom)
+
+    def _builtin_integer(self, args: tuple) -> bool:
+        """integer(X) - true if X is an integer."""
+        if len(args) != 1:
+            return False
+        term = args[0]
+        if isinstance(term, Var):
+            result = self.store.deref(term.id)
+            if result[0] == "BOUND":
+                _, _, bound_term = result
+                return isinstance(bound_term, Int)
+            return False
+        return isinstance(term, Int)
+
+    def _builtin_float(self, args: tuple) -> bool:
+        """float(X) - true if X is a float."""
+        if len(args) != 1:
+            return False
+        term = args[0]
+        if isinstance(term, Var):
+            result = self.store.deref(term.id)
+            if result[0] == "BOUND":
+                _, _, bound_term = result
+                return isinstance(bound_term, Float)
+            return False
+        return isinstance(term, Float)
+
+    def _builtin_number(self, args: tuple) -> bool:
+        """number(X) - true if X is a number (integer or float)."""
+        if len(args) != 1:
+            return False
+        term = args[0]
+        if isinstance(term, Var):
+            result = self.store.deref(term.id)
+            if result[0] == "BOUND":
+                _, _, bound_term = result
+                return isinstance(bound_term, (Int, Float))
+            return False
+        return isinstance(term, (Int, Float))
+
+    def _builtin_atomic(self, args: tuple) -> bool:
+        """atomic(X) - true if X is atomic (atom, number, or other atomic term)."""
+        if len(args) != 1:
+            return False
+        term = args[0]
+        if isinstance(term, Var):
+            result = self.store.deref(term.id)
+            if result[0] == "BOUND":
+                _, _, bound_term = result
+                return isinstance(bound_term, (Atom, Int, Float))
+            return False
+        return isinstance(term, (Atom, Int, Float))
+
+    def _builtin_compound(self, args: tuple) -> bool:
+        """compound(X) - true if X is a compound term."""
+        if len(args) != 1:
+            return False
+        term = args[0]
+        if isinstance(term, Var):
+            result = self.store.deref(term.id)
+            if result[0] == "BOUND":
+                _, _, bound_term = result
+                return isinstance(bound_term, (Struct, PrologList))
+            return False
+        return isinstance(term, (Struct, PrologList))
+
+    def _builtin_callable(self, args: tuple) -> bool:
+        """callable(X) - true if X is callable (atom or compound)."""
+        if len(args) != 1:
+            return False
+        term = args[0]
+        if isinstance(term, Var):
+            result = self.store.deref(term.id)
+            if result[0] == "BOUND":
+                _, _, bound_term = result
+                return isinstance(bound_term, (Atom, Struct, PrologList))
+            return False
+        return isinstance(term, (Atom, Struct, PrologList))
+
+    def _builtin_ground(self, args: tuple) -> bool:
+        """ground(X) - true if X contains no unbound variables."""
+        if len(args) != 1:
+            return False
+        term = args[0]
+        return self._is_ground(term)
+
+    def _is_ground(self, term: Term) -> bool:
+        """Helper method to check if a term is ground (contains no unbound variables)."""
+        if isinstance(term, Var):
+            result = self.store.deref(term.id)
+            if result[0] == "BOUND":
+                _, _, bound_term = result
+                return self._is_ground(bound_term)
+            return False
+        elif isinstance(term, (Atom, Int, Float)):
+            return True
+        elif isinstance(term, Struct):
+            return all(self._is_ground(arg) for arg in term.args)
+        elif isinstance(term, PrologList):
+            return all(
+                self._is_ground(item) for item in term.items
+            ) and self._is_ground(term.tail)
+        return True
 
     def _eval_int(self, t: Term) -> int:
         """Evaluate a term as an integer.
@@ -3435,14 +3545,14 @@ class Engine:
         # All hooks accepted
         return True
 
-    def _eval_arithmetic(self, term: Term) -> int:
+    def _eval_arithmetic(self, term: Term) -> Union[int, float]:
         """Evaluate an arithmetic expression iteratively.
 
         Args:
             term: The term to evaluate.
 
         Returns:
-            The integer result.
+            The numeric result (int or float).
 
         Raises:
             ValueError: If evaluation fails.
@@ -3469,9 +3579,12 @@ class Engine:
 
                 if isinstance(t, Int):
                     value_stack.append(t.value)
+                elif isinstance(t, Float):
+                    value_stack.append(t.value)
                 elif isinstance(t, Struct):
                     if (
-                        t.functor in ["+", "-", "*", "//", "mod", "max", "min", "**"]
+                        t.functor
+                        in ["+", "-", "*", "//", "/", "mod", "max", "min", "**"]
                         and len(t.args) == 2
                     ):
                         # Binary operator: evaluate args then apply
@@ -3510,6 +3623,10 @@ class Engine:
                     if right == 0:
                         raise ValueError("Division by zero")
                     value_stack.append(left // right)
+                elif op == "/":
+                    if right == 0:
+                        raise ValueError("Division by zero")
+                    value_stack.append(left / right)  # Float division
                 elif op == "mod":
                     if right == 0:
                         raise ValueError("Modulo by zero")
@@ -3521,7 +3638,7 @@ class Engine:
                 elif op == "**":
                     try:
                         result = left**right
-                        value_stack.append(int(result))  # Convert to int for now
+                        value_stack.append(result)
                     except (OverflowError, ValueError):
                         raise ValueError("Power operation overflow or invalid")
 
