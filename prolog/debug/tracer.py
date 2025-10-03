@@ -205,6 +205,68 @@ class PortsTracer:
         # Return event with bindings included
         return replace(event, bindings=bindings)
 
+    def _can_prefilter_by_predicate(self) -> bool:
+        """
+        Check if the current custom filter can be optimized by predicate-based pre-filtering.
+        This is a heuristic to identify common filter patterns that only check pred_id.
+        """
+        # For now, assume any custom filter might benefit from pre-filtering
+        # In the future, we could analyze the filter function or use attributes
+        return True
+
+    def _prefilter_by_predicate(self, port: str, goal: Term) -> bool:
+        """
+        Fast predicate-based pre-filtering before event creation.
+
+        Performance optimization: This method avoids expensive _create_event() calls
+        by testing filters with minimal predicate information. Particularly effective
+        for filters that only check pred_id (e.g., spypoints, predicate-based filtering).
+
+        Returns True if the event should potentially be emitted.
+        """
+        # Extract predicate info efficiently
+        if isinstance(goal, Atom):
+            pred_name = goal.name
+            pred_arity = 0
+        elif isinstance(goal, Struct):
+            pred_name = goal.functor
+            pred_arity = len(goal.args)
+        else:
+            # For other cases, don't pre-filter (conservative)
+            return True
+
+        pred_id = f"{pred_name}/{pred_arity}"
+
+        # Create a minimal pseudo-event for the filter
+        # Performance: This avoids expensive _create_event operations like:
+        # - String conversion of goal (str(goal))
+        # - Stack depth calculation (len(frame_stack), len(cp_stack), etc.)
+        # - Engine state extraction (write_stamp, frame overrides)
+        # For filters that only check pred_id, this can provide significant speedup.
+        class MinimalEvent:
+            def __init__(self, port, pred_id):
+                self.port = port
+                self.pred_id = pred_id
+                # Add other commonly used attributes as None/defaults
+                self.step_id = 0
+                self.frame_depth = 0
+                self.goal_pretty = None
+                self.goal_canonical = None
+                self.bindings = None
+                self.cp_depth = 0
+                self.goal_height = 0
+                self.run_id = ""
+                self.write_stamp = 0
+
+        minimal_event = MinimalEvent(port, pred_id)
+
+        try:
+            # Test the filter with minimal event
+            return self._custom_filter(minimal_event)
+        except (AttributeError, TypeError):
+            # If filter fails with minimal event, fall back to full event creation
+            return True
+
     def _should_emit(self, event: TraceEvent) -> bool:
         """
         Apply filters to determine if event should be emitted.
@@ -225,13 +287,20 @@ class PortsTracer:
         Emit a trace event through configured sinks.
 
         Key policy: step_id increments ONLY for emitted events (post-filter).
+        Performance note: Fast path avoids isinstance checks and can pre-filter.
 
         Args:
             port_or_event: Either a port string ('call'|'exit'|'redo'|'fail') or a TraceEvent
             goal: Goal term (required if port_or_event is a string)
         """
-        # Fast path for the common case (port, goal)
+        # Fast path for the common case (port, goal) with pre-filtering
         if goal is not None:
+            # Fast pre-filter check for custom filters that can work with minimal data
+            if self._custom_filter is not None and self._can_prefilter_by_predicate():
+                # Quick predicate-based filtering before expensive event creation
+                if not self._prefilter_by_predicate(port_or_event, goal):
+                    return  # Filtered out early, no step_id increment
+
             # Create event from port and goal
             event = self._create_event(port_or_event, goal)
         else:
@@ -242,7 +311,7 @@ class PortsTracer:
                 # Create event from port and goal
                 event = self._create_event(port_or_event, goal)
 
-        # Apply filters
+        # Apply filters (final check for complex filters)
         if not self._should_emit(event):
             return  # Filtered out, no step_id increment
 
