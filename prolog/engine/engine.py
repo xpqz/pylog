@@ -853,8 +853,8 @@ class Engine:
                     if hasattr(cursor, "clone") and callable(cursor.clone):
                         snapshot = cursor_snapshots.get(id(cursor))
                         if snapshot:
-                            # Replace with cloned cursor
-                            other_cp.payload["cursor"] = snapshot.clone()
+                            # Replace with snapshot directly (already cloned at catch time)
+                            other_cp.payload["cursor"] = snapshot
 
             # Re-unify to make catcher bindings visible to Recovery
             ok2 = self._unify(ball, cp.payload.get("catcher"))

@@ -8,7 +8,7 @@ Tests are designed to validate the fixes for Issue #102.
 import pytest
 from prolog.parser import parser
 from prolog.ast.clauses import Program
-from prolog.ast.terms import Atom, Int, Var, Struct
+from prolog.ast.terms import Atom, Int, Var, Struct, List
 from prolog.engine.engine import Engine
 from prolog.engine.errors import PrologThrow
 from prolog.debug.sinks import CollectorSink
@@ -749,6 +749,31 @@ class TestEdgeCases:
         # Only first throw is caught
         assert len(solutions) == 1
         assert solutions[0]["X"] == Atom("first")
+
+    def test_multiple_throws_same_catch_cursor_preservation(self):
+        """Multiple throws within same catch should preserve cursor state correctly."""
+        clauses = parser.parse_program("""
+            test(Results) :-
+                catch(
+                    retry_with_throws,
+                    Error,
+                    collect_error(Error, Results)
+                ).
+
+            retry_with_throws :- throw(first_error).
+            retry_with_throws :- throw(second_error).
+            retry_with_throws :- throw(third_error).
+
+            collect_error(Error, [Error]).
+        """)
+        engine = Engine(Program(tuple(clauses)), use_streaming=True)
+
+        goals = parser.parse_query("?- test(R).")
+        solutions = list(engine.run(goals))
+
+        # Should catch the first throw from first clause of retry_with_throws
+        assert len(solutions) == 1
+        assert solutions[0]['R'] == List((Atom("first_error"),), Atom("[]"))
 
 
 class TestTracingAndInstrumentation:
