@@ -4,15 +4,16 @@ Tests for performance and behavior metrics collection.
 Tests the metrics module for tracking engine operations with minimal overhead.
 """
 
+import json
 import pytest
 from dataclasses import FrozenInstanceError
-from typing import Dict, Any
 
 from prolog.debug.metrics import PredMetrics, EngineMetrics
 from prolog.engine.engine import Engine
 from prolog.ast.terms import Atom, Struct, Int, Var
-from prolog.ast.clauses import Program, Clause
-from prolog.tests.helpers import mk_fact, mk_rule, program, run_query
+from prolog.ast.clauses import Program
+from prolog.tests.helpers import mk_fact, mk_rule, program
+from prolog.parser import parser
 
 
 # Helper functions to reduce boilerplate
@@ -26,7 +27,9 @@ def program_from_source(src: str) -> Program:
     if "foo(1)" in src:
         return program(mk_fact("foo", Int(1)), mk_fact("foo", Int(2)))
     elif "test(1). test(2). test(3)" in src:
-        return program(mk_fact("test", Int(1)), mk_fact("test", Int(2)), mk_fact("test", Int(3)))
+        return program(
+            mk_fact("test", Int(1)), mk_fact("test", Int(2)), mk_fact("test", Int(3))
+        )
     elif "test(1). test(2)" in src:
         return program(mk_fact("test", Int(1)), mk_fact("test", Int(2)))
     elif "test(1)" in src:
@@ -35,10 +38,17 @@ def program_from_source(src: str) -> Program:
         return program(
             mk_fact("parent", Atom("tom"), Atom("bob")),
             mk_fact("parent", Atom("bob"), Atom("pat")),
-            mk_rule("grandparent", (Var(0, "X"), Var(1, "Z")),
-                    Struct("parent", (Var(0, "X"), Var(2, "Y"))),
-                    Struct("parent", (Var(2, "Y"), Var(1, "Z"))))
+            mk_rule(
+                "grandparent",
+                (Var(0, "X"), Var(1, "Z")),
+                Struct("parent", (Var(0, "X"), Var(2, "Y"))),
+                Struct("parent", (Var(2, "Y"), Var(1, "Z"))),
+            ),
         )
+    elif "risky(X) :- throw(error(bad(X)))" in src:
+        # Exception handling test case
+        clauses = parser.parse_program(src)
+        return Program(tuple(clauses))
     else:
         # For other cases, return empty program
         return program()
@@ -61,7 +71,7 @@ class TestPredMetrics:
             fails=2,
             redos=3,
             unifications=25,
-            backtracks=5
+            backtracks=5,
         )
 
         assert metrics.pred_id == "append/3"
@@ -81,7 +91,7 @@ class TestPredMetrics:
             fails=0,
             redos=0,
             unifications=2,
-            backtracks=0
+            backtracks=0,
         )
 
         with pytest.raises(FrozenInstanceError):
@@ -106,12 +116,12 @@ class TestPredMetrics:
             fails=0,
             redos=0,
             unifications=0,
-            backtracks=0
+            backtracks=0,
         )
 
         # Classes with __slots__ don't have __dict__
-        assert not hasattr(metrics, '__dict__')
-        assert hasattr(type(metrics), '__slots__')
+        assert not hasattr(metrics, "__dict__")
+        assert hasattr(type(metrics), "__slots__")
 
     def test_pred_metrics_to_dict(self):
         """PredMetrics exports to dict format."""
@@ -122,7 +132,7 @@ class TestPredMetrics:
             fails=2,
             redos=1,
             unifications=10,
-            backtracks=2
+            backtracks=2,
         )
 
         d = metrics.to_dict()
@@ -350,20 +360,20 @@ class TestMetricsEngineIntegration:
     def test_engine_creates_metrics_when_debug_true(self):
         """Engine creates EngineMetrics when metrics=True."""
         engine = Engine(program=Program(()), metrics=True)
-        assert hasattr(engine, 'metrics')
+        assert hasattr(engine, "metrics")
         assert isinstance(engine.metrics, EngineMetrics)
 
     def test_engine_no_metrics_when_debug_false(self):
         """Engine doesn't create metrics when metrics=False."""
         engine = Engine(program=Program(()), metrics=False)
-        assert not hasattr(engine, 'metrics') or engine.metrics is None
+        assert not hasattr(engine, "metrics") or engine.metrics is None
 
     def test_metrics_track_unifications(self):
         """Metrics track unification attempts/successes during execution."""
         engine = engine_for("foo(1). foo(2).")
 
         # Query that will attempt unifications
-        results = engine.query("foo(X)")
+        _ = engine.query("foo(X)")
 
         # Should have attempted some unifications
         assert engine.metrics.unifications_attempted > 0
@@ -375,7 +385,7 @@ class TestMetricsEngineIntegration:
         engine = engine_for("test(1). test(2). test(3).")
 
         # Query for all solutions (will backtrack)
-        results = engine.query("test(X)")
+        _ = engine.query("test(X)")
 
         # Should have backtracked at least twice (after first and second solutions)
         assert engine.metrics.backtracks_taken >= 2
@@ -384,16 +394,15 @@ class TestMetricsEngineIntegration:
         """Metrics track cut operations."""
         # Create a simple program with cut
         prog = program(
-            mk_rule("test", (Var(0, "X"),),
-                    Struct("=", (Var(0, "X"), Int(1))),
-                    Atom("!")),
-            mk_rule("test", (Var(0, "X"),),
-                    Struct("=", (Var(0, "X"), Int(2))))
+            mk_rule(
+                "test", (Var(0, "X"),), Struct("=", (Var(0, "X"), Int(1))), Atom("!")
+            ),
+            mk_rule("test", (Var(0, "X"),), Struct("=", (Var(0, "X"), Int(2)))),
         )
         engine = Engine(program=prog, debug=True, metrics=True)
 
         # Query that will execute a cut
-        results = engine.query("test(X)")
+        _ = engine.query("test(X)")
 
         # Should have executed one cut
         assert engine.metrics.cuts_executed == 1
@@ -422,14 +431,16 @@ class TestMetricsEngineIntegration:
 
     def test_metrics_track_predicate_calls(self):
         """Metrics track per-predicate call/exit/fail."""
-        engine = engine_for("""
+        engine = engine_for(
+            """
             parent(tom, bob).
             parent(bob, pat).
             grandparent(X, Z) :- parent(X, Y), parent(Y, Z).
-        """)
+        """
+        )
 
         # Query for grandparent
-        results = engine.query("grandparent(tom, Z)")
+        _ = engine.query("grandparent(tom, Z)")
 
         # Should have metrics for predicates
         gp_stats = engine.metrics.get_predicate_metrics("grandparent/2")
@@ -443,7 +454,7 @@ class TestMetricsEngineIntegration:
         engine = engine_for("test(1). test(2).", debug=False, metrics=False)
 
         # Should not have metrics attribute or it's None
-        assert not hasattr(engine, 'metrics') or engine.metrics is None
+        assert not hasattr(engine, "metrics") or engine.metrics is None
 
         # Query should work without metrics
         results = engine.query("test(X)")
@@ -451,7 +462,6 @@ class TestMetricsEngineIntegration:
 
     def test_metrics_export_format(self):
         """Exported metrics are JSON-compatible."""
-        import json
 
         engine = engine_for("test(1).")
         engine.query("test(X)")
@@ -518,13 +528,14 @@ class TestMetricsEngineIntegration:
         assert results[0]["Y"] == Int(2)
         assert results[1]["Y"] == Int(4)
 
-    @pytest.mark.xfail(reason="throw/catch integration not yet wired in engine")
     def test_metrics_track_exceptions_integration(self):
         """Metrics track exceptions thrown and caught."""
-        engine = engine_for("""
+        engine = engine_for(
+            """
             risky(X) :- throw(error(bad(X))).
             safe(X) :- catch(risky(X), E, true).
-        """)
+        """
+        )
 
         engine.query("safe(1)")
         assert engine.metrics.exceptions_thrown >= 1
