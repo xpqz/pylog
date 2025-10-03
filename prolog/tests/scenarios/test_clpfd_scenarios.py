@@ -21,17 +21,30 @@ class TestSimpleConstraintProblems:
         ?- S in 1..9, E in 0..9, N in 0..9, D in 0..9,
            M in 1..9, O in 0..9, R in 0..9, Y in 0..9,
            all_different([S, E, N, D, M, O, R, Y]),
+           1000*S + 100*E + 10*N + D +
+           1000*M + 100*O + 10*R + E #=
+           10000*M + 1000*O + 100*N + 10*E + Y,
            once(labeling([first_fail], [S, E, N, D, M, O, R, Y])).
         """
         solutions = list(engine.query(query))
 
-        # Should find valid assignments where all variables are different
-        assert len(solutions) > 0
+        # Should find the unique SEND+MORE=MONEY solution
+        assert len(solutions) == 1
 
-        # Check that all values are indeed different
         sol = solutions[0]
-        values = [sol[v].value for v in ["S", "E", "N", "D", "M", "O", "R", "Y"]]
-        assert len(set(values)) == 8  # All different
+        values = {
+            var: sol[var].value for var in ["S", "E", "N", "D", "M", "O", "R", "Y"]
+        }
+        assert values == {
+            "S": 9,
+            "E": 5,
+            "N": 6,
+            "D": 7,
+            "M": 1,
+            "O": 0,
+            "R": 8,
+            "Y": 2,
+        }
 
     def test_simple_scheduling(self):
         """Simple scheduling problem with precedence constraints."""
@@ -72,6 +85,14 @@ class TestSimpleConstraintProblems:
            D in 1..9, E in 1..9, F in 1..9,
            G in 1..9, H in 1..9, I in 1..9,
            all_different([A, B, C, D, E, F, G, H, I]),
+           A + B + C #= 15,
+           D + E + F #= 15,
+           G + H + I #= 15,
+           A + D + G #= 15,
+           B + E + H #= 15,
+           C + F + I #= 15,
+           A + E + I #= 15,
+           C + E + G #= 15,
            once(labeling([first_fail], [A, B, C, D, E, F, G, H, I])).
         """
         # Only get first solution for performance test
@@ -83,8 +104,10 @@ class TestSimpleConstraintProblems:
         # Should find permutations of 1..9
         assert len(solutions) > 0
         sol = solutions[0]
-        values = [sol[v].value for v in ["A", "B", "C", "D", "E", "F", "G", "H", "I"]]
-        assert set(values) == set(range(1, 10))
+        values = {
+            var: sol[var].value for var in ["A", "B", "C", "D", "E", "F", "G", "H", "I"]
+        }
+        assert set(values.values()) == set(range(1, 10))
 
 
 @pytest.mark.swi_baseline
