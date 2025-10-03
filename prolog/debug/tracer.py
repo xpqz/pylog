@@ -210,9 +210,9 @@ class PortsTracer:
         Check if the current custom filter can be optimized by predicate-based pre-filtering.
         This is a heuristic to identify common filter patterns that only check pred_id.
         """
-        # Conservative approach: Only enable pre-filtering for simple cases
-        # Disable pre-filtering temporarily to avoid performance regressions
-        return False
+        # Enable pre-filtering for custom filters - the _prefilter_by_predicate method
+        # already handles exceptions gracefully by falling back to full event creation
+        return True
 
     def _prefilter_by_predicate(self, port: str, goal: Term) -> bool:
         """
@@ -311,8 +311,11 @@ class PortsTracer:
             if isinstance(port_or_event, TraceEvent):
                 event = port_or_event
             else:
-                # Create event from port and goal
-                event = self._create_event(port_or_event, goal)
+                # Guard against misuse: string port without goal
+                raise TypeError(
+                    f"emit_event called with port '{port_or_event}' but goal is None. "
+                    "Either provide a goal term or pass a TraceEvent directly."
+                )
 
         # Apply filters (final check for complex filters)
         if not self._should_emit(event):
