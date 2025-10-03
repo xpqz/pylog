@@ -21,4 +21,4 @@ Reification (parsing example):
 ```text
 ?- B in 0..1, B #==> (X #< 10).
 ```
-See CLP(FD) → Reification (preview) for details.
+See CLP(FD) → Reification for details.

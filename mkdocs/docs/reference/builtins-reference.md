@@ -25,9 +25,7 @@ CLP(FD):
 
 See the Basics and CLP(FD) sections for usage examples.
 
+Reification
+-----------
 
-Reification (preview)
----------------------
-
-- `#<=>/2`, `#==>/2`, `#<==/2` — relate a boolean to a constraint's truth. Parsing is supported; solver semantics are in progress.
-
+- `#<=>/2`, `#==>/2`, `#<==/2` — relate a Boolean to a constraint's truth. See CLP(FD) → Reification for semantics and examples.

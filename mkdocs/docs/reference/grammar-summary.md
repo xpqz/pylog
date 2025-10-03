@@ -1,18 +1,26 @@
 # Grammar summary
 
-Terms:
+Terms
+-----
 
 - atom, integer, variable, structure, list
 - lists: `[]` or `[E1,E2|Tail]`
+- parentheses for grouping goals: `(A, B, ...)`
 
-Clauses:
+Clauses
+-------
 
 - fact: `head.`
 - rule: `head :- goal1, goal2.`
 
-Queries:
+Queries
+-------
 
 - `?- goal.`
 
-Operators follow standard Prolog precedence and associativity used by the reader.
-The reader also recognizes CLP(FD) reification operators `#<=>`, `#==>`, `#<==`.
+Notes
+-----
+
+- Parentheses group goals in clause bodies, queries, and directives. For example: `p :- (a, b).` This is parsed directly and behaves like `p :- a, b.`
+- Operators follow standard Prolog precedence and associativity via the reader.
+- The reader recognizes CLP(FD) reification operators `#<=>`, `#==>`, `#<==`.

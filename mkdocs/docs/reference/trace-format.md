@@ -30,8 +30,16 @@ When internal events are enabled, the tracer may emit records with `type: "inter
 - `v` (int): 1
 - `type` (string): `internal`
 - `sid` (int): Step ID
-- `kind` (string): Event kind (e.g., `cp_push`, `frame_pop`)
+- `kind` (string): Event kind (e.g., `cp_push`, `frame_pop`, `catch_switch`)
 - `details` (object): Event details
+
+Common kinds:
+
+- `cp_push` — a choicepoint was created; `details` includes metadata such as `pred_id` and `trail_top`.
+- `frame_pop` — a frame was popped; `details` includes `pred_id` and `frame_id`.
+- `catch_switch` — an exception was caught and control was transferred to the recovery handler; `details` includes:
+  - `exception` (string): the thrown term rendered as a string
+  - `handler` (string): the recovery goal
 
 Example
 -------
@@ -47,4 +55,3 @@ Notes
 - Keys are minimized for size and streaming friendliness
 - Deterministic output when timestamps are disabled
 - See `prolog/debug/sinks.py` for the encoder and `prolog/debug/invariant_checker.py` for invariants
-

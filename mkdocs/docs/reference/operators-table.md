@@ -11,6 +11,6 @@ Common operators and categories:
 CLP(FD) operators:
 
 - Linear relations: `#=`, `#\=`, `#<`, `#=<`, `#>`, `#>=`
-- Reification (preview): `#<=>`, `#==>`, `#<==`
+- Reification: `#<=>`, `#==>`, `#<==`
 
 For precedence and associativity, see the implementation notes and tests under operators. Reification operators are non‑associative (xfx) at precedence 900.
