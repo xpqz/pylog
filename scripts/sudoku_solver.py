@@ -69,7 +69,7 @@ heads_tails([[H|T]|Rows], [H|Hs], [T|Ts]) :-
 all_blocks([]).
 all_blocks([R1,R2,R3|Rs]) :-
     row_blocks(R1,R2,R3,Bs),
-    pairwise_neq_each(Bs),
+    all_different_each(Bs),
     all_blocks(Rs).
 
 % Split three rows into 3 blocks each
@@ -78,16 +78,10 @@ row_blocks([A1,A2,A3|AR], [B1,B2,B3|BR], [C1,C2,C3|CR],
            [[A1,A2,A3,B1,B2,B3,C1,C2,C3] | Tail]) :-
     row_blocks(AR, BR, CR, Tail).
 
-pairwise_neq_each([]).
-pairwise_neq_each([L|Ls]) :- pairwise_neq(L), pairwise_neq_each(Ls).
-
-% Pairwise inequality over a list
-pairwise_neq([]).
-pairwise_neq([_]).
-pairwise_neq([X|Xs]) :- neq_list(X, Xs), pairwise_neq(Xs).
-
-neq_list(_, []).
-neq_list(X, [Y|Ys]) :- X #\= Y, neq_list(X, Ys).
+all_different_each([]).
+all_different_each([Block|Blocks]) :-
+    all_different(Block),
+    all_different_each(Blocks).
 
 % Flatten matrix to a single list
 flatten_rows([], []).

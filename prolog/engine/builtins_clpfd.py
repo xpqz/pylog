@@ -1090,17 +1090,52 @@ def _builtin_all_different(engine, list_term):
     store = engine.store
     trail = engine.trail
 
+    def _normalize_list(term):
+        # Dereference top-level variable if necessary
+        while isinstance(term, Var):
+            deref = store.deref(term.id)
+            if deref[0] == "BOUND":
+                term = deref[2]
+            elif deref[0] == "UNBOUND":
+                return None  # List structure unknown yet
+            else:
+                return None
+
+        # Handle List term directly
+        if isinstance(term, List):
+            items = list(term.items)
+            tail = getattr(term, "tail", Atom("[]"))
+            if not isinstance(tail, Atom) or tail.name != "[]":
+                return None
+            return items
+
+        # Handle cons-form '.'/2 (proper list only)
+        if isinstance(term, Struct) and term.functor == "." and len(term.args) == 2:
+            items = []
+            current = term
+            while (
+                isinstance(current, Struct)
+                and current.functor == "."
+                and len(current.args) == 2
+            ):
+                items.append(current.args[0])
+                current = current.args[1]
+            if isinstance(current, Atom) and current.name == "[]":
+                return items
+            return None
+
+        return None
+
     # Parse list to collect variables and fixed values
 
     fixed_values = set()
     var_ids = []
 
-    # Handle both List and cons-form, but for Phase 1 we focus on List
-    if not isinstance(list_term, List):
-        # Could be cons-form '.'/2, but for Phase 1 we only handle List
+    items = _normalize_list(list_term)
+    if items is None:
         return False
 
-    for item in list_term.items:
+    for item in items:
         if isinstance(item, Int):
             # Direct integer value
             if item.value in fixed_values:
