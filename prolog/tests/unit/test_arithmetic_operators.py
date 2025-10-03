@@ -82,14 +82,17 @@ class TestIntegerDivision:
         solutions = empty_engine.run([query])
         assert solutions == [{"X": Int(0)}]
 
-    @pytest.mark.parametrize("n,d,expected", [
-        (7, 3, 2),
-        (-7, 3, -3),
-        (7, -3, -3),
-        (-7, -3, 2),
-        (0, 5, 0),
-        (12, 4, 3),
-    ])
+    @pytest.mark.parametrize(
+        "n,d,expected",
+        [
+            (7, 3, 2),
+            (-7, 3, -3),
+            (7, -3, -3),
+            (-7, -3, 2),
+            (0, 5, 0),
+            (12, 4, 3),
+        ],
+    )
     def test_integer_division_parametrized(self, empty_engine, n, d, expected):
         """Test integer division with various inputs."""
         X = Var(0, "X")
@@ -170,13 +173,18 @@ class TestModuloOperator:
         """Test mod sign convention and identity N = Q*D + R."""
         N, D = Int(n), Int(d)
         Q, R = Var(0, "Q"), Var(1, "R")
-        query = Struct(",", (
-            Struct("is", (Q, Struct("//", (N, D)))),
-            Struct("is", (R, Struct("mod", (N, D))))
-        ))
+        query = Struct(
+            ",",
+            (
+                Struct("is", (Q, Struct("//", (N, D)))),
+                Struct("is", (R, Struct("mod", (N, D)))),
+            ),
+        )
         sol = empty_engine.run([query])[0]
         # Verify N == Q*D + R
-        check = Struct("is", (Int(n), Struct("+", (Struct("*", (sol["Q"], D)), sol["R"]))))
+        check = Struct(
+            "is", (Int(n), Struct("+", (Struct("*", (sol["Q"], D)), sol["R"])))
+        )
         assert len(empty_engine.run([check])) == 1
 
 
@@ -226,7 +234,9 @@ class TestUnaryMinus:
     def test_unary_minus_rhs_var(self, empty_engine):
         """Test unary minus with RHS variable."""
         X, Y = Var(0, "X"), Var(1, "Y")
-        query = Struct(",", (Struct("=", (Y, Int(5))), Struct("is", (X, Struct("-", (Y,))))))
+        query = Struct(
+            ",", (Struct("=", (Y, Int(5))), Struct("is", (X, Struct("-", (Y,)))))
+        )
         solutions = empty_engine.run([query])
         assert solutions == [{"X": Int(-5), "Y": Int(5)}]
 
@@ -238,7 +248,13 @@ class TestIsChecksAndLiterals:
         """Test is/2 can check as well as assign - success case."""
         X = Var(0, "X")
         # X = 2, and 7 // 3 evaluates to 2 -> success
-        query = Struct(",", (Struct("=", (X, Int(2))), Struct("is", (X, Struct("//", (Int(7), Int(3)))))))
+        query = Struct(
+            ",",
+            (
+                Struct("=", (X, Int(2))),
+                Struct("is", (X, Struct("//", (Int(7), Int(3))))),
+            ),
+        )
         solutions = empty_engine.run([query])
         assert len(solutions) == 1
         assert solutions[0]["X"] == Int(2)
@@ -247,7 +263,13 @@ class TestIsChecksAndLiterals:
         """Test is/2 can check as well as assign - failure case."""
         X = Var(0, "X")
         # X = 3, but 7 // 3 evaluates to 2 -> fail
-        query = Struct(",", (Struct("=", (X, Int(3))), Struct("is", (X, Struct("//", (Int(7), Int(3)))))))
+        query = Struct(
+            ",",
+            (
+                Struct("=", (X, Int(3))),
+                Struct("is", (X, Struct("//", (Int(7), Int(3))))),
+            ),
+        )
         solutions = empty_engine.run([query])
         assert solutions == []
 
@@ -265,10 +287,10 @@ class TestOperandBinding:
     def test_rhs_var_bound_then_evals(self, empty_engine):
         """Test RHS variable bound before evaluation."""
         X, Y = Var(0, "X"), Var(1, "Y")
-        query = Struct(",", (
-            Struct("=", (Y, Int(7))),
-            Struct("is", (X, Struct("//", (Y, Int(3)))))
-        ))
+        query = Struct(
+            ",",
+            (Struct("=", (Y, Int(7))), Struct("is", (X, Struct("//", (Y, Int(3)))))),
+        )
         solutions = empty_engine.run([query])
         assert solutions == [{"X": Int(2), "Y": Int(7)}]
 
@@ -281,13 +303,19 @@ class TestMixedArithmeticOperators:
         """Test that n = (n // d) * d + (n mod d) for all sign combinations."""
         N, D = Int(n), Int(d)
         Q, R, Check = Var(0, "Q"), Var(1, "R"), Var(2, "Check")
-        query = Struct(",", (
-            Struct("is", (Q, Struct("//", (N, D)))),
-            Struct(",", (
-                Struct("is", (R, Struct("mod", (N, D)))),
-                Struct("is", (Check, Struct("+", (Struct("*", (Q, D)), R))))
-            ))
-        ))
+        query = Struct(
+            ",",
+            (
+                Struct("is", (Q, Struct("//", (N, D)))),
+                Struct(
+                    ",",
+                    (
+                        Struct("is", (R, Struct("mod", (N, D)))),
+                        Struct("is", (Check, Struct("+", (Struct("*", (Q, D)), R)))),
+                    ),
+                ),
+            ),
+        )
         sols = empty_engine.run([query])
         assert len(sols) == 1
         assert sols[0]["Check"] == N
@@ -313,18 +341,25 @@ class TestMixedArithmeticOperators:
         X = Var(0, "X")
         # X is (20 // 3) * 3 + (20 mod 3) + (-(5))
         # (6 * 3) + 2 + (-5) = 18 + 2 - 5 = 15
-        query = Struct("is", (X, 
-            Struct("+", (
-                Struct("+", (
-                    Struct("*", (
-                        Struct("//", (Int(20), Int(3))),
-                        Int(3)
-                    )),
-                    Struct("mod", (Int(20), Int(3)))
-                )),
-                Struct("-", (Int(5),))
-            ))
-        ))
+        query = Struct(
+            "is",
+            (
+                X,
+                Struct(
+                    "+",
+                    (
+                        Struct(
+                            "+",
+                            (
+                                Struct("*", (Struct("//", (Int(20), Int(3))), Int(3))),
+                                Struct("mod", (Int(20), Int(3))),
+                            ),
+                        ),
+                        Struct("-", (Int(5),)),
+                    ),
+                ),
+            ),
+        )
         solutions = empty_engine.run([query])
         assert solutions == [{"X": Int(15)}]
 
@@ -336,7 +371,9 @@ class TestArithmeticErrorHandling:
         """Test division by zero in middle of expression fails."""
         X = Var(0, "X")
         # X is 5 + (10 // 0) - should fail
-        query = Struct("is", (X, Struct("+", (Int(5), Struct("//", (Int(10), Int(0)))))))
+        query = Struct(
+            "is", (X, Struct("+", (Int(5), Struct("//", (Int(10), Int(0))))))
+        )
         solutions = empty_engine.run([query])
         assert solutions == []
 
@@ -344,7 +381,9 @@ class TestArithmeticErrorHandling:
         """Test modulo by zero in middle of expression fails."""
         X = Var(0, "X")
         # X is 5 + (10 mod 0) - should fail
-        query = Struct("is", (X, Struct("+", (Int(5), Struct("mod", (Int(10), Int(0)))))))
+        query = Struct(
+            "is", (X, Struct("+", (Int(5), Struct("mod", (Int(10), Int(0))))))
+        )
         solutions = empty_engine.run([query])
         assert solutions == []
 
@@ -370,6 +409,7 @@ class TestArithmeticErrorHandling:
 # MERGED FROM test_is_builtin_advanced.py
 # =============================================================================
 
+
 class TestIsWithComplexExpressions:
     """Tests for is/2 with complex arithmetic expressions."""
 
@@ -377,13 +417,13 @@ class TestIsWithComplexExpressions:
         """Test is/2 with deeply nested arithmetic expression."""
         X = Var(0, "X")
         # X is ((1 + 2) * 3) - (4 // 2)
-        expr = Struct("-", (
-            Struct("*", (
-                Struct("+", (Int(1), Int(2))),
-                Int(3)
-            )),
-            Struct("//", (Int(4), Int(2)))
-        ))
+        expr = Struct(
+            "-",
+            (
+                Struct("*", (Struct("+", (Int(1), Int(2))), Int(3))),
+                Struct("//", (Int(4), Int(2))),
+            ),
+        )
         query = Struct("is", (X, expr))
         solutions = empty_engine.run([query])
         assert len(solutions) == 1
@@ -403,16 +443,19 @@ class TestIsWithComplexExpressions:
         """Test is/2 with expression using all supported operators."""
         X = Var(0, "X")
         # X is (10 + 5) * 2 - 8 // 3 + 10 mod 3
-        expr = Struct("+", (
-            Struct("-", (
-                Struct("*", (
-                    Struct("+", (Int(10), Int(5))),
-                    Int(2)
-                )),
-                Struct("//", (Int(8), Int(3)))
-            )),
-            Struct("mod", (Int(10), Int(3)))
-        ))
+        expr = Struct(
+            "+",
+            (
+                Struct(
+                    "-",
+                    (
+                        Struct("*", (Struct("+", (Int(10), Int(5))), Int(2))),
+                        Struct("//", (Int(8), Int(3))),
+                    ),
+                ),
+                Struct("mod", (Int(10), Int(3))),
+            ),
+        )
         query = Struct("is", (X, expr))
         solutions = empty_engine.run([query])
         assert len(solutions) == 1
@@ -430,16 +473,25 @@ class TestIsWithVariableExpressions:
         Z = Var(2, "Z")
         W = Var(3, "W")
         # W = Z, Z = Y, Y = 10, X is W + 5
-        query = Struct(",", (
-            Struct("=", (W, Z)),
-            Struct(",", (
-                Struct("=", (Z, Y)),
-                Struct(",", (
-                    Struct("=", (Y, Int(10))),
-                    Struct("is", (X, Struct("+", (W, Int(5)))))
-                ))
-            ))
-        ))
+        query = Struct(
+            ",",
+            (
+                Struct("=", (W, Z)),
+                Struct(
+                    ",",
+                    (
+                        Struct("=", (Z, Y)),
+                        Struct(
+                            ",",
+                            (
+                                Struct("=", (Y, Int(10))),
+                                Struct("is", (X, Struct("+", (W, Int(5))))),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
         solutions = empty_engine.run([query])
         assert len(solutions) == 1
         assert solutions[0]["X"] == Int(15)
@@ -450,10 +502,9 @@ class TestIsWithVariableExpressions:
         Y = Var(1, "Y")
         Z = Var(2, "Z")
         # Y = 5, X is Y + Z (Z unbound - should fail)
-        query = Struct(",", (
-            Struct("=", (Y, Int(5))),
-            Struct("is", (X, Struct("+", (Y, Z))))
-        ))
+        query = Struct(
+            ",", (Struct("=", (Y, Int(5))), Struct("is", (X, Struct("+", (Y, Z)))))
+        )
         solutions = empty_engine.run([query])
         assert len(solutions) == 0  # Fails due to unbound Z
 
@@ -463,10 +514,9 @@ class TestIsWithVariableExpressions:
         Y = Var(1, "Y")
         # Y = 3 + 4, X is Y (should evaluate Y)
         # Note: This binds Y to the struct +(3,4), not to 7
-        query = Struct(",", (
-            Struct("=", (Y, Struct("+", (Int(3), Int(4))))),
-            Struct("is", (X, Y))
-        ))
+        query = Struct(
+            ",", (Struct("=", (Y, Struct("+", (Int(3), Int(4))))), Struct("is", (X, Y)))
+        )
         solutions = empty_engine.run([query])
         assert len(solutions) == 1
         assert solutions[0]["X"] == Int(7)
@@ -493,10 +543,13 @@ class TestIsAsCheckerAdvanced:
         """Test is/2 check mode with bound variable on LHS."""
         X = Var(0, "X")
         # X = 10, X is 5 * 2
-        query = Struct(",", (
-            Struct("=", (X, Int(10))),
-            Struct("is", (X, Struct("*", (Int(5), Int(2)))))
-        ))
+        query = Struct(
+            ",",
+            (
+                Struct("=", (X, Int(10))),
+                Struct("is", (X, Struct("*", (Int(5), Int(2))))),
+            ),
+        )
         solutions = empty_engine.run([query])
         assert len(solutions) == 1
 
@@ -504,10 +557,13 @@ class TestIsAsCheckerAdvanced:
         """Test is/2 check fails with bound variable mismatch."""
         X = Var(0, "X")
         # X = 10, X is 5 + 2 (should fail: 10 != 7)
-        query = Struct(",", (
-            Struct("=", (X, Int(10))),
-            Struct("is", (X, Struct("+", (Int(5), Int(2)))))
-        ))
+        query = Struct(
+            ",",
+            (
+                Struct("=", (X, Int(10))),
+                Struct("is", (X, Struct("+", (Int(5), Int(2))))),
+            ),
+        )
         solutions = empty_engine.run([query])
         assert len(solutions) == 0
 
@@ -533,7 +589,7 @@ class TestIsErrorCasesAdvanced:
 
     def test_is_with_list_in_expression(self, empty_engine):
         """Test is/2 fails with list in expression."""
-        from prolog.ast.terms import List
+
         X = Var(0, "X")
         # X is [1,2] + 3
         query = Struct("is", (X, Struct("+", (List((Int(1), Int(2))), Int(3)))))
@@ -546,7 +602,7 @@ class TestIsErrorCasesAdvanced:
         query1 = Struct("is", (Var(0, "X"),))
         solutions1 = empty_engine.run([query1])
         assert len(solutions1) == 0
-        
+
         # is(X, Y, Z) - too many arguments
         query2 = Struct("is", (Var(0, "X"), Int(5), Int(3)))
         solutions2 = empty_engine.run([query2])
@@ -555,10 +611,19 @@ class TestIsErrorCasesAdvanced:
     def test_is_unknown_operator(self, empty_engine):
         """Test is/2 with unknown operator in expression."""
         X = Var(0, "X")
-        # X is 5 ** 2 (** not supported)
-        query = Struct("is", (X, Struct("**", (Int(5), Int(2)))))
+        # X is 5 unknown_op 2 (using truly unsupported operator)
+        query = Struct("is", (X, Struct("unknown_op", (Int(5), Int(2)))))
         solutions = empty_engine.run([query])
         assert len(solutions) == 0
+
+    def test_is_power_operator(self, empty_engine):
+        """Test is/2 with power operator (now supported)."""
+        X = Var(0, "X")
+        # X is 5 ** 2 (power operator now implemented)
+        query = Struct("is", (X, Struct("**", (Int(5), Int(2)))))
+        solutions = empty_engine.run([query])
+        assert len(solutions) == 1
+        assert solutions[0]["X"] == Int(25)  # 5 ** 2 = 25
 
 
 class TestIsWithDivisionByZeroAdvanced:
@@ -585,13 +650,13 @@ class TestIsWithDivisionByZeroAdvanced:
         X = Var(0, "X")
         Y = Var(1, "Y")
         # Y = 0, X is 5 + (10 // Y)
-        query = Struct(",", (
-            Struct("=", (Y, Int(0))),
-            Struct("is", (X, Struct("+", (
-                Int(5),
-                Struct("//", (Int(10), Y))
-            ))))
-        ))
+        query = Struct(
+            ",",
+            (
+                Struct("=", (Y, Int(0))),
+                Struct("is", (X, Struct("+", (Int(5), Struct("//", (Int(10), Y)))))),
+            ),
+        )
         solutions = empty_engine.run([query])
         assert len(solutions) == 0
 
@@ -603,10 +668,13 @@ class TestIsInComplexQueries:
         """Test is/2 in disjunction branches."""
         X = Var(0, "X")
         # (X is 3 + 4) ; (X is 5 * 2)
-        query = Struct(";", (
-            Struct("is", (X, Struct("+", (Int(3), Int(4))))),
-            Struct("is", (X, Struct("*", (Int(5), Int(2)))))
-        ))
+        query = Struct(
+            ";",
+            (
+                Struct("is", (X, Struct("+", (Int(3), Int(4))))),
+                Struct("is", (X, Struct("*", (Int(5), Int(2))))),
+            ),
+        )
         solutions = empty_engine.run([query])
         assert len(solutions) == 2
         assert solutions[0]["X"] == Int(7)
@@ -621,14 +689,13 @@ class TestIsInComplexQueries:
             mk_fact("num", Int(3)),
         )
         engine = Engine(p)
-        
+
         X = Var(0, "X")
         Y = Var(1, "Y")
         # num(X), Y is X * 10
-        query = Struct(",", (
-            Struct("num", (X,)),
-            Struct("is", (Y, Struct("*", (X, Int(10)))))
-        ))
+        query = Struct(
+            ",", (Struct("num", (X,)), Struct("is", (Y, Struct("*", (X, Int(10))))))
+        )
         solutions = engine.run([query])
         assert len(solutions) == 3
         assert solutions[0]["Y"] == Int(10)

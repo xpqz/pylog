@@ -7,6 +7,7 @@ and cover all edge cases and invariants for the single-loop VM.
 import pytest
 from prolog.ast.terms import Atom, Int, Var, Struct, List as PrologList
 from prolog.engine.engine import Engine
+from prolog.engine.errors import UndefinedPredicateError
 from prolog.tests.helpers import program, mk_fact, mk_rule
 
 
@@ -950,14 +951,12 @@ class TestErrorHandling:
         assert len(solutions) == 0
 
     @pytest.mark.iso_mode
-    @pytest.mark.skip(reason="ISO mode not yet implemented")
     def test_undefined_predicate_errors_in_iso(self):
         """Test undefined predicate throws in ISO mode."""
         prog = program()
-        # When ISO mode is implemented:
-        # with pytest.raises(UndefinedPredicateError):
-        #     Engine(prog, mode="iso").run([Struct("no_such", (Int(1),))])
-        pass
+        # In ISO mode, undefined predicates should raise an error
+        with pytest.raises(UndefinedPredicateError):
+            Engine(prog, mode="iso").run([Struct("no_such", (Int(1),))])
 
     def test_unification_failure_not_error(self):
         """Test that unification failure is not an error."""

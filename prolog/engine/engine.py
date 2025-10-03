@@ -20,7 +20,7 @@ from prolog.engine.runtime import (
     Trail,
 )
 from prolog.engine.trail_adapter import TrailAdapter
-from prolog.engine.errors import PrologThrow
+from prolog.engine.errors import PrologThrow, UndefinedPredicateError
 from prolog.engine.cursors import StreamingClauseCursor
 
 # Debug imports (conditional imports moved here)
@@ -75,6 +75,7 @@ class Engine:
         debug: bool = False,
         use_streaming: bool = False,
         metrics: bool = False,
+        mode: str = "dev",
     ):
         """Initialize engine with a program.
 
@@ -88,6 +89,7 @@ class Engine:
             debug: Whether to enable debug instrumentation (e.g., candidate counting).
             use_streaming: Whether to use streaming clause selection (requires indexing).
             metrics: Whether to enable metrics collection.
+            mode: Engine mode - "dev" for development (default) or "iso" for ISO compliance.
         """
         # Convert to IndexedProgram if indexing is enabled
         if use_indexing:
@@ -145,6 +147,7 @@ class Engine:
         self._trace_log: List[str] = []  # For debugging
         self.max_steps = max_steps  # Step budget for infinite loop detection
         self._steps_taken = 0  # Counter for steps executed
+        self.mode = mode  # Engine mode: "dev" or "iso"
 
         # Add write_stamp for tracer
         self.write_stamp = 0
@@ -490,6 +493,22 @@ class Engine:
         )
         self._builtins[("table", 2)] = lambda eng, args: _builtin_table(eng, *args)
         self._builtins[("#\\/", 2)] = lambda eng, args: _builtin_fd_disj(eng, *args)
+
+        # Structural comparison operators
+        self._builtins[("==", 2)] = lambda eng, args: eng._builtin_structural_equal(
+            args
+        )
+        self._builtins[("\\==", 2)] = (
+            lambda eng, args: eng._builtin_structural_not_equal(args)
+        )
+        self._builtins[("@<", 2)] = lambda eng, args: eng._builtin_term_less(args)
+        self._builtins[("@>", 2)] = lambda eng, args: eng._builtin_term_greater(args)
+        self._builtins[("@=<", 2)] = lambda eng, args: eng._builtin_term_less_equal(
+            args
+        )
+        self._builtins[("@>=", 2)] = lambda eng, args: eng._builtin_term_greater_equal(
+            args
+        )
 
     def solve(
         self, goal: Term, max_solutions: Optional[int] = None
@@ -1031,11 +1050,16 @@ class Engine:
                     self.metrics.record_candidates(len(matches), len(matches))
 
         if not cursor.has_more():
-            # No matching clauses - emit FAIL port
-            self._port("FAIL", f"{functor}/{arity}")
-            if self.metrics:
-                self.metrics.record_fail(pred_id)
-            return False
+            # No matching clauses
+            if self.mode == "iso":
+                # In ISO mode, throw an error for undefined predicates
+                raise UndefinedPredicateError(predicate=functor, arity=arity)
+            else:
+                # In dev mode, just fail - emit FAIL port
+                self._port("FAIL", f"{functor}/{arity}")
+                if self.metrics:
+                    self.metrics.record_fail(pred_id)
+                return False
 
         # Take first clause
         clause_idx = cursor.take()
@@ -3144,6 +3168,141 @@ class Engine:
 
         return True
 
+    def _builtin_structural_equal(self, args: tuple) -> bool:
+        """==(X, Y) - structural equality comparison."""
+        if len(args) != 2:
+            return False
+        left, right = args
+        return self._structural_compare(left, right) == 0
+
+    def _builtin_structural_not_equal(self, args: tuple) -> bool:
+        """\\==(X, Y) - structural inequality comparison."""
+        if len(args) != 2:
+            return False
+        left, right = args
+        return self._structural_compare(left, right) != 0
+
+    def _builtin_term_less(self, args: tuple) -> bool:
+        """@<(X, Y) - term ordering less than."""
+        if len(args) != 2:
+            return False
+        left, right = args
+        return self._structural_compare(left, right) < 0
+
+    def _builtin_term_greater(self, args: tuple) -> bool:
+        """@>(X, Y) - term ordering greater than."""
+        if len(args) != 2:
+            return False
+        left, right = args
+        return self._structural_compare(left, right) > 0
+
+    def _builtin_term_less_equal(self, args: tuple) -> bool:
+        """@=<(X, Y) - term ordering less than or equal."""
+        if len(args) != 2:
+            return False
+        left, right = args
+        return self._structural_compare(left, right) <= 0
+
+    def _builtin_term_greater_equal(self, args: tuple) -> bool:
+        """@>=(X, Y) - term ordering greater than or equal."""
+        if len(args) != 2:
+            return False
+        left, right = args
+        return self._structural_compare(left, right) >= 0
+
+    def _structural_compare(self, term1: Term, term2: Term) -> int:
+        """Standard term ordering comparison.
+
+        Returns: -1 if term1 < term2, 0 if equal, 1 if term1 > term2
+        Standard order: variables < numbers < atoms < compound terms
+        """
+        # Dereference terms first
+        term1 = self._deref_term(term1)
+        term2 = self._deref_term(term2)
+
+        # Get type ordering values
+        type1 = self._term_order_type(term1)
+        type2 = self._term_order_type(term2)
+
+        if type1 != type2:
+            return type1 - type2
+
+        # Same type - compare within type
+        if isinstance(term1, Var) and isinstance(term2, Var):
+            return term1.id - term2.id
+        elif isinstance(term1, Int) and isinstance(term2, Int):
+            if term1.value < term2.value:
+                return -1
+            elif term1.value > term2.value:
+                return 1
+            else:
+                return 0
+        elif isinstance(term1, Atom) and isinstance(term2, Atom):
+            if term1.name < term2.name:
+                return -1
+            elif term1.name > term2.name:
+                return 1
+            else:
+                return 0
+        elif isinstance(term1, Struct) and isinstance(term2, Struct):
+            # Compare arity first, then functor, then args
+            if len(term1.args) != len(term2.args):
+                return len(term1.args) - len(term2.args)
+            if term1.functor != term2.functor:
+                if term1.functor < term2.functor:
+                    return -1
+                else:
+                    return 1
+            # Compare arguments left to right
+            for arg1, arg2 in zip(term1.args, term2.args):
+                cmp = self._structural_compare(arg1, arg2)
+                if cmp != 0:
+                    return cmp
+            return 0
+        elif isinstance(term1, PrologList) and isinstance(term2, PrologList):
+            # Compare list elements and tail
+            min_len = min(len(term1.items), len(term2.items))
+            for i in range(min_len):
+                cmp = self._structural_compare(term1.items[i], term2.items[i])
+                if cmp != 0:
+                    return cmp
+            # If one list is shorter, it comes first
+            if len(term1.items) != len(term2.items):
+                return len(term1.items) - len(term2.items)
+            # Compare tails
+            return self._structural_compare(term1.tail, term2.tail)
+        else:
+            # Fallback: convert to string and compare
+            str1 = str(term1)
+            str2 = str(term2)
+            if str1 < str2:
+                return -1
+            elif str1 > str2:
+                return 1
+            else:
+                return 0
+
+    def _term_order_type(self, term: Term) -> int:
+        """Get term ordering type value."""
+        if isinstance(term, Var):
+            return 0
+        elif isinstance(term, Int):
+            return 1
+        elif isinstance(term, Atom):
+            return 2
+        elif isinstance(term, (Struct, PrologList)):
+            return 3
+        else:
+            return 4
+
+    def _deref_term(self, term: Term) -> Term:
+        """Dereference a term if it's a variable."""
+        if isinstance(term, Var):
+            result = self.store.deref(term.id)
+            if result[0] == "BOUND":
+                return result[2]
+        return term
+
     def register_attr_hook(self, module: str, hook_fn) -> None:
         """Register an attribute hook for a module.
 
@@ -3232,7 +3391,7 @@ class Engine:
                     value_stack.append(t.value)
                 elif isinstance(t, Struct):
                     if (
-                        t.functor in ["+", "-", "*", "//", "mod", "max", "min"]
+                        t.functor in ["+", "-", "*", "//", "mod", "max", "min", "**"]
                         and len(t.args) == 2
                     ):
                         # Binary operator: evaluate args then apply
@@ -3279,6 +3438,12 @@ class Engine:
                     value_stack.append(max(left, right))
                 elif op == "min":
                     value_stack.append(min(left, right))
+                elif op == "**":
+                    try:
+                        result = left**right
+                        value_stack.append(int(result))  # Convert to int for now
+                    except (OverflowError, ValueError):
+                        raise ValueError("Power operation overflow or invalid")
 
             elif action == "apply_unary":
                 op_atom = data
