@@ -3,10 +3,9 @@
 Tests put_attr/3, get_attr/3, and del_attr/2 builtins.
 """
 
-import pytest
 from prolog.engine.engine import Engine
-from prolog.ast.clauses import Clause, Program
-from prolog.ast.terms import Atom, Int, Var, Struct
+from prolog.ast.clauses import Program
+from prolog.ast.terms import Atom, Int, Var
 
 
 class TestPutAttr:
@@ -86,9 +85,11 @@ class TestPutAttr:
         engine = Engine(program)
 
         # ?- put_attr(X, color, red), put_attr(X, color, blue), get_attr(X, color, C).
-        solutions = list(engine.query(
-            "?- put_attr(X, color, red), put_attr(X, color, blue), get_attr(X, color, C)."
-        ))
+        solutions = list(
+            engine.query(
+                "?- put_attr(X, color, red), put_attr(X, color, blue), get_attr(X, color, C)."
+            )
+        )
         assert len(solutions) == 1
         assert solutions[0]["C"] == Atom("blue")
 
@@ -102,7 +103,9 @@ class TestGetAttr:
         engine = Engine(program)
 
         # ?- put_attr(X, color, red), get_attr(X, color, C).
-        solutions = list(engine.query("?- put_attr(X, color, red), get_attr(X, color, C)."))
+        solutions = list(
+            engine.query("?- put_attr(X, color, red), get_attr(X, color, C).")
+        )
         assert len(solutions) == 1
         assert solutions[0]["C"] == Atom("red")
 
@@ -116,7 +119,9 @@ class TestGetAttr:
         assert len(solutions) == 0
 
         # ?- put_attr(X, size, 10), get_attr(X, color, C).  (X has size but not color)
-        solutions = list(engine.query("?- put_attr(X, size, 10), get_attr(X, color, C)."))
+        solutions = list(
+            engine.query("?- put_attr(X, size, 10), get_attr(X, color, C).")
+        )
         assert len(solutions) == 0
 
     def test_get_attr_unifies_third_arg(self):
@@ -125,11 +130,15 @@ class TestGetAttr:
         engine = Engine(program)
 
         # ?- put_attr(X, color, red), get_attr(X, color, red).  (check mode)
-        solutions = list(engine.query("?- put_attr(X, color, red), get_attr(X, color, red)."))
+        solutions = list(
+            engine.query("?- put_attr(X, color, red), get_attr(X, color, red).")
+        )
         assert len(solutions) == 1
 
         # ?- put_attr(X, color, red), get_attr(X, color, blue).  (fails to unify)
-        solutions = list(engine.query("?- put_attr(X, color, red), get_attr(X, color, blue)."))
+        solutions = list(
+            engine.query("?- put_attr(X, color, red), get_attr(X, color, blue).")
+        )
         assert len(solutions) == 0
 
     def test_get_attr_bound_var_fails(self):
@@ -147,7 +156,9 @@ class TestGetAttr:
         engine = Engine(program)
 
         # ?- put_attr(X, color, red), get_attr(X, 123, C).
-        solutions = list(engine.query("?- put_attr(X, color, red), get_attr(X, 123, C)."))
+        solutions = list(
+            engine.query("?- put_attr(X, color, red), get_attr(X, 123, C).")
+        )
         assert len(solutions) == 0
 
     def test_get_attr_wrong_arity_fails(self):
@@ -174,9 +185,11 @@ class TestDelAttr:
 
         # ?- put_attr(X, color, red), del_attr(X, color), get_attr(X, color, C).
         # Should fail because color was deleted
-        solutions = list(engine.query(
-            "?- put_attr(X, color, red), del_attr(X, color), get_attr(X, color, C)."
-        ))
+        solutions = list(
+            engine.query(
+                "?- put_attr(X, color, red), del_attr(X, color), get_attr(X, color, C)."
+            )
+        )
         assert len(solutions) == 0
 
     def test_del_attr_succeeds_for_missing(self):
@@ -256,9 +269,9 @@ class TestAttributeIntegration:
         engine = Engine(program)
 
         # ?- put_attr(X, module1, value1), get_attr(X, module1, V).
-        solutions = list(engine.query(
-            "?- put_attr(X, module1, value1), get_attr(X, module1, V)."
-        ))
+        solutions = list(
+            engine.query("?- put_attr(X, module1, value1), get_attr(X, module1, V).")
+        )
         assert len(solutions) == 1
         assert solutions[0]["V"] == Atom("value1")
 
@@ -268,9 +281,9 @@ class TestAttributeIntegration:
         engine = Engine(program)
 
         # ?- put_attr(X, m, v), del_attr(X, m), get_attr(X, m, V).
-        solutions = list(engine.query(
-            "?- put_attr(X, m, v), del_attr(X, m), get_attr(X, m, V)."
-        ))
+        solutions = list(
+            engine.query("?- put_attr(X, m, v), del_attr(X, m), get_attr(X, m, V).")
+        )
         assert len(solutions) == 0
 
     def test_multiple_modules_on_same_variable(self):
@@ -280,10 +293,12 @@ class TestAttributeIntegration:
 
         # ?- put_attr(X, color, red), put_attr(X, size, 10),
         #    get_attr(X, color, C), get_attr(X, size, S).
-        solutions = list(engine.query(
-            "?- put_attr(X, color, red), put_attr(X, size, 10), " +
-            "get_attr(X, color, C), get_attr(X, size, S)."
-        ))
+        solutions = list(
+            engine.query(
+                "?- put_attr(X, color, red), put_attr(X, size, 10), "
+                + "get_attr(X, color, C), get_attr(X, size, S)."
+            )
+        )
         assert len(solutions) == 1
         assert solutions[0]["C"] == Atom("red")
         assert solutions[0]["S"] == Int(10)
@@ -310,17 +325,17 @@ class TestAttributeIntegration:
         engine = Engine(program)
 
         # ?- put_attr(X, color, red), Y = X, get_attr(Y, color, C).
-        solutions = list(engine.query(
-            "?- put_attr(X, color, red), Y = X, get_attr(Y, color, C)."
-        ))
+        solutions = list(
+            engine.query("?- put_attr(X, color, red), Y = X, get_attr(Y, color, C).")
+        )
         assert len(solutions) == 1
         assert solutions[0]["C"] == Atom("red")
 
         # Also test setting through alias
         # ?- X = Y, put_attr(X, color, blue), get_attr(Y, color, C).
-        solutions = list(engine.query(
-            "?- X = Y, put_attr(X, color, blue), get_attr(Y, color, C)."
-        ))
+        solutions = list(
+            engine.query("?- X = Y, put_attr(X, color, blue), get_attr(Y, color, C).")
+        )
         assert len(solutions) == 1
         assert solutions[0]["C"] == Atom("blue")
 
@@ -360,23 +375,23 @@ class TestAttributeIntegration:
         engine = Engine(program)
 
         # Test with list attribute
-        solutions = list(engine.query(
-            "?- put_attr(X, data, [1,2,3]), get_attr(X, data, D)."
-        ))
+        solutions = list(
+            engine.query("?- put_attr(X, data, [1,2,3]), get_attr(X, data, D).")
+        )
         assert len(solutions) == 1
         # D should be the list [1,2,3]
 
         # Test with structure attribute
-        solutions = list(engine.query(
-            "?- put_attr(X, info, point(3,4)), get_attr(X, info, I)."
-        ))
+        solutions = list(
+            engine.query("?- put_attr(X, info, point(3,4)), get_attr(X, info, I).")
+        )
         assert len(solutions) == 1
         # I should be point(3,4)
 
         # Test with variable in attribute (should work)
-        solutions = list(engine.query(
-            "?- put_attr(X, ref, Y), get_attr(X, ref, R), R = 42, Y = Z."
-        ))
+        solutions = list(
+            engine.query("?- put_attr(X, ref, Y), get_attr(X, ref, R), R = 42, Y = Z.")
+        )
         assert len(solutions) == 1
         assert solutions[0]["Y"] == Int(42)
         assert solutions[0]["Z"] == Int(42)

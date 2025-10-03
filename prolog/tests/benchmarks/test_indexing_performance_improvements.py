@@ -7,10 +7,9 @@ These benchmarks measure:
 3. Performance with large predicates
 """
 
-import pytest
 import time
 import tracemalloc
-from typing import List, Tuple
+from typing import List
 
 from prolog.engine.engine import Engine
 from prolog.engine.indexed_program import IndexedProgram
@@ -66,7 +65,7 @@ class TestIndexingMemoryPerformance:
         tracemalloc.stop()
 
         # Record baseline memory usage
-        print(f"\nBaseline select() memory:")
+        print("\nBaseline select() memory:")
         print(f"  Current: {current / 1024:.2f} KB")
         print(f"  Peak: {peak / 1024:.2f} KB")
         print(f"  Results: {len(results)} clauses")
@@ -107,12 +106,15 @@ class TestEngineListMaterialization:
         """Measure overhead of materializing full clause list."""
         # Create program with large predicate
         clauses = generate_large_predicate("test", 5000)
-        clauses.extend([
-            # Add a simple goal to query
-            Clause(head=Struct("go", ()), body=(
-                Struct("test", (Int(100), Var(0, "X"))),
-            ))
-        ])
+        clauses.extend(
+            [
+                # Add a simple goal to query
+                Clause(
+                    head=Struct("go", ()),
+                    body=(Struct("test", (Int(100), Var(0, "X"))),),
+                )
+            ]
+        )
 
         program = Program(tuple(clauses))
 
@@ -130,7 +132,7 @@ class TestEngineListMaterialization:
         results_no_index = list(engine_no_index.query("go"))
         time_no_index = time.perf_counter() - start
 
-        print(f"\nQuery execution time:")
+        print("\nQuery execution time:")
         print(f"  With indexing: {time_indexed * 1000:.3f} ms")
         print(f"  Without indexing: {time_no_index * 1000:.3f} ms")
         print(f"  Speedup: {time_no_index / time_indexed:.2f}x")
@@ -148,17 +150,15 @@ class TestLargeIntegerPredicates:
 
         # Create 10000 clauses, 90% with integer first args
         for i in range(9000):
-            clauses.append(Clause(
-                head=Struct("data", (Int(i), Atom(f"value_{i}"))),
-                body=()
-            ))
+            clauses.append(
+                Clause(head=Struct("data", (Int(i), Atom(f"value_{i}"))), body=())
+            )
 
         # Add some variable clauses
         for i in range(1000):
-            clauses.append(Clause(
-                head=Struct("data", (Var(0, "X"), Atom(f"var_{i}"))),
-                body=()
-            ))
+            clauses.append(
+                Clause(head=Struct("data", (Var(0, "X"), Atom(f"var_{i}"))), body=())
+            )
 
         program = IndexedProgram(tuple(clauses))
         store = Store()
@@ -172,8 +172,8 @@ class TestLargeIntegerPredicates:
         current, peak = tracemalloc.get_traced_memory()
         tracemalloc.stop()
 
-        print(f"\nInteger-heavy predicate:")
-        print(f"  Clauses: 10000 (90% integers)")
+        print("\nInteger-heavy predicate:")
+        print("  Clauses: 10000 (90% integers)")
         print(f"  Memory peak: {peak / 1024:.2f} KB")
         print(f"  Matches: {len(results)}")
 
@@ -201,7 +201,7 @@ def test_negative_integer_indexing():
     goal_pos = Struct("test", (Int(5), Var(1, "Result")))
     results_pos = list(program.select(("test", 2), goal_pos, store))
 
-    print(f"\nNegative integer indexing:")
+    print("\nNegative integer indexing:")
     print(f"  Negative query matches: {len(results_neg)}")
     print(f"  Positive query matches: {len(results_pos)}")
 

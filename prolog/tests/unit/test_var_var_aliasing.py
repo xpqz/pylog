@@ -4,11 +4,10 @@ Tests attribute merging when unifying two variables, ensuring attributes
 migrate to the union-find root with proper trailing.
 """
 
-import pytest
 from prolog.engine.engine import Engine
 from prolog.ast.clauses import Clause, Program
-from prolog.ast.terms import Atom, Int, Var, Struct
-from prolog.unify.store import Store, Cell
+from prolog.ast.terms import Atom, Int, Var
+from prolog.unify.store import Store
 from prolog.unify.unify import unify
 
 
@@ -21,9 +20,9 @@ class TestAttributeVisibilityThroughAliases:
         engine = Engine(program)
 
         # ?- put_attr(X, test, value), X = X, get_attr(X, test, V).
-        solutions = list(engine.query(
-            "?- put_attr(X, test, value), X = X, get_attr(X, test, V)."
-        ))
+        solutions = list(
+            engine.query("?- put_attr(X, test, value), X = X, get_attr(X, test, V).")
+        )
         assert len(solutions) == 1
         assert solutions[0]["V"] == Atom("value")
         # X should still have its attribute after self-unification
@@ -34,9 +33,9 @@ class TestAttributeVisibilityThroughAliases:
         engine = Engine(program)
 
         # ?- put_attr(X, color, red), X = Y, get_attr(Y, color, C).
-        solutions = list(engine.query(
-            "?- put_attr(X, color, red), X = Y, get_attr(Y, color, C)."
-        ))
+        solutions = list(
+            engine.query("?- put_attr(X, color, red), X = Y, get_attr(Y, color, C).")
+        )
         assert len(solutions) == 1
         assert solutions[0]["C"] == Atom("red")
 
@@ -46,9 +45,9 @@ class TestAttributeVisibilityThroughAliases:
         engine = Engine(program)
 
         # ?- put_attr(X, size, 10), X = Y, get_attr(Y, size, S).
-        solutions = list(engine.query(
-            "?- put_attr(X, size, 10), X = Y, get_attr(Y, size, S)."
-        ))
+        solutions = list(
+            engine.query("?- put_attr(X, size, 10), X = Y, get_attr(Y, size, S).")
+        )
         assert len(solutions) == 1
         assert solutions[0]["S"] == Int(10)
 
@@ -59,9 +58,11 @@ class TestAttributeVisibilityThroughAliases:
 
         # Create chain: X=Y, Y=Z with attribute on X
         # ?- put_attr(X, test, value), X = Y, Y = Z, get_attr(Z, test, V).
-        solutions = list(engine.query(
-            "?- put_attr(X, test, value), X = Y, Y = Z, get_attr(Z, test, V)."
-        ))
+        solutions = list(
+            engine.query(
+                "?- put_attr(X, test, value), X = Y, Y = Z, get_attr(Z, test, V)."
+            )
+        )
         assert len(solutions) == 1
         assert solutions[0]["V"] == Atom("value")
 
@@ -113,10 +114,12 @@ class TestAttributeMerging:
         # X has color, Y has size, after X=Y both accessible
         # ?- put_attr(X, color, red), put_attr(Y, size, 10),
         #    X = Y, get_attr(X, color, C), get_attr(X, size, S).
-        solutions = list(engine.query(
-            "?- put_attr(X, color, red), put_attr(Y, size, 10), " +
-            "X = Y, get_attr(X, color, C), get_attr(X, size, S)."
-        ))
+        solutions = list(
+            engine.query(
+                "?- put_attr(X, color, red), put_attr(Y, size, 10), "
+                + "X = Y, get_attr(X, color, C), get_attr(X, size, S)."
+            )
+        )
         assert len(solutions) == 1
         assert solutions[0]["C"] == Atom("red")
         assert solutions[0]["S"] == Int(10)
@@ -133,7 +136,10 @@ class TestAttributeMerging:
                 other_result = engine.store.deref(other.id)
                 if other_result[0] == "UNBOUND":
                     other_id = other_result[1]
-                    if other_id in engine.store.attrs and "test" in engine.store.attrs[other_id]:
+                    if (
+                        other_id in engine.store.attrs
+                        and "test" in engine.store.attrs[other_id]
+                    ):
                         my_value = engine.store.attrs[varid]["test"]
                         other_value = engine.store.attrs[other_id]["test"]
                         # Only allow merge if values are the same
@@ -144,16 +150,16 @@ class TestAttributeMerging:
 
         # Same values should merge successfully
         # ?- put_attr(X, test, same), put_attr(Y, test, same), X = Y.
-        solutions = list(engine.query(
-            "?- put_attr(X, test, same), put_attr(Y, test, same), X = Y."
-        ))
+        solutions = list(
+            engine.query("?- put_attr(X, test, same), put_attr(Y, test, same), X = Y.")
+        )
         assert len(solutions) == 1
 
         # Different values should fail merge
         # ?- put_attr(X, test, val1), put_attr(Y, test, val2), X = Y.
-        solutions = list(engine.query(
-            "?- put_attr(X, test, val1), put_attr(Y, test, val2), X = Y."
-        ))
+        solutions = list(
+            engine.query("?- put_attr(X, test, val1), put_attr(Y, test, val2), X = Y.")
+        )
         assert len(solutions) == 0
 
     def test_child_attributes_cleared_after_merge(self):
@@ -227,9 +233,9 @@ class TestHookDispatchForAliasing:
         engine.register_attr_hook("tracked", track_hook)
 
         # ?- put_attr(X, tracked, x), put_attr(Y, tracked, y), X = Y.
-        solutions = list(engine.query(
-            "?- put_attr(X, tracked, x), put_attr(Y, tracked, y), X = Y."
-        ))
+        solutions = list(
+            engine.query("?- put_attr(X, tracked, x), put_attr(Y, tracked, y), X = Y.")
+        )
         assert len(solutions) == 1
         # Hook should have been called for the overlapping module
         assert len(hook_called) > 0
@@ -245,7 +251,10 @@ class TestHookDispatchForAliasing:
                 other_result = engine.store.deref(other.id)
                 if other_result[0] == "UNBOUND":
                     other_id = other_result[1]
-                    if other_id in engine.store.attrs and "veto" in engine.store.attrs[other_id]:
+                    if (
+                        other_id in engine.store.attrs
+                        and "veto" in engine.store.attrs[other_id]
+                    ):
                         return False  # Veto the merge
             return True
 
@@ -253,9 +262,9 @@ class TestHookDispatchForAliasing:
 
         # Should fail due to veto
         # ?- put_attr(X, veto, x), put_attr(Y, veto, y), X = Y.
-        solutions = list(engine.query(
-            "?- put_attr(X, veto, x), put_attr(Y, veto, y), X = Y."
-        ))
+        solutions = list(
+            engine.query("?- put_attr(X, veto, x), put_attr(Y, veto, y), X = Y.")
+        )
         assert len(solutions) == 0
 
     def test_non_overlapping_modules_dont_interfere(self):
@@ -274,9 +283,9 @@ class TestHookDispatchForAliasing:
 
         # Should succeed because modules don't overlap
         # ?- put_attr(X, color, red), put_attr(Y, size, 10), X = Y.
-        solutions = list(engine.query(
-            "?- put_attr(X, color, red), put_attr(Y, size, 10), X = Y."
-        ))
+        solutions = list(
+            engine.query("?- put_attr(X, color, red), put_attr(Y, size, 10), X = Y.")
+        )
         assert len(solutions) == 1
         assert not blocking_called  # Hook should not have been called
 
@@ -294,9 +303,11 @@ class TestHookDispatchForAliasing:
         engine.register_attr_hook("observer", observer_hook)
 
         # ?- put_attr(X, observer, x), put_attr(Y, observer, y), X = Y.
-        solutions = list(engine.query(
-            "?- put_attr(X, observer, x), put_attr(Y, observer, y), X = Y."
-        ))
+        solutions = list(
+            engine.query(
+                "?- put_attr(X, observer, x), put_attr(Y, observer, y), X = Y."
+            )
+        )
         assert len(solutions) == 1
 
         # Hook should have seen the variables
@@ -488,15 +499,21 @@ class TestIntegrationWithBuiltins:
 
     def test_aliasing_in_predicate_context(self):
         """Aliasing should work in predicate context with attributes."""
-        program = Program((
-            Clause.from_str("merge_colors(X, Y) :- "
-                          "put_attr(X, color, red), "
-                          "put_attr(Y, color, blue), "
-                          "X = Y."),
-            Clause.from_str("check_merge(X, Y, C) :- "
-                          "merge_colors(X, Y), "
-                          "get_attr(X, color, C)."),
-        ))
+        program = Program(
+            (
+                Clause.from_str(
+                    "merge_colors(X, Y) :- "
+                    "put_attr(X, color, red), "
+                    "put_attr(Y, color, blue), "
+                    "X = Y."
+                ),
+                Clause.from_str(
+                    "check_merge(X, Y, C) :- "
+                    "merge_colors(X, Y), "
+                    "get_attr(X, color, C)."
+                ),
+            )
+        )
         engine = Engine(program)
 
         # Register hook that takes first value

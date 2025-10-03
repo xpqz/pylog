@@ -4,13 +4,10 @@ Test internal events for if-then-else construct.
 Tests that if-then-else emits correct internal events and 4-port behavior.
 """
 
-import pytest
-
 from prolog.parser import parser
 from prolog.ast.clauses import Program
-from prolog.ast.terms import Int, Atom
+from prolog.ast.terms import Atom
 from prolog.engine.engine import Engine
-from prolog.engine.runtime import ChoicepointKind
 from prolog.debug.sinks import CollectorSink
 from prolog.debug.tracer import TraceEvent, InternalEvent
 
@@ -21,9 +18,11 @@ class TestIfThenElseInternalEvents:
     def test_ite_cp_push_event(self):
         """Test if-then-else emits cp_push internal event."""
         # Create a program with if-then-else
-        clauses = parser.parse_program("""
+        clauses = parser.parse_program(
+            """
             test(X, Y) :- (X = 1 -> Y = a ; Y = b).
-        """)
+        """
+        )
         engine = Engine(Program(tuple(clauses)), trace=True)
         engine.tracer.enable_internal_events = True
 
@@ -43,8 +42,9 @@ class TestIfThenElseInternalEvents:
 
         # Should have cp_push for if-then-else
         cp_push_events = [e for e in internal_events if e.kind == "cp_push"]
-        ite_events = [e for e in cp_push_events
-                      if e.details.get("pred_id") == "if_then_else"]
+        ite_events = [
+            e for e in cp_push_events if e.details.get("pred_id") == "if_then_else"
+        ]
 
         assert len(ite_events) > 0, "Should have if-then-else cp_push event"
         assert "trail_top" in ite_events[0].details
@@ -52,9 +52,11 @@ class TestIfThenElseInternalEvents:
     def test_ite_then_branch_commits(self):
         """Test that taking then branch prunes else choicepoint."""
         # Create a program with if-then-else
-        clauses = parser.parse_program("""
+        clauses = parser.parse_program(
+            """
             test(X, Y) :- (X = 1 -> Y = a ; Y = b).
-        """)
+        """
+        )
         engine = Engine(Program(tuple(clauses)), trace=True)
         engine.tracer.enable_internal_events = True
 
@@ -73,9 +75,11 @@ class TestIfThenElseInternalEvents:
         internal_events = [e for e in collector.events if isinstance(e, InternalEvent)]
 
         # Should have cp_push followed by cp_pop (commit)
-        cp_events = [(e.kind, e.details.get("pred_id", ""))
-                     for e in internal_events
-                     if e.kind in ["cp_push", "cp_pop"]]
+        cp_events = [
+            (e.kind, e.details.get("pred_id", ""))
+            for e in internal_events
+            if e.kind in ["cp_push", "cp_pop"]
+        ]
 
         # Find if-then-else related events
         ite_push_idx = None
@@ -95,9 +99,11 @@ class TestIfThenElseInternalEvents:
     def test_ite_else_branch_taken(self):
         """Test that else branch is taken when condition fails."""
         # Create a program with if-then-else
-        clauses = parser.parse_program("""
+        clauses = parser.parse_program(
+            """
             test(X, Y) :- (X = 2 -> Y = a ; Y = b).
-        """)
+        """
+        )
         engine = Engine(Program(tuple(clauses)), trace=True)
         engine.tracer.enable_internal_events = True
 
@@ -117,8 +123,9 @@ class TestIfThenElseInternalEvents:
 
         # Should have CALL and EXIT for test predicate
         # Note: pred_id might be test/2 or test/0 depending on arity transformation
-        test_events = [(e.port, e.pred_id) for e in trace_events
-                       if e.pred_id.startswith("test/")]
+        test_events = [
+            (e.port, e.pred_id) for e in trace_events if e.pred_id.startswith("test/")
+        ]
 
         # Should have both CALL and EXIT ports
         ports = [port for port, _ in test_events]
@@ -131,14 +138,16 @@ class TestIfThenElseInternalEvents:
     def test_ite_nested_behavior(self):
         """Test nested if-then-else behavior."""
         # Create a program with nested if-then-else
-        clauses = parser.parse_program("""
+        clauses = parser.parse_program(
+            """
             test(X, Y) :-
                 (X = 1 ->
                     (Y = a ; Y = b)
                 ;
                     (Y = c ; Y = d)
                 ).
-        """)
+        """
+        )
         engine = Engine(Program(tuple(clauses)), trace=True)
         engine.tracer.enable_internal_events = True
 
@@ -168,10 +177,12 @@ class TestIfThenElseInternalEvents:
     def test_ite_with_cut_interaction(self):
         """Test if-then-else with cut interaction."""
         # Create a program with if-then-else and cut
-        clauses = parser.parse_program("""
+        clauses = parser.parse_program(
+            """
             test(X, Y) :- (X = 1 -> !, Y = a ; Y = b).
             test(X, c).
-        """)
+        """
+        )
         engine = Engine(Program(tuple(clauses)), trace=True)
         engine.tracer.enable_internal_events = True
 
@@ -200,13 +211,15 @@ class TestIfThenElseInternalEvents:
     def test_ite_port_sequence(self):
         """Test that if-then-else maintains correct 4-port sequence."""
         # Create a program with if-then-else
-        clauses = parser.parse_program("""
+        clauses = parser.parse_program(
+            """
             cond(1).
             then_branch(a).
             else_branch(b).
 
             test(X, Y) :- (cond(X) -> then_branch(Y) ; else_branch(Y)).
-        """)
+        """
+        )
         engine = Engine(Program(tuple(clauses)), trace=True)
 
         # Use collector sink to capture events
@@ -228,7 +241,7 @@ class TestIfThenElseInternalEvents:
 
         # Should have proper nesting with predicates (arities may vary)
         # Extract just the ports and predicate names
-        port_pred_names = [(e.port, e.pred_id.split('/')[0]) for e in trace_events]
+        port_pred_names = [(e.port, e.pred_id.split("/")[0]) for e in trace_events]
 
         # Check that test is called and exits
         assert ("call", "test") in port_pred_names
@@ -243,5 +256,15 @@ class TestIfThenElseInternalEvents:
         assert ("exit", "then_branch") in port_pred_names
 
         # Validate that else_branch is NOT called when then branch is taken
-        assert ("call", "else_branch") not in port_pred_names, "else_branch should not be called when then branch succeeds"
-        assert ("exit", "else_branch") not in port_pred_names, "else_branch should not exit when then branch succeeds"
+        assert (
+            "call",
+            "else_branch",
+        ) not in port_pred_names, (
+            "else_branch should not be called when then branch succeeds"
+        )
+        assert (
+            "exit",
+            "else_branch",
+        ) not in port_pred_names, (
+            "else_branch should not exit when then branch succeeds"
+        )

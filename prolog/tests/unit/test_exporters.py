@@ -8,7 +8,7 @@ from prolog.debug.exporters import (
     export_call_graph,
     export_constraint_graph,
     parse_dot_graph,
-    extract_predicate_relationships
+    extract_predicate_relationships,
 )
 
 
@@ -21,7 +21,7 @@ class TestCallGraphExporter:
             Clause(Struct("parent", (Atom("tom"), Atom("bob"))), ()),
             Clause(Struct("parent", (Atom("bob"), Atom("pat"))), ()),
             Clause(Struct("male", (Atom("tom"),)), ()),
-            Clause(Struct("male", (Atom("bob"),)), ())
+            Clause(Struct("male", (Atom("bob"),)), ()),
         ]
         program = Program(tuple(clauses))
 
@@ -47,9 +47,9 @@ class TestCallGraphExporter:
                 Struct("grandparent", (Var(0, "X"), Var(1, "Z"))),
                 (
                     Struct("parent", (Var(0, "X"), Var(2, "Y"))),
-                    Struct("parent", (Var(2, "Y"), Var(1, "Z")))
-                )
-            )
+                    Struct("parent", (Var(2, "Y"), Var(1, "Z"))),
+                ),
+            ),
         ]
         program = Program(tuple(clauses))
 
@@ -68,8 +68,8 @@ class TestCallGraphExporter:
             Clause(Struct("nat", (Int(0),)), ()),
             Clause(
                 Struct("nat", (Struct("s", (Var(0, "N"),)),)),
-                (Struct("nat", (Var(0, "N"),)),)
-            )
+                (Struct("nat", (Var(0, "N"),)),),
+            ),
         ]
         program = Program(tuple(clauses))
 
@@ -87,16 +87,16 @@ class TestCallGraphExporter:
             Clause(Struct("even", (Int(0),)), ()),
             Clause(
                 Struct("even", (Struct("s", (Struct("s", (Var(0, "N"),)),)),)),
-                (Struct("even", (Var(0, "N"),)),)
+                (Struct("even", (Var(0, "N"),)),),
             ),
             Clause(
                 Struct("odd", (Struct("s", (Var(0, "N"),)),)),
-                (Struct("even", (Var(0, "N"),)),)
+                (Struct("even", (Var(0, "N"),)),),
             ),
             Clause(
                 Struct("even", (Struct("s", (Var(0, "N"),)),)),
-                (Struct("odd", (Var(0, "N"),)),)
-            )
+                (Struct("odd", (Var(0, "N"),)),),
+            ),
         ]
         program = Program(tuple(clauses))
 
@@ -120,8 +120,8 @@ class TestCallGraphExporter:
                 (
                     Struct("is", (Var(0, "X"), Struct("+", (Int(1), Int(2))))),
                     Struct("=", (Var(1, "Y"), Var(0, "X"))),
-                    Atom("!")
-                )
+                    Atom("!"),
+                ),
             )
         ]
         program = Program(tuple(clauses))
@@ -138,10 +138,12 @@ class TestCallGraphExporter:
 
         # Built-ins should have special style (anchored to node)
         # At least one of these patterns should match for each builtin
-        builtin_style_pattern = r'"\w+/\d+"\s*\[(?:[^\]]*(?:style=dashed|shape=box)[^\]]*)\]'
-        assert re.search(builtin_style_pattern.replace(r'\w+/\d+', 'is/2'), dot)
-        assert re.search(builtin_style_pattern.replace(r'\w+/\d+', '=/2'), dot)
-        assert re.search(builtin_style_pattern.replace(r'\w+/\d+', '!/0'), dot)
+        builtin_style_pattern = (
+            r'"\w+/\d+"\s*\[(?:[^\]]*(?:style=dashed|shape=box)[^\]]*)\]'
+        )
+        assert re.search(builtin_style_pattern.replace(r"\w+/\d+", "is/2"), dot)
+        assert re.search(builtin_style_pattern.replace(r"\w+/\d+", "=/2"), dot)
+        assert re.search(builtin_style_pattern.replace(r"\w+/\d+", "!/0"), dot)
 
     def test_export_complex_program(self):
         """Complex program with multiple predicates and relationships."""
@@ -152,40 +154,46 @@ class TestCallGraphExporter:
             Clause(Struct("male", (Atom("tom"),)), ()),
             Clause(Struct("male", (Atom("bob"),)), ()),
             Clause(Struct("female", (Atom("ann"),)), ()),
-
             # Rules
             Clause(
                 Struct("father", (Var(0, "X"), Var(1, "Y"))),
                 (
                     Struct("parent", (Var(0, "X"), Var(1, "Y"))),
-                    Struct("male", (Var(0, "X"),))
-                )
+                    Struct("male", (Var(0, "X"),)),
+                ),
             ),
             Clause(
                 Struct("mother", (Var(0, "X"), Var(1, "Y"))),
                 (
                     Struct("parent", (Var(0, "X"), Var(1, "Y"))),
-                    Struct("female", (Var(0, "X"),))
-                )
+                    Struct("female", (Var(0, "X"),)),
+                ),
             ),
             Clause(
                 Struct("ancestor", (Var(0, "X"), Var(1, "Y"))),
-                (Struct("parent", (Var(0, "X"), Var(1, "Y"))),)
+                (Struct("parent", (Var(0, "X"), Var(1, "Y"))),),
             ),
             Clause(
                 Struct("ancestor", (Var(0, "X"), Var(1, "Z"))),
                 (
                     Struct("parent", (Var(0, "X"), Var(2, "Y"))),
-                    Struct("ancestor", (Var(2, "Y"), Var(1, "Z")))
-                )
-            )
+                    Struct("ancestor", (Var(2, "Y"), Var(1, "Z"))),
+                ),
+            ),
         ]
         program = Program(tuple(clauses))
 
         dot = export_call_graph(program)
 
         # All predicates should be nodes
-        for pred in ["parent/2", "male/1", "female/1", "father/2", "mother/2", "ancestor/2"]:
+        for pred in [
+            "parent/2",
+            "male/1",
+            "female/1",
+            "father/2",
+            "mother/2",
+            "ancestor/2",
+        ]:
             assert f'"{pred}"' in dot
 
         # Check edges
@@ -199,12 +207,9 @@ class TestCallGraphExporter:
     def test_dot_format_validity(self):
         """Generated DOT should be syntactically valid."""
         clauses = [
-            Clause(
-                Struct("p", (Var(0, "X"),)),
-                (Struct("q", (Var(0, "X"),)),)
-            ),
+            Clause(Struct("p", (Var(0, "X"),)), (Struct("q", (Var(0, "X"),)),)),
             Clause(Struct("q", (Atom("a"),)), ()),
-            Clause(Struct("q", (Atom("b"),)), ())  # Multiple clauses of q
+            Clause(Struct("q", (Atom("b"),)), ()),  # Multiple clauses of q
         ]
         program = Program(tuple(clauses))
 
@@ -215,8 +220,12 @@ class TestCallGraphExporter:
         assert dot.endswith("}")
 
         # Node declarations (should appear exactly once despite multiple clauses)
-        node_p_count = len(re.findall(r'^\s*"p/1"\s*(?:\[.*?\])?;\s*$', dot, re.MULTILINE))
-        node_q_count = len(re.findall(r'^\s*"q/1"\s*(?:\[.*?\])?;\s*$', dot, re.MULTILINE))
+        node_p_count = len(
+            re.findall(r'^\s*"p/1"\s*(?:\[.*?\])?;\s*$', dot, re.MULTILINE)
+        )
+        node_q_count = len(
+            re.findall(r'^\s*"q/1"\s*(?:\[.*?\])?;\s*$', dot, re.MULTILINE)
+        )
         assert node_p_count == 1, f"p/1 node declared {node_p_count} times"
         assert node_q_count == 1, f"q/1 node declared {node_q_count} times"
 
@@ -241,12 +250,9 @@ class TestCallGraphExporter:
         clauses = [
             Clause(
                 Struct("p", (Var(0, "X"),)),
-                (
-                    Struct("q", (Var(0, "X"),)),
-                    Struct("r", (Var(0, "X"),))
-                )
+                (Struct("q", (Var(0, "X"),)), Struct("r", (Var(0, "X"),))),
             ),
-            Clause(Struct("q", (Atom("a"),)), ())  # q/1 fact
+            Clause(Struct("q", (Atom("a"),)), ()),  # q/1 fact
         ]
         program = Program(tuple(clauses))
 
@@ -259,17 +265,17 @@ class TestCallGraphExporter:
 
     def test_graph_layout_hints(self):
         """Graph should include layout hints for better visualization."""
-        clauses = [
-            Clause(Struct("p", ()), ())
-        ]
+        clauses = [Clause(Struct("p", ()), ())]
         program = Program(tuple(clauses))
 
         dot = export_call_graph(program)
 
         # Should have layout hints at graph scope
-        has_rankdir = re.search(r'^\s*rankdir\s*=\s*(LR|TB|RL|BT)\s*;', dot, re.MULTILINE)
-        has_node_defaults = re.search(r'^\s*node\s*\[', dot, re.MULTILINE)
-        has_edge_defaults = re.search(r'^\s*edge\s*\[', dot, re.MULTILINE)
+        has_rankdir = re.search(
+            r"^\s*rankdir\s*=\s*(LR|TB|RL|BT)\s*;", dot, re.MULTILINE
+        )
+        has_node_defaults = re.search(r"^\s*node\s*\[", dot, re.MULTILINE)
+        has_edge_defaults = re.search(r"^\s*edge\s*\[", dot, re.MULTILINE)
         assert has_rankdir or has_node_defaults or has_edge_defaults
 
     def test_operator_predicates_quoted_and_linked(self):
@@ -277,9 +283,9 @@ class TestCallGraphExporter:
         clauses = [
             Clause(
                 Struct("eq_test", (Var(0, "X"), Var(1, "Y"))),
-                (Struct("=", (Var(0, "X"), Var(1, "Y"))),)
+                (Struct("=", (Var(0, "X"), Var(1, "Y"))),),
             ),
-            Clause(Struct("cut_test", ()), (Atom("!"),))
+            Clause(Struct("cut_test", ()), (Atom("!"),)),
         ]
         program = Program(tuple(clauses))
 
@@ -298,10 +304,7 @@ class TestCallGraphExporter:
     def test_disjunction_descends(self):
         """Disjunction (;/2) should descend to find nested predicates."""
         clauses = [
-            Clause(
-                Struct("p", ()),
-                (Struct(";", (Struct("q", ()), Struct("r", ()))),)
-            )
+            Clause(Struct("p", ()), (Struct(";", (Struct("q", ()), Struct("r", ()))),))
         ]
         program = Program(tuple(clauses))
         dot = export_call_graph(program)
@@ -312,12 +315,7 @@ class TestCallGraphExporter:
 
     def test_negation_descends(self):
         """Negation (\\+/1) should descend to find nested predicates."""
-        clauses = [
-            Clause(
-                Struct("p", ()),
-                (Struct("\\+", (Struct("q", ()),)),)
-            )
-        ]
+        clauses = [Clause(Struct("p", ()), (Struct("\\+", (Struct("q", ()),)),))]
         program = Program(tuple(clauses))
         dot = export_call_graph(program)
 
@@ -327,10 +325,9 @@ class TestCallGraphExporter:
     def test_if_then_else_descends(self):
         """If-then-else should descend into all branches."""
         # Canonical form: ;(->(Cond, Then), Else)
-        ite = Struct(";", (
-            Struct("->", (Struct("q", ()), Struct("r", ()))),
-            Struct("s", ())
-        ))
+        ite = Struct(
+            ";", (Struct("->", (Struct("q", ()), Struct("r", ()))), Struct("s", ()))
+        )
         clauses = [Clause(Struct("p", ()), (ite,))]
         program = Program(tuple(clauses))
         dot = export_call_graph(program)
@@ -354,10 +351,9 @@ class TestCallGraphExporter:
     def test_nested_control_dedup(self):
         """Nested control structures should not duplicate edges."""
         # p :- (q ; (q, r)).
-        nested = Struct(";", (
-            Struct("q", ()),
-            Struct(",", (Struct("q", ()), Struct("r", ())))
-        ))
+        nested = Struct(
+            ";", (Struct("q", ()), Struct(",", (Struct("q", ()), Struct("r", ()))))
+        )
         clauses = [Clause(Struct("p", ()), (nested,))]
         program = Program(tuple(clauses))
         dot = export_call_graph(program)
@@ -371,7 +367,7 @@ class TestCallGraphExporter:
         clauses = [
             Clause(
                 Struct("p", (Var(0, "X"),)),
-                (Struct("is", (Var(0, "X"), Struct("+", (Int(1), Int(2))))),)
+                (Struct("is", (Var(0, "X"), Struct("+", (Int(1), Int(2))))),),
             )
         ]
         program = Program(tuple(clauses))
@@ -385,13 +381,16 @@ class TestCallGraphExporter:
     def test_deeply_nested_control(self):
         """Deeply nested control structures should be handled."""
         # p :- (a ; (b , (c ; d))).
-        deep = Struct(";", (
-            Struct("a", ()),
-            Struct(",", (
-                Struct("b", ()),
-                Struct(";", (Struct("c", ()), Struct("d", ())))
-            ))
-        ))
+        deep = Struct(
+            ";",
+            (
+                Struct("a", ()),
+                Struct(
+                    ",",
+                    (Struct("b", ()), Struct(";", (Struct("c", ()), Struct("d", ())))),
+                ),
+            ),
+        )
         clauses = [Clause(Struct("p", ()), (deep,))]
         program = Program(tuple(clauses))
         dot = export_call_graph(program)
@@ -409,12 +408,11 @@ class TestCallGraphExporter:
                 (
                     Struct("call", (Struct("q", ()),)),
                     Struct("once", (Struct("r", ()),)),
-                    Struct("findall", (
-                        Var(0, "X"),
-                        Struct("s", (Var(0, "X"),)),
-                        Var(1, "L")
-                    ))
-                )
+                    Struct(
+                        "findall",
+                        (Var(0, "X"), Struct("s", (Var(0, "X"),)), Var(1, "L")),
+                    ),
+                ),
             )
         ]
         program = Program(tuple(clauses))
@@ -475,12 +473,13 @@ class TestConstraintGraphExporter:
     def test_placeholder_ready_for_clpfd(self):
         """Structure is ready for CLP(FD) integration."""
         variables = [Var(0, "X"), Var(1, "Y")]
-        dot = export_constraint_graph(variables,
-                                     constraints=[("neq", "X \\= Y")])
+        dot = export_constraint_graph(variables, constraints=[("neq", "X \\= Y")])
 
         # Should represent constraints somehow
         # Accept either a labelled edge or a graph label containing the constraint
-        assert ('"var_0"' in dot and '"var_1"' in dot and 'neq' in dot) or ('X \\= Y' in dot)
+        assert ('"var_0"' in dot and '"var_1"' in dot and "neq" in dot) or (
+            "X \\= Y" in dot
+        )
 
     def test_constraint_graph_format(self):
         """Constraint graph has proper DOT format."""
@@ -605,9 +604,9 @@ class TestIntegration:
                 Struct("grandparent", (Var(0, "X"), Var(1, "Z"))),
                 (
                     Struct("parent", (Var(0, "X"), Var(2, "Y"))),
-                    Struct("parent", (Var(2, "Y"), Var(1, "Z")))
-                )
-            )
+                    Struct("parent", (Var(2, "Y"), Var(1, "Z"))),
+                ),
+            ),
         ]
         program = Program(tuple(clauses))
 

@@ -3,7 +3,6 @@
 Tests for builtin infrastructure and basic builtins like true/0, fail/0, and call/1.
 """
 
-import pytest
 from prolog.ast.terms import Atom, Var, Struct, Int, List
 from prolog.engine.engine import Engine
 
@@ -40,7 +39,7 @@ class TestBuiltinInfrastructure:
         assert not engine._is_builtin(Struct("fail", (Atom("a"),)))
 
     def test_is_builtin_recognizes_call(self):
-        """Test _is_builtin recognizes call/1 (structural)."""
+        """Test _is_builtin recognizes call/1-8 (structural)."""
         engine = Engine(program())
 
         # call/1 should be recognized as builtin
@@ -49,8 +48,17 @@ class TestBuiltinInfrastructure:
         # call/0 should NOT be recognized
         assert not engine._is_builtin(Atom("call"))
 
-        # call/2 should NOT be recognized
-        assert not engine._is_builtin(Struct("call", (Atom("a"), Atom("b"))))
+        # call/2-8 should be recognized as builtin (ISO compliance)
+        assert engine._is_builtin(Struct("call", (Atom("a"), Atom("b"))))
+        assert engine._is_builtin(Struct("call", (Atom("a"), Atom("b"), Atom("c"))))
+        assert engine._is_builtin(
+            Struct("call", tuple(Atom(f"arg{i}") for i in range(8)))
+        )
+
+        # call/9 should NOT be recognized (beyond ISO range)
+        assert not engine._is_builtin(
+            Struct("call", tuple(Atom(f"arg{i}") for i in range(9)))
+        )
 
     def test_is_builtin_recognizes_cut(self):
         """Test _is_builtin still recognizes cut (!) (structural)."""
@@ -588,23 +596,24 @@ class TestBuiltinIntegration:
 # MERGED FROM test_builtin_arity_errors.py
 # =============================================================================
 
+
 class TestUnificationBuiltinArity:
     """Test arity errors for unification builtins."""
 
     def test_unify_wrong_arity(self):
         """Test =/2 with wrong number of arguments."""
         engine = Engine(program())
-        
+
         # = with 1 argument
         query1 = Struct("=", (Int(5),))
         solutions1 = engine.run([query1])
         assert len(solutions1) == 0
-        
+
         # = with 3 arguments
         query2 = Struct("=", (Int(5), Int(5), Int(5)))
         solutions2 = engine.run([query2])
         assert len(solutions2) == 0
-        
+
         # = with 0 arguments
         query3 = Struct("=", ())
         solutions3 = engine.run([query3])
@@ -613,12 +622,12 @@ class TestUnificationBuiltinArity:
     def test_not_unify_wrong_arity(self):
         """Test \\=/2 with wrong number of arguments."""
         engine = Engine(program())
-        
+
         # \\= with 1 argument
         query1 = Struct("\\=", (Int(5),))
         solutions1 = engine.run([query1])
         assert len(solutions1) == 0
-        
+
         # \\= with 3 arguments
         query2 = Struct("\\=", (Int(5), Int(6), Int(7)))
         solutions2 = engine.run([query2])
@@ -631,12 +640,12 @@ class TestTypeCheckBuiltinArity:
     def test_var_wrong_arity(self):
         """Test var/1 with wrong number of arguments."""
         engine = Engine(program())
-        
+
         # var with 0 arguments
         query1 = Struct("var", ())
         solutions1 = engine.run([query1])
         assert len(solutions1) == 0
-        
+
         # var with 2 arguments
         query2 = Struct("var", (Var(0, "X"), Var(1, "Y")))
         solutions2 = engine.run([query2])
@@ -645,12 +654,12 @@ class TestTypeCheckBuiltinArity:
     def test_nonvar_wrong_arity(self):
         """Test nonvar/1 with wrong number of arguments."""
         engine = Engine(program())
-        
+
         # nonvar with 0 arguments
         query1 = Struct("nonvar", ())
         solutions1 = engine.run([query1])
         assert len(solutions1) == 0
-        
+
         # nonvar with 2 arguments
         query2 = Struct("nonvar", (Int(5), Int(6)))
         solutions2 = engine.run([query2])
@@ -659,12 +668,12 @@ class TestTypeCheckBuiltinArity:
     def test_atom_wrong_arity(self):
         """Test atom/1 with wrong number of arguments."""
         engine = Engine(program())
-        
+
         # atom with 0 arguments
         query1 = Struct("atom", ())
         solutions1 = engine.run([query1])
         assert len(solutions1) == 0
-        
+
         # atom with 2 arguments
         query2 = Struct("atom", (Atom("a"), Atom("b")))
         solutions2 = engine.run([query2])
@@ -677,12 +686,12 @@ class TestMetaBuiltinArity:
     def test_call_wrong_arity(self):
         """Test call/1 with wrong number of arguments."""
         engine = Engine(program())
-        
+
         # call with 0 arguments
         query1 = Struct("call", ())
         solutions1 = engine.run([query1])
         assert len(solutions1) == 0
-        
+
         # call with 2 arguments
         query2 = Struct("call", (Atom("true"), Atom("extra")))
         solutions2 = engine.run([query2])
@@ -691,46 +700,38 @@ class TestMetaBuiltinArity:
     def test_catch_wrong_arity(self):
         """Test catch/3 with wrong number of arguments."""
         engine = Engine(program())
-        
+
         # catch with 1 argument
         query1 = Struct("catch", (Atom("true"),))
         solutions1 = engine.run([query1])
         assert len(solutions1) == 0
-        
+
         # catch with 2 arguments
         query2 = Struct("catch", (Atom("true"), Var(0, "X")))
         solutions2 = engine.run([query2])
         assert len(solutions2) == 0
-        
+
         # catch with 4 arguments
-        query3 = Struct("catch", (
-            Atom("true"),
-            Var(0, "X"),
-            Atom("fail"),
-            Atom("extra")
-        ))
+        query3 = Struct(
+            "catch", (Atom("true"), Var(0, "X"), Atom("fail"), Atom("extra"))
+        )
         solutions3 = engine.run([query3])
         assert len(solutions3) == 0
 
     def test_throw_wrong_arity(self):
         """Test throw/1 with wrong number of arguments."""
         engine = Engine(program())
-        
+
         # throw with 0 arguments
-        query1 = Struct("catch", (
-            Struct("throw", ()),
-            Var(0, "X"),
-            Atom("true")
-        ))
+        query1 = Struct("catch", (Struct("throw", ()), Var(0, "X"), Atom("true")))
         solutions1 = engine.run([query1])
         assert len(solutions1) == 0  # throw fails
-        
+
         # throw with 2 arguments
-        query2 = Struct("catch", (
-            Struct("throw", (Atom("e"), Atom("extra"))),
-            Var(1, "Y"),
-            Atom("true")
-        ))
+        query2 = Struct(
+            "catch",
+            (Struct("throw", (Atom("e"), Atom("extra"))), Var(1, "Y"), Atom("true")),
+        )
         solutions2 = engine.run([query2])
         assert len(solutions2) == 0  # throw fails
 
@@ -741,67 +742,56 @@ class TestStructureBuiltinArity:
     def test_functor_wrong_arity(self):
         """Test functor/3 with wrong number of arguments."""
         engine = Engine(program())
-        
+
         # functor with 1 argument
         query1 = Struct("functor", (Atom("foo"),))
         solutions1 = engine.run([query1])
         assert len(solutions1) == 0
-        
+
         # functor with 2 arguments
         query2 = Struct("functor", (Atom("foo"), Atom("foo")))
         solutions2 = engine.run([query2])
         assert len(solutions2) == 0
-        
+
         # functor with 4 arguments
-        query3 = Struct("functor", (
-            Atom("foo"),
-            Atom("foo"),
-            Int(0),
-            Atom("extra")
-        ))
+        query3 = Struct("functor", (Atom("foo"), Atom("foo"), Int(0), Atom("extra")))
         solutions3 = engine.run([query3])
         assert len(solutions3) == 0
 
     def test_arg_wrong_arity(self):
         """Test arg/3 with wrong number of arguments."""
         engine = Engine(program())
-        
+
         # arg with 1 argument
         query1 = Struct("arg", (Int(1),))
         solutions1 = engine.run([query1])
         assert len(solutions1) == 0
-        
+
         # arg with 2 arguments
         query2 = Struct("arg", (Int(1), Struct("f", (Atom("a"),))))
         solutions2 = engine.run([query2])
         assert len(solutions2) == 0
-        
+
         # arg with 4 arguments
-        query3 = Struct("arg", (
-            Int(1),
-            Struct("f", (Atom("a"),)),
-            Var(0, "X"),
-            Atom("extra")
-        ))
+        query3 = Struct(
+            "arg", (Int(1), Struct("f", (Atom("a"),)), Var(0, "X"), Atom("extra"))
+        )
         solutions3 = engine.run([query3])
         assert len(solutions3) == 0
 
     def test_univ_wrong_arity(self):
         """Test =../2 with wrong number of arguments."""
         engine = Engine(program())
-        
+
         # =.. with 1 argument
         query1 = Struct("=..", (Atom("foo"),))
         solutions1 = engine.run([query1])
         assert len(solutions1) == 0
-        
+
         # =.. with 3 arguments
         from prolog.ast.terms import List
-        query2 = Struct("=..", (
-            Atom("foo"),
-            List((Atom("foo"),)),
-            Atom("extra")
-        ))
+
+        query2 = Struct("=..", (Atom("foo"), List((Atom("foo"),)), Atom("extra")))
         solutions2 = engine.run([query2])
         assert len(solutions2) == 0
 
@@ -812,12 +802,12 @@ class TestControlBuiltinArity:
     def test_cut_wrong_arity(self):
         """Test !/0 with wrong number of arguments."""
         engine = Engine(program())
-        
+
         # ! with 1 argument
         query1 = Struct("!", (Atom("arg"),))
         solutions1 = engine.run([query1])
         assert len(solutions1) == 0
-        
+
         # ! with 2 arguments
         query2 = Struct("!", (Atom("arg1"), Atom("arg2")))
         solutions2 = engine.run([query2])
@@ -826,7 +816,7 @@ class TestControlBuiltinArity:
     def test_true_wrong_arity(self):
         """Test true/0 with wrong number of arguments."""
         engine = Engine(program())
-        
+
         # true with 1 argument
         query1 = Struct("true", (Atom("arg"),))
         solutions1 = engine.run([query1])
@@ -835,7 +825,7 @@ class TestControlBuiltinArity:
     def test_fail_wrong_arity(self):
         """Test fail/0 with wrong number of arguments."""
         engine = Engine(program())
-        
+
         # fail with 1 argument
         query1 = Struct("fail", (Atom("arg"),))
         solutions1 = engine.run([query1])
@@ -845,6 +835,7 @@ class TestControlBuiltinArity:
 # =============================================================================
 # MERGED FROM test_builtins_type_checking.py
 # =============================================================================
+
 
 class TestNotUnifiable:
     """Tests for \\=/2 (not unifiable) predicate."""
@@ -945,13 +936,13 @@ class TestNotUnifiable:
         X = Var(0, "X")
         Y = Var(1, "Y")
         # X = 1, Y = 2, X \\= Y
-        query = Struct(",", (
-            Struct("=", (X, Int(1))),
-            Struct(",", (
-                Struct("=", (Y, Int(2))),
-                Struct("\\=", (X, Y))
-            ))
-        ))
+        query = Struct(
+            ",",
+            (
+                Struct("=", (X, Int(1))),
+                Struct(",", (Struct("=", (Y, Int(2))), Struct("\\=", (X, Y)))),
+            ),
+        )
         solutions = engine.run([query])
         assert len(solutions) == 1
         assert solutions[0]["X"] == Int(1)
@@ -1169,16 +1160,19 @@ class TestMixedTypeChecking:
         X = Var(0, "X")
         Y = Var(1, "Y")
         # X = abc, Y = 42, atom(X), nonvar(Y)
-        query = Struct(",", (
-            Struct("=", (X, Atom("abc"))),
-            Struct(",", (
-                Struct("=", (Y, Int(42))),
-                Struct(",", (
-                    Struct("atom", (X,)),
-                    Struct("nonvar", (Y,))
-                ))
-            ))
-        ))
+        query = Struct(
+            ",",
+            (
+                Struct("=", (X, Atom("abc"))),
+                Struct(
+                    ",",
+                    (
+                        Struct("=", (Y, Int(42))),
+                        Struct(",", (Struct("atom", (X,)), Struct("nonvar", (Y,)))),
+                    ),
+                ),
+            ),
+        )
         solutions = engine.run([query])
         assert len(solutions) == 1
         assert solutions[0]["X"] == Atom("abc")
@@ -1190,16 +1184,13 @@ class TestMixedTypeChecking:
         X = Var(0, "X")
         Y = Var(1, "Y")
         # (var(X) ; atom(X)), X = abc, atom(X)
-        query = Struct(",", (
-            Struct(";", (
-                Struct("var", (X,)),
-                Struct("atom", (X,))
-            )),
-            Struct(",", (
-                Struct("=", (X, Atom("abc"))),
-                Struct("atom", (X,))
-            ))
-        ))
+        query = Struct(
+            ",",
+            (
+                Struct(";", (Struct("var", (X,)), Struct("atom", (X,)))),
+                Struct(",", (Struct("=", (X, Atom("abc"))), Struct("atom", (X,)))),
+            ),
+        )
         solutions = engine.run([query])
         assert len(solutions) == 1
         assert solutions[0]["X"] == Atom("abc")

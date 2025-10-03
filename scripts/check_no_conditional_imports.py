@@ -17,7 +17,7 @@ import warnings
 import ast
 import subprocess
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 
 def read_staged_or_worktree(path: Path) -> str:
@@ -55,7 +55,11 @@ def build_parent_map(node: ast.AST) -> Dict[ast.AST, Optional[ast.AST]]:
 
 
 def is_docstring_stmt(stmt: ast.stmt) -> bool:
-    return isinstance(stmt, ast.Expr) and isinstance(getattr(stmt, "value", None), ast.Constant) and isinstance(stmt.value.value, str)
+    return (
+        isinstance(stmt, ast.Expr)
+        and isinstance(getattr(stmt, "value", None), ast.Constant)
+        and isinstance(stmt.value.value, str)
+    )
 
 
 def check_file(path: Path) -> List[str]:
@@ -65,7 +69,7 @@ def check_file(path: Path) -> List[str]:
         # Silence SyntaxWarning noise from docstrings with backslashes, etc.
         warnings.filterwarnings("ignore", category=SyntaxWarning)
         tree = ast.parse(src, filename=str(path))
-    except SyntaxError as e:
+    except SyntaxError:
         # Don't fail commits for syntax errors here; let linters/tests handle it
         return []
 
@@ -96,9 +100,7 @@ def check_file(path: Path) -> List[str]:
             if isinstance(stmt, (ast.Import, ast.ImportFrom)):
                 if seen_non_import:
                     # Late import at top level
-                    errors.append(
-                        f"{path}:{stmt.lineno}: import not at top of file"
-                    )
+                    errors.append(f"{path}:{stmt.lineno}: import not at top of file")
                 continue
             # Any other top-level statement marks end of import section
             seen_non_import = True

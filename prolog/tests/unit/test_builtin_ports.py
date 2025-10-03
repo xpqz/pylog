@@ -4,9 +4,6 @@ Test 4-port events for builtin predicates.
 Tests that builtin predicates emit correct CALL/EXIT/FAIL ports in traces.
 """
 
-import pytest
-from io import StringIO
-
 from prolog.parser import parser
 from prolog.ast.clauses import Program
 from prolog.ast.terms import Int
@@ -132,7 +129,9 @@ class TestBuiltinPorts:
         trace_events = [e for e in collector.events if isinstance(e, TraceEvent)]
 
         # Find nonvar/1 events
-        nonvar_events = [(e.port, e.pred_id) for e in trace_events if e.pred_id == "nonvar/1"]
+        nonvar_events = [
+            (e.port, e.pred_id) for e in trace_events if e.pred_id == "nonvar/1"
+        ]
 
         # Should have CALL followed by FAIL
         assert len(nonvar_events) >= 2
@@ -159,8 +158,9 @@ class TestBuiltinPorts:
         trace_events = [e for e in collector.events if isinstance(e, TraceEvent)]
 
         # Check sequence of builtin calls
-        builtin_events = [(e.port, e.pred_id) for e in trace_events
-                          if e.pred_id in ["is/2", ">/2"]]
+        builtin_events = [
+            (e.port, e.pred_id) for e in trace_events if e.pred_id in ["is/2", ">/2"]
+        ]
 
         # Expected sequence: is/2 CALL, EXIT, is/2 CALL, EXIT, >/2 CALL, EXIT
         expected = [
@@ -169,7 +169,7 @@ class TestBuiltinPorts:
             ("call", "is/2"),
             ("exit", "is/2"),
             ("call", ">/2"),
-            ("exit", ">/2")
+            ("exit", ">/2"),
         ]
 
         assert builtin_events == expected
@@ -177,9 +177,11 @@ class TestBuiltinPorts:
     def test_builtin_frame_depth(self):
         """Test that builtins have correct frame_depth in traces."""
         # Create a program with a rule that calls builtins
-        clauses = parser.parse_program("""
+        clauses = parser.parse_program(
+            """
             test(X, Y) :- X is 5, Y is X + 1.
-        """)
+        """
+        )
         engine = Engine(Program(tuple(clauses)), trace=True)
 
         # Use collector sink to capture events
@@ -198,9 +200,11 @@ class TestBuiltinPorts:
         trace_events = [e for e in collector.events if isinstance(e, TraceEvent)]
 
         # Find test/2 and is/2 events with depths
-        events_with_depths = [(e.port, e.pred_id, e.frame_depth)
-                              for e in trace_events
-                              if e.pred_id in ["test/2", "is/2"]]
+        events_with_depths = [
+            (e.port, e.pred_id, e.frame_depth)
+            for e in trace_events
+            if e.pred_id in ["test/2", "is/2"]
+        ]
 
         # test/2 should be at depth 0, builtins at depth 1
         test_events = [e for e in events_with_depths if e[1] == "test/2"]
@@ -215,11 +219,13 @@ class TestBuiltinPorts:
     def test_zero_arity_port_sequence(self):
         """Test zero-arity predicates maintain correct 4-port parity."""
         # Create a program with zero-arity facts
-        clauses = parser.parse_program("""
+        clauses = parser.parse_program(
+            """
             z.
             z.
             other :- z, fail.
-        """)
+        """
+        )
         engine = Engine(Program(tuple(clauses)), trace=True)
 
         # Use collector sink to capture events
@@ -249,7 +255,9 @@ class TestBuiltinPorts:
 
         # Count exits - should be 2 (one for each fact)
         exit_count = sum(1 for port, _ in z_events if port == "exit")
-        assert exit_count == 2, f"Should have 2 EXIT events (one per fact), got {exit_count}"
+        assert (
+            exit_count == 2
+        ), f"Should have 2 EXIT events (one per fact), got {exit_count}"
 
         # If there's a REDO, it should be between the two EXITs
         if ("redo", "z/0") in z_events:
@@ -269,7 +277,9 @@ class TestBuiltinPorts:
         trace_events = [e for e in collector.events if isinstance(e, TraceEvent)]
 
         # Find other/0 and z/0 events
-        other_events = [(e.port, e.pred_id) for e in trace_events if e.pred_id == "other/0"]
+        other_events = [
+            (e.port, e.pred_id) for e in trace_events if e.pred_id == "other/0"
+        ]
         z_events = [(e.port, e.pred_id) for e in trace_events if e.pred_id == "z/0"]
 
         # other/0 should CALL and FAIL

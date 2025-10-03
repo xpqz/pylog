@@ -9,11 +9,10 @@ Tests cover:
 - Backtracking behavior with Boolean domain changes
 """
 
-import pytest
 from prolog.unify.store import Store
 from prolog.unify.trail import Trail, undo_to
 from prolog.unify.unify import bind
-from prolog.ast.terms import Var, Int
+from prolog.ast.terms import Int
 from prolog.clpfd.domain import Domain
 from prolog.clpfd.api import get_domain, set_domain
 

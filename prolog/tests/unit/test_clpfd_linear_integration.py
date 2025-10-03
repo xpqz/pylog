@@ -3,18 +3,14 @@
 Tests the full integration path through the engine, not just the propagators.
 """
 
-import pytest
-from prolog.ast.terms import Var, Int, Struct, Atom
+from prolog.ast.terms import Var, Int, Struct
 from prolog.engine.engine import Engine, Program
 from prolog.clpfd.api import get_domain
-from prolog.clpfd.domain import Domain
 from prolog.engine.builtins_clpfd import (
     _builtin_in,
     _builtin_fd_eq,
     _builtin_fd_neq,
-    _builtin_fd_lt,
     _builtin_fd_le,
-    _builtin_fd_gt,
     _builtin_fd_ge,
 )
 

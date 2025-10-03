@@ -12,7 +12,7 @@ from prolog.debug.tracer import PortsTracer
 from prolog.debug.sinks import JSONLTraceSink, PrettyTraceSink
 from prolog.parser import parser
 from prolog.ast.clauses import Program
-from prolog.ast.terms import Atom, Int, Var, List
+from prolog.ast.terms import Atom, Int, List
 
 
 class TestEndToEndTraces:
@@ -20,10 +20,12 @@ class TestEndToEndTraces:
 
     def test_trace_append_complete(self):
         """Complete trace of append/3 with all ports."""
-        clauses = parser.parse_program("""
+        clauses = parser.parse_program(
+            """
             append([], L, L).
             append([H|T], L, [H|R]) :- append(T, L, R).
-        """)
+        """
+        )
         engine = Engine(Program(tuple(clauses)), trace=True)
 
         # Add JSONL sink to the tracer
@@ -37,7 +39,7 @@ class TestEndToEndTraces:
 
         # Verify we got the right solution
         assert len(solutions) == 1
-        result = solutions[0]['X']
+        result = solutions[0]["X"]
         assert isinstance(result, List)
         assert len(result.items) == 3
 
@@ -52,24 +54,26 @@ class TestEndToEndTraces:
         assert len(events) > 0
 
         # Verify port sequence includes CALL, EXIT, REDO, FAIL
-        ports = [e['p'] for e in events]
+        ports = [e["p"] for e in events]
         assert 0 in ports  # CALL
         assert 1 in ports  # EXIT
 
         # Verify pred_ids are correct
-        pred_ids = {e.get('pid') for e in events if 'pid' in e}
-        assert 'append/3' in pred_ids
+        pred_ids = {e.get("pid") for e in events if "pid" in e}
+        assert "append/3" in pred_ids
 
         # Verify step_ids are sequential (starting from 1, not 0)
-        step_ids = [e['sid'] for e in events]
+        step_ids = [e["sid"] for e in events]
         assert step_ids == list(range(1, len(step_ids) + 1))
 
     def test_trace_member_with_backtracking(self):
         """Complete trace of member/2 showing backtracking."""
-        clauses = parser.parse_program("""
+        clauses = parser.parse_program(
+            """
             member(X, [X|_]).
             member(X, [_|T]) :- member(X, T).
-        """)
+        """
+        )
         engine = Engine(Program(tuple(clauses)), trace=True)
 
         # Add JSONL sink to the tracer
@@ -83,9 +87,9 @@ class TestEndToEndTraces:
 
         # Should get 3 solutions
         assert len(solutions) == 3
-        assert solutions[0]['X'] == Int(1)
-        assert solutions[1]['X'] == Int(2)
-        assert solutions[2]['X'] == Int(3)
+        assert solutions[0]["X"] == Int(1)
+        assert solutions[1]["X"] == Int(2)
+        assert solutions[2]["X"] == Int(3)
 
         # Close sink to flush events
         sink.close()
@@ -95,7 +99,7 @@ class TestEndToEndTraces:
         events = [json.loads(line) for line in output if line.strip()]
 
         # Should see REDO events for backtracking
-        ports = [e['p'] for e in events]
+        ports = [e["p"] for e in events]
         assert 2 in ports  # REDO
 
         # Verify multiple EXIT events for multiple solutions
@@ -104,10 +108,12 @@ class TestEndToEndTraces:
 
     def test_trace_with_cut(self):
         """Complete trace showing cut behavior."""
-        clauses = parser.parse_program("""
+        clauses = parser.parse_program(
+            """
             first([H|_], H) :- !.
             first([_|T], X) :- first(T, X).
-        """)
+        """
+        )
         engine = Engine(Program(tuple(clauses)), trace=True)
 
         # Add JSONL sink to the tracer
@@ -121,7 +127,7 @@ class TestEndToEndTraces:
 
         # Should only get first element due to cut
         assert len(solutions) == 1
-        assert solutions[0]['X'] == Int(1)
+        assert solutions[0]["X"] == Int(1)
 
         # Close sink to flush events
         sink.close()
@@ -131,12 +137,13 @@ class TestEndToEndTraces:
         events = [json.loads(line) for line in output if line.strip()]
 
         # Verify we see the cut builtin
-        pred_ids = {e.get('pid') for e in events if 'pid' in e}
-        assert '!/0' in pred_ids
+        pred_ids = {e.get("pid") for e in events if "pid" in e}
+        assert "!/0" in pred_ids
 
     def test_trace_with_exception(self):
         """Complete trace with exception handling."""
-        clauses = parser.parse_program("""
+        clauses = parser.parse_program(
+            """
             safe_div(X, Y, R) :-
                 catch(
                     div_check(X, Y, R),
@@ -146,7 +153,8 @@ class TestEndToEndTraces:
 
             div_check(X, 0, _) :- throw(error(division_by_zero)).
             div_check(X, Y, R) :- Y \\= 0, R is X / Y.
-        """)
+        """
+        )
         engine = Engine(Program(tuple(clauses)), trace=True)
 
         # Add JSONL sink to the tracer
@@ -169,16 +177,18 @@ class TestEndToEndTraces:
         events = [json.loads(line) for line in output if line.strip()]
 
         # Should see catch and throw in trace
-        pred_ids = {e.get('pid') for e in events if 'pid' in e}
-        assert 'catch/3' in pred_ids
-        assert 'throw/1' in pred_ids
+        pred_ids = {e.get("pid") for e in events if "pid" in e}
+        assert "catch/3" in pred_ids
+        assert "throw/1" in pred_ids
 
     def test_trace_deep_recursion(self):
         """Trace deep recursion to verify depth tracking."""
-        clauses = parser.parse_program("""
+        clauses = parser.parse_program(
+            """
             count_down(0).
             count_down(N) :- N > 0, N1 is N - 1, count_down(N1).
-        """)
+        """
+        )
         engine = Engine(Program(tuple(clauses)), trace=True)
 
         # Add JSONL sink to the tracer
@@ -202,18 +212,22 @@ class TestEndToEndTraces:
         # Validate recursion via either goal height or number of recursive calls.
         # Frame depth is not a reliable proxy because CALL events are emitted
         # before pushing a new frame and EXIT uses the parent's depth.
-        call_events = [e for e in events if e.get('pid') == 'count_down/1' and e['p'] == 0]
+        call_events = [
+            e for e in events if e.get("pid") == "count_down/1" and e["p"] == 0
+        ]
         assert len(call_events) >= 5  # Should observe multiple recursive CALLs
-        max_goal_height = max(e.get('gh', 0) for e in events)
+        max_goal_height = max(e.get("gh", 0) for e in events)
         assert max_goal_height >= 5
 
     def test_pretty_trace_format(self):
         """Test pretty trace output format."""
-        clauses = parser.parse_program("""
+        clauses = parser.parse_program(
+            """
             parent(tom, bob).
             parent(bob, pat).
             grandparent(X, Z) :- parent(X, Y), parent(Y, Z).
-        """)
+        """
+        )
         engine = Engine(Program(tuple(clauses)), trace=True)
 
         # Add pretty sink to the tracer
@@ -226,7 +240,7 @@ class TestEndToEndTraces:
         solutions = list(engine.run(goals))
 
         assert len(solutions) == 1
-        assert solutions[0]['Z'] == Atom("pat")
+        assert solutions[0]["Z"] == Atom("pat")
 
         # Close sink to flush events
         sink.close()
@@ -239,7 +253,7 @@ class TestEndToEndTraces:
         assert "parent" in output_str
 
         # Should show indentation for nested calls
-        lines = output_str.split('\n')
+        lines = output_str.split("\n")
         # Find lines with different indentation levels
         indents = set()
         for line in lines:
@@ -254,13 +268,15 @@ class TestTraceCompatibility:
 
     def test_all_builtins_work_with_tracing(self):
         """Verify all builtins work correctly with tracing enabled."""
-        clauses = parser.parse_program("""
+        clauses = parser.parse_program(
+            """
             test_arithmetic(X) :- X is 2 + 3 * 4.
             test_comparison :- 5 > 3, 2 =< 4.
             test_unify :- X = Y, Y = 42.
             test_var :- var(X), X = 1, nonvar(X).
             test_list :- append([1,2], [3,4], L), length(L, 4).
-        """)
+        """
+        )
         engine = Engine(Program(tuple(clauses)), trace=True)
 
         # Add JSONL sink to the tracer
@@ -283,13 +299,15 @@ class TestTraceCompatibility:
 
     def test_indexing_with_tracing(self):
         """Verify indexing works correctly with tracing enabled."""
-        clauses = parser.parse_program("""
+        clauses = parser.parse_program(
+            """
             fact(a, 1).
             fact(b, 2).
             fact(c, 3).
             fact(d, 4).
             fact(e, 5).
-        """)
+        """
+        )
 
         # Test with and without indexing
         for use_indexing in [False, True]:
@@ -306,11 +324,12 @@ class TestTraceCompatibility:
             solutions = list(engine.run(goals))
 
             assert len(solutions) == 1
-            assert solutions[0]['X'] == Int(3)
+            assert solutions[0]["X"] == Int(3)
 
     def test_catch_throw_with_tracing(self):
         """Verify catch/throw works with tracing enabled."""
-        clauses = parser.parse_program("""
+        clauses = parser.parse_program(
+            """
             safe_op(X) :-
                 catch(
                     risky_op(X),
@@ -322,7 +341,8 @@ class TestTraceCompatibility:
             risky_op(good) :- true.
 
             handle_error(_).
-        """)
+        """
+        )
         engine = Engine(Program(tuple(clauses)), trace=True)
 
         # Add JSONL sink to the tracer
@@ -343,10 +363,12 @@ class TestTraceStress:
     @pytest.mark.slow
     def test_large_trace_handling(self):
         """Test handling of large traces (many events)."""
-        clauses = parser.parse_program("""
+        clauses = parser.parse_program(
+            """
             generate(0, []).
             generate(N, [N|T]) :- N > 0, N1 is N - 1, generate(N1, T).
-        """)
+        """
+        )
         engine = Engine(Program(tuple(clauses)), trace=True)
 
         # Add JSONL sink to the tracer
@@ -372,26 +394,34 @@ class TestTraceStress:
 
         # All events should have required fields
         for event in events:
-            assert 'sid' in event
-            assert 'p' in event
-            assert 'rid' in event
+            assert "sid" in event
+            assert "p" in event
+            assert "rid" in event
 
     def test_many_spypoints(self):
         """Test performance with many spypoints active."""
-        clauses = parser.parse_program("""
+        clauses = parser.parse_program(
+            """
             pred_a(1).
             pred_a(2).
             pred_b(X) :- pred_a(X).
             pred_c(X) :- pred_b(X).
             pred_d(X) :- pred_c(X).
             pred_e(X) :- pred_d(X).
-        """)
+        """
+        )
         engine = Engine(Program(tuple(clauses)), trace=True)
 
         # Add spypoints and JSONL sink
         output = StringIO()
         sink = JSONLTraceSink(output)
-        engine.tracer.spypoints = {'pred_a/1', 'pred_b/1', 'pred_c/1', 'pred_d/1', 'pred_e/1'}
+        engine.tracer.spypoints = {
+            "pred_a/1",
+            "pred_b/1",
+            "pred_c/1",
+            "pred_d/1",
+            "pred_e/1",
+        }
         engine.tracer.add_sink(sink)
 
         # Run query
@@ -408,29 +438,33 @@ class TestTraceStress:
         events = [json.loads(line) for line in output if line.strip()]
 
         # Should only have events for spied predicates
-        pred_ids = {e.get('pid') for e in events if 'pid' in e}
-        for pred in ['pred_a/1', 'pred_b/1', 'pred_c/1', 'pred_d/1', 'pred_e/1']:
+        pred_ids = {e.get("pid") for e in events if "pid" in e}
+        for pred in ["pred_a/1", "pred_b/1", "pred_c/1", "pred_d/1", "pred_e/1"]:
             assert pred in pred_ids
 
     def test_trace_memory_bounded(self):
         """Verify trace memory usage is bounded with file rotation."""
-        clauses = parser.parse_program("""
+        clauses = parser.parse_program(
+            """
             bounded_loop(0).
             bounded_loop(N) :- N > 0, N1 is N - 1, bounded_loop(N1).
-        """)
+        """
+        )
         engine = Engine(Program(tuple(clauses)), trace=True)
 
         # Use JSONL sink with max file size for bounded output
         import tempfile
         import os
 
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.jsonl', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
             temp_file = f.name
 
         try:
             # Create a JSONL sink with file rotation
-            with open(temp_file, 'w') as output:
-                sink = JSONLTraceSink(output)  # Note: file rotation would need implementation
+            with open(temp_file, "w") as output:
+                sink = JSONLTraceSink(
+                    output
+                )  # Note: file rotation would need implementation
                 engine.tracer.add_sink(sink)
 
                 # Run bounded loop that would generate many events

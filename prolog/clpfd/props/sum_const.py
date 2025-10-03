@@ -21,12 +21,13 @@ def create_sum_const_propagator(z_id: int, x_id: int, k: int):
         x_id: Var ID for X
         k: constant integer
     """
+
     def prop(store, trail, engine, cause) -> Tuple[str, Optional[List[int]]]:
         z_dom = get_domain(store, z_id)
         x_dom = get_domain(store, x_id)
 
         if z_dom is None and x_dom is None:
-            return ('ok', None)
+            return ("ok", None)
 
         changed: List[int] = []
 
@@ -39,7 +40,7 @@ def create_sum_const_propagator(z_id: int, x_id: int, k: int):
                 new_z = z_from_x
 
             if new_z.is_empty():
-                return ('fail', None)
+                return ("fail", None)
             if z_dom is None or new_z is not z_dom:
                 set_domain(store, z_id, new_z, trail)
                 changed.append(z_id)
@@ -54,12 +55,11 @@ def create_sum_const_propagator(z_id: int, x_id: int, k: int):
                 new_x = x_from_z
 
             if new_x.is_empty():
-                return ('fail', None)
+                return ("fail", None)
             if x_dom is None or new_x is not x_dom:
                 set_domain(store, x_id, new_x, trail)
                 changed.append(x_id)
 
-        return ('ok', changed if changed else None)
+        return ("ok", changed if changed else None)
 
     return prop
-

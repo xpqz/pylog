@@ -10,7 +10,7 @@ ISO errors. ISO error behavior to be added in later stages.
 """
 
 import pytest
-from prolog.ast.terms import Atom, Var, Struct, Int, List
+from prolog.ast.terms import Atom, Var, Struct, Int
 from prolog.engine.engine import Engine
 from prolog.tests.helpers import mk_fact, mk_rule, program
 
@@ -592,6 +592,7 @@ class TestOnceAdvancedSemantics:
 # MERGED FROM test_once_builtin.py
 # =============================================================================
 
+
 @pytest.fixture
 def multi_solution_engine():
     """Create an engine with predicates that have multiple solutions."""
@@ -599,9 +600,9 @@ def multi_solution_engine():
         mk_fact("color", Atom("red")),
         mk_fact("color", Atom("green")),
         mk_fact("color", Atom("blue")),
-        mk_fact("number", Int(1)),
-        mk_fact("number", Int(2)),
-        mk_fact("number", Int(3)),
+        mk_fact("value", Int(1)),
+        mk_fact("value", Int(2)),
+        mk_fact("value", Int(3)),
         mk_fact("single", Atom("only")),
     )
     return Engine(p)
@@ -637,10 +638,7 @@ class TestOnceBasic:
         X = Var(0, "X")
         Y = Var(1, "Y")
         # once((color(X), number(Y))) - should get first combination only
-        conj = Struct(",", (
-            Struct("color", (X,)),
-            Struct("number", (Y,))
-        ))
+        conj = Struct(",", (Struct("color", (X,)), Struct("value", (Y,))))
         query = Struct("once", (conj,))
         solutions = multi_solution_engine.run([query])
         assert len(solutions) == 1
@@ -651,10 +649,7 @@ class TestOnceBasic:
         """Test once/1 with disjunction inside."""
         X = Var(0, "X")
         # once((color(X) ; number(X))) - should get first solution from first branch
-        disj = Struct(";", (
-            Struct("color", (X,)),
-            Struct("number", (X,))
-        ))
+        disj = Struct(";", (Struct("color", (X,)), Struct("value", (X,))))
         query = Struct("once", (disj,))
         solutions = multi_solution_engine.run([query])
         assert len(solutions) == 1
@@ -676,10 +671,9 @@ class TestOnceWithVariables:
         X = Var(0, "X")
         Y = Var(1, "Y")
         # X = color(Y), once(X)
-        query = Struct(",", (
-            Struct("=", (X, Struct("color", (Y,)))),
-            Struct("once", (X,))
-        ))
+        query = Struct(
+            ",", (Struct("=", (X, Struct("color", (Y,)))), Struct("once", (X,)))
+        )
         solutions = multi_solution_engine.run([query])
         assert len(solutions) == 1
         assert solutions[0]["Y"] == Atom("red")
@@ -709,12 +703,11 @@ class TestOnceNestedMerged:
         Y = Var(1, "Y")
         # (once(color(X)) ; number(Y))
         # First branch gives one solution, second branch gives three
-        query = Struct(";", (
-            Struct("once", (Struct("color", (X,)),)),
-            Struct("number", (Y,))
-        ))
+        query = Struct(
+            ";", (Struct("once", (Struct("color", (X,)),)), Struct("value", (Y,)))
+        )
         solutions = multi_solution_engine.run([query])
-        assert len(solutions) == 4  # 1 from once(color) + 3 from number
+        assert len(solutions) == 4  # 1 from once(color) + 3 from value
         # First solution from first branch
         assert solutions[0]["X"] == Atom("red")
         # Rest from second branch
@@ -732,16 +725,22 @@ class TestOnceWithBacktrackingMerged:
         Y = Var(1, "Y")
         # color(X), once(number(Y)), fail ; single(X)
         # The once should prevent backtracking to other numbers
-        query = Struct(";", (
-            Struct(",", (
-                Struct("color", (X,)),
-                Struct(",", (
-                    Struct("once", (Struct("number", (Y,)),)),
-                    Atom("fail")
-                ))
-            )),
-            Struct("single", (X,))
-        ))
+        query = Struct(
+            ";",
+            (
+                Struct(
+                    ",",
+                    (
+                        Struct("color", (X,)),
+                        Struct(
+                            ",",
+                            (Struct("once", (Struct("value", (Y,)),)), Atom("fail")),
+                        ),
+                    ),
+                ),
+                Struct("single", (X,)),
+            ),
+        )
         solutions = multi_solution_engine.run([query])
         # All color attempts fail after once(number(1)), so we get single
         assert len(solutions) == 1
@@ -755,24 +754,18 @@ class TestOnceWithBacktrackingMerged:
             mk_fact("q", Atom("a")),
         )
         engine = Engine(p)
-        
+
         X = Var(0, "X")
         # once(p(X)), q(X)
         # once gives X=a, q(a) succeeds
-        query = Struct(",", (
-            Struct("once", (Struct("p", (X,)),)),
-            Struct("q", (X,))
-        ))
+        query = Struct(",", (Struct("once", (Struct("p", (X,)),)), Struct("q", (X,))))
         solutions = engine.run([query])
         assert len(solutions) == 1
         assert solutions[0]["X"] == Atom("a")
-        
+
         # Without once, we'd try p(b) on backtrack, but q(b) would fail
         # Let's verify this behaves differently without once:
-        query_no_once = Struct(",", (
-            Struct("p", (X,)),
-            Struct("q", (X,))
-        ))
+        query_no_once = Struct(",", (Struct("p", (X,)), Struct("q", (X,))))
         solutions_no_once = engine.run([query_no_once])
         assert len(solutions_no_once) == 1  # Same result, but different search
 
@@ -787,7 +780,7 @@ class TestOnceWithBuiltinsMerged:
             mk_fact("p", Atom("b")),
         )
         engine = Engine(p)
-        
+
         X = Var(0, "X")
         # once((p(X), !)) - cut inside once
         goal = Struct(",", (Struct("p", (X,)), Atom("!")))

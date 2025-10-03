@@ -25,21 +25,21 @@ FunctorKey = Tuple[str, int]  # (functor, arity)
 class PredIndex:
     """
     Per-predicate index structure organizing clauses by first-argument type.
-    
+
     Uses buckets to categorize clauses for efficient selection while
     maintaining source order through the order list.
     """
-    
+
     __slots__ = (
-        'order',              # List[int]: clause IDs in source order
-        'var_ids',            # Set[int]: clauses with variable first arg
-        'empty_list_ids',     # Set[int]: clauses with [] first arg
-        'int_ids',            # Set[int]: clauses with integer first arg (type-based)
-        'list_nonempty_ids',  # Set[int]: clauses with [H|T] first arg
-        'struct_functor',     # Dict[FunctorKey, Set[ClauseID]]: (functor, arity) -> clause IDs
-        'float_ids',          # Set[int]: placeholder for future float support
+        "order",  # List[int]: clause IDs in source order
+        "var_ids",  # Set[int]: clauses with variable first arg
+        "empty_list_ids",  # Set[int]: clauses with [] first arg
+        "int_ids",  # Set[int]: clauses with integer first arg (type-based)
+        "list_nonempty_ids",  # Set[int]: clauses with [H|T] first arg
+        "struct_functor",  # Dict[FunctorKey, Set[ClauseID]]: (functor, arity) -> clause IDs
+        "float_ids",  # Set[int]: placeholder for future float support
     )
-    
+
     def __init__(self):
         """Initialize empty per-predicate index."""
         self.order: List[int] = []
@@ -54,70 +54,72 @@ class PredIndex:
 class ClauseIndex:
     """
     Global index mapping predicates to their clause indices.
-    
+
     Maintains complete isolation between predicates and supports
     efficient clause selection based on first-argument indexing.
     """
-    
+
     __slots__ = (
-        'preds',         # Dict[PredKey, PredIndex]: (name, arity) -> per-pred index
-        'clauses',       # Dict[Tuple[PredKey, ClauseID], Clause]: ((name, arity), id) -> clause
-        'finalized',     # bool: whether index is finalized (static program)
-        'supports_rebuild',  # bool: whether rebuilding is supported
+        "preds",  # Dict[PredKey, PredIndex]: (name, arity) -> per-pred index
+        "clauses",  # Dict[Tuple[PredKey, ClauseID], Clause]: ((name, arity), id) -> clause
+        "finalized",  # bool: whether index is finalized (static program)
+        "supports_rebuild",  # bool: whether rebuilding is supported
     )
-    
+
     def __init__(self):
         """Initialize empty global index."""
         self.preds: Dict[PredKey, PredIndex] = {}
         self.clauses: Dict[Tuple[PredKey, ClauseID], Clause] = {}
         self.finalized: bool = False
         self.supports_rebuild: bool = False  # Stage 2 assumes static programs
-    
+
     def add_clause(self, clause: Clause) -> None:
         """
         Add a clause to the index.
-        
+
         Raises AssertionError if index is finalized (static program assumption).
         """
-        assert not self.finalized, "Cannot add clauses after index is built (static program assumption)"
+        assert (
+            not self.finalized
+        ), "Cannot add clauses after index is built (static program assumption)"
         # This will be called during build_from_clauses
         raise NotImplementedError("Use build_from_clauses instead")
-    
+
     def select(self, pred_key: PredKey, goal: Term, store: Store) -> Iterator[Clause]:
         """
         Select clauses for the given predicate and goal.
-        
+
         Uses first-argument indexing to filter candidates, then yields
         clauses in source order (Order ∩ Candidates pattern).
-        
+
         Args:
             pred_key: (predicate_name, arity) tuple
             goal: The goal term to match
             store: Store for dereferencing variables
-            
+
         Yields:
             Matching clauses in source order
         """
         # Check if predicate exists (empty iterator if not)
         if pred_key not in self.preds:
             return
-        
+
         pred_idx = self.preds[pred_key]
-        
+
         # Handle zero-arity predicates: yield all in source order
         if pred_key[1] == 0:
             # All clauses match for zero-arity predicates
             for clause_id in pred_idx.order:
                 yield self.clauses[(pred_key, clause_id)]
             return
-        
+
         # Get the first argument of the goal
         if isinstance(goal, Struct) and goal.args and len(goal.args) >= 1:
             first_arg = goal.args[0]
         else:
             # Defensive: malformed goal shape for non-zero arity
             return
-        
+
         # Dereference if it's a variable
         if isinstance(first_arg, Var):
             # Check if variable exists in store
@@ -139,7 +141,7 @@ class ClauseIndex:
                 for clause_id in pred_idx.order:
                     yield self.clauses[(pred_key, clause_id)]
                 return
-        
+
         # Optimize: Instead of building a union set, check membership on-the-fly
         # This avoids O(N) memory allocation for large buckets
 
@@ -181,7 +183,9 @@ class ClauseIndex:
 
         # Hoist lookups outside loop to avoid repeated dict/attribute access
         var_ids = pred_idx.var_ids
-        struct_set = pred_idx.struct_functor.get(functor_key) if use_struct_bucket else None
+        struct_set = (
+            pred_idx.struct_functor.get(functor_key) if use_struct_bucket else None
+        )
 
         for clause_id in pred_idx.order:
             # Check if clause matches: either in typed bucket, struct bucket, or var bucket
@@ -205,7 +209,7 @@ class ClauseIndex:
 def analyze_first_arg(head: Term, store: Store) -> Union[str, Tuple[str, str, int]]:
     """
     Analyze the first argument of a clause head to determine its type.
-    
+
     Returns:
         - "no_args" for zero-arity predicates
         - "var" for variable first arguments
@@ -218,30 +222,30 @@ def analyze_first_arg(head: Term, store: Store) -> Union[str, Tuple[str, str, in
     # Handle zero-arity predicates
     if isinstance(head, Atom):
         return "no_args"
-    
+
     if not isinstance(head, Struct) or not head.args:
         return "no_args"
-    
+
     # Get and dereference the first argument
     first_arg = head.args[0]
     # Note: In actual implementation, we'd dereference if we had a store with bindings
     # For index building, variables are unbound, so deref would return the variable itself
-    
+
     # Check variable
     if isinstance(first_arg, Var):
         return "var"
-    
+
     # Check integer (positive or negative) - type-based indexing
     if isinstance(first_arg, Int):
         return "int"
-    
+
     # Check empty list - both representations
     if isinstance(first_arg, PrologList):
         if len(first_arg.items) == 0:
             return "empty_list"
         else:
             return "list_nonempty"
-    
+
     # Check atom (including special [] atom)
     if isinstance(first_arg, Atom):
         if first_arg.name == "[]":
@@ -249,7 +253,7 @@ def analyze_first_arg(head: Term, store: Store) -> Union[str, Tuple[str, str, in
         else:
             # Atoms are keyed in struct_functor with arity 0
             return ("atom", first_arg.name, 0)
-    
+
     # Check struct
     if isinstance(first_arg, Struct):
         # Special case: canonical list representation '.'/2
@@ -257,15 +261,17 @@ def analyze_first_arg(head: Term, store: Store) -> Union[str, Tuple[str, str, in
             return "list_nonempty"
         else:
             return ("struct", first_arg.functor, len(first_arg.args))
-    
+
     # Should not reach here for well-formed Prolog terms
-    raise ValueError(f"Unknown term type for first-argument analysis: {type(first_arg)}")
+    raise ValueError(
+        f"Unknown term type for first-argument analysis: {type(first_arg)}"
+    )
 
 
 def build_from_clauses(clauses: List[Clause]) -> ClauseIndex:
     """
     Build a complete index from a list of clauses.
-    
+
     Maintains source order and ensures per-predicate isolation.
     The resulting index is finalized and assumes a static program.
     """
@@ -273,10 +279,10 @@ def build_from_clauses(clauses: List[Clause]) -> ClauseIndex:
     # Store reserved for future deref support (e.g., attributed variables)
     # Currently unused as we analyze clause heads at build time without bindings
     store = Store()
-    
+
     # Track clause IDs per predicate
     pred_counters: Dict[PredKey, ClauseID] = {}
-    
+
     for clause in clauses:
         # Determine predicate key
         head = clause.head
@@ -286,26 +292,26 @@ def build_from_clauses(clauses: List[Clause]) -> ClauseIndex:
             pred_key = (head.functor, len(head.args))
         else:
             raise ValueError(f"Invalid clause head type: {type(head)}")
-        
+
         # Ensure predicate has an index
         if pred_key not in idx.preds:
             idx.preds[pred_key] = PredIndex()
             pred_counters[pred_key] = 0
-        
+
         # Get clause ID for this predicate (monotonic, starts at 0)
         clause_id = pred_counters[pred_key]
         pred_counters[pred_key] += 1
-        
+
         # Add to order list
         pred_idx = idx.preds[pred_key]
         pred_idx.order.append(clause_id)
-        
+
         # Store clause in global mapping
         idx.clauses[(pred_key, clause_id)] = clause
-        
+
         # Analyze first argument and add to appropriate bucket
         arg_type = analyze_first_arg(head, store)
-        
+
         if arg_type == "no_args":
             # Zero-arity predicates don't need bucketing
             pass
@@ -330,8 +336,8 @@ def build_from_clauses(clauses: List[Clause]) -> ClauseIndex:
                 if functor_key not in pred_idx.struct_functor:
                     pred_idx.struct_functor[functor_key] = set()
                 pred_idx.struct_functor[functor_key].add(clause_id)
-    
+
     # Mark index as finalized
     idx.finalized = True
-    
+
     return idx

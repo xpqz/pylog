@@ -20,6 +20,7 @@ class TraceFilters:
 
     Filter precedence: port → predicate → depth → sampling
     """
+
     ports: Optional[Set[str]] = None
     predicates: Optional[Set[str]] = None
     spypoints: Set[str] = field(default_factory=set)
@@ -27,7 +28,7 @@ class TraceFilters:
     max_depth: Optional[int] = None
     sampling_rate: int = 1
     sampling_seed: Optional[int] = None
-    bindings_policy: str = 'none'
+    bindings_policy: str = "none"
     max_term_depth: int = 10
     max_items_per_list: int = 10
 
@@ -47,17 +48,19 @@ class TraceFilters:
         if self.max_depth is not None and self.max_depth < 0:
             raise ValueError(f"max_depth must be >= 0, got {self.max_depth}")
         if self.max_depth is not None and self.min_depth > self.max_depth:
-            raise ValueError(f"min_depth ({self.min_depth}) > max_depth ({self.max_depth})")
+            raise ValueError(
+                f"min_depth ({self.min_depth}) > max_depth ({self.max_depth})"
+            )
 
         # Validate ports
-        valid_ports = {'call', 'exit', 'redo', 'fail'}
+        valid_ports = {"call", "exit", "redo", "fail"}
         if self.ports is not None:
             invalid = self.ports - valid_ports
             if invalid:
                 raise ValueError(f"Invalid ports: {invalid}")
 
         # Validate bindings policy
-        valid_policies = {'none', 'names', 'names_values'}
+        valid_policies = {"none", "names", "names_values"}
         if self.bindings_policy not in valid_policies:
             raise ValueError(f"Invalid bindings_policy: {self.bindings_policy}")
 
@@ -77,8 +80,14 @@ class TraceFilters:
         """Clear all spypoints."""
         self.spypoints.clear()
 
-    def _truncate_term(self, term: Any, depth: int, max_depth: int,
-                      max_items: int, store: Optional[Store] = None) -> str:
+    def _truncate_term(
+        self,
+        term: Any,
+        depth: int,
+        max_depth: int,
+        max_items: int,
+        store: Optional[Store] = None,
+    ) -> str:
         """
         Convert term to string with truncation.
 
@@ -101,9 +110,9 @@ class TraceFilters:
 
         # Handle different term types
         if isinstance(term, Atom):
-            return term.name if hasattr(term, 'name') else str(term)
+            return term.name if hasattr(term, "name") else str(term)
         elif isinstance(term, Int):
-            return str(term.value if hasattr(term, 'value') else term)
+            return str(term.value if hasattr(term, "value") else term)
         elif isinstance(term, Var):
             # Unbound variable
             return f"_{term.hint}" if term.hint else f"_G{term.id}"
@@ -115,7 +124,9 @@ class TraceFilters:
             # Recursively format arguments
             formatted_args = []
             for arg in term.args:
-                formatted = self._truncate_term(arg, depth + 1, max_depth, max_items, store)
+                formatted = self._truncate_term(
+                    arg, depth + 1, max_depth, max_items, store
+                )
                 formatted_args.append(formatted)
 
             args_str = ", ".join(formatted_args)
@@ -125,9 +136,12 @@ class TraceFilters:
                 return "[...]"
 
             # Prefer Python list-like representation if available
-            if hasattr(term, 'items'):
+            if hasattr(term, "items"):
                 limited = term.items[:max_items]
-                parts = [self._truncate_term(x, depth + 1, max_depth, max_items, store) for x in limited]
+                parts = [
+                    self._truncate_term(x, depth + 1, max_depth, max_items, store)
+                    for x in limited
+                ]
                 if len(term.items) > max_items:
                     parts.append("...")
                 return "[" + ", ".join(parts) + "]"
@@ -135,11 +149,18 @@ class TraceFilters:
             # Prolog [H|T] representation
             parts, count, current = [], 0, term
             while count < max_items and isinstance(current, List):
-                if hasattr(current, 'head'):
-                    parts.append(self._truncate_term(current.head, depth + 1, max_depth, max_items, store))
+                if hasattr(current, "head"):
+                    parts.append(
+                        self._truncate_term(
+                            current.head, depth + 1, max_depth, max_items, store
+                        )
+                    )
                     count += 1
                     current = current.tail
-                    if isinstance(current, Atom) and getattr(current, 'name', None) == "[]":
+                    if (
+                        isinstance(current, Atom)
+                        and getattr(current, "name", None) == "[]"
+                    ):
                         # Proper list ending
                         return "[" + ", ".join(parts) + "]"
                 else:
@@ -149,31 +170,39 @@ class TraceFilters:
             if isinstance(current, List):
                 # Hit max_items limit with more list to go
                 parts.append("...")
-            elif not (isinstance(current, Atom) and getattr(current, 'name', None) == "[]"):
+            elif not (
+                isinstance(current, Atom) and getattr(current, "name", None) == "[]"
+            ):
                 # Improper list [H|T] where T is not []
                 parts.append("|")
-                parts.append(self._truncate_term(current, depth + 1, max_depth, max_items, store))
+                parts.append(
+                    self._truncate_term(current, depth + 1, max_depth, max_items, store)
+                )
 
             return "[" + ", ".join(parts) + "]"
         else:
             # Fallback
             return str(term)
 
-    def process_bindings(self, event: Any, bindings: Dict[str, Any],
-                        fresh_var_map: Optional[Dict[int, str]] = None) -> Dict[str, Any]:
+    def process_bindings(
+        self,
+        event: Any,
+        bindings: Dict[str, Any],
+        fresh_var_map: Optional[Dict[int, str]] = None,
+    ) -> Dict[str, Any]:
         """Process bindings according to policy."""
         result = {}
 
-        if self.bindings_policy == 'none':
+        if self.bindings_policy == "none":
             # Don't include bindings field at all
             return result
 
-        if self.bindings_policy == 'names':
+        if self.bindings_policy == "names":
             # Include names but not values
-            result['bindings'] = {k: None for k in bindings.keys()}
-        elif self.bindings_policy == 'names_values':
+            result["bindings"] = {k: None for k in bindings.keys()}
+        elif self.bindings_policy == "names_values":
             # Include names and values with truncation
-            result['bindings'] = {}
+            result["bindings"] = {}
 
             for name, value in bindings.items():
                 # Apply truncation
@@ -183,18 +212,24 @@ class TraceFilters:
 
                 # Convert to appropriate representation
                 if isinstance(value, Atom):
-                    result['bindings'][name] = value.name if hasattr(value, 'name') else str(value)
+                    result["bindings"][name] = (
+                        value.name if hasattr(value, "name") else str(value)
+                    )
                 elif isinstance(value, Int):
-                    result['bindings'][name] = value.value if hasattr(value, 'value') else value
+                    result["bindings"][name] = (
+                        value.value if hasattr(value, "value") else value
+                    )
                 elif isinstance(value, Var):
                     # Unbound variable
                     if fresh_var_map and value.id in fresh_var_map:
-                        result['bindings'][name] = fresh_var_map[value.id]
+                        result["bindings"][name] = fresh_var_map[value.id]
                     else:
-                        result['bindings'][name] = value.hint if value.hint else f"_G{value.id}"
+                        result["bindings"][name] = (
+                            value.hint if value.hint else f"_G{value.id}"
+                        )
                 else:
                     # Complex term - use truncated string
-                    result['bindings'][name] = truncated
+                    result["bindings"][name] = truncated
 
         return result
 
@@ -231,7 +266,10 @@ def should_emit_event(event: Any, filters: TraceFilters) -> bool:
                 return False
         else:
             # Predicates filter is set with values
-            if event.pred_id not in filters.predicates and event.pred_id not in filters.spypoints:
+            if (
+                event.pred_id not in filters.predicates
+                and event.pred_id not in filters.spypoints
+            ):
                 return False
 
     # Check depth filter (third)

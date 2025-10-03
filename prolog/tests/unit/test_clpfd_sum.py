@@ -1,6 +1,5 @@
 """Unit tests for CLP(FD) sum constraint propagator."""
 
-import pytest
 from prolog.ast.terms import Var, Int
 from prolog.engine.engine import Engine, Program
 from prolog.clpfd.api import set_domain, get_domain
@@ -47,7 +46,9 @@ class TestSumPropagator:
         # Create variables
         x_id = self.engine.store.new_var()
         y_id = self.engine.store.new_var()
-        set_domain(self.engine.store, x_id, Domain(((5, 5),)), self.engine.trail)  # X = 5
+        set_domain(
+            self.engine.store, x_id, Domain(((5, 5),)), self.engine.trail
+        )  # X = 5
         set_domain(self.engine.store, y_id, Domain(((1, 10),)), self.engine.trail)
 
         # Create propagator for X + Y = 8
@@ -216,7 +217,9 @@ class TestSumPropagator:
         prop = create_sum_propagator([x_id, y_id], 10)
 
         # Run propagator first time
-        result1, changed1 = prop(self.engine.store, self.engine.trail, self.engine, None)
+        result1, changed1 = prop(
+            self.engine.store, self.engine.trail, self.engine, None
+        )
         assert result1 == "ok"
         assert changed1
 
@@ -225,7 +228,9 @@ class TestSumPropagator:
         y_dom1 = get_domain(self.engine.store, y_id)
 
         # Run propagator second time
-        result2, changed2 = prop(self.engine.store, self.engine.trail, self.engine, None)
+        result2, changed2 = prop(
+            self.engine.store, self.engine.trail, self.engine, None
+        )
         assert result2 == "ok"
         assert changed2 is None  # No changes on second run
 

@@ -3,10 +3,9 @@
 Tests basic attribute storage, trailing, and restoration functionality.
 """
 
-import pytest
-from prolog.unify.store import Store, Cell
+from prolog.unify.store import Store
 from prolog.unify.trail import Trail, undo_to
-from prolog.ast.terms import Atom, Int, Var
+from prolog.ast.terms import Atom, Int
 
 
 class TestStoreAttributeSupport:
@@ -15,7 +14,7 @@ class TestStoreAttributeSupport:
     def test_store_initializes_with_empty_attrs(self):
         """Store should initialize with empty attrs dict."""
         store = Store()
-        assert hasattr(store, 'attrs')
+        assert hasattr(store, "attrs")
         assert store.attrs == {}
 
     def test_get_attrs_returns_none_for_var_without_attributes(self):
@@ -75,7 +74,7 @@ class TestStoreAttributeSupport:
         # Check trail has entry
         assert len(trail) == 1
         entry = trail.entries[0]
-        assert entry[0] == 'attr'
+        assert entry[0] == "attr"
         assert entry[1] == v
         assert entry[2] == "test"
         assert entry[3] is None  # old value was None
@@ -100,7 +99,7 @@ class TestStoreAttributeSupport:
         # Check trail has new entry with old value
         assert len(trail) == initial_trail_len + 1
         entry = trail.entries[-1]
-        assert entry[0] == 'attr'
+        assert entry[0] == "attr"
         assert entry[1] == v
         assert entry[2] == "test"
         assert entry[3] == Int(1)  # old value
@@ -124,7 +123,7 @@ class TestStoreAttributeSupport:
         # Check trail has deletion entry
         assert len(trail) == 2  # put + del
         entry = trail.entries[-1]
-        assert entry[0] == 'attr'
+        assert entry[0] == "attr"
         assert entry[1] == v
         assert entry[2] == "test"
         assert entry[3] == Int(42)  # old value that was deleted
@@ -239,10 +238,10 @@ class TestTrailAttributeSupport:
         trail = Trail()
 
         # Push attr entry
-        trail.push(('attr', 0, 'module', Int(42)))
+        trail.push(("attr", 0, "module", Int(42)))
 
         assert len(trail) == 1
-        assert trail.entries[0] == ('attr', 0, 'module', Int(42))
+        assert trail.entries[0] == ("attr", 0, "module", Int(42))
 
     def test_undo_to_restores_attribute_value(self):
         """undo_to should restore attribute to old value."""
@@ -361,7 +360,7 @@ class TestRuntimeTrailVerification:
         trail = RuntimeTrail()
 
         # Verify push_attr exists
-        assert hasattr(trail, 'push_attr')
+        assert hasattr(trail, "push_attr")
 
         # Test it works (runtime Trail has different signature with old_value param)
         trail.push_attr(0, "module", Int(42))  # old_value is Int(42)
@@ -369,7 +368,7 @@ class TestRuntimeTrailVerification:
         # Check entry was added (runtime Trail uses _entries)
         assert len(trail._entries) == 1
         entry = trail._entries[0]
-        assert entry[0] == 'attr'
+        assert entry[0] == "attr"
         assert entry[1] == 0
         assert entry[2] == "module"
         assert entry[3] == Int(42)
@@ -385,7 +384,7 @@ class TestRuntimeTrailVerification:
         v = store.new_var()
 
         # Set initial attribute (no trailing needed for initial set)
-        if not hasattr(store, 'attrs'):
+        if not hasattr(store, "attrs"):
             store.attrs = {}
         store.attrs[v] = {"test": Int(1)}
 

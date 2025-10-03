@@ -9,7 +9,6 @@ from prolog.debug.replay import (
     TraceAnalyzer,
     TraceStatistics,
     InvalidTraceError,
-    InvariantViolationError,
 )
 from prolog.debug.invariant_checker import check_trace_invariants
 
@@ -89,7 +88,9 @@ class TestReplayTool:
         violations = replay.check_invariants()
 
         assert len(violations) > 0
-        assert any(("redo" in str(v).lower() and "exit" in str(v).lower()) for v in violations)
+        assert any(
+            ("redo" in str(v).lower() and "exit" in str(v).lower()) for v in violations
+        )
 
     def test_replay_handles_empty_trace(self, tmp_path):
         """Test replay handles empty trace files gracefully."""
@@ -107,14 +108,17 @@ class TestReplayTool:
         trace_file = tmp_path / "trace.jsonl"
         with trace_file.open("w") as f:
             f.write('{"sid": 1, "p": 0}\n')
-            f.write('not valid json\n')
+            f.write("not valid json\n")
             f.write('{"sid": 2, "p": 1}\n')
 
         replay = ReplayTool(trace_file)
         with pytest.raises(InvalidTraceError) as exc_info:
             replay.load_events()
 
-        assert "malformed" in str(exc_info.value).lower() or "invalid" in str(exc_info.value).lower()
+        assert (
+            "malformed" in str(exc_info.value).lower()
+            or "invalid" in str(exc_info.value).lower()
+        )
 
     def test_replay_reports_step_sequence_violations(self, tmp_path):
         """Test detection of step sequence violations."""
@@ -254,9 +258,9 @@ class TestTraceAnalyzer:
         """Test analyzer handles missing or unknown fields gracefully."""
         trace_file = tmp_path / "trace.jsonl"
         events = [
-            {"sid": 1},                 # missing p, fd, pid
-            {"sid": 2, "p": 99},        # unknown port code
-            {"sid": 3, "fd": "NaN"},    # bad depth type
+            {"sid": 1},  # missing p, fd, pid
+            {"sid": 2, "p": 99},  # unknown port code
+            {"sid": 3, "fd": "NaN"},  # bad depth type
         ]
         with trace_file.open("w") as f:
             for e in events:
@@ -340,10 +344,7 @@ class TestTraceStatistics:
 
     def test_statistics_computes_percentiles(self):
         """Test computation of percentile statistics."""
-        events = [
-            {"sid": i, "fd": i % 10}
-            for i in range(1, 101)
-        ]
+        events = [{"sid": i, "fd": i % 10} for i in range(1, 101)]
 
         stats = TraceStatistics(events)
         percentiles = stats.compute_depth_percentiles([50, 90, 99])
@@ -371,9 +372,7 @@ class TestCIIntegration:
         from prolog.debug.ci_integration import capture_failure_artifacts
 
         capture_failure_artifacts(
-            trace_file=trace_file,
-            output_dir=artifact_dir,
-            max_trace_size_mb=10
+            trace_file=trace_file, output_dir=artifact_dir, max_trace_size_mb=10
         )
 
         assert (artifact_dir / "trace.jsonl").exists()
@@ -382,7 +381,7 @@ class TestCIIntegration:
         """Test that CI respects trace size limits."""
         # Create a 2MB file quickly
         trace_file = tmp_path / "trace.jsonl"
-        trace_file.write_bytes(b'X' * (2 * 1024 * 1024))  # 2MB
+        trace_file.write_bytes(b"X" * (2 * 1024 * 1024))  # 2MB
 
         artifact_dir = tmp_path / "artifacts"
         artifact_dir.mkdir()
@@ -392,7 +391,7 @@ class TestCIIntegration:
         capture_failure_artifacts(
             trace_file=trace_file,
             output_dir=artifact_dir,
-            max_trace_size_mb=1  # 1MB limit
+            max_trace_size_mb=1,  # 1MB limit
         )
 
         captured = artifact_dir / "trace.jsonl"
@@ -413,9 +412,7 @@ class TestCIIntegration:
         from prolog.debug.ci_integration import capture_failure_artifacts
 
         capture_failure_artifacts(
-            trace_file=trace_file,
-            snapshot_file=snapshot_file,
-            output_dir=artifact_dir
+            trace_file=trace_file, snapshot_file=snapshot_file, output_dir=artifact_dir
         )
 
         assert (artifact_dir / "trace.jsonl").exists()
@@ -520,7 +517,10 @@ class TestInvariantChecker:
         replay = ReplayTool(trace_file)
         with pytest.raises(InvalidTraceError) as exc:
             replay.validate_consistency()
-        assert "duplicate" in str(exc.value).lower() or "monotonic" in str(exc.value).lower()
+        assert (
+            "duplicate" in str(exc.value).lower()
+            or "monotonic" in str(exc.value).lower()
+        )
 
     def test_replay_detects_cross_predicate_sequence_violations(self, tmp_path):
         """Test detection of cross-predicate port sequence violations."""
@@ -541,7 +541,9 @@ class TestInvariantChecker:
         """Test detection of EXIT without prior CALL."""
         events = [{"sid": 1, "p": 1, "pid": "a/0", "fd": 0}]  # EXIT first
         violations = check_trace_invariants(events)
-        assert any(("exit" in str(v).lower() and "call" in str(v).lower()) for v in violations)
+        assert any(
+            ("exit" in str(v).lower() and "call" in str(v).lower()) for v in violations
+        )
 
     def test_invariant_checker_depth_underflow(self):
         """Test detection of depth underflow."""
@@ -550,7 +552,13 @@ class TestInvariantChecker:
             {"sid": 2, "p": 1, "fd": -1},  # underflow
         ]
         violations = check_trace_invariants(events)
-        assert any(("depth" in str(v).lower() and ("underflow" in str(v).lower() or "negative" in str(v).lower())) for v in violations)
+        assert any(
+            (
+                "depth" in str(v).lower()
+                and ("underflow" in str(v).lower() or "negative" in str(v).lower())
+            )
+            for v in violations
+        )
 
     def test_invariant_checker_exit_depth_mismatch(self):
         """Test detection of EXIT depth mismatch."""

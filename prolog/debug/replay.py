@@ -2,17 +2,19 @@
 
 import json
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 from dataclasses import dataclass
 
 
 class InvalidTraceError(Exception):
     """Raised when trace file is invalid or corrupted."""
+
     pass
 
 
 class InvariantViolationError(Exception):
     """Raised when trace invariants are violated."""
+
     pass
 
 
@@ -35,7 +37,9 @@ class ReplayTool:
                         try:
                             events.append(json.loads(line))
                         except json.JSONDecodeError as e:
-                            raise InvalidTraceError(f"Malformed JSON in trace file: {e}")
+                            raise InvalidTraceError(
+                                f"Malformed JSON in trace file: {e}"
+                            )
         except Exception as e:
             if isinstance(e, InvalidTraceError):
                 raise
@@ -73,6 +77,7 @@ class ReplayTool:
     def check_invariants(self) -> List[str]:
         """Check trace invariants and return violations."""
         from prolog.debug.invariant_checker import check_trace_invariants
+
         events = self.load_events()
         return check_trace_invariants(events)
 
@@ -90,11 +95,13 @@ class ReplayTool:
             if sid > prev_sid + 1:
                 # Missing step(s)
                 for missing in range(prev_sid + 1, sid):
-                    violations.append({
-                        "missing_sid": missing,
-                        "after_sid": prev_sid,
-                        "before_sid": sid
-                    })
+                    violations.append(
+                        {
+                            "missing_sid": missing,
+                            "after_sid": prev_sid,
+                            "before_sid": sid,
+                        }
+                    )
             prev_sid = sid
 
         return violations
@@ -132,11 +139,7 @@ class TraceAnalyzer:
         """Compute frame depth distribution statistics."""
         events = self.parse()
         if not events:
-            return {
-                "max_depth": 0,
-                "avg_depth": 0,
-                "depth_counts": {}
-            }
+            return {"max_depth": 0, "avg_depth": 0, "depth_counts": {}}
 
         depths = []
         depth_counts = {}
@@ -149,16 +152,12 @@ class TraceAnalyzer:
                 depth_counts[fd] = depth_counts.get(fd, 0) + 1
 
         if not depths:
-            return {
-                "max_depth": 0,
-                "avg_depth": 0,
-                "depth_counts": {}
-            }
+            return {"max_depth": 0, "avg_depth": 0, "depth_counts": {}}
 
         return {
             "max_depth": max(depths),
             "avg_depth": sum(depths) / len(depths),
-            "depth_counts": depth_counts
+            "depth_counts": depth_counts,
         }
 
     def identify_hot_predicates(self, top_n: int = 10) -> List[tuple]:
@@ -183,11 +182,7 @@ class TraceAnalyzer:
         total = len(events)
 
         if total == 0:
-            return {
-                "total_events": 0,
-                "backtrack_events": 0,
-                "backtrack_rate": 0.0
-            }
+            return {"total_events": 0, "backtrack_events": 0, "backtrack_rate": 0.0}
 
         # REDO (p=2) and FAIL (p=3) are backtrack events
         backtrack_count = sum(1 for e in events if e.get("p") in [2, 3])
@@ -195,7 +190,7 @@ class TraceAnalyzer:
         return {
             "total_events": total,
             "backtrack_events": backtrack_count,
-            "backtrack_rate": backtrack_count / total
+            "backtrack_rate": backtrack_count / total,
         }
 
     def generate_summary_report(self) -> Dict[str, Any]:
@@ -207,7 +202,7 @@ class TraceAnalyzer:
             "port_counts": self.compute_port_counts(),
             "depth_distribution": self.compute_depth_distribution(),
             "hot_predicates": self.identify_hot_predicates(top_n=5),
-            "backtrack_frequency": self.measure_backtrack_frequency()
+            "backtrack_frequency": self.measure_backtrack_frequency(),
         }
 
         # Add duration if timestamps available
@@ -239,7 +234,7 @@ class TraceStatistics:
                 "event_count": 0,
                 "max_frame_depth": 0,
                 "max_choice_depth": 0,
-                "avg_frame_depth": 0
+                "avg_frame_depth": 0,
             }
 
         frame_depths = []
@@ -258,7 +253,9 @@ class TraceStatistics:
             "event_count": len(self.events),
             "max_frame_depth": max(frame_depths) if frame_depths else 0,
             "max_choice_depth": max(choice_depths) if choice_depths else 0,
-            "avg_frame_depth": sum(frame_depths) / len(frame_depths) if frame_depths else 0
+            "avg_frame_depth": (
+                sum(frame_depths) / len(frame_depths) if frame_depths else 0
+            ),
         }
 
     def compute_depth_percentiles(self, percentiles: List[int]) -> Dict[str, int]:

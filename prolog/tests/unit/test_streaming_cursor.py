@@ -6,7 +6,6 @@ from an iterator while maintaining backtracking support.
 """
 
 import pytest
-from typing import Iterator, List, Any
 
 from prolog.engine.cursors import StreamingClauseCursor
 from prolog.ast.clauses import ClauseCursor
@@ -17,29 +16,17 @@ class TestStreamingClauseCursorBasics:
 
     def test_has_more_on_empty_iterator(self):
         """Test has_more returns False for empty iterator."""
-        cursor = StreamingClauseCursor(
-            functor="test",
-            arity=0,
-            it=iter([])
-        )
+        cursor = StreamingClauseCursor(functor="test", arity=0, it=iter([]))
         assert cursor.has_more() is False
 
     def test_has_more_before_consumption(self):
         """Test has_more returns True when items available."""
-        cursor = StreamingClauseCursor(
-            functor="test",
-            arity=1,
-            it=iter([0, 1, 2])
-        )
+        cursor = StreamingClauseCursor(functor="test", arity=1, it=iter([0, 1, 2]))
         assert cursor.has_more() is True
 
     def test_peek_does_not_advance(self):
         """Test peek returns next item without advancing position."""
-        cursor = StreamingClauseCursor(
-            functor="test",
-            arity=1,
-            it=iter([10, 20, 30])
-        )
+        cursor = StreamingClauseCursor(functor="test", arity=1, it=iter([10, 20, 30]))
 
         # First peek
         first_peek = cursor.peek()
@@ -63,11 +50,7 @@ class TestStreamingClauseCursorBasics:
     def test_take_consumes_items_in_order(self):
         """Test take consumes items maintaining order."""
         items = [100, 200, 300, 400]
-        cursor = StreamingClauseCursor(
-            functor="pred",
-            arity=2,
-            it=iter(items)
-        )
+        cursor = StreamingClauseCursor(functor="pred", arity=2, it=iter(items))
 
         result = []
         while cursor.has_more():
@@ -77,11 +60,7 @@ class TestStreamingClauseCursorBasics:
 
     def test_exhaustion_behavior(self):
         """Test behavior when cursor is exhausted."""
-        cursor = StreamingClauseCursor(
-            functor="test",
-            arity=0,
-            it=iter([1, 2])
-        )
+        cursor = StreamingClauseCursor(functor="test", arity=0, it=iter([1, 2]))
 
         # Consume all items
         cursor.take()  # 1
@@ -97,11 +76,7 @@ class TestStreamingClauseCursorBasics:
 
     def test_empty_iterator(self):
         """Test empty iterator behavior."""
-        cursor = StreamingClauseCursor(
-            functor="empty",
-            arity=0,
-            it=iter([])
-        )
+        cursor = StreamingClauseCursor(functor="empty", arity=0, it=iter([]))
 
         assert cursor.has_more() is False
 
@@ -113,11 +88,7 @@ class TestStreamingClauseCursorBasics:
 
     def test_singleton_iterator(self):
         """Test single item iterator behavior."""
-        cursor = StreamingClauseCursor(
-            functor="fact",
-            arity=0,
-            it=iter([42])
-        )
+        cursor = StreamingClauseCursor(functor="fact", arity=0, it=iter([42]))
 
         assert cursor.has_more() is True
         assert cursor.peek() == 42
@@ -134,11 +105,7 @@ class TestStreamingClauseCursorClone:
     def test_clone_at_start(self):
         """Test cloning cursor at start position."""
         items = [1, 2, 3, 4, 5]
-        cursor1 = StreamingClauseCursor(
-            functor="test",
-            arity=1,
-            it=iter(items)
-        )
+        cursor1 = StreamingClauseCursor(functor="test", arity=1, it=iter(items))
 
         # Clone before any consumption
         cursor2 = cursor1.clone()
@@ -152,9 +119,7 @@ class TestStreamingClauseCursorClone:
     def test_clone_at_same_logical_position(self):
         """Test clone yields same remaining sequence."""
         cursor1 = StreamingClauseCursor(
-            functor="test",
-            arity=2,
-            it=iter([10, 20, 30, 40])
+            functor="test", arity=2, it=iter([10, 20, 30, 40])
         )
 
         # Consume first two items
@@ -179,11 +144,7 @@ class TestStreamingClauseCursorClone:
         """Test that concurrent clone usage is documented as undefined."""
         # This test documents that clones should not be used concurrently
         # The behavior is undefined if you interleave take() calls
-        cursor1 = StreamingClauseCursor(
-            functor="test",
-            arity=1,
-            it=iter([1, 2, 3, 4])
-        )
+        cursor1 = StreamingClauseCursor(functor="test", arity=1, it=iter([1, 2, 3, 4]))
 
         cursor2 = cursor1.clone()
 
@@ -198,16 +159,13 @@ class TestStreamingClauseCursorExceptions:
 
     def test_iterator_exception_surfaced_consistently(self):
         """Test exceptions from iterator are surfaced consistently."""
+
         def failing_iterator():
             yield 1
             yield 2
             raise ValueError("Iterator failed")
 
-        cursor = StreamingClauseCursor(
-            functor="test",
-            arity=1,
-            it=failing_iterator()
-        )
+        cursor = StreamingClauseCursor(functor="test", arity=1, it=failing_iterator())
 
         cursor.take()  # 1
         cursor.take()  # 2
@@ -229,11 +187,7 @@ class TestStreamingClauseCursorInterface:
 
     def test_required_methods_exist(self):
         """Test StreamingClauseCursor has ClauseCursor-compatible API."""
-        cursor = StreamingClauseCursor(
-            functor="test",
-            arity=1,
-            it=iter([1, 2, 3])
-        )
+        cursor = StreamingClauseCursor(functor="test", arity=1, it=iter([1, 2, 3]))
 
         # Check required methods exist and are callable
         assert callable(cursor.has_more)
@@ -250,17 +204,9 @@ class TestStreamingClauseCursorInterface:
         data = [10, 20, 30]
 
         # Create both cursor types with same data
-        streaming = StreamingClauseCursor(
-            functor="test",
-            arity=2,
-            it=iter(data)
-        )
+        streaming = StreamingClauseCursor(functor="test", arity=2, it=iter(data))
 
-        regular = ClauseCursor(
-            matches=data,
-            functor="test",
-            arity=2
-        )
+        regular = ClauseCursor(matches=data, functor="test", arity=2)
 
         # Run identical assertions
         assert streaming.functor == regular.functor
@@ -287,9 +233,7 @@ class TestStreamingClauseCursorEdgeCases:
     def test_none_values_handled(self):
         """Test None values in iterator are handled correctly."""
         cursor = StreamingClauseCursor(
-            functor="test",
-            arity=1,
-            it=iter([None, 0, None, 1])
+            functor="test", arity=1, it=iter([None, 0, None, 1])
         )
 
         assert cursor.take() is None
@@ -300,11 +244,7 @@ class TestStreamingClauseCursorEdgeCases:
 
     def test_interleaved_peek_and_take(self):
         """Test interleaving peek and take operations."""
-        cursor = StreamingClauseCursor(
-            functor="test",
-            arity=1,
-            it=iter(range(5))
-        )
+        cursor = StreamingClauseCursor(functor="test", arity=1, it=iter(range(5)))
 
         assert cursor.peek() == 0
         assert cursor.take() == 0

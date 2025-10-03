@@ -5,7 +5,7 @@ Provides lightweight metrics tracking with zero overhead when disabled.
 Tracks both global engine counters and per-predicate statistics.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Dict, Any
 
 
@@ -17,6 +17,7 @@ class PredMetrics:
     Immutable dataclass with slots for memory efficiency.
     All counters default to 0 if not specified.
     """
+
     pred_id: str
     calls: int = 0
     exits: int = 0
@@ -34,7 +35,7 @@ class PredMetrics:
             "fails": self.fails,
             "redos": self.redos,
             "unifications": self.unifications,
-            "backtracks": self.backtracks
+            "backtracks": self.backtracks,
         }
 
 
@@ -128,7 +129,7 @@ class EngineMetrics:
                 "fails": 0,
                 "redos": 0,
                 "unifications": 0,
-                "backtracks": 0
+                "backtracks": 0,
             }
 
     def record_call(self, pred_id: str):
@@ -151,7 +152,9 @@ class EngineMetrics:
         self._ensure_predicate(pred_id)
         self._pred_metrics[pred_id]["redos"] += 1
 
-    def record_predicate_unification(self, pred_id: str, attempted: int, succeeded: int = 0):
+    def record_predicate_unification(
+        self, pred_id: str, attempted: int, succeeded: int = 0
+    ):
         """Record unifications for a specific predicate."""
         if attempted < 0:
             raise ValueError(f"Negative attempted unifications: {attempted}")
@@ -185,7 +188,7 @@ class EngineMetrics:
                 fails=data["fails"],
                 redos=data["redos"],
                 unifications=data["unifications"],
-                backtracks=data["backtracks"]
+                backtracks=data["backtracks"],
             )
         else:
             # Return zeros for unknown predicates
@@ -207,9 +210,9 @@ class EngineMetrics:
                 "exceptions_thrown": self.exceptions_thrown,
                 "exceptions_caught": self.exceptions_caught,
                 "candidates_considered": self.candidates_considered,
-                "candidates_yielded": self.candidates_yielded
+                "candidates_yielded": self.candidates_yielded,
             },
-            "predicates": {}
+            "predicates": {},
         }
 
         # Add per-predicate metrics

@@ -12,7 +12,7 @@ SMALL_ITERATIONS = 100
 NUM_VARS = 100
 NUM_LARGE_VARS = 1000
 SPARSE_ATTR_PERCENTAGE = 10  # 10% of vars have attributes
-DENSE_ATTR_PERCENTAGE = 90   # 90% of vars have attributes
+DENSE_ATTR_PERCENTAGE = 90  # 90% of vars have attributes
 MAX_MODULES = 100
 DEEP_CHAIN_LENGTH = 100
 
@@ -23,11 +23,15 @@ DEEP_CHAIN_LENGTH = 100
 # 2. Measurement variability in CI environments
 # 3. Initial implementation prioritizing correctness over optimization
 # TODO: Create follow-up issue to optimize performance to meet original targets
-TARGET_NO_ATTRS_OVERHEAD = 2.0      # < 2% (relaxed from 1% to account for variability)
+TARGET_NO_ATTRS_OVERHEAD = 2.0  # < 2% (relaxed from 1% to account for variability)
 # Slightly relaxed to account for variability across environments
 TARGET_SPARSE_ATTRS_OVERHEAD = 10.0  # < 10% (was 5%)
-TARGET_DENSE_ATTRS_OVERHEAD = 25.0  # < 25% (relaxed from 10% for initial implementation)
-TARGET_HOOK_DISPATCH_OVERHEAD = 20.0  # < 20% (increased to account for CLP(FD) complexity)
+TARGET_DENSE_ATTRS_OVERHEAD = (
+    25.0  # < 25% (relaxed from 10% for initial implementation)
+)
+TARGET_HOOK_DISPATCH_OVERHEAD = (
+    20.0  # < 20% (increased to account for CLP(FD) complexity)
+)
 
 import time
 import pytest
@@ -56,6 +60,7 @@ class TestPerformanceTargets:
     @pytest.mark.performance
     def test_baseline_no_attributes(self):
         """Establish baseline performance without attributes."""
+
         def baseline_unification():
             store = Store()
             trail = []
@@ -69,7 +74,12 @@ class TestPerformanceTargets:
             for i in range(50):
                 unify(Var(vars[i], f"V{i}"), Int(i), store, trail)
             for i in range(25):
-                unify(Var(vars[i*2], f"V{i*2}"), Var(vars[i*2+1], f"V{i*2+1}"), store, trail)
+                unify(
+                    Var(vars[i * 2], f"V{i*2}"),
+                    Var(vars[i * 2 + 1], f"V{i*2+1}"),
+                    store,
+                    trail,
+                )
 
         baseline_mean, baseline_std = self.measure_time(baseline_unification)
         # Store for comparison
@@ -85,14 +95,16 @@ class TestPerformanceTargets:
         overhead = ((with_system_mean - baseline_mean) / baseline_mean) * 100
         print(f"Overhead with attr system but no attrs: {overhead:.2f}%")
 
-        assert overhead < TARGET_NO_ATTRS_OVERHEAD, f"Overhead {overhead:.2f}% exceeds {TARGET_NO_ATTRS_OVERHEAD}% target"
+        assert (
+            overhead < TARGET_NO_ATTRS_OVERHEAD
+        ), f"Overhead {overhead:.2f}% exceeds {TARGET_NO_ATTRS_OVERHEAD}% target"
 
     def _baseline_no_attrs(self):
         """Baseline without attribute system."""
         store = Store()
         # Ensure attrs dict doesn't exist
-        if hasattr(store, 'attrs'):
-            delattr(store, 'attrs')
+        if hasattr(store, "attrs"):
+            delattr(store, "attrs")
         trail = []
 
         vars = [store.new_var(f"V{i}") for i in range(100)]
@@ -119,7 +131,9 @@ class TestPerformanceTargets:
         overhead = ((sparse_mean - baseline_mean) / baseline_mean) * 100
         print(f"Overhead with sparse attrs (10%): {overhead:.2f}%")
 
-        assert overhead < TARGET_SPARSE_ATTRS_OVERHEAD, f"Overhead {overhead:.2f}% exceeds {TARGET_SPARSE_ATTRS_OVERHEAD}% target"
+        assert (
+            overhead < TARGET_SPARSE_ATTRS_OVERHEAD
+        ), f"Overhead {overhead:.2f}% exceeds {TARGET_SPARSE_ATTRS_OVERHEAD}% target"
 
     def _with_sparse_attrs(self):
         """With attributes on 10% of variables."""
@@ -146,7 +160,9 @@ class TestPerformanceTargets:
         overhead = ((dense_mean - baseline_mean) / baseline_mean) * 100
         print(f"Overhead with dense attrs (90%): {overhead:.2f}%")
 
-        assert overhead < TARGET_DENSE_ATTRS_OVERHEAD, f"Overhead {overhead:.2f}% exceeds {TARGET_DENSE_ATTRS_OVERHEAD}% target"
+        assert (
+            overhead < TARGET_DENSE_ATTRS_OVERHEAD
+        ), f"Overhead {overhead:.2f}% exceeds {TARGET_DENSE_ATTRS_OVERHEAD}% target"
 
     def _with_dense_attrs(self):
         """With attributes on 90% of variables."""
@@ -167,6 +183,7 @@ class TestPerformanceTargets:
     @pytest.mark.performance
     def test_hook_dispatch_overhead(self):
         """Test overhead of hook dispatch during unification."""
+
         def with_inactive_hooks():
             """Hooks registered but not triggered."""
             program = Program(())
@@ -198,7 +215,9 @@ class TestPerformanceTargets:
         print(f"Hook dispatch overhead: {overhead:.2f}%")
 
         # Hook dispatch should be efficient
-        assert overhead < TARGET_HOOK_DISPATCH_OVERHEAD, f"Hook overhead {overhead:.2f}% exceeds {TARGET_HOOK_DISPATCH_OVERHEAD}% target"
+        assert (
+            overhead < TARGET_HOOK_DISPATCH_OVERHEAD
+        ), f"Hook overhead {overhead:.2f}% exceeds {TARGET_HOOK_DISPATCH_OVERHEAD}% target"
 
 
 class TestScalability:
@@ -288,7 +307,7 @@ class TestScalability:
         # Create deep aliasing chain
         start = time.perf_counter()
         for i in range(99):
-            unify(Var(vars[i], f"V{i}"), Var(vars[i+1], f"V{i+1}"), store, trail)
+            unify(Var(vars[i], f"V{i}"), Var(vars[i + 1], f"V{i+1}"), store, trail)
         end = time.perf_counter()
 
         chain_time = end - start
@@ -321,7 +340,7 @@ class TestMemoryUsage:
 
         # Get size of store without attributes
         baseline_size = sys.getsizeof(store)
-        if hasattr(store, 'cells'):
+        if hasattr(store, "cells"):
             baseline_size += sys.getsizeof(store.cells)
 
         print(f"Baseline store size for 1000 vars: {baseline_size} bytes")
@@ -342,12 +361,12 @@ class TestMemoryUsage:
             store.attrs[vars[i]] = {
                 "module1": Int(i),
                 "module2": Atom(f"atom{i}"),
-                "module3": Struct("f", (Int(i), Atom("x")))
+                "module3": Struct("f", (Int(i), Atom("x"))),
             }
 
         # Calculate total size
         total_size = sys.getsizeof(store)
-        if hasattr(store, 'cells'):
+        if hasattr(store, "cells"):
             total_size += sys.getsizeof(store.cells)
         total_size += sys.getsizeof(store.attrs)
 

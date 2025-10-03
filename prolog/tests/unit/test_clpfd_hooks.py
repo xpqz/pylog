@@ -4,12 +4,8 @@ Tests the integration of CLP(FD) with attributed variable unification,
 including domain merging for var-var aliasing and var-int grounding.
 """
 
-import pytest
-from prolog.ast.terms import Atom, Int, Var, Struct, List
 from prolog.engine.engine import Engine, Program
-from prolog.unify.unify import unify, bind
-from prolog.clpfd.api import get_domain, set_domain
-from prolog.clpfd.domain import Domain
+from prolog.clpfd.api import get_domain
 
 
 class TestCLPFDUnificationHooks:
@@ -27,8 +23,8 @@ class TestCLPFDUnificationHooks:
 
         # Both X and Y should have the intersected domain 5..10
         # After unification, they are aliased so checking one is sufficient
-        x_val = sol['X']
-        y_val = sol['Y']
+        x_val = sol["X"]
+        y_val = sol["Y"]
 
         # They should be the same variable after unification
         assert x_val.id == y_val.id
@@ -57,7 +53,7 @@ class TestCLPFDUnificationHooks:
         solutions = list(engine.query(query))
 
         assert len(solutions) == 1
-        assert solutions[0]['X'].value == 7
+        assert solutions[0]["X"].value == 7
 
     def test_var_int_domain_membership_failure(self):
         """X in 5..10, X = 3 should fail since 3 is not in domain."""
@@ -86,7 +82,7 @@ class TestCLPFDUnificationHooks:
 
         # After X = Y, the unified variable should have watchers from both
         sol = solutions[0]
-        unified_var = sol['X']  # X and Y are now the same
+        unified_var = sol["X"]  # X and Y are now the same
 
         # Check that constraints are still enforced
         # X (now unified with Y) should be constrained by both X #< Z and Y #> W
@@ -107,10 +103,10 @@ class TestCLPFDUnificationHooks:
         sol = solutions[0]
 
         # X should be 5
-        assert sol['X'].value == 5
+        assert sol["X"].value == 5
 
         # Y should be pruned to 6..10 due to propagation
-        y_domain = get_domain(engine.store, sol['Y'].id)
+        y_domain = get_domain(engine.store, sol["Y"].id)
         assert y_domain is not None
         assert y_domain.min() == 6
         assert y_domain.max() == 10
@@ -140,9 +136,9 @@ class TestCLPFDUnificationHooks:
 
         assert len(solutions) == 1
         sol = solutions[0]
-        assert sol['X'].functor == 'foo'
-        assert sol['Y'].functor == 'foo'
-        assert sol['Z'].value == 42
+        assert sol["X"].functor == "foo"
+        assert sol["Y"].functor == "foo"
+        assert sol["Z"].value == 42
 
     def test_multiple_domain_merges(self):
         """Chain of unifications should properly merge all domains."""
@@ -158,10 +154,10 @@ class TestCLPFDUnificationHooks:
         sol = solutions[0]
 
         # All three should be aliased to the same variable
-        assert sol['X'].id == sol['Y'].id == sol['Z'].id
+        assert sol["X"].id == sol["Y"].id == sol["Z"].id
 
         # Domain should be intersection of all three: 10..20
-        domain = get_domain(engine.store, sol['X'].id)
+        domain = get_domain(engine.store, sol["X"].id)
         assert domain is not None
         assert domain.min() == 10
         assert domain.max() == 20
@@ -183,7 +179,7 @@ class TestCLPFDUnificationHooks:
         sol = solutions[0]
 
         # Final domain should be 6..9 (further constrained after unification)
-        domain = get_domain(engine.store, sol['X'].id)
+        domain = get_domain(engine.store, sol["X"].id)
         assert domain is not None
         assert domain.min() == 6
         assert domain.max() == 9
@@ -207,12 +203,12 @@ class TestCLPFDPropagationAfterUnification:
         sol = solutions[0]
 
         # X = 5 should propagate to Y and Z
-        assert sol['X'].value == 5
+        assert sol["X"].value == 5
 
-        y_domain = get_domain(engine.store, sol['Y'].id)
+        y_domain = get_domain(engine.store, sol["Y"].id)
         assert y_domain.min() == 6  # Y > 5
 
-        z_domain = get_domain(engine.store, sol['Z'].id)
+        z_domain = get_domain(engine.store, sol["Z"].id)
         assert z_domain.min() == 7  # Z > Y > 5, so Z >= 7
 
     def test_var_var_unification_propagates_to_both_sets_of_watchers(self):
@@ -230,8 +226,8 @@ class TestCLPFDPropagationAfterUnification:
         sol = solutions[0]
 
         # Both A and B should be affected by X=Y=5
-        a_domain = get_domain(engine.store, sol['A'].id)
-        b_domain = get_domain(engine.store, sol['B'].id)
+        a_domain = get_domain(engine.store, sol["A"].id)
+        b_domain = get_domain(engine.store, sol["B"].id)
 
         assert a_domain.min() == 6  # A > X = 5
         assert b_domain.min() == 6  # B > Y = X = 5
@@ -250,8 +246,8 @@ class TestCLPFDPropagationAfterUnification:
         assert len(solutions) == 1
         sol = solutions[0]
 
-        x_domain = get_domain(engine.store, sol['X'].id)
-        y_domain = get_domain(engine.store, sol['Y'].id)
+        x_domain = get_domain(engine.store, sol["X"].id)
+        y_domain = get_domain(engine.store, sol["Y"].id)
 
         # Domains should be from the else branch
         assert x_domain.min() == 2 and x_domain.max() == 4
@@ -269,8 +265,8 @@ class TestCLPFDHookEdgeCases:
         solutions = list(engine.query(query))
 
         assert len(solutions) == 1
-        assert solutions[0]['X'].value == 5
-        assert solutions[0]['Y'].value == 5
+        assert solutions[0]["X"].value == 5
+        assert solutions[0]["Y"].value == 5
 
     def test_singleton_domain_conflict(self):
         """Unifying variables with different singleton domains should fail."""
@@ -299,8 +295,8 @@ class TestCLPFDHookEdgeCases:
         solutions = list(engine.query(query))
 
         assert len(solutions) == 1
-        assert solutions[0]['X'].value == 7
-        assert solutions[0]['Y'].value == 7
+        assert solutions[0]["X"].value == 7
+        assert solutions[0]["Y"].value == 7
 
     def test_cyclic_constraint_after_unification(self):
         """Ensure no infinite loops when variables involved in mutual constraints are unified."""
@@ -319,6 +315,6 @@ class TestCLPFDHookEdgeCases:
 
         # They remain as unbound FD variables with domain 1..10
         sol = solutions[0]
-        assert sol['X'].id == sol['Y'].id
-        domain = get_domain(engine.store, sol['X'].id)
+        assert sol["X"].id == sol["Y"].id
+        domain = get_domain(engine.store, sol["X"].id)
         assert domain.min() == 1 and domain.max() == 10

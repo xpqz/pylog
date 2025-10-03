@@ -1,7 +1,6 @@
 """Unit tests for CLP(FD) linear constraint propagator."""
 
-import pytest
-from prolog.ast.terms import Var, Int, Struct
+from prolog.ast.terms import Var, Int
 from prolog.engine.engine import Engine, Program
 from prolog.clpfd.api import set_domain, get_domain
 from prolog.clpfd.domain import Domain
@@ -23,7 +22,7 @@ class TestLinearPropagator:
         set_domain(self.engine.store, x_id, Domain(((1, 10),)), self.engine.trail)
 
         # Create propagator for X = 5 (coeffs={x: 1}, const=-5, op='=')
-        prop = create_linear_propagator({x_id: 1}, -5, '=')
+        prop = create_linear_propagator({x_id: 1}, -5, "=")
 
         # Run propagator
         result, changed = prop(self.engine.store, self.engine.trail, self.engine, None)
@@ -43,7 +42,7 @@ class TestLinearPropagator:
         set_domain(self.engine.store, x_id, Domain(((1, 10),)), self.engine.trail)
 
         # Create propagator for X =< 5 (coeffs={x: 1}, const=-5, op='=<')
-        prop = create_linear_propagator({x_id: 1}, -5, '=<')
+        prop = create_linear_propagator({x_id: 1}, -5, "=<")
 
         # Run propagator
         result, changed = prop(self.engine.store, self.engine.trail, self.engine, None)
@@ -65,7 +64,7 @@ class TestLinearPropagator:
         set_domain(self.engine.store, y_id, Domain(((1, 10),)), self.engine.trail)
 
         # Create propagator for X + Y = 10
-        prop = create_linear_propagator({x_id: 1, y_id: 1}, -10, '=')
+        prop = create_linear_propagator({x_id: 1, y_id: 1}, -10, "=")
 
         # Run propagator
         result, changed = prop(self.engine.store, self.engine.trail, self.engine, None)
@@ -92,7 +91,7 @@ class TestLinearPropagator:
         set_domain(self.engine.store, y_id, Domain(((1, 10),)), self.engine.trail)
 
         # Create propagator for 2*X + 3*Y =< 20
-        prop = create_linear_propagator({x_id: 2, y_id: 3}, -20, '=<')
+        prop = create_linear_propagator({x_id: 2, y_id: 3}, -20, "=<")
 
         # Run propagator
         result, changed = prop(self.engine.store, self.engine.trail, self.engine, None)
@@ -120,7 +119,7 @@ class TestLinearPropagator:
         set_domain(self.engine.store, y_id, Domain(((1, 10),)), self.engine.trail)
 
         # X - Y >= 3 is equivalent to X - Y - 3 >= 0
-        prop = create_linear_propagator({x_id: 1, y_id: -1}, -3, '>=')
+        prop = create_linear_propagator({x_id: 1, y_id: -1}, -3, ">=")
 
         # Run propagator
         result, changed = prop(self.engine.store, self.engine.trail, self.engine, None)
@@ -144,7 +143,7 @@ class TestLinearPropagator:
         set_domain(self.engine.store, x_id, Domain(((1, 5),)), self.engine.trail)
 
         # Create propagator for X >= 10 (impossible)
-        prop = create_linear_propagator({x_id: 1}, -10, '>=')
+        prop = create_linear_propagator({x_id: 1}, -10, ">=")
 
         # Run propagator
         result, _ = prop(self.engine.store, self.engine.trail, self.engine, None)
@@ -159,7 +158,7 @@ class TestLinearPropagator:
         set_domain(self.engine.store, x_id, Domain(((5, 5),)), self.engine.trail)
 
         # Create propagator for X = 5 (already satisfied)
-        prop = create_linear_propagator({x_id: 1}, -5, '=')
+        prop = create_linear_propagator({x_id: 1}, -5, "=")
 
         # Run propagator
         result, changed = prop(self.engine.store, self.engine.trail, self.engine, None)
@@ -182,7 +181,7 @@ class TestLinearPropagator:
 
         # Create propagator for X + Y = 8
         # Since X is bound to 5, this becomes 5 + Y = 8, so Y = 3
-        prop = create_linear_propagator({x_id: 1, y_id: 1}, -8, '=')
+        prop = create_linear_propagator({x_id: 1, y_id: 1}, -8, "=")
 
         # Run propagator
         result, changed = prop(self.engine.store, self.engine.trail, self.engine, None)
@@ -201,7 +200,7 @@ class TestLinearPropagator:
         set_domain(self.engine.store, x_id, Domain(((4, 6),)), self.engine.trail)
 
         # Create propagator for X != 5
-        prop = create_linear_propagator({x_id: 1}, -5, '!=')
+        prop = create_linear_propagator({x_id: 1}, -5, "!=")
 
         # Run propagator
         result, changed = prop(self.engine.store, self.engine.trail, self.engine, None)
@@ -228,9 +227,7 @@ class TestLinearPropagator:
             set_domain(self.engine.store, vid, Domain(((1, 5),)), self.engine.trail)
 
         # Create propagator for A + B + C + D = 10
-        prop = create_linear_propagator(
-            {a_id: 1, b_id: 1, c_id: 1, d_id: 1}, -10, '='
-        )
+        prop = create_linear_propagator({a_id: 1, b_id: 1, c_id: 1, d_id: 1}, -10, "=")
 
         # Run propagator
         result, changed = prop(self.engine.store, self.engine.trail, self.engine, None)
@@ -252,7 +249,7 @@ class TestLinearPropagator:
         set_domain(self.engine.store, x_id, Domain(((1, 10),)), self.engine.trail)
 
         # Create propagator with zero coefficient (0*X = 5 is just 0 = 5, which fails)
-        prop = create_linear_propagator({x_id: 0}, -5, '=')
+        prop = create_linear_propagator({x_id: 0}, -5, "=")
 
         # Run propagator
         result, _ = prop(self.engine.store, self.engine.trail, self.engine, None)
@@ -264,7 +261,7 @@ class TestLinearPropagator:
         """Test constraint with no variables."""
 
         # Create propagator for 0 = 0 (trivially true)
-        prop = create_linear_propagator({}, 0, '=')
+        prop = create_linear_propagator({}, 0, "=")
 
         # Run propagator
         result, changed = prop(self.engine.store, self.engine.trail, self.engine, None)
@@ -273,7 +270,7 @@ class TestLinearPropagator:
         assert changed is None  # No variables to change
 
         # Create propagator for 0 = 5 (trivially false)
-        prop = create_linear_propagator({}, -5, '=')
+        prop = create_linear_propagator({}, -5, "=")
 
         # Run propagator
         result, _ = prop(self.engine.store, self.engine.trail, self.engine, None)
@@ -290,7 +287,7 @@ class TestLinearPropagator:
         set_domain(self.engine.store, y_id, Domain(((0, 100),)), self.engine.trail)
 
         # Create propagator for 1000*X + 100*Y = 5000
-        prop = create_linear_propagator({x_id: 1000, y_id: 100}, -5000, '=')
+        prop = create_linear_propagator({x_id: 1000, y_id: 100}, -5000, "=")
 
         # Run propagator
         result, changed = prop(self.engine.store, self.engine.trail, self.engine, None)
@@ -317,10 +314,12 @@ class TestLinearPropagator:
         set_domain(self.engine.store, y_id, Domain(((1, 10),)), self.engine.trail)
 
         # Create propagator for X + Y = 10
-        prop = create_linear_propagator({x_id: 1, y_id: 1}, -10, '=')
+        prop = create_linear_propagator({x_id: 1, y_id: 1}, -10, "=")
 
         # Run propagator first time
-        result1, changed1 = prop(self.engine.store, self.engine.trail, self.engine, None)
+        result1, changed1 = prop(
+            self.engine.store, self.engine.trail, self.engine, None
+        )
         assert result1 == "ok"
         assert changed1
 
@@ -329,7 +328,9 @@ class TestLinearPropagator:
         y_dom1 = get_domain(self.engine.store, y_id)
 
         # Run propagator second time
-        result2, changed2 = prop(self.engine.store, self.engine.trail, self.engine, None)
+        result2, changed2 = prop(
+            self.engine.store, self.engine.trail, self.engine, None
+        )
         assert result2 == "ok"
         assert changed2 is None  # No changes on second run
 

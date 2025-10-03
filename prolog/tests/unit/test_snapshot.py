@@ -10,8 +10,11 @@ import json
 from dataclasses import FrozenInstanceError
 
 from prolog.debug.snapshot import (
-    EngineSnapshot, CPSnapshot, FrameSnapshot,
-    SnapshotManager, SnapshotDiff
+    EngineSnapshot,
+    CPSnapshot,
+    FrameSnapshot,
+    SnapshotManager,
+    SnapshotDiff,
 )
 from prolog.engine.engine import Engine
 from prolog.ast.terms import Atom, Int, Var, Struct
@@ -37,7 +40,7 @@ class TestDataclasses:
             write_stamp=42,
             choicepoints=(),
             frames=(),
-            memory_bytes=None
+            memory_bytes=None,
         )
 
         with pytest.raises(FrozenInstanceError):
@@ -58,12 +61,12 @@ class TestDataclasses:
             write_stamp=0,
             choicepoints=(),  # Use tuples for immutability
             frames=(),
-            memory_bytes=None
+            memory_bytes=None,
         )
 
         # Classes with __slots__ don't have __dict__
-        assert not hasattr(snapshot, '__dict__')
-        assert hasattr(type(snapshot), '__slots__')
+        assert not hasattr(snapshot, "__dict__")
+        assert hasattr(type(snapshot), "__slots__")
 
     def test_engine_snapshot_collections_immutable(self):
         """EngineSnapshot collections are deeply immutable."""
@@ -80,7 +83,7 @@ class TestDataclasses:
             write_stamp=0,
             choicepoints=(),  # Must be tuples
             frames=(),
-            memory_bytes=None
+            memory_bytes=None,
         )
 
         # Collections should be tuples for immutability
@@ -101,7 +104,7 @@ class TestDataclasses:
             pred_id="foo/2",
             trail_top=10,
             goal_height=5,
-            frame_height=3
+            frame_height=3,
         )
 
         assert cp.cp_id == 0
@@ -119,7 +122,7 @@ class TestDataclasses:
             pred_id="test/1",
             trail_top=0,
             goal_height=0,
-            frame_height=0
+            frame_height=0,
         )
 
         with pytest.raises(FrozenInstanceError):
@@ -127,11 +130,7 @@ class TestDataclasses:
 
     def test_frame_snapshot_fields(self):
         """FrameSnapshot has required fields."""
-        frame = FrameSnapshot(
-            frame_id=0,
-            pred_id="append/3",
-            parent_frame=None
-        )
+        frame = FrameSnapshot(frame_id=0, pred_id="append/3", parent_frame=None)
 
         assert frame.frame_id == 0
         assert frame.pred_id == "append/3"
@@ -139,11 +138,7 @@ class TestDataclasses:
 
     def test_frame_snapshot_with_parent(self):
         """FrameSnapshot can have parent frame reference."""
-        frame = FrameSnapshot(
-            frame_id=1,
-            pred_id="member/2",
-            parent_frame=0
-        )
+        frame = FrameSnapshot(frame_id=1, pred_id="member/2", parent_frame=0)
 
         assert frame.parent_frame == 0
 
@@ -169,10 +164,7 @@ class TestSnapshotManager:
 
     def test_snapshot_with_query(self):
         """Snapshot captures state during query execution."""
-        prog = program(
-            mk_fact("test", Int(1)),
-            mk_fact("test", Int(2))
-        )
+        prog = program(mk_fact("test", Int(1)), mk_fact("test", Int(2)))
         engine = Engine(program=prog, debug=True)
         manager = SnapshotManager()
 
@@ -192,7 +184,7 @@ class TestSnapshotManager:
         prog = program(
             mk_fact("choice", Int(1)),
             mk_fact("choice", Int(2)),
-            mk_fact("choice", Int(3))
+            mk_fact("choice", Int(3)),
         )
         engine = Engine(program=prog, debug=True)
         manager = SnapshotManager()
@@ -209,8 +201,8 @@ class TestSnapshotManager:
         # so we may have 0 choicepoints
         if len(snapshot.choicepoints) > 0:
             cp = snapshot.choicepoints[0]
-            assert hasattr(cp, 'pred_id')
-            assert hasattr(cp, 'kind')
+            assert hasattr(cp, "pred_id")
+            assert hasattr(cp, "kind")
             assert cp.kind in ["clause", "call"]
 
             # Check choicepoint IDs are unique
@@ -220,9 +212,8 @@ class TestSnapshotManager:
     def test_snapshot_frames(self):
         """Snapshot captures frame stack with meaningful assertions."""
         prog = program(
-            mk_rule("parent", (Var(0, "X"),),
-                    Struct("child", (Var(0, "X"),))),
-            mk_fact("child", Atom("alice"))
+            mk_rule("parent", (Var(0, "X"),), Struct("child", (Var(0, "X"),))),
+            mk_fact("child", Atom("alice")),
         )
         engine = Engine(program=prog, debug=True)
         manager = SnapshotManager()
@@ -239,9 +230,9 @@ class TestSnapshotManager:
         if len(snapshot.frames) > 0:
             # Check frame structure
             frame = snapshot.frames[0]
-            assert hasattr(frame, 'frame_id')
-            assert hasattr(frame, 'pred_id')
-            assert hasattr(frame, 'parent_frame')
+            assert hasattr(frame, "frame_id")
+            assert hasattr(frame, "pred_id")
+            assert hasattr(frame, "parent_frame")
 
             # If multiple frames, check parent linkage
             if len(snapshot.frames) > 1:
@@ -263,13 +254,9 @@ class TestSnapshotManager:
             cp_height=1,
             cp_top=0,
             write_stamp=42,
-            choicepoints=[
-                CPSnapshot(0, "clause", "test/1", 2, 1, 0)
-            ],
-            frames=[
-                FrameSnapshot(0, "test/1", None)
-            ],
-            memory_bytes=1024
+            choicepoints=[CPSnapshot(0, "clause", "test/1", 2, 1, 0)],
+            frames=[FrameSnapshot(0, "test/1", None)],
+            memory_bytes=1024,
         )
 
         d = snapshot.to_dict()
@@ -297,7 +284,7 @@ class TestSnapshotManager:
             write_stamp=10,
             choicepoints=(),
             frames=(),
-            memory_bytes=None
+            memory_bytes=None,
         )
 
         # Should be JSON serializable
@@ -324,7 +311,7 @@ class TestSnapshotManager:
             write_stamp=42,
             choicepoints=(),
             frames=(),
-            memory_bytes=None
+            memory_bytes=None,
         )
 
         manager = SnapshotManager()
@@ -356,28 +343,23 @@ class TestSnapshotManager:
             write_stamp=42,
             choicepoints=(),
             frames=(),
-            memory_bytes=None
+            memory_bytes=None,
         )
 
         snapshot2 = EngineSnapshot(
             store_size=15,  # +5
             trail_length=8,  # +3
             trail_top=5,
-            goal_height=3,   # +1
+            goal_height=3,  # +1
             goal_top=2,
             frame_height=2,  # +1
             frame_top=1,
-            cp_height=1,     # +1
+            cp_height=1,  # +1
             cp_top=0,
             write_stamp=50,  # +8
-            choicepoints=[
-                CPSnapshot(0, "clause", "test/1", 5, 2, 1)
-            ],
-            frames=[
-                FrameSnapshot(0, "test/1", None),
-                FrameSnapshot(1, "foo/2", 0)
-            ],
-            memory_bytes=2048
+            choicepoints=[CPSnapshot(0, "clause", "test/1", 5, 2, 1)],
+            frames=[FrameSnapshot(0, "test/1", None), FrameSnapshot(1, "foo/2", 0)],
+            memory_bytes=2048,
         )
 
         manager = SnapshotManager()
@@ -407,13 +389,10 @@ class TestSnapshotManager:
             write_stamp=42,
             choicepoints=[
                 CPSnapshot(0, "clause", "test/1", 2, 1, 0),
-                CPSnapshot(1, "clause", "foo/2", 3, 2, 1)
+                CPSnapshot(1, "clause", "foo/2", 3, 2, 1),
             ],
-            frames=[
-                FrameSnapshot(0, "test/1", None),
-                FrameSnapshot(1, "foo/2", 0)
-            ],
-            memory_bytes=None
+            frames=[FrameSnapshot(0, "test/1", None), FrameSnapshot(1, "foo/2", 0)],
+            memory_bytes=None,
         )
 
         snapshot2 = EngineSnapshot(
@@ -424,16 +403,12 @@ class TestSnapshotManager:
             goal_top=0,
             frame_height=1,  # Reduced
             frame_top=0,
-            cp_height=1,     # Reduced
+            cp_height=1,  # Reduced
             cp_top=0,
             write_stamp=45,
-            choicepoints=[
-                CPSnapshot(0, "clause", "test/1", 2, 1, 0)
-            ],
-            frames=[
-                FrameSnapshot(0, "test/1", None)
-            ],
-            memory_bytes=None
+            choicepoints=[CPSnapshot(0, "clause", "test/1", 2, 1, 0)],
+            frames=[FrameSnapshot(0, "test/1", None)],
+            memory_bytes=None,
         )
 
         manager = SnapshotManager()
@@ -462,7 +437,7 @@ class TestSnapshotManager:
             choicepoints_removed=1,
             frames_added=3,
             frames_removed=0,
-            memory_delta=1024
+            memory_delta=1024,
         )
 
         d = diff.to_dict()
@@ -492,7 +467,7 @@ class TestSnapshotManager:
             choicepoints_removed=1,
             frames_added=3,
             frames_removed=0,
-            memory_delta=1024
+            memory_delta=1024,
         )
 
         s = str(diff)
@@ -506,8 +481,11 @@ class TestSnapshotManager:
         """Verify no growth during pure backtracking."""
         prog = program(
             mk_fact("member", Var(0, "X"), Struct(".", (Var(0, "X"), Var(1, "_")))),
-            mk_rule("member", (Var(0, "X"), Struct(".", (Var(1, "_"), Var(2, "T")))),
-                    Struct("member", (Var(0, "X"), Var(2, "T"))))
+            mk_rule(
+                "member",
+                (Var(0, "X"), Struct(".", (Var(1, "_"), Var(2, "T")))),
+                Struct("member", (Var(0, "X"), Var(2, "T"))),
+            ),
         )
         engine = Engine(program=prog, debug=True)
         manager = SnapshotManager()
@@ -585,7 +563,7 @@ class TestSnapshotManager:
             write_stamp=10,
             choicepoints=(),
             frames=(),
-            memory_bytes=None
+            memory_bytes=None,
         )
 
         snapshot2 = EngineSnapshot(
@@ -601,7 +579,7 @@ class TestSnapshotManager:
             write_stamp=15,
             choicepoints=(CPSnapshot(0, "clause", "p/1", 5, 2, 1),),
             frames=(FrameSnapshot(0, "p/1", None),),
-            memory_bytes=256
+            memory_bytes=256,
         )
 
         manager = SnapshotManager()
@@ -637,7 +615,7 @@ class TestSnapshotManager:
             write_stamp=42,
             choicepoints=(),
             frames=(),
-            memory_bytes=None
+            memory_bytes=None,
         )
 
         snapshot2 = EngineSnapshot(
@@ -653,7 +631,7 @@ class TestSnapshotManager:
             write_stamp=43,
             choicepoints=(),
             frames=(),
-            memory_bytes=None
+            memory_bytes=None,
         )
 
         manager = SnapshotManager()
@@ -670,14 +648,20 @@ class TestSnapshotIntegration:
     def test_snapshot_during_execution(self):
         """Take snapshots at different points during execution."""
         prog = program(
-            mk_rule("path", (Var(0, "X"), Var(1, "Y")),
-                    Struct("edge", (Var(0, "X"), Var(1, "Y")))),
-            mk_rule("path", (Var(0, "X"), Var(1, "Z")),
-                    Struct("edge", (Var(0, "X"), Var(2, "Y"))),
-                    Struct("path", (Var(2, "Y"), Var(1, "Z")))),
+            mk_rule(
+                "path",
+                (Var(0, "X"), Var(1, "Y")),
+                Struct("edge", (Var(0, "X"), Var(1, "Y"))),
+            ),
+            mk_rule(
+                "path",
+                (Var(0, "X"), Var(1, "Z")),
+                Struct("edge", (Var(0, "X"), Var(2, "Y"))),
+                Struct("path", (Var(2, "Y"), Var(1, "Z"))),
+            ),
             mk_fact("edge", Atom("a"), Atom("b")),
             mk_fact("edge", Atom("b"), Atom("c")),
-            mk_fact("edge", Atom("c"), Atom("d"))
+            mk_fact("edge", Atom("c"), Atom("d")),
         )
         engine = Engine(program=prog, debug=True)
         manager = SnapshotManager()
@@ -698,17 +682,14 @@ class TestSnapshotIntegration:
 
         # Compare snapshots
         for i in range(1, len(snapshots)):
-            diff = manager.diff(snapshots[i-1], snapshots[i])
+            diff = manager.diff(snapshots[i - 1], snapshots[i])
             # Store size may change as variables are created
             # (write_stamp isn't currently incremented by engine)
             assert diff.store_size_delta >= 0
 
     def test_snapshot_completeness(self):
         """Snapshot captures all essential engine state."""
-        prog = program(
-            mk_fact("test", Int(1)),
-            mk_fact("test", Int(2))
-        )
+        prog = program(mk_fact("test", Int(1)), mk_fact("test", Int(2)))
         engine = Engine(program=prog, debug=True)
         manager = SnapshotManager()
 
@@ -718,19 +699,19 @@ class TestSnapshotIntegration:
         snapshot = manager.snapshot(engine)
 
         # Verify all essential fields are captured
-        assert hasattr(snapshot, 'store_size')
-        assert hasattr(snapshot, 'trail_length')
-        assert hasattr(snapshot, 'trail_top')
-        assert hasattr(snapshot, 'goal_height')
-        assert hasattr(snapshot, 'goal_top')
-        assert hasattr(snapshot, 'frame_height')
-        assert hasattr(snapshot, 'frame_top')
-        assert hasattr(snapshot, 'cp_height')
-        assert hasattr(snapshot, 'cp_top')
-        assert hasattr(snapshot, 'write_stamp')
-        assert hasattr(snapshot, 'choicepoints')
-        assert hasattr(snapshot, 'frames')
-        assert hasattr(snapshot, 'memory_bytes')
+        assert hasattr(snapshot, "store_size")
+        assert hasattr(snapshot, "trail_length")
+        assert hasattr(snapshot, "trail_top")
+        assert hasattr(snapshot, "goal_height")
+        assert hasattr(snapshot, "goal_top")
+        assert hasattr(snapshot, "frame_height")
+        assert hasattr(snapshot, "frame_top")
+        assert hasattr(snapshot, "cp_height")
+        assert hasattr(snapshot, "cp_top")
+        assert hasattr(snapshot, "write_stamp")
+        assert hasattr(snapshot, "choicepoints")
+        assert hasattr(snapshot, "frames")
+        assert hasattr(snapshot, "memory_bytes")
 
     def test_snapshot_uses_public_apis(self):
         """Snapshot exposes only public state data."""

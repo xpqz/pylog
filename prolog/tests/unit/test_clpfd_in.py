@@ -5,11 +5,8 @@ Tests domain posting, parsing, and integration with the engine.
 
 import pytest
 from prolog.ast.terms import Atom, Int, Var, Struct, List
-from prolog.unify.store import Store
-from prolog.unify.trail import Trail
 from prolog.engine.engine import Engine
 from prolog.ast.clauses import Program
-from prolog.clpfd.domain import Domain
 from prolog.clpfd.api import get_domain
 from prolog.engine.builtins_clpfd import _builtin_in, parse_domain_term
 
@@ -46,10 +43,9 @@ class TestDomainParsing:
     def test_parse_union_of_intervals(self):
         """Parse union of domain specifications."""
         # 1..3 \/ 7..9
-        term = Struct("\\/", (
-            Struct("..", (Int(1), Int(3))),
-            Struct("..", (Int(7), Int(9)))
-        ))
+        term = Struct(
+            "\\/", (Struct("..", (Int(1), Int(3))), Struct("..", (Int(7), Int(9))))
+        )
         domain = parse_domain_term(term)
 
         # Should merge into sorted intervals
@@ -60,10 +56,7 @@ class TestDomainParsing:
     def test_parse_union_of_singletons(self):
         """Parse union of singleton values."""
         # 1 \/ 3 \/ 5
-        term = Struct("\\/", (
-            Int(1),
-            Struct("\\/", (Int(3), Int(5)))
-        ))
+        term = Struct("\\/", (Int(1), Struct("\\/", (Int(3), Int(5)))))
         domain = parse_domain_term(term)
 
         # Should create separate singleton intervals
@@ -86,10 +79,9 @@ class TestDomainParsing:
     def test_parse_union_with_overlap_normalizes(self):
         """Parse union with overlapping intervals should normalize."""
         # (1..4) \/ (3..6) should merge to single interval
-        term = Struct("\\/", (
-            Struct("..", (Int(1), Int(4))),
-            Struct("..", (Int(3), Int(6)))
-        ))
+        term = Struct(
+            "\\/", (Struct("..", (Int(1), Int(4))), Struct("..", (Int(3), Int(6))))
+        )
         domain = parse_domain_term(term)
 
         # Should be normalized to single interval 1..6
@@ -103,10 +95,9 @@ class TestDomainParsing:
     def test_parse_union_with_adjacency_normalizes(self):
         """Parse union with adjacent intervals should normalize."""
         # (1..3) \/ (4..6) should merge to 1..6 (adjacent intervals)
-        term = Struct("\\/", (
-            Struct("..", (Int(1), Int(3))),
-            Struct("..", (Int(4), Int(6)))
-        ))
+        term = Struct(
+            "\\/", (Struct("..", (Int(1), Int(3))), Struct("..", (Int(4), Int(6))))
+        )
         domain = parse_domain_term(term)
 
         # Should be normalized to single interval 1..6
@@ -208,13 +199,13 @@ class TestInBuiltin:
         store = engine.store
 
         # Initially no CLP(FD) hook
-        assert not hasattr(engine, '_clpfd_inited') or not engine._clpfd_inited
+        assert not hasattr(engine, "_clpfd_inited") or not engine._clpfd_inited
 
         x = Var(store.new_var(), "X")
         _builtin_in(engine, x, Struct("..", (Int(1), Int(10))))
 
         # Hook should now be registered
-        assert hasattr(engine, '_clpfd_inited')
+        assert hasattr(engine, "_clpfd_inited")
         assert engine._clpfd_inited
 
     def test_in_with_singleton_domain(self):
@@ -255,10 +246,9 @@ class TestInBuiltin:
         trail = engine.trail
 
         x = Var(store.new_var(), "X")
-        union_term = Struct("\\/", (
-            Struct("..", (Int(1), Int(3))),
-            Struct("..", (Int(7), Int(9)))
-        ))
+        union_term = Struct(
+            "\\/", (Struct("..", (Int(1), Int(3))), Struct("..", (Int(7), Int(9))))
+        )
         _builtin_in(engine, x, union_term)
 
         domain = get_domain(store, x.id)

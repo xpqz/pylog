@@ -19,6 +19,7 @@ class CPSnapshot:
     Immutable dataclass with slots for memory efficiency.
     Note: cp_id may be snapshot-relative if engine doesn't provide stable IDs.
     """
+
     cp_id: int
     kind: str  # "clause" or "call"
     pred_id: str
@@ -34,7 +35,7 @@ class CPSnapshot:
             "pred_id": self.pred_id,
             "trail_top": self.trail_top,
             "goal_height": self.goal_height,
-            "frame_height": self.frame_height
+            "frame_height": self.frame_height,
         }
 
 
@@ -46,6 +47,7 @@ class FrameSnapshot:
     Immutable dataclass with slots for memory efficiency.
     Note: frame_id may be snapshot-relative if engine doesn't provide stable IDs.
     """
+
     frame_id: int
     pred_id: str
     parent_frame: Optional[int]
@@ -55,7 +57,7 @@ class FrameSnapshot:
         return {
             "frame_id": self.frame_id,
             "pred_id": self.pred_id,
-            "parent_frame": self.parent_frame
+            "parent_frame": self.parent_frame,
         }
 
 
@@ -67,6 +69,7 @@ class EngineSnapshot:
     Immutable dataclass with slots for memory efficiency.
     Collections are stored as tuples for deep immutability.
     """
+
     store_size: int
     trail_length: int
     trail_top: int
@@ -96,7 +99,7 @@ class EngineSnapshot:
             "write_stamp": self.write_stamp,
             "choicepoints": [cp.to_dict() for cp in self.choicepoints],
             "frames": [f.to_dict() for f in self.frames],
-            "memory_bytes": self.memory_bytes
+            "memory_bytes": self.memory_bytes,
         }
 
 
@@ -109,6 +112,7 @@ class SnapshotDiff:
     Note: add/remove counts are cardinality deltas (length differences),
     not identity-based tracking of individual items.
     """
+
     store_size_delta: int
     trail_length_delta: int
     trail_top_delta: int
@@ -142,7 +146,7 @@ class SnapshotDiff:
             "choicepoints_removed": self.choicepoints_removed,
             "frames_added": self.frames_added,
             "frames_removed": self.frames_removed,
-            "memory_delta": self.memory_delta
+            "memory_delta": self.memory_delta,
         }
 
     def __str__(self) -> str:
@@ -166,7 +170,9 @@ class SnapshotDiff:
         lines.append(fmt_delta("write_stamp", self.write_stamp_delta))
 
         # Format add/remove counts
-        lines.append(f"choicepoints: +{self.choicepoints_added}/-{self.choicepoints_removed}")
+        lines.append(
+            f"choicepoints: +{self.choicepoints_added}/-{self.choicepoints_removed}"
+        )
         lines.append(f"frames: +{self.frames_added}/-{self.frames_removed}")
 
         if self.memory_delta is not None:
@@ -212,15 +218,15 @@ class SnapshotManager:
 
             # Add sizes from internal structures if available
             # This is best-effort and may access internals
-            if hasattr(engine, 'store') and hasattr(engine.store, 'cells'):
+            if hasattr(engine, "store") and hasattr(engine.store, "cells"):
                 size += sys.getsizeof(engine.store.cells)
-            if hasattr(engine, 'trail'):
+            if hasattr(engine, "trail"):
                 size += sys.getsizeof(engine.trail)
-            if hasattr(engine, 'goal_stack'):
+            if hasattr(engine, "goal_stack"):
                 size += sys.getsizeof(engine.goal_stack)
-            if hasattr(engine, 'frame_stack'):
+            if hasattr(engine, "frame_stack"):
                 size += sys.getsizeof(engine.frame_stack)
-            if hasattr(engine, 'cp_stack'):
+            if hasattr(engine, "cp_stack"):
                 size += sys.getsizeof(engine.cp_stack)
 
             return size if size > 0 else None
@@ -240,49 +246,59 @@ class SnapshotManager:
             Complete engine state snapshot
         """
         # Access state through public APIs only
-        store_size = engine.store_size() if hasattr(engine, 'store_size') else 0
-        trail_length = engine.trail_length() if hasattr(engine, 'trail_length') else 0
-        trail_top = engine.trail_top_value() if hasattr(engine, 'trail_top_value') else 0
-        goal_height = engine.goal_height() if hasattr(engine, 'goal_height') else 0
-        goal_top = engine.goal_top_value() if hasattr(engine, 'goal_top_value') else 0
-        frame_height = engine.frame_height() if hasattr(engine, 'frame_height') else 0
-        frame_top = engine.frame_top_value() if hasattr(engine, 'frame_top_value') else 0
-        cp_height = engine.choicepoint_height() if hasattr(engine, 'choicepoint_height') else 0
-        cp_top = engine.choicepoint_top() if hasattr(engine, 'choicepoint_top') else 0
-        write_stamp = engine.write_stamp_value() if hasattr(engine, 'write_stamp_value') else 0
+        store_size = engine.store_size() if hasattr(engine, "store_size") else 0
+        trail_length = engine.trail_length() if hasattr(engine, "trail_length") else 0
+        trail_top = (
+            engine.trail_top_value() if hasattr(engine, "trail_top_value") else 0
+        )
+        goal_height = engine.goal_height() if hasattr(engine, "goal_height") else 0
+        goal_top = engine.goal_top_value() if hasattr(engine, "goal_top_value") else 0
+        frame_height = engine.frame_height() if hasattr(engine, "frame_height") else 0
+        frame_top = (
+            engine.frame_top_value() if hasattr(engine, "frame_top_value") else 0
+        )
+        cp_height = (
+            engine.choicepoint_height() if hasattr(engine, "choicepoint_height") else 0
+        )
+        cp_top = engine.choicepoint_top() if hasattr(engine, "choicepoint_top") else 0
+        write_stamp = (
+            engine.write_stamp_value() if hasattr(engine, "write_stamp_value") else 0
+        )
 
         # Capture choicepoints using public API
         choicepoints = []
-        if hasattr(engine, 'choicepoints'):
+        if hasattr(engine, "choicepoints"):
             for i, cp in enumerate(engine.choicepoints()):
                 # Prefer stable ID if available, otherwise use enumeration
-                cp_id = getattr(cp, 'id', None)
+                cp_id = getattr(cp, "id", None)
                 if cp_id is None:
                     cp_id = i  # Snapshot-relative ID
 
                 cp_snapshot = CPSnapshot(
                     cp_id=cp_id,
-                    kind=cp.kind if hasattr(cp, 'kind') else "clause",
-                    pred_id=cp.pred_id if hasattr(cp, 'pred_id') else "unknown",
-                    trail_top=cp.trail_top if hasattr(cp, 'trail_top') else 0,
-                    goal_height=cp.goal_top if hasattr(cp, 'goal_top') else 0,
-                    frame_height=cp.frame_top if hasattr(cp, 'frame_top') else 0
+                    kind=cp.kind if hasattr(cp, "kind") else "clause",
+                    pred_id=cp.pred_id if hasattr(cp, "pred_id") else "unknown",
+                    trail_top=cp.trail_top if hasattr(cp, "trail_top") else 0,
+                    goal_height=cp.goal_top if hasattr(cp, "goal_top") else 0,
+                    frame_height=cp.frame_top if hasattr(cp, "frame_top") else 0,
                 )
                 choicepoints.append(cp_snapshot)
 
         # Capture frames using public API
         frames = []
-        if hasattr(engine, 'frames'):
+        if hasattr(engine, "frames"):
             for i, frame in enumerate(engine.frames()):
                 # Prefer stable ID if available, otherwise use enumeration
-                frame_id = getattr(frame, 'id', None)
+                frame_id = getattr(frame, "id", None)
                 if frame_id is None:
                     frame_id = i  # Snapshot-relative ID
 
                 frame_snapshot = FrameSnapshot(
                     frame_id=frame_id,
-                    pred_id=frame.pred_id if hasattr(frame, 'pred_id') else "unknown",
-                    parent_frame=frame.parent_frame if hasattr(frame, 'parent_frame') else None
+                    pred_id=frame.pred_id if hasattr(frame, "pred_id") else "unknown",
+                    parent_frame=(
+                        frame.parent_frame if hasattr(frame, "parent_frame") else None
+                    ),
                 )
                 frames.append(frame_snapshot)
 
@@ -303,10 +319,12 @@ class SnapshotManager:
             write_stamp=write_stamp,
             choicepoints=tuple(choicepoints),  # Ensure tuple for immutability
             frames=tuple(frames),  # Ensure tuple for immutability
-            memory_bytes=memory_bytes
+            memory_bytes=memory_bytes,
         )
 
-    def diff(self, snapshot1: EngineSnapshot, snapshot2: EngineSnapshot) -> SnapshotDiff:
+    def diff(
+        self, snapshot1: EngineSnapshot, snapshot2: EngineSnapshot
+    ) -> SnapshotDiff:
         """
         Compute differences between two snapshots.
 
@@ -331,8 +349,12 @@ class SnapshotManager:
 
         # Count choicepoint changes
         # Simple counting - could be enhanced to track modifications
-        choicepoints_added = max(0, len(snapshot2.choicepoints) - len(snapshot1.choicepoints))
-        choicepoints_removed = max(0, len(snapshot1.choicepoints) - len(snapshot2.choicepoints))
+        choicepoints_added = max(
+            0, len(snapshot2.choicepoints) - len(snapshot1.choicepoints)
+        )
+        choicepoints_removed = max(
+            0, len(snapshot1.choicepoints) - len(snapshot2.choicepoints)
+        )
 
         # Count frame changes
         frames_added = max(0, len(snapshot2.frames) - len(snapshot1.frames))
@@ -358,5 +380,5 @@ class SnapshotManager:
             choicepoints_removed=choicepoints_removed,
             frames_added=frames_added,
             frames_removed=frames_removed,
-            memory_delta=memory_delta
+            memory_delta=memory_delta,
         )

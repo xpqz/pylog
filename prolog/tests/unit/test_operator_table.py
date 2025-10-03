@@ -5,7 +5,6 @@ as the single source of truth for the reader.
 """
 
 import pytest
-import re
 from typing import Dict, Tuple
 
 
@@ -20,378 +19,408 @@ pytestmark = pytest.mark.stage15
 
 class TestOperatorTable:
     """Test the static operator table with exact precedence and associativity."""
-    
+
     def setup_method(self):
         """Import the operator table once it exists."""
         # This will import from prolog.parser.operators once implemented
         # For now, we define the expected table for testing
         self.expected_operators = self.get_expected_table()
-    
+
     def get_expected_table(self) -> Dict[Tuple[str, str], OperatorInfo]:
         """Define the expected operator table for testing.
-        
+
         Returns dict mapping (operator, position) to (precedence, type, canonical).
         Position is 'infix', 'prefix', or 'postfix'.
         """
         return {
             # Control flow operators
-            (',', 'infix'): (1000, 'xfy', "','"),
-            (';', 'infix'): (1100, 'xfy', "';'"),
-            ('->', 'infix'): (1050, 'xfy', "'->'"),
-            
+            (",", "infix"): (1000, "xfy", "','"),
+            (";", "infix"): (1100, "xfy", "';'"),
+            ("->", "infix"): (1050, "xfy", "'->'"),
             # Equality and disequality
-            ('=', 'infix'): (700, 'xfx', "'='"),
-            ('\\=', 'infix'): (700, 'xfx', "'\\\\='"),
-            
+            ("=", "infix"): (700, "xfx", "'='"),
+            ("\\=", "infix"): (700, "xfx", "'\\\\='"),
             # Structural comparison
-            ('==', 'infix'): (700, 'xfx', "'=='"),
-            ('\\==', 'infix'): (700, 'xfx', "'\\\\=='"),
-            
+            ("==", "infix"): (700, "xfx", "'=='"),
+            ("\\==", "infix"): (700, "xfx", "'\\\\=='"),
             # Term order
-            ('@<', 'infix'): (700, 'xfx', "'@<'"),
-            ('@>', 'infix'): (700, 'xfx', "'@>'"),
-            ('@=<', 'infix'): (700, 'xfx', "'@=<'"),
-            ('@>=', 'infix'): (700, 'xfx', "'@>='"),
-            
+            ("@<", "infix"): (700, "xfx", "'@<'"),
+            ("@>", "infix"): (700, "xfx", "'@>'"),
+            ("@=<", "infix"): (700, "xfx", "'@=<'"),
+            ("@>=", "infix"): (700, "xfx", "'@>='"),
             # Arithmetic comparison
-            ('<', 'infix'): (700, 'xfx', "'<'"),
-            ('>', 'infix'): (700, 'xfx', "'>'"),
-            ('=<', 'infix'): (700, 'xfx', "'=<'"),
-            ('>=', 'infix'): (700, 'xfx', "'>='"),
-            ('=:=', 'infix'): (700, 'xfx', "'=:='"),
-            ('=\\=', 'infix'): (700, 'xfx', "'=\\\\='"),
-            
+            ("<", "infix"): (700, "xfx", "'<'"),
+            (">", "infix"): (700, "xfx", "'>'"),
+            ("=<", "infix"): (700, "xfx", "'=<'"),
+            (">=", "infix"): (700, "xfx", "'>='"),
+            ("=:=", "infix"): (700, "xfx", "'=:='"),
+            ("=\\=", "infix"): (700, "xfx", "'=\\\\='"),
             # Arithmetic operators
-            ('+', 'infix'): (500, 'yfx', "'+'"),
-            ('-', 'infix'): (500, 'yfx', "'-'"),
-            ('*', 'infix'): (400, 'yfx', "'*'"),
-            ('/', 'infix'): (400, 'yfx', "'/'"),
-            ('//', 'infix'): (400, 'yfx', "'//'"),
-            ('mod', 'infix'): (400, 'yfx', "'mod'"),
-            ('**', 'infix'): (200, 'xfy', "'**'"),  # Right associative!
-            
+            ("+", "infix"): (500, "yfx", "'+'"),
+            ("-", "infix"): (500, "yfx", "'-'"),
+            ("*", "infix"): (400, "yfx", "'*'"),
+            ("/", "infix"): (400, "yfx", "'/'"),
+            ("//", "infix"): (400, "yfx", "'//'"),
+            ("mod", "infix"): (400, "yfx", "'mod'"),
+            ("**", "infix"): (200, "xfy", "'**'"),  # Right associative!
             # Unary operators
-            ('-', 'prefix'): (200, 'fy', "'-'"),
-            ('+', 'prefix'): (200, 'fy', "'+'"),
-            ('\\+', 'prefix'): (900, 'fy', "'\\\\+'"),
-            
+            ("-", "prefix"): (200, "fy", "'-'"),
+            ("+", "prefix"): (200, "fy", "'+'"),
+            ("\\+", "prefix"): (900, "fy", "'\\\\+'"),
             # Other standard operators
-            ('is', 'infix'): (700, 'xfx', "'is'"),
+            ("is", "infix"): (700, "xfx", "'is'"),
         }
-    
+
     def test_operator_table_import(self):
         """Test that we can import the operator table module."""
         from prolog.parser.operators import OPERATOR_TABLE
+
         assert OPERATOR_TABLE is not None
-    
+
     def test_comma_precedence_and_type(self):
         """Test that ',' has exact precedence 1000 and type xfy."""
         from prolog.parser.operators import get_operator_info
-        info = get_operator_info(',', 'infix')
+
+        info = get_operator_info(",", "infix")
         assert info[0] == 1000  # precedence
-        assert info[1] == 'xfy'  # type (right associative)
+        assert info[1] == "xfy"  # type (right associative)
         assert info[2] == "','"  # canonical form
-    
+
     def test_semicolon_precedence_and_type(self):
         """Test that ';' has exact precedence 1100 and type xfy."""
         from prolog.parser.operators import get_operator_info
-        info = get_operator_info(';', 'infix')
+
+        info = get_operator_info(";", "infix")
         assert info[0] == 1100  # precedence
-        assert info[1] == 'xfy'  # type (right associative)
+        assert info[1] == "xfy"  # type (right associative)
         assert info[2] == "';'"  # canonical form
-    
+
     def test_arrow_precedence_and_type(self):
         """Test that '->' has exact precedence 1050 and type xfy."""
         from prolog.parser.operators import get_operator_info
-        info = get_operator_info('->', 'infix')
+
+        info = get_operator_info("->", "infix")
         assert info[0] == 1050  # precedence
-        assert info[1] == 'xfy'  # type (right associative)
+        assert info[1] == "xfy"  # type (right associative)
         assert info[2] == "'->'"  # canonical form
-    
+
     def test_plus_infix_precedence(self):
         """Test that infix '+' has exact precedence 500 and type yfx."""
         from prolog.parser.operators import get_operator_info
-        info = get_operator_info('+', 'infix')
+
+        info = get_operator_info("+", "infix")
         assert info[0] == 500  # precedence
-        assert info[1] == 'yfx'  # type (left associative)
+        assert info[1] == "yfx"  # type (left associative)
         assert info[2] == "'+'"  # canonical form
-    
+
     def test_plus_prefix_precedence(self):
         """Test that prefix '+' has exact precedence 200 and type fy."""
         from prolog.parser.operators import get_operator_info
-        info = get_operator_info('+', 'prefix')
+
+        info = get_operator_info("+", "prefix")
         assert info[0] == 200  # precedence
-        assert info[1] == 'fy'  # type
+        assert info[1] == "fy"  # type
         assert info[2] == "'+'"  # canonical form
-    
+
     def test_minus_infix_precedence(self):
         """Test that infix '-' has exact precedence 500 and type yfx."""
         from prolog.parser.operators import get_operator_info
-        info = get_operator_info('-', 'infix')
+
+        info = get_operator_info("-", "infix")
         assert info[0] == 500  # precedence
-        assert info[1] == 'yfx'  # type (left associative)
+        assert info[1] == "yfx"  # type (left associative)
         assert info[2] == "'-'"  # canonical form
-    
+
     def test_minus_prefix_precedence(self):
         """Test that prefix '-' has exact precedence 200 and type fy."""
         from prolog.parser.operators import get_operator_info
-        info = get_operator_info('-', 'prefix')
+
+        info = get_operator_info("-", "prefix")
         assert info[0] == 200  # precedence
-        assert info[1] == 'fy'  # type
+        assert info[1] == "fy"  # type
         assert info[2] == "'-'"  # canonical form
-    
+
     def test_power_right_associative(self):
         """Test that '**' has exact precedence 200 and type xfy (right-assoc)."""
         from prolog.parser.operators import get_operator_info
-        info = get_operator_info('**', 'infix')
+
+        info = get_operator_info("**", "infix")
         assert info[0] == 200  # precedence
-        assert info[1] == 'xfy'  # type (RIGHT associative!)
+        assert info[1] == "xfy"  # type (RIGHT associative!)
         assert info[2] == "'**'"  # canonical form
-    
+
     def test_all_comparison_ops_are_xfx(self):
         """Test that all comparison operators are precedence 700, type xfx (non-chainable)."""
         comparison_ops = [
-            '=', '\\=', '==', '\\==',  # Equality/disequality
-            '@<', '@>', '@=<', '@>=',  # Term order
-            '<', '>', '=<', '>=', '=:=', '=\\=',  # Arithmetic
-            'is'  # is/2 is also a comparison operator
+            "=",
+            "\\=",
+            "==",
+            "\\==",  # Equality/disequality
+            "@<",
+            "@>",
+            "@=<",
+            "@>=",  # Term order
+            "<",
+            ">",
+            "=<",
+            ">=",
+            "=:=",
+            "=\\=",  # Arithmetic
+            "is",  # is/2 is also a comparison operator
         ]
-        
+
         from prolog.parser.operators import get_operator_info
+
         for op in comparison_ops:
-            info = get_operator_info(op, 'infix')
+            info = get_operator_info(op, "infix")
             assert info[0] == 700, f"{op} should have precedence 700"
-            assert info[1] == 'xfx', f"{op} should be xfx (non-chainable)"
-    
+            assert info[1] == "xfx", f"{op} should be xfx (non-chainable)"
+
     def test_all_arithmetic_ops_precedence(self):
         """Test that arithmetic operators have correct precedence and type."""
         arithmetic_ops = {
-            '*': (400, 'yfx'),
-            '/': (400, 'yfx'),
-            '//': (400, 'yfx'),
-            'mod': (400, 'yfx'),
+            "*": (400, "yfx"),
+            "/": (400, "yfx"),
+            "//": (400, "yfx"),
+            "mod": (400, "yfx"),
         }
-        
+
         from prolog.parser.operators import get_operator_info
+
         for op, (prec, typ) in arithmetic_ops.items():
-            info = get_operator_info(op, 'infix')
+            info = get_operator_info(op, "infix")
             assert info[0] == prec, f"{op} should have precedence {prec}"
             assert info[1] == typ, f"{op} should have type {typ}"
-    
+
     def test_term_order_ops_precedence(self):
         """Test that term order operators (@<, @=<, etc.) are 700, xfx."""
-        term_order_ops = ['@<', '@>', '@=<', '@>=']
-        
+        term_order_ops = ["@<", "@>", "@=<", "@>="]
+
         from prolog.parser.operators import get_operator_info
+
         for op in term_order_ops:
-            info = get_operator_info(op, 'infix')
+            info = get_operator_info(op, "infix")
             assert info[0] == 700, f"{op} should have precedence 700"
-            assert info[1] == 'xfx', f"{op} should be xfx"
-    
+            assert info[1] == "xfx", f"{op} should be xfx"
+
     def test_mod_word_token_operator(self):
         """Test that 'mod' is a word-token operator at precedence 400, yfx."""
         from prolog.parser.operators import get_operator_info
-        info = get_operator_info('mod', 'infix')
+
+        info = get_operator_info("mod", "infix")
         assert info[0] == 400  # precedence
-        assert info[1] == 'yfx'  # type (left associative)
+        assert info[1] == "yfx"  # type (left associative)
         assert info[2] == "'mod'"  # canonical form
-    
+
     def test_mod_quoted_still_works(self):
         """Test that 'mod'(X,Y) as quoted atom is not affected by operator table."""
         # Here we only assert the table does not treat quoted atoms as operators.
         # Parser tests will verify runtime: "'mod'(X,Y)" is parsed as a functor call.
         pass
-    
+
     def test_canonical_mapping_complete(self):
         """Test that every operator has a one-to-one canonical mapping."""
         from prolog.parser.operators import OPERATOR_TABLE
-        
+
         for (op, _), (_, _, canonical) in OPERATOR_TABLE.items():
             # Every operator should have a canonical form
             assert canonical is not None and canonical != ""
             # Canonical form should be quoted functor
             assert canonical.startswith("'") and canonical.endswith("'")
             # The operator should be in the canonical form (accounting for escaping)
-            if '\\' in op:
+            if "\\" in op:
                 # For operators with backslashes, check escaped form
-                assert op.replace('\\', '\\\\') in canonical or op in canonical
+                assert op.replace("\\", "\\\\") in canonical or op in canonical
             else:
                 assert op in canonical
-    
+
     def test_unsupported_operators_marked(self):
         """Test that operators lacking Stage 1 runtime support are marked."""
         # These operators parse but should fail at runtime in Stage 1
-        unsupported = ['//', 'mod', '**']
-        
+        unsupported = ["//", "mod", "**"]
+
         from prolog.parser.operators import get_operator_info, is_stage1_supported
-        
+
         for op in unsupported:
-            info = get_operator_info(op, 'infix')
+            info = get_operator_info(op, "infix")
             assert info is not None  # Should be in table
-            assert not is_stage1_supported(op, 'infix'), f"{op} should be marked as unsupported in Stage 1"
-    
+            assert not is_stage1_supported(
+                op, "infix"
+            ), f"{op} should be marked as unsupported in Stage 1"
+
     def test_all_operators_have_types(self):
         """Test that all operators have valid associativity types."""
-        valid_types = {'fx', 'fy', 'xf', 'yf', 'xfx', 'xfy', 'yfx', 'yfy'}
-        
+        valid_types = {"fx", "fy", "xf", "yf", "xfx", "xfy", "yfx", "yfy"}
+
         from prolog.parser.operators import OPERATOR_TABLE
-        
+
         for (op, _), (_, typ, _) in OPERATOR_TABLE.items():
             assert typ in valid_types, f"{op} has invalid type {typ}"
-    
+
     def test_operator_lookup_by_symbol_and_position(self):
         """Test that we can look up operators by symbol and position."""
         from prolog.parser.operators import get_operator_info
-        
+
         # Test that + has different info for prefix vs infix
-        prefix_plus = get_operator_info('+', 'prefix')
-        infix_plus = get_operator_info('+', 'infix')
-        
+        prefix_plus = get_operator_info("+", "prefix")
+        infix_plus = get_operator_info("+", "infix")
+
         assert prefix_plus[0] == 200  # prefix precedence
-        assert infix_plus[0] == 500   # infix precedence
-        
+        assert infix_plus[0] == 500  # infix precedence
+
         # Same for minus
-        prefix_minus = get_operator_info('-', 'prefix')
-        infix_minus = get_operator_info('-', 'infix')
-        
+        prefix_minus = get_operator_info("-", "prefix")
+        infix_minus = get_operator_info("-", "infix")
+
         assert prefix_minus[0] == 200  # prefix precedence
-        assert infix_minus[0] == 500   # infix precedence
-    
+        assert infix_minus[0] == 500  # infix precedence
+
     def test_no_soft_cut_operator(self):
         """Test that soft-cut (*->) is NOT in the operator table (deferred)."""
         from prolog.parser.operators import get_operator_info
-        
-        assert get_operator_info('*->', 'infix') is None
-    
+
+        assert get_operator_info("*->", "infix") is None
+
     def test_no_univ_operator(self):
         """Test that univ (=..) is NOT in the operator table (remains canonical-only)."""
         from prolog.parser.operators import get_operator_info
-        
-        assert get_operator_info('=..', 'infix') is None
-    
+
+        assert get_operator_info("=..", "infix") is None
+
     def test_is_precedence_and_type(self):
         """Test that 'is' has exact precedence 700 and type xfx."""
         from prolog.parser.operators import get_operator_info
-        info = get_operator_info('is', 'infix')
+
+        info = get_operator_info("is", "infix")
         assert info[0] == 700  # precedence
-        assert info[1] == 'xfx'  # type (non-chainable)
+        assert info[1] == "xfx"  # type (non-chainable)
         assert info[2] == "'is'"  # canonical form
-    
+
     def test_not_prefix_precedence_and_type(self):
         """Test that '\\+' (not) has exact precedence 900 and type fy."""
         from prolog.parser.operators import get_operator_info
-        info = get_operator_info('\\+', 'prefix')
+
+        info = get_operator_info("\\+", "prefix")
         assert info[0] == 900  # precedence
-        assert info[1] == 'fy'  # type
+        assert info[1] == "fy"  # type
         assert info[2] == "'\\\\+'"  # canonical form
-    
+
     def test_power_beats_prefix_minus_in_binding(self):
         """Test that power and prefix minus have same precedence (200)."""
         from prolog.parser.operators import get_operator_info
-        p_pow, _, _ = get_operator_info('**', 'infix')
-        p_neg, _, _ = get_operator_info('-', 'prefix')
+
+        p_pow, _, _ = get_operator_info("**", "infix")
+        p_neg, _, _ = get_operator_info("-", "prefix")
         assert p_neg == p_pow == 200, "Both should be at precedence 200"
-    
-    @pytest.mark.parametrize("key,expected", [
-        ((',', 'infix'), (1000, 'xfy', "','")),
-        ((';', 'infix'), (1100, 'xfy', "';'")),
-        (('->', 'infix'), (1050, 'xfy', "'->'")),
-        (('=', 'infix'), (700, 'xfx', "'='")),
-        (('is', 'infix'), (700, 'xfx', "'is'")),
-        (('+', 'infix'), (500, 'yfx', "'+'")),
-        (('+', 'prefix'), (200, 'fy', "'+'")),
-        (('-', 'infix'), (500, 'yfx', "'-'")),
-        (('-', 'prefix'), (200, 'fy', "'-'")),
-        (('**', 'infix'), (200, 'xfy', "'**'")),
-        (('\\+', 'prefix'), (900, 'fy', "'\\\\+'")),
-    ])
+
+    @pytest.mark.parametrize(
+        "key,expected",
+        [
+            ((",", "infix"), (1000, "xfy", "','")),
+            ((";", "infix"), (1100, "xfy", "';'")),
+            (("->", "infix"), (1050, "xfy", "'->'")),
+            (("=", "infix"), (700, "xfx", "'='")),
+            (("is", "infix"), (700, "xfx", "'is'")),
+            (("+", "infix"), (500, "yfx", "'+'")),
+            (("+", "prefix"), (200, "fy", "'+'")),
+            (("-", "infix"), (500, "yfx", "'-'")),
+            (("-", "prefix"), (200, "fy", "'-'")),
+            (("**", "infix"), (200, "xfy", "'**'")),
+            (("\\+", "prefix"), (900, "fy", "'\\\\+'")),
+        ],
+    )
     def test_table_matches_expected(self, key, expected):
         """Test that operator table matches expected values."""
         from prolog.parser.operators import get_operator_info
+
         op, pos = key
         assert get_operator_info(op, pos) == expected
-    
+
     def test_canonical_escaping_for_backslash_ops(self):
         """Test proper escaping in canonical forms for backslash operators."""
         cases = {
-            '\\=': "'\\\\='",
-            '\\==': "'\\\\=='", 
-            '=\\=': "'=\\\\='",
-            '\\+': "'\\\\+'"
+            "\\=": "'\\\\='",
+            "\\==": "'\\\\=='",
+            "=\\=": "'=\\\\='",
+            "\\+": "'\\\\+'",
         }
         from prolog.parser.operators import get_operator_info
+
         for op, want in cases.items():
-            pos = 'prefix' if op == '\\+' else 'infix'
+            pos = "prefix" if op == "\\+" else "infix"
             info = get_operator_info(op, pos)
             assert info[2] == want, f"{op} canonical should be {want}"
 
 
 class TestTableInvariants:
     """Test invariants that must hold for the entire operator table."""
-    
+
     def test_no_duplicate_keys(self):
         """Test that there are no duplicate (operator, position) pairs."""
         from prolog.parser.operators import OPERATOR_TABLE
+
         # If we're here, dict construction succeeded so no duplicates
         assert len(OPERATOR_TABLE) > 0
-    
+
     def test_all_types_valid(self):
         """Test all operators have valid associativity types."""
-        valid_types = {'fx', 'fy', 'xf', 'yf', 'xfx', 'xfy', 'yfx', 'yfy'}
+        valid_types = {"fx", "fy", "xf", "yf", "xfx", "xfy", "yfx", "yfy"}
         from prolog.parser.operators import OPERATOR_TABLE
-        
+
         for (op, pos), (prec, typ, canonical) in OPERATOR_TABLE.items():
             assert typ in valid_types, f"Operator {op} at {pos} has invalid type: {typ}"
-    
+
     def test_all_canonical_forms_quoted(self):
         """Test all canonical forms are properly quoted atoms."""
         from prolog.parser.operators import OPERATOR_TABLE
-        
+
         for (op, pos), (prec, typ, canonical) in OPERATOR_TABLE.items():
             # Must be non-empty
             assert canonical, f"Operator {op} at {pos} has empty canonical form"
-            
+
             # Must start and end with quotes
-            assert canonical.startswith("'") and canonical.endswith("'"), \
-                f"Operator {op} at {pos} canonical form not quoted: {canonical}"
-            
+            assert canonical.startswith("'") and canonical.endswith(
+                "'"
+            ), f"Operator {op} at {pos} canonical form not quoted: {canonical}"
+
             # Content between quotes should contain the operator
             content = canonical[1:-1]
-            
+
             # Handle escaped backslashes
-            if '\\' in op:
+            if "\\" in op:
                 # For operators with backslashes, verify escaping
-                if op == '\\=':
-                    assert content == '\\\\=', f"Bad escaping for {op}"
-                elif op == '\\==':
-                    assert content == '\\\\==', f"Bad escaping for {op}"
-                elif op == '=\\=':
-                    assert content == '=\\\\=', f"Bad escaping for {op}"
-                elif op == '\\+':
-                    assert content == '\\\\+', f"Bad escaping for {op}"
+                if op == "\\=":
+                    assert content == "\\\\=", f"Bad escaping for {op}"
+                elif op == "\\==":
+                    assert content == "\\\\==", f"Bad escaping for {op}"
+                elif op == "=\\=":
+                    assert content == "=\\\\=", f"Bad escaping for {op}"
+                elif op == "\\+":
+                    assert content == "\\\\+", f"Bad escaping for {op}"
             else:
                 # For normal operators, should match exactly
                 assert op == content, f"Canonical mismatch for {op}: got {content}"
-    
+
     def test_precedence_ranges(self):
         """Test all precedences are in valid range (typically 1-1200)."""
         from prolog.parser.operators import OPERATOR_TABLE
-        
+
         for (op, pos), (prec, typ, canonical) in OPERATOR_TABLE.items():
-            assert 1 <= prec <= 1200, \
-                f"Operator {op} at {pos} has precedence {prec} outside valid range"
-    
+            assert (
+                1 <= prec <= 1200
+            ), f"Operator {op} at {pos} has precedence {prec} outside valid range"
+
     def test_prefix_infix_consistency(self):
         """Test operators with both prefix and infix forms have consistent properties."""
         from prolog.parser.operators import OPERATOR_TABLE
-        
+
         # Collect operators by symbol
         by_symbol = {}
         for (op, pos), info in OPERATOR_TABLE.items():
             if op not in by_symbol:
                 by_symbol[op] = {}
             by_symbol[op][pos] = info
-        
+
         # Check consistency for operators with multiple positions
         for op, positions in by_symbol.items():
             if len(positions) > 1:
@@ -399,41 +428,42 @@ class TestTableInvariants:
                 canonicals = [info[2] for info in positions.values()]
                 # Strip quotes and compare
                 bases = [c.strip("'") for c in canonicals]
-                
+
                 # Handle escaped backslashes
                 normalized = []
                 for b in bases:
-                    if '\\\\' in b:
-                        normalized.append(b.replace('\\\\', '\\'))
+                    if "\\\\" in b:
+                        normalized.append(b.replace("\\\\", "\\"))
                     else:
                         normalized.append(b)
-                
+
                 # All should normalize to same operator
-                assert len(set(normalized)) == 1, \
-                    f"Operator {op} has inconsistent canonical forms: {canonicals}"
-    
+                assert (
+                    len(set(normalized)) == 1
+                ), f"Operator {op} has inconsistent canonical forms: {canonicals}"
+
     def test_unknown_operators_return_none(self):
         """Test that unknown operators return None, not raise."""
         from prolog.parser.operators import get_operator_info
-        
+
         # Test completely unknown operators
-        assert get_operator_info('*->', 'infix') is None
-        assert get_operator_info('=..', 'infix') is None
-        assert get_operator_info('foo', 'infix') is None
-        assert get_operator_info('++', 'prefix') is None
-        
+        assert get_operator_info("*->", "infix") is None
+        assert get_operator_info("=..", "infix") is None
+        assert get_operator_info("foo", "infix") is None
+        assert get_operator_info("++", "prefix") is None
+
         # Test known operators in wrong positions
-        assert get_operator_info(',', 'prefix') is None
-        assert get_operator_info(';', 'postfix') is None
-    
+        assert get_operator_info(",", "prefix") is None
+        assert get_operator_info(";", "postfix") is None
+
     def test_unknown_operators_not_supported(self):
         """Test that unknown operators return False for is_stage1_supported."""
         from prolog.parser.operators import is_stage1_supported
-        
+
         # Unknown operators should not be supported
-        assert is_stage1_supported('*->', 'infix') is False
-        assert is_stage1_supported('=..', 'infix') is False
-        assert is_stage1_supported('foo', 'infix') is False
-        
+        assert is_stage1_supported("*->", "infix") is False
+        assert is_stage1_supported("=..", "infix") is False
+        assert is_stage1_supported("foo", "infix") is False
+
         # Known operators in wrong positions
-        assert is_stage1_supported(',', 'prefix') is False
+        assert is_stage1_supported(",", "prefix") is False

@@ -10,14 +10,12 @@ Ensures that:
 """
 
 import json
-from typing import List, Dict, Any
 
 import pytest
 
 from prolog.ast.terms import Atom, Int, Var, Struct
 from prolog.ast.clauses import Clause, Program
 from prolog.engine.engine import Engine
-from prolog.debug.tracer import PortsTracer, TraceEvent
 from prolog.debug.sinks import CollectorSink, JSONLTraceSink
 
 
@@ -32,8 +30,7 @@ class TestTraceDeterminism:
             Clause(head=Struct("p", (Atom("b"),)), body=()),
             Clause(head=Struct("p", (Atom("c"),)), body=()),
             Clause(
-                head=Struct("q", (Var(0, "X"),)),
-                body=(Struct("p", (Var(0, "X"),)),)
+                head=Struct("q", (Var(0, "X"),)), body=(Struct("p", (Var(0, "X"),)),)
             ),
         ]
         program = Program(tuple(clauses))
@@ -82,7 +79,7 @@ class TestTraceDeterminism:
         # Run 1 - create JSONL file
         trace_file1 = tmp_path / "trace1.jsonl"
         engine1 = Engine(program, trace=True)
-        with open(trace_file1, 'w') as f:
+        with open(trace_file1, "w") as f:
             sink1 = JSONLTraceSink(f)
             engine1.tracer.add_sink(sink1)
             list(engine1.query("fact(X)"))
@@ -90,14 +87,13 @@ class TestTraceDeterminism:
         # Run 2 - should produce identical JSONL
         trace_file2 = tmp_path / "trace2.jsonl"
         engine2 = Engine(program, trace=True)
-        with open(trace_file2, 'w') as f:
+        with open(trace_file2, "w") as f:
             sink2 = JSONLTraceSink(f)
             engine2.tracer.add_sink(sink2)
             list(engine2.query("fact(X)"))
 
         # Files should be byte-for-byte identical (except for run_id)
         # Since run_id will differ, we need to parse and compare
-        import json
 
         with open(trace_file1) as f:
             lines1 = [json.loads(line) for line in f]
@@ -109,30 +105,26 @@ class TestTraceDeterminism:
         # Compare everything except run_id
         for l1, l2 in zip(lines1, lines2):
             # Remove run_id for comparison
-            l1.pop('rid', None)
-            l2.pop('rid', None)
+            l1.pop("rid", None)
+            l2.pop("rid", None)
             assert l1 == l2
 
     def test_variable_names_deterministic(self):
         """Test that variable names are generated deterministically."""
         clauses = [
             Clause(
-                head=Struct("append", (
-                    Atom("[]"),
-                    Var(0, "L"),
-                    Var(0, "L")
-                )),
-                body=()
+                head=Struct("append", (Atom("[]"), Var(0, "L"), Var(0, "L"))), body=()
             ),
             Clause(
-                head=Struct("append", (
-                    Struct(".", (Var(0, "H"), Var(1, "T1"))),
-                    Var(2, "L2"),
-                    Struct(".", (Var(0, "H"), Var(3, "T3")))
-                )),
-                body=(
-                    Struct("append", (Var(1, "T1"), Var(2, "L2"), Var(3, "T3"))),
-                )
+                head=Struct(
+                    "append",
+                    (
+                        Struct(".", (Var(0, "H"), Var(1, "T1"))),
+                        Var(2, "L2"),
+                        Struct(".", (Var(0, "H"), Var(3, "T3"))),
+                    ),
+                ),
+                body=(Struct("append", (Var(1, "T1"), Var(2, "L2"), Var(3, "T3"))),),
             ),
         ]
         program = Program(tuple(clauses))
@@ -167,7 +159,7 @@ class TestTraceDeterminism:
             Clause(head=Struct("color", (Atom("blue"),)), body=()),
             Clause(
                 head=Struct("test", (Var(0, "X"),)),
-                body=(Struct("color", (Var(0, "X"),)),)
+                body=(Struct("color", (Var(0, "X"),)),),
             ),
         ]
         program = Program(tuple(clauses))
@@ -192,7 +184,7 @@ class TestTraceDeterminism:
             return [
                 (ev.port, ev.pred_id, str(ev.goal))
                 for ev in events
-                if ev.port in ['call', 'exit', 'redo', 'fail']
+                if ev.port in ["call", "exit", "redo", "fail"]
             ]
 
         ports_no_idx = get_port_events(collector_no_idx.events)
@@ -234,14 +226,20 @@ class TestTraceDeterminism:
             Clause(
                 head=Struct("test", (Var(0, "X"), Var(1, "Y"))),
                 body=(
-                    Struct(";", (
-                        Struct("->", (
-                            Struct("cond", (Var(0, "X"),)),
-                            Struct("=", (Var(1, "Y"), Atom("yes"))),
-                        )),
-                        Struct("=", (Var(1, "Y"), Atom("no")))
-                    )),
-                )
+                    Struct(
+                        ";",
+                        (
+                            Struct(
+                                "->",
+                                (
+                                    Struct("cond", (Var(0, "X"),)),
+                                    Struct("=", (Var(1, "Y"), Atom("yes"))),
+                                ),
+                            ),
+                            Struct("=", (Var(1, "Y"), Atom("no"))),
+                        ),
+                    ),
+                ),
             ),
         ]
         program = Program(tuple(clauses))
@@ -279,7 +277,7 @@ class TestTraceDeterminism:
                     Struct("num", (Var(0, "X"),)),
                     Struct("num", (Var(1, "Y"),)),
                     Struct("<", (Var(0, "X"), Var(1, "Y"))),
-                )
+                ),
             )
         )
         program = Program(tuple(clauses))
@@ -311,9 +309,7 @@ class TestVariableNaming:
         clauses = [
             Clause(
                 head=Struct("rule", (Var(0, "X"), Var(1, "Y"))),
-                body=(
-                    Struct("=", (Var(0, "X"), Var(1, "Y"))),
-                )
+                body=(Struct("=", (Var(0, "X"), Var(1, "Y"))),),
             ),
         ]
         program = Program(tuple(clauses))
@@ -336,9 +332,7 @@ class TestVariableNaming:
         clauses = [
             Clause(
                 head=Struct("gen", (Var(0, "X"),)),
-                body=(
-                    Struct("=", (Var(0, "X"), Struct("f", (Var(1, "_"),)))),
-                )
+                body=(Struct("=", (Var(0, "X"), Struct("f", (Var(1, "_"),)))),),
             ),
         ]
         program = Program(tuple(clauses))

@@ -16,7 +16,7 @@ def capture_failure_artifacts(
     trace_file: Path,
     output_dir: Path,
     max_trace_size_mb: float = 10,
-    snapshot_file: Optional[Path] = None
+    snapshot_file: Optional[Path] = None,
 ) -> None:
     """
     Capture trace and snapshot artifacts for CI failure analysis.
@@ -56,8 +56,8 @@ def capture_failure_artifacts(
                     if dst.tell() > 0:
                         dst.seek(-1, os.SEEK_END)
                         last_byte = dst.read(1)
-                        if last_byte != b'\n':
-                            dst.write(b'\n')
+                        if last_byte != b"\n":
+                            dst.write(b"\n")
 
     # Capture snapshot if provided
     if snapshot_file and snapshot_file.exists():

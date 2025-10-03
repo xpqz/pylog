@@ -1,7 +1,7 @@
 """Tests for the Prolog reader module with Pratt parser - Issue #37.
 
-The reader module implements a Pratt parser that transforms operator 
-expressions to canonical AST forms using the operator table for 
+The reader module implements a Pratt parser that transforms operator
+expressions to canonical AST forms using the operator table for
 precedence and associativity.
 
 Test Coverage:
@@ -112,10 +112,7 @@ class TestPrattParser:
         """If-then-else: p -> q ; r → ;(->(p, q), r)."""
         reader = Reader()
         result = reader.read_term("p -> q ; r")
-        expected = Struct(";", (
-            Struct("->", (Atom("p"), Atom("q"))),
-            Atom("r")
-        ))
+        expected = Struct(";", (Struct("->", (Atom("p"), Atom("q"))), Atom("r")))
         assert result == expected
 
     def test_complex_expression(self):
@@ -124,41 +121,38 @@ class TestPrattParser:
         result = reader.read_term("X = Y + Z * W")
         # = has precedence 700, + has 500, * has 400
         # So: X = (Y + (Z * W))
-        expected = Struct("=", (
-            Var(0, "X"),
-            Struct("+", (
-                Var(1, "Y"),
-                Struct("*", (Var(2, "Z"), Var(3, "W")))
-            ))
-        ))
+        expected = Struct(
+            "=",
+            (
+                Var(0, "X"),
+                Struct("+", (Var(1, "Y"), Struct("*", (Var(2, "Z"), Var(3, "W"))))),
+            ),
+        )
         assert result == expected
 
     def test_arithmetic_evaluation(self):
         """Arithmetic evaluation operator: X is 2 + 3."""
         reader = Reader()
         result = reader.read_term("X is 2 + 3")
-        expected = Struct("is", (
-            Var(0, "X"),
-            Struct("+", (Int(2), Int(3)))
-        ))
+        expected = Struct("is", (Var(0, "X"), Struct("+", (Int(2), Int(3)))))
         assert result == expected
 
     def test_comparison_operators(self):
         """Various comparison operators."""
         reader = Reader()
-        
+
         # Less than
         result = reader.read_term("X < Y")
         assert result == Struct("<", (Var(0, "X"), Var(1, "Y")))
-        
+
         # Less or equal
         result = reader.read_term("X =< Y")
         assert result == Struct("=<", (Var(0, "X"), Var(1, "Y")))
-        
+
         # Structural equality
         result = reader.read_term("X == Y")
         assert result == Struct("==", (Var(0, "X"), Var(1, "Y")))
-        
+
         # Arithmetic equality
         result = reader.read_term("X =:= Y")
         assert result == Struct("=:=", (Var(0, "X"), Var(1, "Y")))
@@ -181,20 +175,26 @@ class TestPrattParser:
         """Structures can contain operator expressions."""
         reader = Reader()
         result = reader.read_term("f(X + Y, Z * W)")
-        expected = Struct("f", (
-            Struct("+", (Var(0, "X"), Var(1, "Y"))),
-            Struct("*", (Var(2, "Z"), Var(3, "W")))
-        ))
+        expected = Struct(
+            "f",
+            (
+                Struct("+", (Var(0, "X"), Var(1, "Y"))),
+                Struct("*", (Var(2, "Z"), Var(3, "W"))),
+            ),
+        )
         assert result == expected
 
     def test_list_with_operators(self):
         """Lists can contain operator expressions."""
         reader = Reader()
         result = reader.read_term("[X + Y, Z * W]")
-        expected = List((
-            Struct("+", (Var(0, "X"), Var(1, "Y"))),
-            Struct("*", (Var(2, "Z"), Var(3, "W")))
-        ), Atom("[]"))
+        expected = List(
+            (
+                Struct("+", (Var(0, "X"), Var(1, "Y"))),
+                Struct("*", (Var(2, "Z"), Var(3, "W"))),
+            ),
+            Atom("[]"),
+        )
         assert result == expected
 
     def test_operator_as_atom(self):
@@ -227,18 +227,18 @@ class TestPrattParser:
         with pytest.raises(ReaderError) as exc_info:
             reader.read_term(src)
         error = exc_info.value
-        
+
         # Error should have position information
-        assert hasattr(error, 'position') or hasattr(error, 'column')
-        
+        assert hasattr(error, "position") or hasattr(error, "column")
+
         # Should identify the problematic operator
         assert "=" in str(error)
-        
+
         # If position is available, it should point to the second =
         # Positions: X(0) ' '(1) =(2) ' '(3) Y(4) ' '(5) =(6)
-        if hasattr(error, 'position'):
+        if hasattr(error, "position"):
             assert error.position >= 6  # Should be at or after the second =
-        elif hasattr(error, 'column'):
+        elif hasattr(error, "column"):
             # 1-based column counting
             assert error.column >= 7
 
@@ -247,7 +247,10 @@ class TestPrattParser:
         reader = Reader()
         with pytest.raises(ReaderError) as exc_info:
             reader.read_term("X @@ Y")  # @@ is not defined
-        assert "unknown operator" in str(exc_info.value).lower() or "unexpected" in str(exc_info.value).lower()
+        assert (
+            "unknown operator" in str(exc_info.value).lower()
+            or "unexpected" in str(exc_info.value).lower()
+        )
 
     def test_clause_with_operators(self):
         """Parse clauses with operator expressions."""
@@ -256,13 +259,19 @@ class TestPrattParser:
         # Expected: max(X, Y, Z) :- (X > Y, Z = X) ; Z = Y
         # The conjunction , binds tighter than disjunction ;
         expected_head = Struct("max", (Var(0, "X"), Var(1, "Y"), Var(2, "Z")))
-        expected_body = Struct(";", (
-            Struct(",", (
-                Struct(">", (Var(0, "X"), Var(1, "Y"))),
-                Struct("=", (Var(2, "Z"), Var(0, "X")))
-            )),
-            Struct("=", (Var(2, "Z"), Var(1, "Y")))
-        ))
+        expected_body = Struct(
+            ";",
+            (
+                Struct(
+                    ",",
+                    (
+                        Struct(">", (Var(0, "X"), Var(1, "Y"))),
+                        Struct("=", (Var(2, "Z"), Var(0, "X"))),
+                    ),
+                ),
+                Struct("=", (Var(2, "Z"), Var(1, "Y"))),
+            ),
+        )
         assert result.head == expected_head
         # Body is now a list containing the disjunction
         assert len(result.body) == 1
@@ -274,18 +283,15 @@ class TestPrattParser:
         result = reader.read_query("?- X = 1 + 2, Y is X * 3.")
         # Two goals: X = 1 + 2 and Y is X * 3
         assert len(result) == 2
-        assert result[0] == Struct("=", (
-            Var(0, "X"),
-            Struct("+", (Int(1), Int(2)))
-        ))
-        assert result[1] == Struct("is", (
-            Var(1, "Y"),
-            Struct("*", (Var(0, "X"), Int(3)))
-        ))
+        assert result[0] == Struct("=", (Var(0, "X"), Struct("+", (Int(1), Int(2)))))
+        assert result[1] == Struct(
+            "is", (Var(1, "Y"), Struct("*", (Var(0, "X"), Int(3))))
+        )
 
     def test_unsupported_operator_warning(self, caplog):
         """Unsupported operators should parse but warn in dev mode."""
         import logging
+
         reader = Reader()
         # //, mod, ** are marked as unsupported in Stage 1
         with caplog.at_level(logging.WARNING):
@@ -293,7 +299,9 @@ class TestPrattParser:
         expected = Struct("//", (Var(0, "X"), Var(1, "Y")))
         assert result == expected
         # Should have logged a warning about unsupported operator
-        assert any("unsupported" in msg.lower() or "//" in msg for msg in caplog.messages)
+        assert any(
+            "unsupported" in msg.lower() or "//" in msg for msg in caplog.messages
+        )
 
     def test_variable_consistency(self):
         """Variables with same name should have same ID."""
@@ -305,16 +313,16 @@ class TestPrattParser:
         assert conj.functor == ","
         left = conj.args[0]  # X = Y
         right = conj.args[1]  # Y = X
-        
+
         # Extract variable IDs (these should be Structs with Var args)
         assert isinstance(left, Struct) and left.functor == "="
         assert isinstance(right, Struct) and right.functor == "="
-        
+
         x_id_1 = left.args[0].id  # X in first equation
         y_id_1 = left.args[1].id  # Y in first equation
         y_id_2 = right.args[0].id  # Y in second equation
         x_id_2 = right.args[1].id  # X in second equation
-        
+
         assert x_id_1 == x_id_2  # Same X
         assert y_id_1 == y_id_2  # Same Y
 
@@ -327,7 +335,7 @@ class TestPrattParser:
         args = result.args
         ids = [arg.id for arg in args]
         assert len(ids) == len(set(ids))  # All unique
-    
+
     def test_mixed_anonymous_and_named_vars(self):
         """Anonymous vars get unique IDs while named vars stay stable."""
         reader = Reader()
@@ -347,40 +355,40 @@ class TestPrattParser:
         result = reader.read_term("+ -1")
         expected = Struct("+", (Int(-1),))
         assert result == expected
-    
+
     def test_then_right_associative(self):
         """Arrow operator chains right-associatively."""
         reader = Reader()
         result = reader.read_term("a -> b -> c")
         expected = Struct("->", (Atom("a"), Struct("->", (Atom("b"), Atom("c")))))
         assert result == expected
-    
+
     def test_or_right_associative(self):
         """Disjunction chains right-associatively."""
         reader = Reader()
         result = reader.read_term("a ; b ; c")
         expected = Struct(";", (Atom("a"), Struct(";", (Atom("b"), Atom("c")))))
         assert result == expected
-    
+
     def test_and_binds_tighter_than_or(self):
         """Conjunction binds tighter than disjunction."""
         reader = Reader()
         # a, b ; c, d → ;(,(a, b), ,(c, d))
         result = reader.read_term("a, b ; c, d")
-        expected = Struct(";", (
-            Struct(",", (Atom("a"), Atom("b"))),
-            Struct(",", (Atom("c"), Atom("d")))
-        ))
+        expected = Struct(
+            ";",
+            (Struct(",", (Atom("a"), Atom("b"))), Struct(",", (Atom("c"), Atom("d")))),
+        )
         assert result == expected
-        
+
         # (a ; b), c → ,( ;(a, b), c)
         result = reader.read_term("(a ; b), c")
         expected = Struct(",", (Struct(";", (Atom("a"), Atom("b"))), Atom("c")))
         assert result == expected
-    
+
     def test_unary_minus_vs_power_tie_break(self):
         """Unary minus vs power precedence tie-breaking.
-        
+
         At precedence 200, unary minus and power have same precedence.
         De-facto Prolog parses -2 ** 3 as -(2 ** 3).
         """
@@ -389,12 +397,12 @@ class TestPrattParser:
         result = reader.read_term("-2 ** 3")
         expected = Struct("-", (Struct("**", (Int(2), Int(3))),))
         assert result == expected
-        
+
         # (-2) ** 3 → **(-2, 3)
         result = reader.read_term("(-2) ** 3")
         expected = Struct("**", (Int(-2), Int(3)))
         assert result == expected
-    
+
     def test_positive_literal(self):
         """Positive literal policy: +3 → Int(3)."""
         reader = Reader()
@@ -402,41 +410,41 @@ class TestPrattParser:
         # Following SWI convention: +3 is Int(3), not Struct("+", (Int(3),))
         expected = Int(3)
         assert result == expected
-    
-    @pytest.mark.parametrize("src", [
-        "X =:= Y =:= Z",
-        "X =< Y =< Z", 
-        "X == Y == Z",
-        "X \\= Y \\= Z"
-    ])
+
+    @pytest.mark.parametrize(
+        "src", ["X =:= Y =:= Z", "X =< Y =< Z", "X == Y == Z", "X \\= Y \\= Z"]
+    )
     def test_xfx_non_chainable_family(self, src):
         """All xfx operators should reject chaining."""
         reader = Reader()
         with pytest.raises(ReaderError) as exc_info:
             reader.read_term(src)
         assert "non-chainable" in str(exc_info.value).lower()
-    
+
     def test_term_order_operators(self):
         """Term order comparison operators."""
         reader = Reader()
         result = reader.read_term("X @=< Y")
         expected = Struct("@=<", (Var(0, "X"), Var(1, "Y")))
         assert result == expected
-        
+
         result = reader.read_term("X @> Y")
         expected = Struct("@>", (Var(0, "X"), Var(1, "Y")))
         assert result == expected
-    
-    @pytest.mark.parametrize("spaced,tight", [
-        ("X = Y + Z * W", "X=Y+Z*W"),
-        ("A ; B , C", "A;B,C"),
-        ("-2 ** 3", "-2**3"),
-    ])
+
+    @pytest.mark.parametrize(
+        "spaced,tight",
+        [
+            ("X = Y + Z * W", "X=Y+Z*W"),
+            ("A ; B , C", "A;B,C"),
+            ("-2 ** 3", "-2**3"),
+        ],
+    )
     def test_whitespace_insensitivity(self, spaced, tight):
         """Whitespace should not affect parsing."""
         reader = Reader()
         assert reader.read_term(spaced) == reader.read_term(tight)
-    
+
     def test_list_tail_with_operator_expression(self):
         """List tail can be an operator expression."""
         reader = Reader()
@@ -444,14 +452,14 @@ class TestPrattParser:
         # [H|T+U] → [H | +(T, U)]
         expected = List((Var(0, "H"),), Struct("+", (Var(1, "T"), Var(2, "U"))))
         assert result == expected
-    
+
     def test_parenthesized_prefix(self):
         """Parenthesized prefix operator."""
         reader = Reader()
         result = reader.read_term("(-X)")
         expected = Struct("-", (Var(0, "X"),))
         assert result == expected
-    
+
     def test_word_operator_boundary(self):
         """Word operators need token boundaries."""
         reader = Reader()
@@ -459,133 +467,135 @@ class TestPrattParser:
         result = reader.read_term("X mod Y")
         expected = Struct("mod", (Var(0, "X"), Var(1, "Y")))
         assert result == expected
-        
+
         # Without spaces, XmodY is just a variable
         result = reader.read_term("XmodY")
         assert isinstance(result, Var) and result.hint == "XmodY"
-    
+
     def test_strict_unsupported_mode(self):
         """Strict mode should raise errors for unsupported operators."""
         reader = Reader(strict_unsupported=True)
-        
+
         # // is unsupported in Stage 1
         with pytest.raises(ReaderError) as exc_info:
             reader.read_term("X // Y")
         assert "//" in str(exc_info.value)
-        
+
         # mod is unsupported in Stage 1
         with pytest.raises(ReaderError) as exc_info:
             reader.read_term("X mod Y")
         assert "mod" in str(exc_info.value)
-        
+
         # ** is unsupported in Stage 1
         with pytest.raises(ReaderError) as exc_info:
             reader.read_term("X ** Y")
         assert "**" in str(exc_info.value)
-    
+
     def test_greedy_tokenization_overlaps(self):
         """Test greedy tokenization of overlapping operators."""
         reader = Reader()
-        
+
         # Test that =\\= is a single token, not = then \\=
         result = reader.read_term("X=\\=Y")
         expected = Struct("=\\=", (Var(0, "X"), Var(1, "Y")))
         assert result == expected
-        
+
         # @=< should be a single token (not @= then <)
         result = reader.read_term("X@=<Y")
         expected = Struct("@=<", (Var(0, "X"), Var(1, "Y")))
         assert result == expected
-        
+
         # Test multiple = signs parse correctly
         result = reader.read_term("X == Y")
         expected = Struct("==", (Var(0, "X"), Var(1, "Y")))
         assert result == expected
-    
+
     def test_comma_context_sensitivity(self):
         """Comma behaves differently in structures vs top-level."""
         reader = Reader()
-        
+
         # Top-level: comma is conjunction operator
         result = reader.read_term("a,b")
         assert result == Struct(",", (Atom("a"), Atom("b")))
-        
+
         # In structure: comma is separator
         result = reader.read_term("f(a,b)")
         assert result == Struct("f", (Atom("a"), Atom("b")))
-        
+
         # In list: comma is separator
         result = reader.read_term("[a,b|T]")
         assert result == PrologList((Atom("a"), Atom("b")), Var(0, "T"))
-    
+
     def test_unknown_operator_error_fields(self):
         """Unknown operator errors should include lexeme and position."""
         src = "X @@ Y"
         with pytest.raises(ReaderError) as exc_info:
             Reader().read_term(src)
         err = exc_info.value
-        
+
         # Should have lexeme/token field
-        assert getattr(err, "lexeme", None) == "@@" or getattr(err, "token", None) == "@@"
-        
+        assert (
+            getattr(err, "lexeme", None) == "@@" or getattr(err, "token", None) == "@@"
+        )
+
         # Should have position/column
         assert hasattr(err, "column") or hasattr(err, "position")
-    
+
     def test_reader_api_consistency(self):
         """Test Reader API methods return expected types."""
         reader = Reader()
-        
+
         # read_term returns Term (one of Atom, Int, Var, Struct, List)
         term = reader.read_term("foo(bar)")
         assert isinstance(term, (Atom, Int, Var, Struct, List))
-        
+
         # read_clause returns Clause
         clause = reader.read_clause("foo(X) :- bar(X).")
         assert isinstance(clause, Clause)
-        
+
         # read_query returns list of Terms
         goals = reader.read_query("?- foo(X), bar(X).")
         assert isinstance(goals, list)
         assert all(isinstance(g, (Atom, Int, Var, Struct, List)) for g in goals)
-    
+
     def test_edge_cases_for_coverage(self):
         """Test edge cases to improve coverage."""
         reader = Reader()
-        
+
         # Empty input
         with pytest.raises(ReaderError) as exc_info:
             reader.read_term("")
         assert "empty" in str(exc_info.value).lower()
-        
+
         # Test clause without body (fact)
         clause = reader.read_clause("foo.")
         assert clause.head == Atom("foo")
         assert clause.body == []  # Facts have empty body list
-        
+
         # Test query with single goal
         goals = reader.read_query("?- foo.")
         assert len(goals) == 1
         assert goals[0] == Atom("foo")
-        
+
         # Test leftover tokens error
         with pytest.raises(ReaderError) as exc_info:
             reader.read_term("foo bar")
         assert "unexpected token" in str(exc_info.value).lower()
-    
+
     def test_classic_tie_break_cases(self):
         """Classic precedence tie-breaking and associativity tests."""
         reader = Reader()
-        
-        # Unary minus vs power: -2 ** 3 → -(2 ** 3) 
+
+        # Unary minus vs power: -2 ** 3 → -(2 ** 3)
         result = reader.read_term("-2 ** 3")
         expected = Struct("-", (Struct("**", (Int(2), Int(3))),))
         assert result == expected
-        
+
         # Right associativity of ->
         result = reader.read_term("a -> b -> c")
         expected = Struct("->", (Atom("a"), Struct("->", (Atom("b"), Atom("c")))))
         assert result == expected
-        
+
         # Positive literal policy
         result = reader.read_term("+3")
         expected = Int(3)

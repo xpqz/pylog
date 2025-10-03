@@ -3,7 +3,7 @@
 import json
 import statistics
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List
 
 
 def compute_trace_statistics(trace_file: Path) -> Dict[str, Any]:
@@ -24,7 +24,7 @@ def compute_trace_statistics(trace_file: Path) -> Dict[str, Any]:
             "unique_predicates": 0,
             "port_distribution": {},
             "depth_statistics": {},
-            "predicate_frequency": []
+            "predicate_frequency": [],
         }
 
     # Basic counts
@@ -62,7 +62,7 @@ def compute_trace_statistics(trace_file: Path) -> Dict[str, Any]:
             "max": max(depths),
             "min": min(depths),
             "avg": sum(depths) / len(depths),
-            "median": statistics.median(depths) if depths else 0
+            "median": statistics.median(depths) if depths else 0,
         }
 
     # Timestamps and duration
@@ -77,7 +77,9 @@ def compute_trace_statistics(trace_file: Path) -> Dict[str, Any]:
         "unique_predicates": len(unique_preds),
         "port_distribution": port_distribution,
         "depth_statistics": depth_statistics,
-        "predicate_frequency": sorted(pred_counts.items(), key=lambda x: x[1], reverse=True)[:10]
+        "predicate_frequency": sorted(
+            pred_counts.items(), key=lambda x: x[1], reverse=True
+        )[:10],
     }
 
     if timestamps:
@@ -122,10 +124,7 @@ def compute_call_graph(events: List[Dict[str, Any]]) -> Dict[str, Any]:
             if stack:
                 stack.pop()
 
-    return {
-        "edges": list(edges),
-        "weights": edge_counts
-    }
+    return {"edges": list(edges), "weights": edge_counts}
 
 
 def identify_backtrack_points(events: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -134,11 +133,9 @@ def identify_backtrack_points(events: List[Dict[str, Any]]) -> List[Dict[str, An
 
     for i, event in enumerate(events):
         if event.get("p") == 2:  # REDO
-            backtrack_points.append({
-                "sid": event.get("sid"),
-                "pid": event.get("pid"),
-                "position": i
-            })
+            backtrack_points.append(
+                {"sid": event.get("sid"), "pid": event.get("pid"), "position": i}
+            )
 
     return backtrack_points
 
@@ -167,7 +164,7 @@ def generate_statistics_report(trace_file: Path, format: str = "text") -> str:
             "| Metric | Value |",
             "|--------|-------|",
             f"| Total Events | {stats['total_events']} |",
-            f"| Unique Predicates | {stats['unique_predicates']} |"
+            f"| Unique Predicates | {stats['unique_predicates']} |",
         ]
         if "duration_ms" in stats:
             lines.append(f"| Duration (ms) | {stats['duration_ms']:.2f} |")
@@ -183,7 +180,7 @@ def generate_statistics_report(trace_file: Path, format: str = "text") -> str:
             f"<tr><td>Total Events</td><td>{stats['total_events']}</td></tr>",
             f"<tr><td>Unique Predicates</td><td>{stats['unique_predicates']}</td></tr>",
             "</table>",
-            "</body></html>"
+            "</body></html>",
         ]
         return "\n".join(html)
 
@@ -249,7 +246,7 @@ def analyze_performance_metrics(trace_file: Path) -> Dict[str, Any]:
                 "count": len(durations),
                 "avg_ms": sum(durations) / len(durations),
                 "min_ms": min(durations),
-                "max_ms": max(durations)
+                "max_ms": max(durations),
             }
         metrics["predicate_timings"] = predicate_timings
 
@@ -266,15 +263,21 @@ def analyze_performance_metrics(trace_file: Path) -> Dict[str, Any]:
         metrics["memory_usage"] = {}
         if store_sizes:
             metrics["memory_usage"]["max_store_size"] = max(store_sizes)
-            metrics["memory_usage"]["avg_store_size"] = sum(store_sizes) / len(store_sizes)
+            metrics["memory_usage"]["avg_store_size"] = sum(store_sizes) / len(
+                store_sizes
+            )
         if trail_sizes:
             metrics["memory_usage"]["max_trail_size"] = max(trail_sizes)
-            metrics["memory_usage"]["avg_trail_size"] = sum(trail_sizes) / len(trail_sizes)
+            metrics["memory_usage"]["avg_trail_size"] = sum(trail_sizes) / len(
+                trail_sizes
+            )
 
     return metrics
 
 
-def detect_performance_anomalies(trace_file: Path, threshold_stddev: float = 2.0) -> List[Dict[str, Any]]:
+def detect_performance_anomalies(
+    trace_file: Path, threshold_stddev: float = 2.0
+) -> List[Dict[str, Any]]:
     """Detect performance anomalies using statistical methods."""
     events = []
     with trace_file.open() as f:
@@ -322,21 +325,25 @@ def detect_performance_anomalies(trace_file: Path, threshold_stddev: float = 2.0
                 # Consider anomaly if > 10x median or > 3x mean
                 for d in durations:
                     if median > 0 and d / median > 10:
-                        anomalies.append({
-                            "pid": pid,
-                            "duration_ms": d,
-                            "mean_ms": mean,
-                            "stddev_ms": 0,
-                            "zscore": 0
-                        })
+                        anomalies.append(
+                            {
+                                "pid": pid,
+                                "duration_ms": d,
+                                "mean_ms": mean,
+                                "stddev_ms": 0,
+                                "zscore": 0,
+                            }
+                        )
                     elif mean > 0 and d / mean > threshold_stddev:
-                        anomalies.append({
-                            "pid": pid,
-                            "duration_ms": d,
-                            "mean_ms": mean,
-                            "stddev_ms": 0,
-                            "zscore": d / mean
-                        })
+                        anomalies.append(
+                            {
+                                "pid": pid,
+                                "duration_ms": d,
+                                "mean_ms": mean,
+                                "stddev_ms": 0,
+                                "zscore": d / mean,
+                            }
+                        )
             else:
                 # For larger samples, use standard deviation
                 stdev = statistics.stdev(durations)
@@ -344,12 +351,14 @@ def detect_performance_anomalies(trace_file: Path, threshold_stddev: float = 2.0
                     for d in durations:
                         zscore = (d - mean) / stdev
                         if abs(zscore) > threshold_stddev:
-                            anomalies.append({
-                                "pid": pid,
-                                "duration_ms": d,
-                                "mean_ms": mean,
-                                "stddev_ms": stdev,
-                                "zscore": zscore
-                            })
+                            anomalies.append(
+                                {
+                                    "pid": pid,
+                                    "duration_ms": d,
+                                    "mean_ms": mean,
+                                    "stddev_ms": stdev,
+                                    "zscore": zscore,
+                                }
+                            )
 
     return anomalies

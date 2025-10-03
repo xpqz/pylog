@@ -36,7 +36,9 @@ def check_trace_invariants(events: List[Dict[str, Any]]) -> List[str]:
 
         # Check monotonic step_id
         if sid <= prev_sid:
-            violations.append(f"step_id not monotonic at position {i}: {sid} <= {prev_sid}")
+            violations.append(
+                f"step_id not monotonic at position {i}: {sid} <= {prev_sid}"
+            )
         elif sid > prev_sid + 1 and prev_sid > 0:
             violations.append(f"Step_id gap at position {i}: {sid} after {prev_sid}")
         prev_sid = sid
@@ -49,7 +51,9 @@ def check_trace_invariants(events: List[Dict[str, Any]]) -> List[str]:
                 violations.append(f"Negative depth at position {i}: fd={fd_num}")
 
             if prev_fd_num is not None and abs(fd_num - prev_fd_num) > 1:
-                violations.append(f"Depth jump at position {i}: {prev_fd_num} to {fd_num}")
+                violations.append(
+                    f"Depth jump at position {i}: {prev_fd_num} to {fd_num}"
+                )
         prev_fd_num = fd_num
 
         # Check port sequences
@@ -69,7 +73,11 @@ def check_trace_invariants(events: List[Dict[str, Any]]) -> List[str]:
                     # Do NOT pop on mismatch to avoid desync
                 else:
                     # Check depth if both are numeric
-                    if fd_num is not None and expected_fd is not None and fd_num != expected_fd:
+                    if (
+                        fd_num is not None
+                        and expected_fd is not None
+                        and fd_num != expected_fd
+                    ):
                         violations.append(
                             f"EXIT depth mismatch at position {i}: expected fd={expected_fd}, got {fd_num}"
                         )

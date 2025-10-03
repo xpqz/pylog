@@ -48,12 +48,12 @@ class TestGreaterThan:
         query1 = Struct(">", (Int(5), Int(0)))
         solutions1 = empty_engine.run([query1])
         assert len(solutions1) == 1
-        
+
         # 0 > -5
         query2 = Struct(">", (Int(0), Int(-5)))
         solutions2 = empty_engine.run([query2])
         assert len(solutions2) == 1
-        
+
         # 0 > 0
         query3 = Struct(">", (Int(0), Int(0)))
         solutions3 = empty_engine.run([query3])
@@ -64,13 +64,13 @@ class TestGreaterThan:
         X = Var(0, "X")
         Y = Var(1, "Y")
         # X = 10, Y = 5, X > Y
-        query = Struct(",", (
-            Struct("=", (X, Int(10))),
-            Struct(",", (
-                Struct("=", (Y, Int(5))),
-                Struct(">", (X, Y))
-            ))
-        ))
+        query = Struct(
+            ",",
+            (
+                Struct("=", (X, Int(10))),
+                Struct(",", (Struct("=", (Y, Int(5))), Struct(">", (X, Y)))),
+            ),
+        )
         solutions = empty_engine.run([query])
         assert len(solutions) == 1
         assert solutions[0]["X"] == Int(10)
@@ -90,7 +90,7 @@ class TestGreaterThan:
         query1 = Struct(">", (Atom("abc"), Int(5)))
         solutions1 = empty_engine.run([query1])
         assert len(solutions1) == 0
-        
+
         # 5 > atom
         query2 = Struct(">", (Int(5), Atom("abc")))
         solutions2 = empty_engine.run([query2])
@@ -101,13 +101,19 @@ class TestGreaterThan:
         X = Var(0, "X")
         Y = Var(1, "Y")
         # X is 3 + 4, Y is 2 * 3, X > Y
-        query = Struct(",", (
-            Struct("is", (X, Struct("+", (Int(3), Int(4))))),
-            Struct(",", (
-                Struct("is", (Y, Struct("*", (Int(2), Int(3))))),
-                Struct(">", (X, Y))
-            ))
-        ))
+        query = Struct(
+            ",",
+            (
+                Struct("is", (X, Struct("+", (Int(3), Int(4))))),
+                Struct(
+                    ",",
+                    (
+                        Struct("is", (Y, Struct("*", (Int(2), Int(3))))),
+                        Struct(">", (X, Y)),
+                    ),
+                ),
+            ),
+        )
         solutions = empty_engine.run([query])
         assert len(solutions) == 1
         assert solutions[0]["X"] == Int(7)
@@ -119,7 +125,7 @@ class TestGreaterThan:
         query1 = Struct(">", (Int(5),))
         solutions1 = empty_engine.run([query1])
         assert len(solutions1) == 0
-        
+
         # > with 3 arguments
         query2 = Struct(">", (Int(5), Int(3), Int(1)))
         solutions2 = empty_engine.run([query2])
@@ -158,13 +164,13 @@ class TestArithmeticEquality:
         X = Var(0, "X")
         Y = Var(1, "Y")
         # X = 42, Y = 42, X =:= Y
-        query = Struct(",", (
-            Struct("=", (X, Int(42))),
-            Struct(",", (
-                Struct("=", (Y, Int(42))),
-                Struct("=:=", (X, Y))
-            ))
-        ))
+        query = Struct(
+            ",",
+            (
+                Struct("=", (X, Int(42))),
+                Struct(",", (Struct("=", (Y, Int(42))), Struct("=:=", (X, Y)))),
+            ),
+        )
         solutions = empty_engine.run([query])
         assert len(solutions) == 1
 
@@ -173,13 +179,19 @@ class TestArithmeticEquality:
         X = Var(0, "X")
         Y = Var(1, "Y")
         # X is 3 + 4, Y is 2 + 5, X =:= Y
-        query = Struct(",", (
-            Struct("is", (X, Struct("+", (Int(3), Int(4))))),
-            Struct(",", (
-                Struct("is", (Y, Struct("+", (Int(2), Int(5))))),
-                Struct("=:=", (X, Y))
-            ))
-        ))
+        query = Struct(
+            ",",
+            (
+                Struct("is", (X, Struct("+", (Int(3), Int(4))))),
+                Struct(
+                    ",",
+                    (
+                        Struct("is", (Y, Struct("+", (Int(2), Int(5))))),
+                        Struct("=:=", (X, Y)),
+                    ),
+                ),
+            ),
+        )
         solutions = empty_engine.run([query])
         assert len(solutions) == 1
 
@@ -187,28 +199,28 @@ class TestArithmeticEquality:
         """Test difference between =:= and =."""
         X = Var(0, "X")
         Y = Var(1, "Y")
-        
+
         # X = 5, Y = 5, X = Y (unification succeeds)
-        query1 = Struct(",", (
-            Struct("=", (X, Int(5))),
-            Struct(",", (
-                Struct("=", (Y, Int(5))),
-                Struct("=", (X, Y))
-            ))
-        ))
+        query1 = Struct(
+            ",",
+            (
+                Struct("=", (X, Int(5))),
+                Struct(",", (Struct("=", (Y, Int(5))), Struct("=", (X, Y)))),
+            ),
+        )
         solutions1 = empty_engine.run([query1])
         assert len(solutions1) == 1
-        
+
         # Same with =:=
         X2 = Var(2, "X2")
         Y2 = Var(3, "Y2")
-        query2 = Struct(",", (
-            Struct("=", (X2, Int(5))),
-            Struct(",", (
-                Struct("=", (Y2, Int(5))),
-                Struct("=:=", (X2, Y2))
-            ))
-        ))
+        query2 = Struct(
+            ",",
+            (
+                Struct("=", (X2, Int(5))),
+                Struct(",", (Struct("=", (Y2, Int(5))), Struct("=:=", (X2, Y2)))),
+            ),
+        )
         solutions2 = empty_engine.run([query2])
         assert len(solutions2) == 1
 
@@ -242,19 +254,27 @@ class TestComparisonChains:
         Y = Var(1, "Y")
         Z = Var(2, "Z")
         # X = 10, Y = 5, Z = 5, X > Y, Y =:= Z
-        query = Struct(",", (
-            Struct("=", (X, Int(10))),
-            Struct(",", (
-                Struct("=", (Y, Int(5))),
-                Struct(",", (
-                    Struct("=", (Z, Int(5))),
-                    Struct(",", (
-                        Struct(">", (X, Y)),
-                        Struct("=:=", (Y, Z))
-                    ))
-                ))
-            ))
-        ))
+        query = Struct(
+            ",",
+            (
+                Struct("=", (X, Int(10))),
+                Struct(
+                    ",",
+                    (
+                        Struct("=", (Y, Int(5))),
+                        Struct(
+                            ",",
+                            (
+                                Struct("=", (Z, Int(5))),
+                                Struct(
+                                    ",", (Struct(">", (X, Y)), Struct("=:=", (Y, Z)))
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
         solutions = empty_engine.run([query])
         assert len(solutions) == 1
 
@@ -262,13 +282,13 @@ class TestComparisonChains:
         """Test comparisons in disjunction."""
         X = Var(0, "X")
         # X = 5, (X > 10 ; X =:= 5)
-        query = Struct(",", (
-            Struct("=", (X, Int(5))),
-            Struct(";", (
-                Struct(">", (X, Int(10))),
-                Struct("=:=", (X, Int(5)))
-            ))
-        ))
+        query = Struct(
+            ",",
+            (
+                Struct("=", (X, Int(5))),
+                Struct(";", (Struct(">", (X, Int(10))), Struct("=:=", (X, Int(5))))),
+            ),
+        )
         solutions = empty_engine.run([query])
         assert len(solutions) == 1  # Second branch succeeds
 
@@ -287,11 +307,11 @@ class TestComparisonEdgeCases:
         """Test comparisons with large numbers."""
         large1 = Int(1000000)
         large2 = Int(999999)
-        
+
         query1 = Struct(">", (large1, large2))
         solutions1 = empty_engine.run([query1])
         assert len(solutions1) == 1
-        
+
         query2 = Struct("=:=", (large1, large1))
         solutions2 = empty_engine.run([query2])
         assert len(solutions2) == 1
@@ -302,15 +322,20 @@ class TestComparisonEdgeCases:
         Y = Var(1, "Y")
         Z = Var(2, "Z")
         # X = Y, Y = Z, Z = 10, X > 5
-        query = Struct(",", (
-            Struct("=", (X, Y)),
-            Struct(",", (
-                Struct("=", (Y, Z)),
-                Struct(",", (
-                    Struct("=", (Z, Int(10))),
-                    Struct(">", (X, Int(5)))
-                ))
-            ))
-        ))
+        query = Struct(
+            ",",
+            (
+                Struct("=", (X, Y)),
+                Struct(
+                    ",",
+                    (
+                        Struct("=", (Y, Z)),
+                        Struct(
+                            ",", (Struct("=", (Z, Int(10))), Struct(">", (X, Int(5))))
+                        ),
+                    ),
+                ),
+            ),
+        )
         solutions = empty_engine.run([query])
         assert len(solutions) == 1

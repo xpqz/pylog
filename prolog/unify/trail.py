@@ -93,14 +93,18 @@ def undo_to(mark: int, trail: Any, store: Any) -> None:
             _, vid, module, old_value = entry
             if old_value is None:
                 # Attribute didn't exist before - remove it
-                if hasattr(store, 'attrs') and vid in store.attrs and module in store.attrs[vid]:
+                if (
+                    hasattr(store, "attrs")
+                    and vid in store.attrs
+                    and module in store.attrs[vid]
+                ):
                     del store.attrs[vid][module]
                     # Clean up empty dict
                     if not store.attrs[vid]:
                         del store.attrs[vid]
             else:
                 # Restore old value
-                if not hasattr(store, 'attrs'):
+                if not hasattr(store, "attrs"):
                     store.attrs = {}
                 if vid not in store.attrs:
                     store.attrs[vid] = {}
