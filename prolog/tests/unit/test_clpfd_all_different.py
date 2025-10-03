@@ -279,6 +279,52 @@ class TestAllDifferentBasic:
         x_dom = get_domain(store, x.id)
         assert x_dom.intervals == ((1, 10),)
 
+
+class TestAllDifferentListForms:
+    """Tests for list variables and cons-form normalization."""
+
+    def test_all_different_accepts_list_variable(self):
+        """List variable bound to list should be accepted."""
+        engine = Engine(Program([]))
+
+        query = "?- X in 1..3, Y in 1..3, L = [X,2,Y], all_different(L), label([X,Y])."
+        solutions = list(engine.query(query))
+
+        assert len(solutions) == 2
+        values = {(sol["X"].value, sol["Y"].value) for sol in solutions}
+        assert values == {(1, 3), (3, 1)}
+
+    def test_all_different_rejects_unbound_list_variable(self):
+        """Unbound list variable should fail (list structure unknown)."""
+        engine = Engine(Program([]))
+
+        assert list(engine.query("?- all_different(L).")) == []
+
+    def test_all_different_accepts_cons_form(self):
+        """Proper cons-form lists should be normalized and accepted."""
+        engine = Engine(Program([]))
+        store = engine.store
+
+        x = Var(store.new_var(), "X")
+        y = Var(store.new_var(), "Y")
+
+        _builtin_in(engine, x, Struct("..", (Int(1), Int(3))))
+        _builtin_in(engine, y, Struct("..", (Int(1), Int(3))))
+
+        cons = Struct(
+            ".",
+            (x, Struct(".", (Int(2), Struct(".", (y, Atom("[]")))))),
+        )
+
+        result = _builtin_all_different(engine, cons)
+        assert result is True
+
+    def test_all_different_same_variable_twice_fails(self):
+        """Same variable appearing twice should fail immediately."""
+        engine = Engine(Program([]))
+
+        assert list(engine.query("?- X in 1..3, all_different([X,X]).")) == []
+
     def test_same_variable_repeated(self):
         """all_different([X, X]) should fail immediately."""
         engine = Engine(Program([]))
