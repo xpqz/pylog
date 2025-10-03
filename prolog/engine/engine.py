@@ -845,9 +845,35 @@ class Engine:
             # Switch to the catch window stamp
             self.trail.set_current_stamp(cp.stamp)
 
+            # Restore streaming cursors (conservative approach)
+            cursor_snapshots = cp.payload.get("cursor_snapshots", {})
+            for other_cp in self.cp_stack[:cp_height]:
+                if other_cp.kind == ChoicepointKind.PREDICATE:
+                    cursor = other_cp.payload.get("cursor")
+                    if hasattr(cursor, "clone") and callable(cursor.clone):
+                        snapshot = cursor_snapshots.get(id(cursor))
+                        if snapshot:
+                            # Replace with cloned cursor
+                            other_cp.payload["cursor"] = snapshot.clone()
+
             # Re-unify to make catcher bindings visible to Recovery
             ok2 = self._unify(ball, cp.payload.get("catcher"))
             assert ok2, "ball unified in trial but failed after restore (bug)"
+
+            # Validate frame stack consistency for recursive predicates
+            expected_depth = cp.payload.get("recursion_depth", 0)
+            if expected_depth > 0 and len(self.frame_stack) > 0:
+                current_pred = self.frame_stack[-1].pred
+                actual_depth = sum(
+                    1 for f in self.frame_stack if f.pred == current_pred
+                )
+
+                if actual_depth != expected_depth:
+                    # Log the inconsistency but don't fail - this is defensive
+                    if self.trace:
+                        self._trace_log.append(
+                            f"[CATCH] Frame depth mismatch: expected {expected_depth}, actual {actual_depth}"
+                        )
 
             # Debug assertions
             assert self.goal_stack.height() == cp.goal_stack_height
@@ -1373,6 +1399,17 @@ class Engine:
             # Normal cut within a predicate
             current_frame = self.frame_stack[-1]
             cut_barrier = current_frame.cut_barrier
+
+            # Find the highest CATCH CP below our target to act as a barrier
+            catch_barrier = None
+            for i in range(len(self.cp_stack) - 1, cut_barrier - 1, -1):
+                if self.cp_stack[i].kind == ChoicepointKind.CATCH:
+                    catch_barrier = i + 1  # Don't prune the CATCH itself
+                    break
+
+            # Apply the more restrictive barrier
+            if catch_barrier is not None:
+                cut_barrier = max(cut_barrier, catch_barrier)
 
             # Count alternatives being pruned
             alternatives_pruned = 0
@@ -2953,6 +2990,23 @@ class Engine:
             and self.goal_stack._stack[-1].type == GoalType.POP_FRAME
         )
 
+        # Count frames for the same predicate for recursion tracking
+        recursion_depth = 0
+        if self.frame_stack:
+            current_pred = self.frame_stack[-1].pred
+            for frame in self.frame_stack:
+                if frame.pred == current_pred:
+                    recursion_depth += 1
+
+        # Snapshot active streaming cursors for restoration after exception
+        cursor_snapshots = {}
+        for cp in self.cp_stack:
+            if cp.kind == ChoicepointKind.PREDICATE:
+                cursor = cp.payload.get("cursor")
+                if hasattr(cursor, "clone") and callable(cursor.clone):
+                    # Clone the cursor for restoration
+                    cursor_snapshots[id(cursor)] = cursor.clone()
+
         # Create CATCH choicepoint (phase=GOAL)
         stamp = self.trail.next_stamp()
         catch_cp = Choicepoint(
@@ -2969,6 +3023,8 @@ class Engine:
                 "adjusted_height": (
                     base_goal_height - 1 if has_pop_frame_sentinel else base_goal_height
                 ),
+                "cursor_snapshots": cursor_snapshots,  # Snapshot for cursor restoration
+                "recursion_depth": recursion_depth,  # Track recursion depth for frame validation
             },
             stamp=stamp,
         )
