@@ -318,6 +318,20 @@ class Engine:
         if self.tracer is not None:
             self.tracer.set_filters(filters)
 
+    def _normalize_pred_id(self, pred) -> str:
+        """Normalize predicate identifier for consistent metrics/tracing.
+
+        Args:
+            pred: Either a string like "foo/2" or tuple like ("catch", 3)
+
+        Returns:
+            Normalized string identifier
+        """
+        if isinstance(pred, tuple) and len(pred) == 2:
+            name, arity = pred
+            return f"{name}/{arity}"
+        return str(pred)
+
     def _collect_goal_bindings(self, term: Term) -> Dict[str, Any]:
         """Collect current variable bindings for all variables in the goal term.
 
@@ -1504,7 +1518,11 @@ class Engine:
                 # Emit internal event for frame pop
                 if self.tracer:
                     self.tracer.emit_internal_event(
-                        "frame_pop", {"pred_id": frame.pred, "frame_id": frame.frame_id}
+                        "frame_pop",
+                        {
+                            "pred_id": self._normalize_pred_id(frame.pred),
+                            "frame_id": frame.frame_id,
+                        },
                     )
 
                 # Emit EXIT port when frame is popped
@@ -1666,7 +1684,10 @@ class Engine:
                     if self.tracer:
                         self.tracer.emit_internal_event(
                             "frame_pop",
-                            {"pred_id": frame.pred, "frame_id": frame.frame_id},
+                            {
+                                "pred_id": self._normalize_pred_id(frame.pred),
+                                "frame_id": frame.frame_id,
+                            },
                         )
 
                 # Debug assertion: verify frame restoration
@@ -1989,20 +2010,27 @@ class Engine:
 
         if self.tracer:
             self.tracer.emit_internal_event(
-                "frame_pop", {"pred_id": frame.pred, "frame_id": frame.frame_id}
+                "frame_pop",
+                {
+                    "pred_id": self._normalize_pred_id(frame.pred),
+                    "frame_id": frame.frame_id,
+                },
             )
 
         self._update_catch_frames_after_pop()
 
     def _update_catch_frames_after_pop(self) -> None:
-        """Adjust CATCH CP goal heights after a frame pop."""
+        """Adjust CATCH CP goal and frame heights after a frame pop."""
         current_goal_height = self.goal_stack.height()
+        current_frame_height = len(self.frame_stack)
         for cp in self.cp_stack:
-            if (
-                cp.kind == ChoicepointKind.CATCH
-                and cp.goal_stack_height > current_goal_height
-            ):
-                cp.goal_stack_height = current_goal_height
+            if cp.kind == ChoicepointKind.CATCH:
+                # Update goal height if it's now too high
+                if cp.goal_stack_height > current_goal_height:
+                    cp.goal_stack_height = current_goal_height
+                # Update frame height if it's now too high
+                if cp.frame_stack_height > current_frame_height:
+                    cp.frame_stack_height = current_frame_height
 
     def _record_solution(self):
         """Record the current solution (bindings of query variables)."""
@@ -2984,10 +3012,9 @@ class Engine:
 
         # Check if there's a POP_FRAME sentinel on top of the goal stack
         # If so, we need to track that it might be consumed before we backtrack
+        top_goal = self.goal_stack.peek()
         has_pop_frame_sentinel = (
-            self.goal_stack.height() > 0
-            and self.goal_stack._stack
-            and self.goal_stack._stack[-1].type == GoalType.POP_FRAME
+            top_goal is not None and top_goal.type == GoalType.POP_FRAME
         )
 
         # Count frames for the same predicate for recursion tracking
@@ -3020,9 +3047,6 @@ class Engine:
                 "recovery": recovery_arg,
                 "cp_height": base_cp_height,  # Store CP height for restoration
                 "has_pop_frame": has_pop_frame_sentinel,  # Track if we have a POP_FRAME that might be consumed
-                "adjusted_height": (
-                    base_goal_height - 1 if has_pop_frame_sentinel else base_goal_height
-                ),
                 "cursor_snapshots": cursor_snapshots,  # Snapshot for cursor restoration
                 "recursion_depth": recursion_depth,  # Track recursion depth for frame validation
             },

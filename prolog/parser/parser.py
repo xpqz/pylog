@@ -8,7 +8,7 @@ For Stage 1.5, this module integrates with the reader for operator support.
 
 import pathlib
 from typing import List, Dict, Any
-from lark import Lark, Tree, Token, Transformer
+from lark import Lark, Token, Transformer
 from lark.exceptions import UnexpectedCharacters, UnexpectedToken
 
 from prolog.ast.terms import Atom, Int, Var, Struct, List as PrologList
@@ -150,6 +150,25 @@ class PrologTransformer(Transformer):
             raise ParseError(f"Invalid functor: {functor}")
         return Struct(functor.name, tuple(args))
 
+    def parenthesized(self, children):
+        """Parenthesized goal list (goal1, goal2, ...) -> conjunction."""
+        # Filter out LPAREN and RPAREN tokens
+        non_tokens = [c for c in children if not isinstance(c, Token)]
+        goals = non_tokens[0] if len(non_tokens) > 0 else []  # goal_list
+
+        if len(goals) == 1:
+            # Single goal in parentheses - just return the goal
+            return goals[0]
+        elif len(goals) > 1:
+            # Multiple goals - create nested conjunction structure
+            result = goals[0]
+            for goal in goals[1:]:
+                result = Struct(",", (result, goal))
+            return result
+        else:
+            # Empty parentheses - shouldn't happen with our grammar
+            raise ParseError("Empty parentheses")
+
     def term(self, children):
         """A term is atom, integer, variable, list, or structure."""
         return children[0]
@@ -248,7 +267,7 @@ def parse_term(text: str) -> Any:
 
 def parse_clause(text: str) -> Clause:
     """Parse a single Prolog clause (fact or rule).
-    
+
     Reader first; grammar fallback on ReaderError.
 
     Args:
@@ -267,7 +286,7 @@ def parse_clause(text: str) -> Clause:
     except ReaderError:
         # Fall back to grammar-based parser for backward compatibility
         pass
-    
+
     try:
         parser = Lark(_get_grammar(), start="clause", parser="lalr")
         tree = parser.parse(text)
@@ -292,7 +311,7 @@ def parse_clause(text: str) -> Clause:
 
 def parse_query(text: str) -> List[Any]:
     """Parse a Prolog query.
-    
+
     Reader first; grammar fallback on ReaderError.
 
     Args:
@@ -311,7 +330,7 @@ def parse_query(text: str) -> List[Any]:
     except ReaderError:
         # Fall back to grammar-based parser for backward compatibility
         pass
-    
+
     try:
         parser = Lark(_get_grammar(), start="query", parser="lalr")
         tree = parser.parse(text)
@@ -334,7 +353,7 @@ def parse_query(text: str) -> List[Any]:
 
 def parse_program(text: str) -> List[Clause]:
     """Parse a complete Prolog program.
-    
+
     Reader first; grammar fallback on ReaderError.
 
     Programs can only contain clauses (facts and rules).
@@ -351,7 +370,7 @@ def parse_program(text: str) -> List[Clause]:
     """
     if not text.strip():
         return []
-    
+
     # Try using the reader first for operator support
     try:
         reader = Reader()
@@ -399,4 +418,4 @@ def parse_program(text: str) -> List[Clause]:
         if "expected" in context.lower() or "unexpected" in context.lower():
             raise ParseError(context, line, column)
         else:
-            raise ParseError(f"Parse error in program", line, column)
+            raise ParseError("Parse error in program", line, column)

@@ -51,7 +51,6 @@ class TestExceptionHandling:
 
         assert len(solutions) == 1
 
-    @pytest.mark.xfail(reason="Catch with streaming cursors not fully implemented")
     def test_catch_with_streaming(self):
         """Test catch/throw with streaming enabled."""
         # Create a program with catch/throw
@@ -77,18 +76,20 @@ class TestExceptionHandling:
         goals = parser.parse_query("?- test(X, Y).")
         solutions = list(engine.run(goals))
 
-        # Should get 3 solutions: ok for 1, caught for 2, ok for 3
-        assert len(solutions) == 3
+        # Should get 2 solutions: ok for 1, caught for exception on 2
+        # Note: After catch, choice points are discarded, so X=3 is not reached
+        assert len(solutions) == 2
+
+        # First solution: X=1, Y=ok
         assert solutions[0]["Y"] == Atom("ok")
         assert solutions[0]["X"] == Int(1)
 
-        # Second solution catches the exception
+        # Second solution: exception caught, X unbound, Y=caught(bad)
         assert isinstance(solutions[1]["Y"], Struct)
         assert solutions[1]["Y"].functor == "caught"
-        assert solutions[1]["X"] == Int(2)
-
-        assert solutions[2]["Y"] == Atom("ok")
-        assert solutions[2]["X"] == Int(3)
+        assert solutions[1]["Y"].args[0] == Atom("bad")
+        # X should be unbound (variable) when exception is caught
+        assert isinstance(solutions[1]["X"], Var)
 
     def test_catch_unification_failure(self):
         """Test catch when catcher doesn't unify with thrown ball."""
