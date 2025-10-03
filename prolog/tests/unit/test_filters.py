@@ -4,26 +4,26 @@ Tests for trace filtering and spypoints.
 
 import pytest
 from prolog.debug.filters import TraceFilters, should_emit_event
-from prolog.debug.tracer import TraceEvent
+from prolog.debug.tracer import TraceEvent, PortsTracer
 from prolog.ast.terms import Atom, Int, Var, Struct, List
 
 
 # Shared test event factory
-def make_event(port='call', pred_id='test/0', frame_depth=0, step_id=1, **kwargs):
+def make_event(port="call", pred_id="test/0", frame_depth=0, step_id=1, **kwargs):
     """Create a test TraceEvent."""
     defaults = {
-        'version': 1,
-        'run_id': 'test',
-        'step_id': step_id,
-        'port': port,
-        'goal': Atom('test'),
-        'goal_pretty': 'test',
-        'goal_canonical': 'test',
-        'frame_depth': frame_depth,
-        'cp_depth': 0,
-        'goal_height': 1,
-        'write_stamp': 1,
-        'pred_id': pred_id,
+        "version": 1,
+        "run_id": "test",
+        "step_id": step_id,
+        "port": port,
+        "goal": Atom("test"),
+        "goal_pretty": "test",
+        "goal_canonical": "test",
+        "frame_depth": frame_depth,
+        "cp_depth": 0,
+        "goal_height": 1,
+        "write_stamp": 1,
+        "pred_id": pred_id,
     }
     defaults.update(kwargs)
     return TraceEvent(**defaults)
@@ -42,20 +42,20 @@ class TestTraceFilters:
         assert filters.max_depth is None
         assert filters.sampling_rate == 1  # Every event
         assert filters.sampling_seed is None  # Non-deterministic
-        assert filters.bindings_policy == 'none'
+        assert filters.bindings_policy == "none"
         # If these are part of the public contract:
         # assert filters.max_term_depth == 10  # or whatever default
         # assert filters.max_items_per_list == 10  # or whatever default
 
     def test_filters_port_configuration(self):
         """Can configure port filters."""
-        filters = TraceFilters(ports={'call', 'exit'})
-        assert filters.ports == {'call', 'exit'}
+        filters = TraceFilters(ports={"call", "exit"})
+        assert filters.ports == {"call", "exit"}
 
     def test_filters_predicate_configuration(self):
         """Can configure predicate filters."""
-        filters = TraceFilters(predicates={'member/2', 'append/3'})
-        assert filters.predicates == {'member/2', 'append/3'}
+        filters = TraceFilters(predicates={"member/2", "append/3"})
+        assert filters.predicates == {"member/2", "append/3"}
 
     def test_filters_depth_configuration(self):
         """Can configure depth filters."""
@@ -71,21 +71,21 @@ class TestTraceFilters:
 
     def test_filters_bindings_configuration(self):
         """Can configure bindings policy."""
-        filters = TraceFilters(bindings_policy='names_values')
-        assert filters.bindings_policy == 'names_values'
+        filters = TraceFilters(bindings_policy="names_values")
+        assert filters.bindings_policy == "names_values"
 
     def test_spypoint_management(self):
         """Can add and remove spypoints."""
         filters = TraceFilters()
 
         # Add spypoints
-        filters.add_spypoint('member/2')
-        filters.add_spypoint('append/3')
-        assert filters.spypoints == {'member/2', 'append/3'}
+        filters.add_spypoint("member/2")
+        filters.add_spypoint("append/3")
+        assert filters.spypoints == {"member/2", "append/3"}
 
         # Remove spypoint
-        filters.remove_spypoint('member/2')
-        assert filters.spypoints == {'append/3'}
+        filters.remove_spypoint("member/2")
+        assert filters.spypoints == {"append/3"}
 
         # Clear all spypoints
         filters.clear_spypoints()
@@ -94,9 +94,9 @@ class TestTraceFilters:
     def test_filters_are_mutable(self):
         """Filter settings can be modified after creation."""
         filters = TraceFilters()
-        filters.ports = {'call'}
+        filters.ports = {"call"}
         filters.min_depth = 5
-        assert filters.ports == {'call'}
+        assert filters.ports == {"call"}
         assert filters.min_depth == 5
 
     @pytest.mark.parametrize("port", ["call", "exit", "redo", "fail"])
@@ -127,14 +127,14 @@ class TestInvalidConfiguration:
     def test_invalid_ports_rejected(self):
         """Invalid port names are rejected."""
         with pytest.raises(ValueError):
-            TraceFilters(ports={'CALL', 'exit'})  # case-sensitive / unknown token
+            TraceFilters(ports={"CALL", "exit"})  # case-sensitive / unknown token
         with pytest.raises(ValueError):
-            TraceFilters(ports={'invalid_port'})
+            TraceFilters(ports={"invalid_port"})
 
     def test_invalid_bindings_policy_rejected(self):
         """Invalid bindings policy is rejected."""
         with pytest.raises(ValueError):
-            TraceFilters(bindings_policy='invalid')
+            TraceFilters(bindings_policy="invalid")
 
 
 class TestFilterPrecedence:
@@ -143,56 +143,55 @@ class TestFilterPrecedence:
     def test_port_filter_applies_first(self):
         """Port filter is checked before other filters."""
         filters = TraceFilters(
-            ports={'exit'},  # Only exit port
-            predicates={'test/0'},  # This predicate is allowed
+            ports={"exit"},  # Only exit port
+            predicates={"test/0"},  # This predicate is allowed
             min_depth=0,  # Depth is fine
         )
 
         # Event matches predicate and depth, but wrong port
-        event = make_event(port='call', pred_id='test/0', frame_depth=0)
+        event = make_event(port="call", pred_id="test/0", frame_depth=0)
         assert not should_emit_event(event, filters)
 
         # Event with correct port passes
-        event = make_event(port='exit', pred_id='test/0', frame_depth=0)
+        event = make_event(port="exit", pred_id="test/0", frame_depth=0)
         assert should_emit_event(event, filters)
 
     def test_predicate_filter_applies_second(self):
         """Predicate filter is checked after port but before depth."""
         filters = TraceFilters(
-            ports={'call'},  # Port matches
-            predicates={'member/2'},  # Only member/2
+            ports={"call"},  # Port matches
+            predicates={"member/2"},  # Only member/2
             min_depth=0,  # Depth is fine
         )
 
         # Event has right port and depth, wrong predicate
-        event = make_event(port='call', pred_id='append/3', frame_depth=0)
+        event = make_event(port="call", pred_id="append/3", frame_depth=0)
         assert not should_emit_event(event, filters)
 
         # Event with correct predicate passes
-        event = make_event(port='call', pred_id='member/2', frame_depth=0)
+        event = make_event(port="call", pred_id="member/2", frame_depth=0)
         assert should_emit_event(event, filters)
 
     def test_depth_filter_applies_third(self):
         """Depth filter is checked after port and predicate."""
         filters = TraceFilters(
-            ports={'call'},  # Port matches
-            predicates={'test/0'},  # Predicate matches
+            ports={"call"},  # Port matches
+            predicates={"test/0"},  # Predicate matches
             min_depth=5,  # Requires depth >= 5
         )
 
         # Event has right port and predicate, wrong depth
-        event = make_event(port='call', pred_id='test/0', frame_depth=2)
+        event = make_event(port="call", pred_id="test/0", frame_depth=2)
         assert not should_emit_event(event, filters)
 
         # Event with sufficient depth passes
-        event = make_event(port='call', pred_id='test/0', frame_depth=5)
+        event = make_event(port="call", pred_id="test/0", frame_depth=5)
         assert should_emit_event(event, filters)
 
     def test_sampling_applies_last(self):
         """Sampling is applied after all other filters."""
         filters = TraceFilters(
-            sampling_rate=2,  # Every 2nd event
-            sampling_seed=42  # Deterministic
+            sampling_rate=2, sampling_seed=42  # Every 2nd event  # Deterministic
         )
 
         # Generate events and check sampling pattern
@@ -214,32 +213,32 @@ class TestSpypointBehaviour:
     def test_spypoint_overrides_predicate_filter(self):
         """Spypoints override predicate filters."""
         filters = TraceFilters(
-            predicates={'member/2'},  # Only member/2 normally
-            spypoints={'append/3'}  # But append/3 is a spypoint
+            predicates={"member/2"},  # Only member/2 normally
+            spypoints={"append/3"},  # But append/3 is a spypoint
         )
 
         # member/2 passes (in predicates)
-        event = make_event(pred_id='member/2')
+        event = make_event(pred_id="member/2")
         assert should_emit_event(event, filters)
 
         # append/3 passes (is spypoint)
-        event = make_event(pred_id='append/3')
+        event = make_event(pred_id="append/3")
         assert should_emit_event(event, filters)
 
         # other/1 fails (not in predicates or spypoints)
-        event = make_event(pred_id='other/1')
+        event = make_event(pred_id="other/1")
         assert not should_emit_event(event, filters)
 
     def test_spypoints_work_without_predicate_filter(self):
         """Spypoints work when no predicate filter is set."""
-        filters = TraceFilters(spypoints={'debug/1'})
+        filters = TraceFilters(spypoints={"debug/1"})
 
         # Spypoint passes
-        event = make_event(pred_id='debug/1')
+        event = make_event(pred_id="debug/1")
         assert should_emit_event(event, filters)
 
         # When no predicate filter, only spypoints are traced
-        event = make_event(pred_id='other/0')
+        event = make_event(pred_id="other/0")
         assert not should_emit_event(event, filters)
 
     def test_empty_spypoints_with_no_predicate_filter(self):
@@ -247,53 +246,56 @@ class TestSpypointBehaviour:
         filters = TraceFilters()  # No predicates, no spypoints
 
         # All predicates should pass
-        event = make_event(pred_id='anything/99')
+        event = make_event(pred_id="anything/99")
         assert should_emit_event(event, filters)
 
     def test_empty_predicates_blocks_all_unless_spypoint(self):
         """Empty predicates set blocks all except spypoints."""
         filters = TraceFilters(predicates=set(), spypoints=set())
-        assert not should_emit_event(make_event(pred_id='any/1'), filters)
+        assert not should_emit_event(make_event(pred_id="any/1"), filters)
 
-        filters.spypoints.add('only/1')
-        assert should_emit_event(make_event(pred_id='only/1'), filters)
-        assert not should_emit_event(make_event(pred_id='other/1'), filters)
+        filters.spypoints.add("only/1")
+        assert should_emit_event(make_event(pred_id="only/1"), filters)
+        assert not should_emit_event(make_event(pred_id="other/1"), filters)
 
     def test_spypoint_does_not_override_port_or_depth(self):
         """Spypoints only affect predicate filtering, not port or depth."""
         filters = TraceFilters(
-            ports={'exit'},            # only EXIT allowed
-            spypoints={'debug/1'},     # spy this predicate
-            min_depth=2,               # depth >= 2
-            sampling_rate=1
+            ports={"exit"},  # only EXIT allowed
+            spypoints={"debug/1"},  # spy this predicate
+            min_depth=2,  # depth >= 2
+            sampling_rate=1,
         )
 
         # Spy predicate with wrong port -> blocked by port filter
-        e = make_event(port='call', pred_id='debug/1', frame_depth=3)
+        e = make_event(port="call", pred_id="debug/1", frame_depth=3)
         assert not should_emit_event(e, filters)
 
         # Spy predicate with insufficient depth -> blocked by depth
-        e = make_event(port='exit', pred_id='debug/1', frame_depth=1)
+        e = make_event(port="exit", pred_id="debug/1", frame_depth=1)
         assert not should_emit_event(e, filters)
 
         # Spy predicate with correct port & depth -> allowed
-        e = make_event(port='exit', pred_id='debug/1', frame_depth=2)
+        e = make_event(port="exit", pred_id="debug/1", frame_depth=2)
         assert should_emit_event(e, filters)
 
     def test_spypoint_still_subject_to_sampling(self):
         """Spypoints are still subject to sampling filter."""
-        filters = TraceFilters(spypoints={'trace/1'}, sampling_rate=2, sampling_seed=7)
-        events = [make_event(step_id=i, pred_id='trace/1') for i in range(10)]
+        filters = TraceFilters(spypoints={"trace/1"}, sampling_rate=2, sampling_seed=7)
+        events = [make_event(step_id=i, pred_id="trace/1") for i in range(10)]
         results = [should_emit_event(e, filters) for e in events]
         # Not all pass because sampling still applies
         assert 0 < sum(results) < len(results)
 
-    @pytest.mark.parametrize("preds,spies,allowed,blocked", [
-        (None, set(), ['a/1','b/2','c/3'], []),           # allow all
-        (None, {'a/1'}, ['a/1'], ['b/2','c/3']),          # whitelist by spies
-        ({'a/1'}, set(), ['a/1'], ['b/2']),               # whitelist by predicates
-        ({'a/1'}, {'b/2'}, ['a/1','b/2'], ['c/3']),       # union of preds and spies
-    ])
+    @pytest.mark.parametrize(
+        "preds,spies,allowed,blocked",
+        [
+            (None, set(), ["a/1", "b/2", "c/3"], []),  # allow all
+            (None, {"a/1"}, ["a/1"], ["b/2", "c/3"]),  # whitelist by spies
+            ({"a/1"}, set(), ["a/1"], ["b/2"]),  # whitelist by predicates
+            ({"a/1"}, {"b/2"}, ["a/1", "b/2"], ["c/3"]),  # union of preds and spies
+        ],
+    )
     def test_predicate_and_spypoint_semantics(self, preds, spies, allowed, blocked):
         """Test predicate and spypoint filter combinations."""
         filters = TraceFilters(predicates=preds, spypoints=spies)
@@ -388,146 +390,137 @@ class TestVariableBindings:
 
     def test_bindings_none_policy(self):
         """'none' policy omits bindings field entirely."""
-        filters = TraceFilters(bindings_policy='none')
+        filters = TraceFilters(bindings_policy="none")
         event = make_event()
 
         # Process event (would be done by tracer)
         processed = filters.process_bindings(event, {})
-        assert 'bindings' not in processed  # Field should be absent, not None
+        assert "bindings" not in processed  # Field should be absent, not None
 
     def test_bindings_names_policy(self):
         """'names' policy includes variable names only."""
-        filters = TraceFilters(bindings_policy='names')
+        filters = TraceFilters(bindings_policy="names")
         event = make_event()
 
         # Simulated bindings
-        bindings = {
-            'X': Atom('foo'),
-            'Y': Int(42),
-            '_G1': Struct('f', (Atom('a'),))
-        }
+        bindings = {"X": Atom("foo"), "Y": Int(42), "_G1": Struct("f", (Atom("a"),))}
 
         processed = filters.process_bindings(event, bindings)
-        assert 'bindings' in processed
+        assert "bindings" in processed
         # Should have names but not values
-        assert 'X' in processed['bindings']
-        assert 'Y' in processed['bindings']
-        assert '_G1' in processed['bindings']
-        assert processed['bindings']['X'] is None  # No value
-        assert processed['bindings']['Y'] is None  # No value
-        assert processed['bindings']['_G1'] is None  # No value
+        assert "X" in processed["bindings"]
+        assert "Y" in processed["bindings"]
+        assert "_G1" in processed["bindings"]
+        assert processed["bindings"]["X"] is None  # No value
+        assert processed["bindings"]["Y"] is None  # No value
+        assert processed["bindings"]["_G1"] is None  # No value
 
     def test_bindings_names_values_policy(self):
         """'names_values' policy includes names and values."""
-        filters = TraceFilters(bindings_policy='names_values')
+        filters = TraceFilters(bindings_policy="names_values")
         event = make_event()
 
         bindings = {
-            'X': Atom('foo'),
-            'Y': Int(42),
-            'Z': Var(99, 'Z'),  # Unbound variable
+            "X": Atom("foo"),
+            "Y": Int(42),
+            "Z": Var(99, "Z"),  # Unbound variable
         }
 
         processed = filters.process_bindings(event, bindings)
-        assert 'bindings' in processed
-        assert processed['bindings']['X'] == 'foo'
-        assert processed['bindings']['Y'] == 42
+        assert "bindings" in processed
+        assert processed["bindings"]["X"] == "foo"
+        assert processed["bindings"]["Y"] == 42
         # Unbound var should have a sensible representation
-        assert 'Z' in processed['bindings']  # Present
+        assert "Z" in processed["bindings"]  # Present
         # Value could be None, '_', or var representation
 
     def test_bindings_respect_max_depth(self):
         """Bindings respect max_term_depth."""
-        filters = TraceFilters(
-            bindings_policy='names_values',
-            max_term_depth=2
-        )
+        filters = TraceFilters(bindings_policy="names_values", max_term_depth=2)
         event = make_event()
 
         # Deep nested structure
-        deep = Struct('f', (Struct('g', (Struct('h', (Atom('deep'),)),)),))
-        bindings = {'X': deep}
+        deep = Struct("f", (Struct("g", (Struct("h", (Atom("deep"),)),)),))
+        bindings = {"X": deep}
 
         processed = filters.process_bindings(event, bindings)
         # Should be truncated at depth 2
-        s = str(processed['bindings']['X'])
-        assert '...' in s
+        s = str(processed["bindings"]["X"])
+        assert "..." in s
         # Verify depth bound is obeyed
-        assert s.count('(') <= 2  # no deeper than depth 2
+        assert s.count("(") <= 2  # no deeper than depth 2
 
     def test_bindings_truncation_cuts_before_deeper_functor(self):
         """Truncation happens before exceeding depth limit."""
-        filters = TraceFilters(bindings_policy='names_values', max_term_depth=2)
-        deep = Struct('f', (Struct('g', (Struct('h', (Atom('x'),)),)),))
-        s = str(filters.process_bindings(make_event(), {'X': deep})['bindings']['X'])
-        assert '...' in s
-        assert 'h(' not in s  # deeper functor must be hidden
+        filters = TraceFilters(bindings_policy="names_values", max_term_depth=2)
+        deep = Struct("f", (Struct("g", (Struct("h", (Atom("x"),)),)),))
+        s = str(filters.process_bindings(make_event(), {"X": deep})["bindings"]["X"])
+        assert "..." in s
+        assert "h(" not in s  # deeper functor must be hidden
 
     def test_bindings_respect_max_items(self):
         """Bindings respect max_items_per_list."""
-        filters = TraceFilters(
-            bindings_policy='names_values',
-            max_items_per_list=3
-        )
+        filters = TraceFilters(bindings_policy="names_values", max_items_per_list=3)
         event = make_event()
 
         # Long list
         long_list = List(tuple(Int(i) for i in range(10)))
-        bindings = {'L': long_list}
+        bindings = {"L": long_list}
 
         processed = filters.process_bindings(event, bindings)
         # Should be truncated to show first 3 items
-        assert '...' in str(processed['bindings']['L'])
+        assert "..." in str(processed["bindings"]["L"])
 
     def test_bindings_respect_max_items_exactly(self):
         """Max items cap is strictly enforced."""
-        filters = TraceFilters(bindings_policy='names_values', max_items_per_list=3)
+        filters = TraceFilters(bindings_policy="names_values", max_items_per_list=3)
         event = make_event()
         long_list = List(tuple(Int(i) for i in range(10)))
-        processed = filters.process_bindings(event, {'L': long_list})
-        s = str(processed['bindings']['L'])
+        processed = filters.process_bindings(event, {"L": long_list})
+        s = str(processed["bindings"]["L"])
         # Expect exactly first 3 items visible
         # Note: Adjust for actual list formatting
-        assert '[0, 1, 2' in s or '[0,1,2' in s  # first 3 items
+        assert "[0, 1, 2" in s or "[0,1,2" in s  # first 3 items
         # Item 3 (0-indexed) should not appear before ellipsis
         # Handle both ASCII and Unicode ellipsis
-        ellipsis = '...' if '...' in s else '…' if '…' in s else None
+        ellipsis = "..." if "..." in s else "…" if "…" in s else None
         if ellipsis:
             before_ellipsis = s.split(ellipsis, 1)[0]
         else:
             before_ellipsis = s
-        assert '3' not in before_ellipsis
+        assert "3" not in before_ellipsis
 
 
 class TestStepIdPolicy:
     """Tests for step_id increment policy."""
 
-    @pytest.mark.xfail(reason="PortsTracer not yet filter-aware; enable when integrated")
     def test_step_id_increments_only_for_emitted_events_integration(self):
         """Integration test: step_id increments only for events that pass filters."""
-        from prolog.debug.tracer import PortsTracer
 
         # Use a collecting sink to capture emitted events
         class _CollectingSink:
             def __init__(self):
                 self.events = []
+
             def write_event(self, e):
                 self.events.append(e)
                 return True
+
             def flush(self):
                 return True
+
             def close(self):
                 pass
 
         # Filters block CALL, but allow EXIT
-        filters = TraceFilters(ports={'exit'})
+        filters = TraceFilters(ports={"exit"})
         tracer = PortsTracer(engine=None, filters=filters)
         sink = _CollectingSink()
         tracer.sinks = [sink]
 
         # Use tracer's own path so step_id is assigned post-filter
-        tracer.emit_event(make_event(port='call', step_id=0))  # filtered out
-        tracer.emit_event(make_event(port='exit', step_id=0))  # emitted
+        tracer.emit_event(make_event(port="call", step_id=0))  # filtered out
+        tracer.emit_event(make_event(port="exit", step_id=0))  # emitted
 
         # Only exit event should be in sink with step_id = 1
         assert [e.step_id for e in sink.events] == [1]
@@ -539,42 +532,23 @@ class TestFilterComposition:
     def test_multiple_filters_combine_correctly(self):
         """Multiple filters combine with AND logic."""
         filters = TraceFilters(
-            ports={'call', 'exit'},
-            predicates={'member/2'},
-            min_depth=1,
-            max_depth=5
+            ports={"call", "exit"}, predicates={"member/2"}, min_depth=1, max_depth=5
         )
 
         # Event must pass ALL filters
-        event = make_event(
-            port='call',
-            pred_id='member/2',
-            frame_depth=3
-        )
+        event = make_event(port="call", pred_id="member/2", frame_depth=3)
         assert should_emit_event(event, filters)
 
         # Fails port filter
-        event = make_event(
-            port='redo',
-            pred_id='member/2',
-            frame_depth=3
-        )
+        event = make_event(port="redo", pred_id="member/2", frame_depth=3)
         assert not should_emit_event(event, filters)
 
         # Fails predicate filter
-        event = make_event(
-            port='call',
-            pred_id='append/3',
-            frame_depth=3
-        )
+        event = make_event(port="call", pred_id="append/3", frame_depth=3)
         assert not should_emit_event(event, filters)
 
         # Fails depth filter
-        event = make_event(
-            port='call',
-            pred_id='member/2',
-            frame_depth=0
-        )
+        event = make_event(port="call", pred_id="member/2", frame_depth=0)
         assert not should_emit_event(event, filters)
 
 
@@ -583,42 +557,34 @@ class TestDeterministicVariableNaming:
 
     def test_fresh_variables_get_g_prefix(self):
         """Fresh variables get _G prefix with deterministic numbering."""
-        filters = TraceFilters(bindings_policy='names_values')
+        filters = TraceFilters(bindings_policy="names_values")
 
         # Simulate fresh variable map from engine
-        fresh_var_map = {
-            100: '_G1',
-            101: '_G2',
-            102: '_G3'
-        }
+        fresh_var_map = {100: "_G1", 101: "_G2", 102: "_G3"}
 
         event = make_event()
-        bindings = {
-            '_G1': Atom('a'),
-            '_G2': Int(42),
-            '_G3': Var(102, '')  # Unbound
-        }
+        bindings = {"_G1": Atom("a"), "_G2": Int(42), "_G3": Var(102, "")}  # Unbound
 
         processed = filters.process_bindings(event, bindings, fresh_var_map)
-        assert '_G1' in processed['bindings']
-        assert '_G2' in processed['bindings']
-        assert '_G3' in processed['bindings']
+        assert "_G1" in processed["bindings"]
+        assert "_G2" in processed["bindings"]
+        assert "_G3" in processed["bindings"]
 
     def test_named_variables_keep_names(self):
         """Named variables keep their original names."""
-        filters = TraceFilters(bindings_policy='names_values')
+        filters = TraceFilters(bindings_policy="names_values")
 
         event = make_event()
         bindings = {
-            'X': Atom('value'),
-            'Result': List((Int(1), Int(2))),
-            'Acc': Var(200, 'Acc')  # Unbound but named
+            "X": Atom("value"),
+            "Result": List((Int(1), Int(2))),
+            "Acc": Var(200, "Acc"),  # Unbound but named
         }
 
         processed = filters.process_bindings(event, bindings)
-        assert 'X' in processed['bindings']
-        assert 'Result' in processed['bindings']
-        assert 'Acc' in processed['bindings']
+        assert "X" in processed["bindings"]
+        assert "Result" in processed["bindings"]
+        assert "Acc" in processed["bindings"]
 
 
 class TestFilterLaziness:
@@ -626,30 +592,30 @@ class TestFilterLaziness:
 
     def test_sampling_rng_not_advanced_when_port_filter_blocks(self):
         """Sampling PRNG not consumed when earlier filter blocks."""
-        filters = TraceFilters(ports={'exit'}, sampling_rate=2, sampling_seed=123)
+        filters = TraceFilters(ports={"exit"}, sampling_rate=2, sampling_seed=123)
 
         # Try to access internal RNG if it exists
         rng = getattr(filters, "_rng", None)
         if rng is None:
             pytest.skip("filters PRNG not accessible; using monkeypatch test instead")
 
-        state_before = rng.getstate() if hasattr(rng, 'getstate') else str(rng)
+        state_before = rng.getstate() if hasattr(rng, "getstate") else str(rng)
 
         # Event fails at the first check (wrong port)
-        assert not should_emit_event(make_event(port='call', step_id=0), filters)
+        assert not should_emit_event(make_event(port="call", step_id=0), filters)
 
         # PRNG state must be unchanged (sampling not reached)
-        state_after = rng.getstate() if hasattr(rng, 'getstate') else str(rng)
+        state_after = rng.getstate() if hasattr(rng, "getstate") else str(rng)
         assert state_after == state_before
 
     def test_check_order_short_circuits(self, monkeypatch):
         """Filter checks short-circuit on first failure."""
         filters = TraceFilters(
-            ports={'exit'},
-            predicates={'test/0'},
+            ports={"exit"},
+            predicates={"test/0"},
             min_depth=1,
             sampling_rate=2,
-            sampling_seed=123
+            sampling_seed=123,
         )
 
         # Track which checks are called
@@ -657,7 +623,8 @@ class TestFilterLaziness:
 
         # Mock the internal check methods if they exist
         # Otherwise we'll test via side effects
-        if hasattr(filters, '_check_port'):
+        if hasattr(filters, "_check_port"):
+
             def mock_check_port(e):
                 calls.append("port")
                 return False  # Fail port check
@@ -679,30 +646,32 @@ class TestFilterLaziness:
             monkeypatch.setattr(filters, "_check_depth", mock_check_depth)
             monkeypatch.setattr(filters, "_check_sampling", mock_check_sampling)
 
-            assert not should_emit_event(make_event(port='call'), filters)
+            assert not should_emit_event(make_event(port="call"), filters)
             # Only the port check should run
             assert calls == ["port"]
         else:
             # Alternative: test that a complex filter setup with wrong port
             # doesn't affect sampling state (proving it wasn't reached)
-            event = make_event(port='call', pred_id='test/0', frame_depth=5)
+            event = make_event(port="call", pred_id="test/0", frame_depth=5)
 
             # This should fail on port check
             assert not should_emit_event(event, filters)
 
             # Now test with correct port - sampling should be deterministic
             # from the same starting point
-            events = [make_event(port='exit', pred_id='test/0',
-                                frame_depth=5, step_id=i) for i in range(10)]
+            events = [
+                make_event(port="exit", pred_id="test/0", frame_depth=5, step_id=i)
+                for i in range(10)
+            ]
             results1 = [should_emit_event(e, filters) for e in events]
 
             # Reset and try again - should get same pattern
             filters2 = TraceFilters(
-                ports={'exit'},
-                predicates={'test/0'},
+                ports={"exit"},
+                predicates={"test/0"},
                 min_depth=1,
                 sampling_rate=2,
-                sampling_seed=123
+                sampling_seed=123,
             )
             results2 = [should_emit_event(e, filters2) for e in events]
             assert results1 == results2  # Sampling deterministic

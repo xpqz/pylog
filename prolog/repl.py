@@ -277,6 +277,14 @@ class PrologREPL:
             Dictionary with 'success' and optional 'bindings' or 'error'
         """
         try:
+            # Ensure engine is properly configured if trace properties were set directly
+            if self.trace_enabled and (
+                not hasattr(self, "engine")
+                or not self.engine
+                or (self.trace_mode == "collector" and not self.collector_sink)
+            ):
+                self._recreate_engine()
+
             # Clean up any previous query state
             self._cleanup_query_state()
 
@@ -557,6 +565,8 @@ class PrologREPL:
                         return {"type": "trace", "action": "sample", "rate": rate}
                     except ValueError:
                         pass
+                elif action == "collector":
+                    return {"type": "trace", "action": "collector"}
                 elif action in ["json", "pretty"] and len(parts) == 3:
                     return {"type": "trace", "action": action, "file": parts[2]}
 
@@ -671,6 +681,12 @@ class PrologREPL:
             self.trace_sample_rate = cmd.get("rate", 1)
             self._recreate_engine()
             print(f"Trace sampling enabled (1 in {self.trace_sample_rate} events)")
+            return True
+        elif action == "collector":
+            self.trace_enabled = True
+            self.trace_mode = "collector"
+            self._recreate_engine()
+            print("Tracing enabled (collector mode for testing)")
             return True
 
         return False
