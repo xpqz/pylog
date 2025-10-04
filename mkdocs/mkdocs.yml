@@ -71,6 +71,7 @@ nav:
   - Reference:
       - Built-ins: reference/builtins-reference.md
       - REPL commands: reference/repl-commands.md
+      - Runtime database: reference/runtime-db.md
       - CLI: reference/cli.md
       - Operators table: reference/operators-table.md
       - Operators cheat sheet: reference/operators-cheatsheet.md
