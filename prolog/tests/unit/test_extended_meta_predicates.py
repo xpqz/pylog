@@ -3,6 +3,7 @@
 Tests for call/2-call/8, \\+/1, copy_term/2, and unify_with_occurs_check/2.
 """
 
+import pytest
 from prolog.ast.terms import Atom, Int, Var, Struct, List as PrologList
 from prolog.ast.clauses import Program
 from prolog.engine.engine import Engine
@@ -124,6 +125,18 @@ class TestNegationAsFailure:
         # \\+(fail) should succeed because fail always fails
         result = engine._builtin_not_provable((Atom("fail"),))
         assert result is True
+
+    def test_not_provable_with_exception(self):
+        """Test \\+/1 with goal that throws an exception - should propagate."""
+        engine = Engine(Program([]))
+
+        # Create a goal that will cause an exception when executed
+        # We'll use an invalid goal structure that causes solve() to fail
+        invalid_goal = Struct("throw", (Atom("test_error"),))
+
+        # \\+ should propagate the exception, not convert it to success
+        with pytest.raises(Exception):
+            engine._builtin_not_provable((invalid_goal,))
 
 
 class TestCopyTerm:

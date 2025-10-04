@@ -2541,8 +2541,6 @@ class Engine:
             result_term = self._build_prolog_list(solutions)
 
         # Unify with result list
-        from prolog.unify.unify import unify
-
         trail_adapter = TrailAdapter(self.trail)
         return unify(
             result_list, result_term, self.store, trail_adapter, self.occurs_check
@@ -2553,6 +2551,11 @@ class Engine:
 
         bagof/3 fails if Goal has no solutions. It backtracks over free variables
         unless they are existentially quantified with the ^ operator.
+
+        CURRENT LIMITATIONS:
+        - No support for existential quantification (^/2) - all variables treated as existential
+        - No grouping/backtracking by free variables - simplified to behave like findall that fails on empty
+        - These will be addressed in future implementations for full ISO compliance
         """
         if len(args) != 3:
             return False
@@ -2574,7 +2577,6 @@ class Engine:
                 return False  # bagof fails on empty results
 
             result_term = self._build_prolog_list(solutions)
-            from prolog.unify.unify import unify
 
             trail_adapter = TrailAdapter(self.trail)
             return unify(
@@ -2591,7 +2593,6 @@ class Engine:
                 return False
 
             result_term = self._build_prolog_list(solutions)
-            from prolog.unify.unify import unify
 
             trail_adapter = TrailAdapter(self.trail)
             return unify(
@@ -2603,6 +2604,12 @@ class Engine:
 
         setof/3 is like bagof/3 but sorts results and removes duplicates.
         Fails if Goal has no solutions.
+
+        CURRENT LIMITATIONS:
+        - No support for existential quantification (^/2) - all variables treated as existential
+        - No grouping/backtracking by free variables - simplified to behave like findall that fails on empty
+        - Uses string representation for sorting/deduplication, not standard term ordering
+        - These will be addressed in future implementations for full ISO compliance
         """
         if len(args) != 3:
             return False
@@ -2624,8 +2631,6 @@ class Engine:
             unique_solutions = self._sort_and_deduplicate(solutions)
             result_term = self._build_prolog_list(unique_solutions)
 
-            from prolog.unify.unify import unify
-
             trail_adapter = TrailAdapter(self.trail)
             return unify(
                 result_set, result_term, self.store, trail_adapter, self.occurs_check
@@ -2640,8 +2645,6 @@ class Engine:
 
             unique_solutions = self._sort_and_deduplicate(solutions)
             result_term = self._build_prolog_list(unique_solutions)
-
-            from prolog.unify.unify import unify
 
             trail_adapter = TrailAdapter(self.trail)
             return unify(
@@ -2809,6 +2812,10 @@ class Engine:
 
         call(Goal, Arg1) is equivalent to calling Goal with Arg1 added as first argument.
         call(Goal, Arg1, Arg2) adds Arg1 and Arg2 as first and second arguments, etc.
+
+        NOTE: Unlike call/1 which uses CONTROL operations for transparency, call/2-8
+        directly push goals. This may affect trace/port behavior but provides correct
+        semantics. Future versions may align with call/1's transparency approach.
         """
         if len(args) < 2:
             return False
@@ -2855,20 +2862,11 @@ class Engine:
 
         goal_arg = args[0]
 
-        # Save current engine state
+        # Save current engine state (query state only - no store changes)
         saved_solutions = self.solutions[:]
         saved_query_vars = self._query_vars[:]
-        saved_store_size = len(self.store.cells)
-        saved_trail_size = len(self.trail)
 
         try:
-            # Create a sub-context to test if goal succeeds
-            self.solutions = []
-            self._query_vars = []
-
-            # Try to prove the goal
-            goal_copy = self._copy_term_with_fresh_vars(goal_arg)
-
             # Create a minimal sub-engine to test the goal
             sub_engine = Engine(
                 self.program,
@@ -2878,10 +2876,10 @@ class Engine:
                 use_indexing=False,
             )
 
-            # Copy goal with fresh variables for the sub-engine
+            # Copy goal directly into sub-engine (avoid main store allocation)
             var_mapping = {}
             goal_for_sub = self._copy_term_recursive(
-                goal_copy, var_mapping, sub_engine.store
+                goal_arg, var_mapping, sub_engine.store
             )
 
             solutions = sub_engine.solve(goal_for_sub)
@@ -2890,15 +2888,12 @@ class Engine:
             return len(solutions) == 0
 
         except Exception:
-            # If goal execution fails with exception, negation succeeds
-            return True
+            # In ISO Prolog, exceptions should propagate through negation
+            raise
         finally:
-            # Restore engine state
+            # Restore engine state (no store/trail changes to undo)
             self.solutions = saved_solutions
             self._query_vars = saved_query_vars
-            # Restore store and trail
-            self.store.shrink_to(saved_store_size)
-            self.trail.unwind_to(saved_trail_size, self.store)
 
     def _builtin_copy_term(self, args: tuple) -> bool:
         """copy_term(+Term, -Copy) - create a copy of term with fresh variables."""
@@ -2911,8 +2906,6 @@ class Engine:
         copied_term = self._copy_term_with_fresh_vars(original)
 
         # Unify the copy with the second argument
-        from prolog.unify.unify import unify
-
         trail_adapter = TrailAdapter(self.trail)
         return unify(copy, copied_term, self.store, trail_adapter, self.occurs_check)
 
@@ -2924,8 +2917,6 @@ class Engine:
         term1, term2 = args
 
         # Unify with occurs check forced on
-        from prolog.unify.unify import unify
-
         trail_adapter = TrailAdapter(self.trail)
         return unify(term1, term2, self.store, trail_adapter, occurs_check=True)
 
