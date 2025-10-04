@@ -4164,11 +4164,40 @@ class Engine:
     def _builtin_dynamic(self, args: tuple) -> bool:
         if len(args) != 1:
             return False
-        pred = self._parse_pred_indicator(args[0])
-        if not pred:
-            return False
-        self._dynamic_preds.add(pred)
-        return True
+        term = args[0]
+        # Allow single Name/Arity or list of Name/Arity
+        single = self._parse_pred_indicator(term)
+        if single:
+            self._dynamic_preds.add(single)
+            return True
+        # List form: dynamic([p/1, q/2, ...])
+        if isinstance(term, PrologList):
+            items = self._prolog_list_to_python_list(term)
+            if items is None:
+                return False
+            preds: list[tuple[str, int]] = []
+            for it in items:
+                pi = self._parse_pred_indicator(it)
+                if not pi:
+                    return False
+                preds.append(pi)
+            # All valid — add them
+            for pi in preds:
+                self._dynamic_preds.add(pi)
+            return True
+        # Comma-conjunction form: dynamic((p/1, q/2)) or nested ,
+        if isinstance(term, Struct) and term.functor == ",":
+            items = self._flatten_conjunction(term)
+            preds: list[tuple[str, int]] = []
+            for it in items:
+                pi = self._parse_pred_indicator(it)
+                if not pi:
+                    return False
+                preds.append(pi)
+            for pi in preds:
+                self._dynamic_preds.add(pi)
+            return True
+        return False
 
     def _builtin_assert(self, args: tuple, append: bool = True) -> bool:
         if len(args) != 1:
@@ -4217,46 +4246,116 @@ class Engine:
     def _builtin_retract(self, args: tuple) -> bool:
         if len(args) != 1:
             return False
-        cl = self._term_to_clause(args[0])
-        if cl is None:
-            # allow retract(Head) for facts
-            t = args[0]
-            if isinstance(t, (Atom, Struct)):
-                cl = Clause(t, tuple())
+        pattern = args[0]
+        # Build list of candidate indices for the predicate to reduce scanning
+        # Extract key from pattern if possible
+        key: Optional[tuple[str, int]] = None
+        if isinstance(pattern, Atom):
+            key = (pattern.name, 0)
+        elif isinstance(pattern, Struct) and pattern.functor != ":-":
+            key = (pattern.functor, len(pattern.args))
+        elif (
+            isinstance(pattern, Struct)
+            and pattern.functor == ":-"
+            and len(pattern.args) == 2
+            and isinstance(pattern.args[0], (Atom, Struct))
+        ):
+            head_t = pattern.args[0]
+            if isinstance(head_t, Atom):
+                key = (head_t.name, 0)
             else:
-                return False
-        h = cl.head
-        if isinstance(h, Atom):
-            key = (h.name, 0)
-        else:
-            key = (h.functor, len(h.args))  # type: ignore
-        if not self._require_dynamic(key):
+                key = (head_t.functor, len(head_t.args))
+
+        if key is None or not self._require_dynamic(key):
             return False
+
+        # Try unification against each clause; bind variables in pattern on success
         clauses = list(self.program.clauses)
         for i, existing in enumerate(clauses):
-            if existing.head == cl.head and existing.body == cl.body:
+            # Quick skip if different predicate
+            eh = existing.head
+            ek = (eh.name, 0) if isinstance(eh, Atom) else (eh.functor, len(eh.args))
+            if ek != key:
+                continue
+
+            # Copy clause head/body to fresh vars in current store
+            def conjunct_from_body(goals: Tuple[Term, ...]) -> Term:
+                if not goals:
+                    return Atom("true")
+                t = goals[-1]
+                for g in reversed(goals[:-1]):
+                    t = Struct(",", (g, t))
+                return t
+
+            var_map: Dict[int, int] = {}
+            head_copy = self._copy_term_recursive(existing.head, var_map)
+            clause_term: Term
+            if existing.body:
+                body_term = conjunct_from_body(
+                    tuple(self._copy_term_recursive(g, var_map) for g in existing.body)
+                )
+                clause_term = Struct(":-", (head_copy, body_term))
+            else:
+                clause_term = head_copy
+
+            # Try unify pattern with clause_term; keep bindings on success
+            trail_pos = self.trail.position()
+            trail_adapter = TrailAdapter(self.trail)
+            if unify(
+                pattern, clause_term, self.store, trail_adapter, self.occurs_check
+            ):
+                # Remove the clause and succeed
                 del clauses[i]
                 self._set_program_clauses(clauses)
                 return True
+            else:
+                # Undo bindings and try next
+                self.trail.unwind_to(trail_pos, self.store)
         return False
 
     def _builtin_abolish(self, args: tuple) -> bool:
         if len(args) != 1:
             return False
-        pred = self._parse_pred_indicator(args[0])
-        if not pred:
+        term = args[0]
+        pis: list[tuple[str, int]] = []
+        single = self._parse_pred_indicator(term)
+        if single:
+            pis = [single]
+        elif isinstance(term, PrologList):
+            items = self._prolog_list_to_python_list(term)
+            if items is None:
+                return False
+            for it in items:
+                pi = self._parse_pred_indicator(it)
+                if not pi:
+                    return False
+                pis.append(pi)
+        elif isinstance(term, Struct) and term.functor == ",":
+            for it in self._flatten_conjunction(term):
+                pi = self._parse_pred_indicator(it)
+                if not pi:
+                    return False
+                pis.append(pi)
+        else:
             return False
-        if not self._require_dynamic(pred):
-            return False
-        name, arity = pred
+
+        # Check dynamic for all
+        for pred in pis:
+            if not self._require_dynamic(pred):
+                return False
+
+        # Remove all clauses for each pred
+        remaining = list(self.program.clauses)
+        to_remove = set(pis)
         new_clauses = []
-        for cl in self.program.clauses:
+        for cl in remaining:
             if isinstance(cl.head, Atom):
                 k = (cl.head.name, 0)
             else:
                 k = (cl.head.functor, len(cl.head.args))  # type: ignore
-            if k != (name, arity):
-                new_clauses.append(cl)
+            if k in to_remove:
+                continue
+            new_clauses.append(cl)
         self._set_program_clauses(new_clauses)
         return True
 

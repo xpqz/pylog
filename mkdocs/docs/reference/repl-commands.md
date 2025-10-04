@@ -16,6 +16,15 @@ Commands are entered at the `?-` prompt without a trailing period, unless noted.
 - `consult(user).` — enter interactive clause input mode; type clauses and finish with Ctrl‑D (EOF) or a single `.` line
   - Clauses are appended to the current program; tracing and spypoints persist
 
+### Runtime database (interactive)
+
+See also: [Runtime Database Predicates](./runtime-db.md)
+
+- `dynamic(Name/Arity)` or `dynamic([PI...])` or `dynamic((PI1,PI2))` — declare dynamic
+- `assertz(Clause)` | `asserta(Clause)` — add clause to a dynamic predicate
+- `retract(Clause)` — remove one matching clause (pattern unifies; variables bind)
+- `abolish(Name/Arity)` or list/conjunction forms — remove all clauses for predicate(s)
+
 ## Tracing
 
 - `trace on` — enable tracing (pretty format to stdout)
