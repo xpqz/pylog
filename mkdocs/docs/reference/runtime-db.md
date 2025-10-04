@@ -12,6 +12,7 @@ complete replacement for advanced database features in full Prolog systems.
 - `assertz(+Clause)`
 - `asserta(+Clause)`
 - `retract(+Clause)`
+- `retractall(+HeadOrClause)`
 - `abolish(+PI)`
 
 Where `PI` is a predicate indicator `name/arity` (e.g., `parent/2`).
@@ -52,13 +53,19 @@ true.
 
 `Clause` can be a fact (e.g., `p(1).`) or a rule written as `Head :- Body`.
 
-### retract/1
+### retract/1 and retractall/1
 
-Remove a single clause matching the given pattern from a dynamic predicate.
+Remove clause(s) matching the given pattern from a dynamic predicate.
 
-- Succeeds once per call, removing the first matching clause.
-- Matches by unification (variables in the pattern are bound on success).
-- Effects persist across backtracking (i.e., removed clauses stay removed).
+- `retract/1`:
+  - Succeeds once per call, removing the first matching clause.
+  - Matches by unification (variables in the pattern are bound on success).
+  - Effects persist across backtracking (i.e., removed clauses stay removed).
+
+- `retractall/1`:
+  - Removes all matching clauses in one call.
+  - Matches by unification but does not bind variables in the query.
+  - Always succeeds (even if nothing matched).
 
 Examples:
 
@@ -77,6 +84,19 @@ true.
 ```
 
 Call `retract/1` again to remove the next matching clause.
+
+Using retractall/1:
+
+```prolog
+?- dynamic(p/1), assertz(p(1)), assertz(p(2)).
+true.
+
+?- retractall(p(X)).
+true.
+
+?- p(X).
+false.
+```
 
 ### abolish/1
 
@@ -99,4 +119,3 @@ Forms accepted:
 
 - REPL: [Loading code and interactive input](../getting-started/repl.md#loading-code)
 - REPL commands: [Reference](./repl-commands.md)
-

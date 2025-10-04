@@ -466,6 +466,9 @@ class Engine:
             args, append=False
         )
         self._builtins[("retract", 1)] = lambda eng, args: eng._builtin_retract(args)
+        self._builtins[("retractall", 1)] = lambda eng, args: eng._builtin_retractall(
+            args
+        )
         self._builtins[("abolish", 1)] = lambda eng, args: eng._builtin_abolish(args)
         # Extended call predicates
         self._builtins[("call", 2)] = lambda eng, args: eng._builtin_call_n(args)
@@ -4357,6 +4360,100 @@ class Engine:
                 continue
             new_clauses.append(cl)
         self._set_program_clauses(new_clauses)
+        return True
+
+    def _builtin_retractall(self, args: tuple) -> bool:
+        """retractall(+HeadOrClause) — remove all matching clauses for a dynamic predicate.
+
+        Matches by unification against the full clause term if provided (Head :- Body),
+        or just the Head if a head-only term is given. Does not bind variables in the
+        query (bindings are unwound after matching).
+        """
+        if len(args) != 1:
+            return False
+        pattern = args[0]
+
+        # Determine key (name/arity) from pattern head
+        key: Optional[tuple[str, int]] = None
+        pat_body: Optional[Term] = None
+        if isinstance(pattern, Atom):
+            key = (pattern.name, 0)
+        elif isinstance(pattern, Struct) and pattern.functor != ":-":
+            key = (pattern.functor, len(pattern.args))
+        elif (
+            isinstance(pattern, Struct)
+            and pattern.functor == ":-"
+            and len(pattern.args) == 2
+            and isinstance(pattern.args[0], (Atom, Struct))
+        ):
+            head_t, body_t = pattern.args
+            if isinstance(head_t, Atom):
+                key = (head_t.name, 0)
+            else:
+                key = (head_t.functor, len(head_t.args))
+            pat_body = body_t
+        else:
+            return False
+
+        if key is None or not self._require_dynamic(key):
+            return False
+
+        # Build new clause list filtering out all matches
+        def build_clause_term(existing: Clause) -> Term:
+            var_map: Dict[int, int] = {}
+            head_copy = self._copy_term_recursive(existing.head, var_map)
+            if existing.body:
+                body_term = None
+                # Rebuild conjunction from body goals
+                for g in reversed(existing.body):
+                    g_copy = self._copy_term_recursive(g, var_map)
+                    body_term = (
+                        g_copy
+                        if body_term is None
+                        else Struct(",", (g_copy, body_term))
+                    )
+                return Struct(":-", (head_copy, body_term))  # type: ignore
+            else:
+                return head_copy
+
+        remaining: list[Clause] = []
+        for cl in self.program.clauses:
+            # Skip non-key predicates quickly
+            eh = cl.head
+            ek = (eh.name, 0) if isinstance(eh, Atom) else (eh.functor, len(eh.args))
+            if ek != key:
+                remaining.append(cl)
+                continue
+
+            # For key matches, verify full unification against requested pattern
+            clause_term = build_clause_term(cl)
+            # If the user supplied a head-only pattern but the clause is a rule,
+            # match only on the head (common retractall semantics).
+            candidate: Term = clause_term
+            if (
+                pat_body is None
+                and isinstance(clause_term, Struct)
+                and clause_term.functor == ":-"
+            ):
+                candidate = clause_term.args[0]
+
+            # Use a fresh copy of pattern so we don't bind query variables
+            pat_copy = self._copy_term_recursive(pattern, {})
+            trail_pos = self.trail.position()
+            trail_adapter = TrailAdapter(self.trail)
+            if unify(pat_copy, candidate, self.store, trail_adapter, self.occurs_check):
+                # Match: remove this clause, but do not keep bindings
+                self.trail.unwind_to(trail_pos, self.store)
+                continue
+            else:
+                # No match: keep clause and undo any bindings
+                self.trail.unwind_to(trail_pos, self.store)
+                remaining.append(cl)
+
+        # Update program if any clause was removed
+        if len(remaining) != len(self.program.clauses):
+            self._set_program_clauses(remaining)
+
         return True
 
     def query(self, query_text: str) -> List[Dict[str, Any]]:
