@@ -13,6 +13,8 @@ Commands are entered at the `?-` prompt without a trailing period, unless noted.
 
 - `consult('path/to/file.pl').` — load a Prolog source file (note the trailing period and quoted path)
   - On success, the completer refreshes with new predicates
+- `consult(user).` — enter interactive clause input mode; type clauses and finish with Ctrl‑D (EOF) or a single `.` line
+  - Clauses are appended to the current program; tracing and spypoints persist
 
 ## Tracing
 
@@ -68,4 +70,3 @@ true.
 Tracing enabled (pretty format to stdout)
 true.
 ```
-

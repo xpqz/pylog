@@ -15,8 +15,11 @@ from __future__ import annotations
 import re
 from pathlib import Path
 from typing import Any, Optional, Generator
+import argparse
+import sys
 
 from prompt_toolkit import PromptSession
+from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.lexers import PygmentsLexer
 from prompt_toolkit.completion import Completer, Completion
@@ -36,7 +39,7 @@ from pygments.token import (
 from prolog.engine.engine import Engine
 from prolog.ast.terms import Atom, Int, Var, Struct, List, Term
 from prolog.ast.clauses import Program
-from prolog.ast.pretty import pretty
+from prolog.ast.pretty import pretty, pretty_clause
 from prolog.parser import parser
 from prolog.parser.parser import parse_program
 from prolog.debug.sinks import PrettyTraceSink, JSONLTraceSink, CollectorSink
@@ -179,6 +182,19 @@ class PrologREPL:
             # If history file is inaccessible, use in-memory history
             history = None
 
+        # Key bindings: make Tab accept inline autosuggestions; otherwise, complete next
+        kb = KeyBindings()
+
+        @kb.add("tab")
+        def _(event):  # type: ignore
+            buff = event.app.current_buffer
+            # If there's an inline suggestion (from history), accept it
+            if getattr(buff, "suggestion", None):
+                buff.insert_text(buff.suggestion.text)
+            else:
+                # Fall back to normal completion behavior
+                buff.complete_next()
+
         self.session = PromptSession(
             history=history,
             lexer=PygmentsLexer(PrologLexer),
@@ -186,6 +202,7 @@ class PrologREPL:
             auto_suggest=AutoSuggestFromHistory(),
             multiline=False,
             complete_while_typing=True,
+            key_bindings=kb,
         )
 
     def _load_standard_library(self):
@@ -504,10 +521,18 @@ class PrologREPL:
             else:
                 return f"_G{term.id}"
         elif isinstance(term, List):
-            if term.items:
-                items_str = ", ".join(self.pretty_print(item) for item in term.items)
-                if term.tail != Atom("[]"):
-                    return f"[{items_str}|{self.pretty_print(term.tail)}]"
+            # Flatten list spines so we always show [a, b, c] for proper lists
+            items, tail = self._flatten_list(term)
+
+            # Heuristic: pretty-print rectangular nested lists (matrices) across lines
+            matrix_rows = self._detect_matrix_rows(items)
+            if matrix_rows is not None and tail == Atom("[]"):
+                return self._format_matrix(matrix_rows)
+
+            if items:
+                items_str = ", ".join(self.pretty_print(item) for item in items)
+                if tail != Atom("[]"):
+                    return f"[{items_str}|{self.pretty_print(tail)}]"
                 return f"[{items_str}]"
             return "[]"
         elif isinstance(term, Struct):
@@ -521,6 +546,65 @@ class PrologREPL:
                 return pretty(term)
             except Exception:
                 return str(term)
+
+    def _flatten_list(self, lst: List) -> tuple[list[Term], Term]:
+        """Flatten a possibly spined Prolog list into items and final tail.
+
+        This turns nested cons-like representations into a flat item list so
+        REPL output shows canonical [a, b, c] rather than [a|[b|[c|[]]]].
+        """
+        items: list[Term] = []
+        current: Term = lst
+        while isinstance(current, List):
+            if current.items:
+                items.extend(current.items)
+            if isinstance(current.tail, List):
+                current = current.tail
+            else:
+                return items, current.tail
+        # If input wasn't a List (defensive), return as-is
+        return items, current
+
+    def _detect_matrix_rows(self, items: list[Term]) -> Optional[list[list[Term]]]:
+        """Detect rectangular nested lists suitable for multi-line matrix formatting.
+
+        Returns a list of rows (each a list of Terms) if and only if:
+        - All top-level items are proper lists with empty tails
+        - All rows have equal length (rectangular)
+        - Dimensions are at least 3x3 (to avoid changing small nested list formatting)
+        Otherwise returns None.
+        """
+        if not items:
+            return None
+
+        rows: list[list[Term]] = []
+        expected_len: Optional[int] = None
+        for it in items:
+            if not isinstance(it, List):
+                return None
+            row_items, row_tail = self._flatten_list(it)
+            if row_tail != Atom("[]"):
+                return None
+            if expected_len is None:
+                expected_len = len(row_items)
+                if expected_len == 0:
+                    return None
+            elif len(row_items) != expected_len:
+                return None
+            rows.append(row_items)
+
+        # Only switch to matrix formatting for reasonably large grids
+        if len(rows) >= 3 and (expected_len or 0) >= 3:
+            return rows
+        return None
+
+    def _format_matrix(self, rows: list[list[Term]]) -> str:
+        """Format a rectangular nested list as a multi-line matrix for readability."""
+        formatted_rows = []
+        for row in rows:
+            row_str = ", ".join(self.pretty_print(cell) for cell in row)
+            formatted_rows.append(f"  [{row_str}]")
+        return "[\n" + ",\n".join(formatted_rows) + "\n]"
 
     def parse_command(self, input_text: str) -> dict[str, str]:
         """Parse user input to determine command type.
@@ -602,6 +686,10 @@ class PrologREPL:
         elif input_lower == "metrics":
             return {"type": "debug", "action": "metrics"}
 
+        # Check for consult(user) interactive mode
+        if re.match(r"^consult\s*\(\s*user\s*\)\s*\.?$", input_lower):
+            return {"type": "consult_user"}
+
         # Check for consult
         consult_match = re.match(
             r'consult\s*\(\s*[\'"]([^\'"]*)[\'"]\s*\)\s*\.?', original_input
@@ -621,7 +709,8 @@ class PrologREPL:
             return {"type": "listing", "name": pred_name, "arity": pred_arity}
 
         # Check for query (with or without ?- prefix)
-        query_text = original_input
+        # Allow trailing comments after the period by stripping comments first
+        query_text = self._strip_comments(original_input)
         if query_text.startswith("?-"):
             query_text = query_text[2:].strip()
 
@@ -632,6 +721,104 @@ class PrologREPL:
         # Remove trailing period and treat as query
         query = query_text[:-1].strip()
         return {"type": "query", "content": query}
+
+    def _strip_comments(self, s: str) -> str:
+        """Strip Prolog line and block comments from a single REPL input line.
+
+        - Removes '%' line comments (outside quoted atoms and blocks)
+        - Removes '/* ... */' block comments (non-nested) across the string
+        - Preserves content inside quoted atoms
+        """
+        out = []
+        i = 0
+        n = len(s)
+        in_quote = False
+        in_block = False
+        while i < n:
+            ch = s[i]
+            nxt = s[i + 1] if i + 1 < n else ""
+
+            if in_block:
+                # Look for block comment end */
+                if ch == "*" and nxt == "/":
+                    in_block = False
+                    i += 2
+                    continue
+                i += 1
+                continue
+
+            if in_quote:
+                out.append(ch)
+                if ch == "\\":
+                    # Escape next character inside quotes
+                    if i + 1 < n:
+                        out.append(s[i + 1])
+                        i += 2
+                        continue
+                elif ch == "'":
+                    in_quote = False
+                i += 1
+                continue
+
+            # Not in quote or block comment
+            if ch == "'":
+                in_quote = True
+                out.append(ch)
+                i += 1
+                continue
+
+            # Start of block comment
+            if ch == "/" and nxt == "*":
+                in_block = True
+                i += 2
+                continue
+
+            # Line comment starts with % (outside quotes/blocks) -> stop here
+            if ch == "%":
+                break
+
+            out.append(ch)
+            i += 1
+
+        return "".join(out).strip()
+
+    def _consult_user(self) -> bool:
+        """Interactive clause entry mode: consult(user).
+
+        Reads clauses from the user until EOF (Ctrl-D). Appends them to the
+        current program using engine.consult_string without recreating the engine,
+        so tracing and spypoints persist.
+        """
+        print("Entering consult(user). Type clauses, end with Ctrl-D (EOF).")
+        lines: list[str] = []
+        while True:
+            try:
+                line = self.session.prompt("|: ")
+            except EOFError:
+                # Finish on Ctrl-D
+                print("")
+                break
+            # Allow a single '.' on its own line to finish as well (quality of life)
+            if line.strip() == ".":
+                break
+            lines.append(line)
+
+        text = "\n".join(lines).strip()
+        if not text:
+            print("true.")
+            return True
+
+        try:
+            self.engine.consult_string(text)
+            # Keep self.program in sync (engine persists)
+            self.program = self.engine.program
+            # Update completer with new predicates
+            self._update_completer()
+            print("true.")
+            return True
+        except Exception as e:
+            print(f"Error: {e}")
+            return False
 
     def execute_trace_command(self, cmd: dict) -> bool:
         """Execute a trace command.
@@ -909,6 +1096,7 @@ class PrologREPL:
 PyLog REPL Commands:
     ?- <query>.          Execute a Prolog query
     consult('file.pl').  Load a Prolog file
+    consult(user).       Enter interactive clause input (Ctrl-D to finish)
     listing.             List all loaded clauses
     listing(name/N).     List clauses for name/N
     help.                Show this help message
@@ -983,6 +1171,8 @@ Examples:
 
                 elif cmd["type"] == "consult":
                     self.load_file(cmd["file"])
+                elif cmd["type"] == "consult_user":
+                    self._consult_user()
 
                 elif cmd["type"] == "trace":
                     self.execute_trace_command(cmd)
@@ -1102,8 +1292,6 @@ Examples:
                     print(f"% No clauses for {name}/{arity}.")
                     return True
 
-            from prolog.ast.pretty import pretty_clause
-
             for cl in clauses:
                 print(pretty_clause(cl))
             return True
@@ -1162,10 +1350,6 @@ def main():
       - Run a goal and exit:           pylog path/to/file.pl -g "member(X,[1,2])" --once --noninteractive
       - Run with tracing to stdout:    pylog -g "append([1],[2],X)" --once --trace --noninteractive
     """
-    import argparse
-    import sys
-    from prolog.ast.pretty import pretty
-
     parser = argparse.ArgumentParser(prog="pylog", add_help=True)
     parser.add_argument(
         "files", nargs="*", help="Prolog files to consult before starting"
