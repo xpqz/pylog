@@ -4383,6 +4383,7 @@ class Engine:
 
     # --- Helpers (dynamic DB) ---
     def _clause_key_from_head(self, head: Term) -> tuple[str, int]:
+        """Compute (name, arity) from a clause head (Atom or Struct)."""
         if isinstance(head, Atom):
             return (head.name, 0)
         assert isinstance(head, Struct)
@@ -4415,7 +4416,7 @@ class Engine:
             existing.head, var_map, target_store=target_store
         )
         if existing.body:
-            # Rebuild conjunction from body goals
+            # Rebuild conjunction from body goals: g1, (g2, (...))
             body_term: Optional[Term] = None
             for g in reversed(existing.body):
                 g_copy = self._copy_term_recursive(
