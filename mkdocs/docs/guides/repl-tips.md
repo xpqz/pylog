@@ -40,13 +40,25 @@ X = 3
 
 The REPL prints `.` after the last solution to indicate completion.
 
-## Loading files
+## Loading files and interactive input
 
-Use `consult('path/to/file.pl').` (quoted string):
+Use `consult('path/to/file.pl').` (quoted string) to load a file, or `consult(user).` to type clauses inline:
 
 ```text
 ?- consult('prolog/lib/lists.pl').
 Loaded: prolog/lib/lists.pl
+true.
+```
+
+Interactive session:
+
+```text
+?- consult(user).
+|: edge(a, b).
+|: edge(b, c).
+|: path(X, Z) :- edge(X, Z).
+|: path(X, Z) :- edge(X, Y), path(Y, Z).
+|: .
 true.
 ```
 
@@ -88,4 +100,3 @@ Metrics add small overhead; leave off unless needed.
 ## Exiting
 
 - `quit`, `exit`, or `halt`, or press Ctrl‑D
-

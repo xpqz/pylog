@@ -57,6 +57,20 @@ Moves = [move(left,right),move(left,middle),move(right,middle),
  .
 ```
 
+Interactive consult:
+
+```text
+?- consult(user).
+|: parent(tom, bob).
+|: parent(bob, ann).
+|: grandparent(X, Z) :- parent(X, Y), parent(Y, Z).
+|: .
+true.
+?- listing(parent/2).
+parent(tom, bob).
+parent(bob, ann).
+```
+
 ### Command‑line
 
 Run a goal without entering the REPL:

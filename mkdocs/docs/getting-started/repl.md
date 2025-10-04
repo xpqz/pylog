@@ -89,11 +89,22 @@ Tips:
 
 ## Loading code
 
-Use `consult('path/to/file.pl').`
+Use `consult('path/to/file.pl').` to load a source file, or `consult(user).` to type clauses interactively.
 
 ```text
 ?- consult('prolog/lib/lists.pl').
 Loaded: prolog/lib/lists.pl
+true.
+```
+
+Interactive input:
+
+```text
+?- consult(user).
+|: parent(tom, bob).
+|: parent(bob, ann).
+|: grandparent(X, Z) :- parent(X, Y), parent(Y, Z).
+|: .
 true.
 ```
 
