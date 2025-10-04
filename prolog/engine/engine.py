@@ -3,7 +3,7 @@
 import os
 from typing import Dict, List, Optional, Any, Tuple, Union
 from prolog.ast.terms import Term, Atom, Int, Float, Var, Struct, List as PrologList
-from prolog.ast.clauses import Program, ClauseCursor
+from prolog.ast.clauses import Program, Clause, ClauseCursor
 from prolog.engine.rename import VarRenamer
 from prolog.unify.store import Store, Cell
 from prolog.unify.unify import unify
@@ -197,6 +197,9 @@ class Engine:
 
         # Feature flag for variable selection caching optimization
         self._uses_variable_selection_caching = True
+
+        # Dynamic predicate registry (name, arity)
+        self._dynamic_preds: set[tuple[str, int]] = set()
 
     # Public accessor methods for snapshot module
     def store_size(self) -> int:
@@ -454,6 +457,16 @@ class Engine:
         self._builtins[("findall", 3)] = lambda eng, args: eng._builtin_findall(args)
         self._builtins[("bagof", 3)] = lambda eng, args: eng._builtin_bagof(args)
         self._builtins[("setof", 3)] = lambda eng, args: eng._builtin_setof(args)
+        # Dynamic database predicates
+        self._builtins[("dynamic", 1)] = lambda eng, args: eng._builtin_dynamic(args)
+        self._builtins[("assertz", 1)] = lambda eng, args: eng._builtin_assert(
+            args, append=True
+        )
+        self._builtins[("asserta", 1)] = lambda eng, args: eng._builtin_assert(
+            args, append=False
+        )
+        self._builtins[("retract", 1)] = lambda eng, args: eng._builtin_retract(args)
+        self._builtins[("abolish", 1)] = lambda eng, args: eng._builtin_abolish(args)
         # Extended call predicates
         self._builtins[("call", 2)] = lambda eng, args: eng._builtin_call_n(args)
         self._builtins[("call", 3)] = lambda eng, args: eng._builtin_call_n(args)
@@ -4107,7 +4120,145 @@ class Engine:
         clauses = parse_program(text)
         # Create new program with existing clauses plus new ones
         all_clauses = list(self.program.clauses) + clauses
-        self.program = ProgramClass(tuple(all_clauses))
+        self._set_program_clauses(all_clauses)
+
+    # --- Dynamic database helpers and builtins ---
+    def _set_program_clauses(self, clauses: list[Clause]) -> None:
+        """Replace the engine program with given clauses, preserving indexing mode."""
+        if self.use_indexing:
+            self.program = IndexedProgram.from_clauses(clauses)
+        else:
+            self.program = ProgramClass(tuple(clauses))
+
+    def _parse_pred_indicator(self, term: Term) -> Optional[tuple[str, int]]:
+        """Parse a predicate indicator Name/Arity into (name, arity)."""
+        if isinstance(term, Struct) and term.functor == "/" and len(term.args) == 2:
+            name_t, arity_t = term.args
+            if isinstance(name_t, Atom) and isinstance(arity_t, Int):
+                return (name_t.name, int(arity_t.value))
+        return None
+
+    def _flatten_conjunction(self, term: Term) -> tuple[Term, ...]:
+        """Flatten a conjunction term into a tuple of goals."""
+        if isinstance(term, Struct) and term.functor == "," and len(term.args) == 2:
+            left, right = term.args
+            return self._flatten_conjunction(left) + self._flatten_conjunction(right)
+        return (term,)
+
+    def _term_to_clause(self, term: Term) -> Optional[Clause]:
+        """Convert a term to a Clause (fact or rule)."""
+        if isinstance(term, (Atom, Struct)) and not (
+            isinstance(term, Struct) and term.functor == ":-"
+        ):
+            return Clause(term, tuple())
+        if isinstance(term, Struct) and term.functor == ":-" and len(term.args) == 2:
+            head_t, body_t = term.args
+            if isinstance(head_t, (Atom, Struct)):
+                body_goals = self._flatten_conjunction(body_t)
+                return Clause(head_t, tuple(body_goals))
+        return None
+
+    def _require_dynamic(self, key: tuple[str, int]) -> bool:
+        return key in self._dynamic_preds
+
+    def _builtin_dynamic(self, args: tuple) -> bool:
+        if len(args) != 1:
+            return False
+        pred = self._parse_pred_indicator(args[0])
+        if not pred:
+            return False
+        self._dynamic_preds.add(pred)
+        return True
+
+    def _builtin_assert(self, args: tuple, append: bool = True) -> bool:
+        if len(args) != 1:
+            return False
+        cl = self._term_to_clause(args[0])
+        if cl is None:
+            return False
+        head = cl.head
+        if isinstance(head, Atom):
+            key = (head.name, 0)
+        else:
+            key = (head.functor, len(head.args))  # type: ignore
+        if not self._require_dynamic(key):
+            return False
+        clauses = list(self.program.clauses)
+        if append:
+            # insert after last same-predicate clause
+            insert_pos = len(clauses)
+            for i in range(len(clauses) - 1, -1, -1):
+                h = clauses[i].head
+                if isinstance(h, Atom):
+                    k = (h.name, 0)
+                else:
+                    k = (h.functor, len(h.args))  # type: ignore
+                if k == key:
+                    insert_pos = i + 1
+                    break
+            clauses.insert(insert_pos, cl)
+        else:
+            # insert before first same-predicate clause
+            insert_pos = 0
+            for i, existing in enumerate(clauses):
+                h = existing.head
+                if isinstance(h, Atom):
+                    k = (h.name, 0)
+                else:
+                    k = (h.functor, len(h.args))  # type: ignore
+                if k == key:
+                    insert_pos = i
+                    break
+                insert_pos = i + 1
+            clauses.insert(insert_pos, cl)
+        self._set_program_clauses(clauses)
+        return True
+
+    def _builtin_retract(self, args: tuple) -> bool:
+        if len(args) != 1:
+            return False
+        cl = self._term_to_clause(args[0])
+        if cl is None:
+            # allow retract(Head) for facts
+            t = args[0]
+            if isinstance(t, (Atom, Struct)):
+                cl = Clause(t, tuple())
+            else:
+                return False
+        h = cl.head
+        if isinstance(h, Atom):
+            key = (h.name, 0)
+        else:
+            key = (h.functor, len(h.args))  # type: ignore
+        if not self._require_dynamic(key):
+            return False
+        clauses = list(self.program.clauses)
+        for i, existing in enumerate(clauses):
+            if existing.head == cl.head and existing.body == cl.body:
+                del clauses[i]
+                self._set_program_clauses(clauses)
+                return True
+        return False
+
+    def _builtin_abolish(self, args: tuple) -> bool:
+        if len(args) != 1:
+            return False
+        pred = self._parse_pred_indicator(args[0])
+        if not pred:
+            return False
+        if not self._require_dynamic(pred):
+            return False
+        name, arity = pred
+        new_clauses = []
+        for cl in self.program.clauses:
+            if isinstance(cl.head, Atom):
+                k = (cl.head.name, 0)
+            else:
+                k = (cl.head.functor, len(cl.head.args))  # type: ignore
+            if k != (name, arity):
+                new_clauses.append(cl)
+        self._set_program_clauses(new_clauses)
+        return True
 
     def query(self, query_text: str) -> List[Dict[str, Any]]:
         """Execute a query and return all solutions.
