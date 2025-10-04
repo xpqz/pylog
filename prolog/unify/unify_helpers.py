@@ -6,7 +6,6 @@ These functions support the main unification algorithm:
 - deref_term: Follow variable chains to find the term or unbound root
 """
 
-from copy import deepcopy
 from typing import Any, List, Tuple
 
 from prolog.ast.terms import Var, Int
@@ -57,7 +56,11 @@ def union_vars(v1: int, v2: int, trail: List, store: Store) -> bool:
         return True
 
     # Handle attribute merging for var-var aliasing
-    if hasattr(store, 'attrs') and hasattr(trail, 'engine') and trail.engine is not None:
+    if (
+        hasattr(store, "attrs")
+        and hasattr(trail, "engine")
+        and trail.engine is not None
+    ):
         if not _handle_var_var_aliasing(root1, root2, trail, store):
             return False
 
@@ -105,16 +108,16 @@ def union_vars(v1: int, v2: int, trail: List, store: Store) -> bool:
         store.cells[root1].rank += 1
 
     # Merge attributes after union
-    if hasattr(store, 'attrs') and winner_root is not None and loser_root is not None:
+    if hasattr(store, "attrs") and winner_root is not None and loser_root is not None:
         _merge_attributes_to_root(winner_root, loser_root, trail, store)
 
         # If the merged CLP(FD) domain is a singleton, bind the root to that value.
         # This ensures queries like `X in 5..5, Y in 5..5, X = Y` ground to 5.
         try:
             attrs = store.attrs.get(winner_root, {})
-            fd = attrs.get('clpfd') if isinstance(attrs, dict) else None
-            dom = fd.get('domain') if isinstance(fd, dict) else None
-            if dom is not None and hasattr(dom, 'is_singleton') and dom.is_singleton():
+            fd = attrs.get("clpfd") if isinstance(attrs, dict) else None
+            dom = fd.get("domain") if isinstance(fd, dict) else None
+            if dom is not None and hasattr(dom, "is_singleton") and dom.is_singleton():
                 val = dom.min()
                 if val is not None:
                     # Trail and bind the union root to the integer value
@@ -169,7 +172,9 @@ def _handle_var_var_aliasing(root1: int, root2: int, trail: List, store: Store) 
     return True
 
 
-def _merge_attributes_to_root(winner_root: int, loser_root: int, trail: List, store: Store) -> None:
+def _merge_attributes_to_root(
+    winner_root: int, loser_root: int, trail: List, store: Store
+) -> None:
     """Merge attributes from loser to winner after union.
 
     Args:
@@ -221,9 +226,9 @@ def _trail_attr_change(trail: List, varid: int, module: str, old_value: Any) -> 
         module: Attribute module name
         old_value: Previous value (None if didn't exist)
     """
-    if hasattr(trail, 'push_attr'):
+    if hasattr(trail, "push_attr"):
         trail.push_attr(varid, module, old_value)
-    elif hasattr(trail, 'push'):
+    elif hasattr(trail, "push"):
         trail.push(("attr", varid, module, old_value))
     else:
         trail.append(("attr", varid, module, old_value))
@@ -253,9 +258,7 @@ def bind_root_to_term(vid: int, term: Any, trail: List, store: Store) -> None:
         raise ValueError(f"Variable {vid} is already bound")
 
     if isinstance(term, Var):
-        raise ValueError(
-            f"Cannot bind to Var term - use union_vars for var-var binding"
-        )
+        raise ValueError("Cannot bind to Var term - use union_vars for var-var binding")
 
     # Create a snapshot of the old cell for the trail
     old_cell = Cell(tag=cell.tag, ref=cell.ref, term=cell.term, rank=cell.rank)

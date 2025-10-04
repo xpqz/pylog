@@ -4,13 +4,10 @@ Tests important properties like confluence, monotonicity, trail invertibility,
 and idempotence using Hypothesis for property-based testing.
 """
 
-import pytest
 from hypothesis import given, strategies as st, settings, assume
 import random
-from prolog.ast.terms import Atom, Int, Var, Struct, List
 from prolog.engine.engine import Engine, Program
-from prolog.clpfd.api import get_domain, set_domain
-from prolog.clpfd.domain import Domain
+from prolog.clpfd.api import get_domain
 
 
 class TestCLPFDConfluence:
@@ -18,20 +15,22 @@ class TestCLPFDConfluence:
 
     @given(
         constraints=st.lists(
-            st.sampled_from([
-                "X in 1..20",
-                "Y in 5..25",
-                "Z in 10..30",
-                "X #< Y",
-                "Y #< Z",
-                "X #> 3",
-                "Y #=< 20",
-                "Z #>= 15",
-            ]),
+            st.sampled_from(
+                [
+                    "X in 1..20",
+                    "Y in 5..25",
+                    "Z in 10..30",
+                    "X #< Y",
+                    "Y #< Z",
+                    "X #> 3",
+                    "Y #=< 20",
+                    "Z #>= 15",
+                ]
+            ),
             min_size=2,
             max_size=6,
         ),
-        seed=st.integers(min_value=0, max_value=1000)
+        seed=st.integers(min_value=0, max_value=1000),
     )
     @settings(max_examples=50, deadline=5000)
     def test_confluence_different_posting_orders(self, constraints, seed):
@@ -63,7 +62,7 @@ class TestCLPFDConfluence:
             sol1 = solutions1[0]
             sol2 = solutions2[0]
 
-            for var_name in ['X', 'Y', 'Z']:
+            for var_name in ["X", "Y", "Z"]:
                 if var_name in sol1 and var_name in sol2:
                     dom1 = get_domain(engine1.store, sol1[var_name].id)
                     dom2 = get_domain(engine2.store, sol2[var_name].id)
@@ -76,12 +75,15 @@ class TestCLPFDConfluence:
         """Test specific constraint reorderings for confluence."""
         test_cases = [
             # Original vs reversed
-            (["X in 1..10", "Y in 5..15", "X #< Y", "X #> 3"],
-             ["X #> 3", "X #< Y", "Y in 5..15", "X in 1..10"]),
-
+            (
+                ["X in 1..10", "Y in 5..15", "X #< Y", "X #> 3"],
+                ["X #> 3", "X #< Y", "Y in 5..15", "X in 1..10"],
+            ),
             # Interleaved vs grouped
-            (["X in 1..20", "X #< Y", "Y in 1..20", "Y #< Z", "Z in 1..20"],
-             ["X in 1..20", "Y in 1..20", "Z in 1..20", "X #< Y", "Y #< Z"]),
+            (
+                ["X in 1..20", "X #< Y", "Y in 1..20", "Y #< Z", "Z in 1..20"],
+                ["X in 1..20", "Y in 1..20", "Z in 1..20", "X #< Y", "Y #< Z"],
+            ),
         ]
 
         for original, reordered in test_cases:
@@ -106,12 +108,12 @@ class TestCLPFDMonotonicity:
         # Start with initial domain
         query1 = "?- X in 1..100."
         sols1 = list(engine.query(query1))
-        initial_domain = get_domain(engine.store, sols1[0]['X'].id)
+        initial_domain = get_domain(engine.store, sols1[0]["X"].id)
 
         # Add constraint
         query2 = "?- X in 1..100, X #> 50."
         sols2 = list(engine.query(query2))
-        constrained_domain = get_domain(engine.store, sols2[0]['X'].id)
+        constrained_domain = get_domain(engine.store, sols2[0]["X"].id)
 
         # Domain should have shrunk
         assert constrained_domain.min() >= initial_domain.min()
@@ -121,7 +123,7 @@ class TestCLPFDMonotonicity:
         # Add another constraint
         query3 = "?- X in 1..100, X #> 50, X #< 75."
         sols3 = list(engine.query(query3))
-        further_constrained = get_domain(engine.store, sols3[0]['X'].id)
+        further_constrained = get_domain(engine.store, sols3[0]["X"].id)
 
         # Should shrink further
         assert further_constrained.min() >= constrained_domain.min()
@@ -131,10 +133,12 @@ class TestCLPFDMonotonicity:
     @given(
         initial_min=st.integers(min_value=1, max_value=50),
         initial_max=st.integers(min_value=51, max_value=100),
-        constraint_value=st.integers(min_value=1, max_value=100)
+        constraint_value=st.integers(min_value=1, max_value=100),
     )
     @settings(max_examples=50, deadline=5000)
-    def test_monotonic_constraint_addition(self, initial_min, initial_max, constraint_value):
+    def test_monotonic_constraint_addition(
+        self, initial_min, initial_max, constraint_value
+    ):
         """Property: adding constraints monotonically shrinks domains."""
         engine = Engine(Program([]))
 
@@ -145,7 +149,7 @@ class TestCLPFDMonotonicity:
         if not sols:
             return  # Invalid domain
 
-        initial_domain = get_domain(engine.store, sols[0]['X'].id)
+        initial_domain = get_domain(engine.store, sols[0]["X"].id)
         initial_size = initial_domain.size()
 
         # Add various constraints and check monotonicity
@@ -161,7 +165,7 @@ class TestCLPFDMonotonicity:
             sols = list(engine.query(query))
 
             if sols:
-                new_domain = get_domain(engine.store, sols[0]['X'].id)
+                new_domain = get_domain(engine.store, sols[0]["X"].id)
                 # Domain should never expand
                 assert new_domain.size() <= initial_size
 
@@ -184,7 +188,7 @@ class TestCLPFDTrailInvertibility:
         sol = solutions[0]
 
         # Domain should be from second branch only
-        domain = get_domain(engine.store, sol['X'].id)
+        domain = get_domain(engine.store, sol["X"].id)
         assert domain.min() == 16
         assert domain.max() == 20
 
@@ -205,7 +209,7 @@ class TestCLPFDTrailInvertibility:
         sol = solutions[0]
 
         # Should have domain 21..25 (from successful branch)
-        domain = get_domain(engine.store, sol['X'].id)
+        domain = get_domain(engine.store, sol["X"].id)
         assert domain.min() == 21
         assert domain.max() == 25
 
@@ -213,10 +217,10 @@ class TestCLPFDTrailInvertibility:
         domain_ranges=st.lists(
             st.tuples(
                 st.integers(min_value=1, max_value=50),
-                st.integers(min_value=51, max_value=100)
+                st.integers(min_value=51, max_value=100),
             ),
             min_size=2,
-            max_size=4
+            max_size=4,
         )
     )
     @settings(max_examples=30, deadline=5000)
@@ -238,7 +242,7 @@ class TestCLPFDTrailInvertibility:
 
         if solutions:
             sol = solutions[0]
-            domain = get_domain(engine.store, sol['X'].id)
+            domain = get_domain(engine.store, sol["X"].id)
 
             # Should have the domain from the last (successful) branch
             assert domain.min() == last_low
@@ -256,7 +260,7 @@ class TestCLPFDIdempotence:
         solutions = list(engine.query(query))
 
         assert len(solutions) == 1
-        domain = get_domain(engine.store, solutions[0]['X'].id)
+        domain = get_domain(engine.store, solutions[0]["X"].id)
         assert domain.min() == 5
         assert domain.max() == 15
 
@@ -276,10 +280,8 @@ class TestCLPFDIdempotence:
             assert len(solutions) > 0
 
     @given(
-        constraint=st.sampled_from([
-            "X #> 5", "X #< 15", "X #>= 7", "X #=< 12"
-        ]),
-        repetitions=st.integers(min_value=1, max_value=5)
+        constraint=st.sampled_from(["X #> 5", "X #< 15", "X #>= 7", "X #=< 12"]),
+        repetitions=st.integers(min_value=1, max_value=5),
     )
     @settings(max_examples=30, deadline=5000)
     def test_idempotent_constraint_property(self, constraint, repetitions):
@@ -299,8 +301,8 @@ class TestCLPFDIdempotence:
         assert len(sols1) == len(sols2)
 
         if sols1:
-            dom1 = get_domain(engine1.store, sols1[0]['X'].id)
-            dom2 = get_domain(engine2.store, sols2[0]['X'].id)
+            dom1 = get_domain(engine1.store, sols1[0]["X"].id)
+            dom2 = get_domain(engine2.store, sols2[0]["X"].id)
             assert dom1.intervals == dom2.intervals
 
 

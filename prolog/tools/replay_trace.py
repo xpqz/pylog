@@ -20,21 +20,12 @@ def main():
     parser.add_argument("trace_file", help="Path to JSONL trace file")
     parser.add_argument("--last", type=int, help="Show only last N events")
     parser.add_argument(
-        "--check-invariants",
-        action="store_true",
-        help="Check trace invariants"
+        "--check-invariants", action="store_true", help="Check trace invariants"
     )
     parser.add_argument(
-        "--format",
-        choices=["text", "json"],
-        default="text",
-        help="Output format"
+        "--format", choices=["text", "json"], default="text", help="Output format"
     )
-    parser.add_argument(
-        "-v", "--verbose",
-        action="store_true",
-        help="Verbose output"
-    )
+    parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
 
     args = parser.parse_args()
 
@@ -53,17 +44,16 @@ def main():
             events = replay.reconstruct_last_n(args.last)
 
         if args.format == "json":
-            output = {
-                "events": events,
-                "total": len(events)
-            }
+            output = {"events": events, "total": len(events)}
             print(json.dumps(output))
         else:
             print(f"Loaded {len(events)} events")
 
             if args.verbose:
                 for event in events[:10]:  # Show first 10 in verbose mode
-                    print(f"  sid={event.get('sid')} p={event.get('p')} pid={event.get('pid')}")
+                    print(
+                        f"  sid={event.get('sid')} p={event.get('p')} pid={event.get('pid')}"
+                    )
                 if len(events) > 10:
                     print(f"  ... and {len(events) - 10} more")
 

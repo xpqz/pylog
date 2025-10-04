@@ -157,10 +157,7 @@ class TestStatisticsReport:
     def test_generate_csv_report(self, tmp_path):
         """Test generation of CSV statistics report."""
         trace_file = tmp_path / "trace.jsonl"
-        events = [
-            {"sid": i, "p": 0, "pid": f"pred{i}/0"}
-            for i in range(1, 6)
-        ]
+        events = [{"sid": i, "p": 0, "pid": f"pred{i}/0"} for i in range(1, 6)]
         with trace_file.open("w") as f:
             for event in events:
                 f.write(json.dumps(event) + "\n")
@@ -196,8 +193,12 @@ class TestPerformanceAnalysis:
         assert "predicate_timings" in metrics
         assert "slow/0" in metrics["predicate_timings"]
         assert "fast/0" in metrics["predicate_timings"]
-        assert metrics["predicate_timings"]["slow/0"]["avg_ms"] == pytest.approx(100.0, rel=0.01)
-        assert metrics["predicate_timings"]["fast/0"]["avg_ms"] == pytest.approx(1.0, rel=0.01)
+        assert metrics["predicate_timings"]["slow/0"]["avg_ms"] == pytest.approx(
+            100.0, rel=0.01
+        )
+        assert metrics["predicate_timings"]["fast/0"]["avg_ms"] == pytest.approx(
+            1.0, rel=0.01
+        )
 
     def test_detect_performance_anomalies(self, tmp_path):
         """Test detection of performance anomalies."""
@@ -219,7 +220,9 @@ class TestPerformanceAnalysis:
         anomalies = detect_performance_anomalies(trace_file, threshold_stddev=2.0)
 
         assert anomalies  # not empty
-        assert any(a["pid"] == "normal/0" and a["duration_ms"] >= 500 for a in anomalies)
+        assert any(
+            a["pid"] == "normal/0" and a["duration_ms"] >= 500 for a in anomalies
+        )
 
     def test_performance_metrics_without_timestamps(self, tmp_path):
         """Test performance analysis handles missing timestamps."""
@@ -256,7 +259,9 @@ class TestPerformanceAnalysis:
         assert "memory_usage" in metrics
         assert metrics["memory_usage"]["max_store_size"] == 20
         assert metrics["memory_usage"]["max_trail_size"] == 10
-        assert metrics["memory_usage"]["avg_store_size"] == pytest.approx(16.25, rel=0.01)
+        assert metrics["memory_usage"]["avg_store_size"] == pytest.approx(
+            16.25, rel=0.01
+        )
 
 
 class TestAdditionalStatistics:
@@ -267,7 +272,7 @@ class TestAdditionalStatistics:
         trace_file = tmp_path / "trace.jsonl"
         with trace_file.open("w") as f:
             for i in range(20):
-                f.write(json.dumps({"sid": i+1, "p": i % 4}) + "\n")
+                f.write(json.dumps({"sid": i + 1, "p": i % 4}) + "\n")
 
         stats = compute_trace_statistics(trace_file)
         pdist = stats["port_distribution"]
@@ -321,7 +326,9 @@ class TestAdditionalStatistics:
                 f.write(json.dumps(e) + "\n")
 
         metrics = analyze_performance_metrics(trace_file)
-        assert "predicate_timings" not in metrics or "p/0" not in metrics.get("predicate_timings", {})
+        assert "predicate_timings" not in metrics or "p/0" not in metrics.get(
+            "predicate_timings", {}
+        )
 
     def test_memory_usage_maxes_and_average(self, tmp_path):
         """Test memory usage tracking for max and average values."""
@@ -329,7 +336,10 @@ class TestAdditionalStatistics:
         vals = [(10, 5), (20, 10), (5, 4), (15, 8)]
         with trace_file.open("w") as f:
             for i, (s, t) in enumerate(vals, 1):
-                f.write(json.dumps({"sid": i, "p": 0, "store_size": s, "trail_size": t}) + "\n")
+                f.write(
+                    json.dumps({"sid": i, "p": 0, "store_size": s, "trail_size": t})
+                    + "\n"
+                )
 
         metrics = analyze_performance_metrics(trace_file)
         assert metrics["memory_usage"]["max_store_size"] == 20
@@ -345,10 +355,7 @@ class TestReportFormatting:
     def test_markdown_report_generation(self, tmp_path):
         """Test generation of Markdown-formatted reports."""
         trace_file = tmp_path / "trace.jsonl"
-        events = [
-            {"sid": i, "p": i % 4, "pid": f"pred{i}/0"}
-            for i in range(1, 21)
-        ]
+        events = [{"sid": i, "p": i % 4, "pid": f"pred{i}/0"} for i in range(1, 21)]
         with trace_file.open("w") as f:
             for event in events:
                 f.write(json.dumps(event) + "\n")

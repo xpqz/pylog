@@ -9,8 +9,11 @@ from .tracer import TraceEvent, PortsTracer
 from .sinks import PrettyTraceSink
 from .metrics import PredMetrics, EngineMetrics
 from .snapshot import (
-    EngineSnapshot, CPSnapshot, FrameSnapshot,
-    SnapshotManager, SnapshotDiff
+    EngineSnapshot,
+    CPSnapshot,
+    FrameSnapshot,
+    SnapshotManager,
+    SnapshotDiff,
 )
 
 __all__ = [

@@ -4,10 +4,9 @@ Tests that attributed variables don't break existing functionality
 and integrate properly with all stages.
 """
 
-import pytest
 from prolog.engine.engine import Engine
 from prolog.ast.clauses import Program, Clause
-from prolog.ast.terms import Atom, Int, Var, Struct, List as PrologList
+from prolog.ast.terms import Atom, Int, Struct, List as PrologList
 
 
 class TestStage1Integration:
@@ -114,10 +113,7 @@ class TestStage3Integration:
         clauses = []
         for i in range(100):
             clauses.append(
-                Clause(
-                    head=Struct("fact", (Int(i), Atom(f"value{i}"))),
-                    body=()
-                )
+                Clause(head=Struct("fact", (Int(i), Atom(f"value{i}"))), body=())
             )
 
         program = Program(tuple(clauses))

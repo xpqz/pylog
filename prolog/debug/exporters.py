@@ -1,9 +1,8 @@
 """Graph exporters for visualization of Prolog programs."""
 
 from typing import Dict, List, Tuple, Set, Any, Optional
-from prolog.ast.terms import Term, Atom, Struct, Var
+from prolog.ast.terms import Atom, Struct, Var
 from prolog.engine.engine import Program
-from prolog.ast.clauses import Clause
 
 
 def export_call_graph(program: Program) -> str:
@@ -40,18 +39,42 @@ def export_call_graph(program: Program) -> str:
     lines.append("    node [shape=ellipse];")
 
     # Identify built-in predicates
-    builtins = {"is", "=", "\\=", "!", "true", "fail", "var", "nonvar",
-                "atom", "call", "==", "\\==", "<", ">", "=<", ">=",
-                "=..", "functor", "arg", "+", "-", "*", "/", "//", "mod"}
+    builtins = {
+        "is",
+        "=",
+        "\\=",
+        "!",
+        "true",
+        "fail",
+        "var",
+        "nonvar",
+        "atom",
+        "call",
+        "==",
+        "\\==",
+        "<",
+        ">",
+        "=<",
+        ">=",
+        "=..",
+        "functor",
+        "arg",
+        "+",
+        "-",
+        "*",
+        "/",
+        "//",
+        "mod",
+    }
 
     # Add nodes
     for pred_name, pred_arity in sorted(all_predicates):
         node_id = f'"{pred_name}/{pred_arity}"'
         if pred_name in builtins:
             # Built-ins get special styling
-            lines.append(f'    {node_id} [shape=box, style=dashed];')
+            lines.append(f"    {node_id} [shape=box, style=dashed];")
         else:
-            lines.append(f'    {node_id};')
+            lines.append(f"    {node_id};")
 
     # Add edges (deduplicated)
     edges_added = set()
@@ -61,7 +84,7 @@ def export_call_graph(program: Program) -> str:
             callee_id = f'"{callee_name}/{callee_arity}"'
             edge = (caller_id, callee_id)
             if edge not in edges_added:
-                lines.append(f'    {caller_id} -> {callee_id};')
+                lines.append(f"    {caller_id} -> {callee_id};")
                 edges_added.add(edge)
 
     lines.append("}")
@@ -124,7 +147,9 @@ def _collect_calls_from_goal(goal, out: Set[Tuple[str, int]]):
         # Future enhancement could special-case these to extract nested goals.
 
 
-def extract_predicate_relationships(program: Program) -> Dict[Tuple[str, int], Set[Tuple[str, int]]]:
+def extract_predicate_relationships(
+    program: Program,
+) -> Dict[Tuple[str, int], Set[Tuple[str, int]]]:
     """
     Extract predicate call relationships from a program.
 
@@ -160,7 +185,9 @@ def extract_predicate_relationships(program: Program) -> Dict[Tuple[str, int], S
     return relationships
 
 
-def export_constraint_graph(variables: List[Var], constraints: Optional[List[Tuple[str, str]]] = None) -> str:
+def export_constraint_graph(
+    variables: List[Var], constraints: Optional[List[Tuple[str, str]]] = None
+) -> str:
     """
     Export constraint graph in DOT format (placeholder for CLP(FD)).
 
@@ -182,13 +209,13 @@ def export_constraint_graph(variables: List[Var], constraints: Optional[List[Tup
     for var_id, var in unique_vars.items():
         node_id = f'"var_{var_id}"'
         label = f'"{var.hint}_{var_id}"' if var.hint else node_id
-        lines.append(f'    {node_id} [label={label}];')
+        lines.append(f"    {node_id} [label={label}];")
 
     # Add constraint information if provided
     if constraints:
-        lines.append('    // Constraints:')
+        lines.append("    // Constraints:")
         for constraint_type, constraint_desc in constraints:
-            lines.append(f'    // {constraint_type}: {constraint_desc}')
+            lines.append(f"    // {constraint_type}: {constraint_desc}")
             # In future, these would become edges or subgraphs
 
     lines.append("}")
@@ -204,14 +231,10 @@ def parse_dot_graph(dot: str) -> Dict[str, Any]:
     """
     import re
 
-    result = {
-        "nodes": {},
-        "edges": [],
-        "attributes": {}
-    }
+    result = {"nodes": {}, "edges": [], "attributes": {}}
 
     # Extract graph type and name
-    match = re.search(r'(digraph|graph)\s+(\w+)\s*\{', dot)
+    match = re.search(r"(digraph|graph)\s+(\w+)\s*\{", dot)
     if match:
         result["type"] = match.group(1)
         result["name"] = match.group(2)
@@ -230,7 +253,7 @@ def parse_dot_graph(dot: str) -> Dict[str, Any]:
 
     # Extract graph-level attributes
     if "rankdir" in dot:
-        rankdir_match = re.search(r'rankdir\s*=\s*(\w+)', dot)
+        rankdir_match = re.search(r"rankdir\s*=\s*(\w+)", dot)
         if rankdir_match:
             result["attributes"]["rankdir"] = rankdir_match.group(1)
 

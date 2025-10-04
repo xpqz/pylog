@@ -12,7 +12,6 @@ from typing import List, Tuple, Optional, Set, Dict
 from dataclasses import dataclass
 from collections import defaultdict
 
-import pytest
 
 from prolog.ast.terms import Atom, Int, Var, Struct
 from prolog.ast.clauses import Clause, Program
@@ -24,6 +23,7 @@ from prolog.debug.sinks import CollectorSink
 @dataclass(frozen=True)
 class PortTransition:
     """Represents a port transition in the trace."""
+
     from_port: str
     to_port: str
     pred_id: str
@@ -35,26 +35,23 @@ class PortSequenceValidator:
 
     VALID_TRANSITIONS = {
         # From CALL
-        ('call', 'exit'),     # Successful completion
-        ('call', 'fail'),     # Immediate failure
-        ('call', 'call'),     # Nested call
-
+        ("call", "exit"),  # Successful completion
+        ("call", "fail"),  # Immediate failure
+        ("call", "call"),  # Nested call
         # From EXIT
-        ('exit', 'redo'),     # Backtrack to retry
-        ('exit', 'call'),     # Next goal
-        ('exit', 'exit'),     # Parent completion
-        ('exit', 'fail'),     # Parent fails
-
+        ("exit", "redo"),  # Backtrack to retry
+        ("exit", "call"),  # Next goal
+        ("exit", "exit"),  # Parent completion
+        ("exit", "fail"),  # Parent fails
         # From REDO
-        ('redo', 'exit'),     # Retry succeeds
-        ('redo', 'fail'),     # No more alternatives
-        ('redo', 'call'),     # Nested call during retry
-
+        ("redo", "exit"),  # Retry succeeds
+        ("redo", "fail"),  # No more alternatives
+        ("redo", "call"),  # Nested call during retry
         # From FAIL
-        ('fail', 'redo'),     # Backtrack to earlier choice
-        ('fail', 'fail'),     # Propagate failure
-        ('fail', 'call'),     # New goal after recovery
-        ('fail', 'exit'),     # Parent succeeds despite child failure
+        ("fail", "redo"),  # Backtrack to earlier choice
+        ("fail", "fail"),  # Propagate failure
+        ("fail", "call"),  # New goal after recovery
+        ("fail", "exit"),  # Parent succeeds despite child failure
     }
 
     def __init__(self):
@@ -73,7 +70,7 @@ class PortSequenceValidator:
         exited_frames: Set[Tuple[str, int]] = set()
 
         for event in events:
-            if event.port not in ['call', 'exit', 'redo', 'fail']:
+            if event.port not in ["call", "exit", "redo", "fail"]:
                 continue  # Skip non-4-port events
 
             # Check transition validity
@@ -87,10 +84,10 @@ class PortSequenceValidator:
 
             key = (event.pred_id, event.frame_depth)
 
-            if event.port == 'call':
+            if event.port == "call":
                 call_counts[key] += 1
 
-            elif event.port == 'exit':
+            elif event.port == "exit":
                 if call_counts[key] <= 0:
                     self.errors.append(
                         f"EXIT without CALL at step {event.step_id} "
@@ -100,14 +97,14 @@ class PortSequenceValidator:
                     call_counts[key] -= 1
                 exited_frames.add(key)
 
-            elif event.port == 'redo':
+            elif event.port == "redo":
                 if key not in exited_frames:
                     self.errors.append(
                         f"REDO without prior EXIT at step {event.step_id} "
                         f"for {event.pred_id} at depth {event.frame_depth}"
                     )
 
-            elif event.port == 'fail':
+            elif event.port == "fail":
                 if call_counts[key] > 0:
                     call_counts[key] -= 1
                 elif key not in exited_frames:
@@ -138,7 +135,9 @@ def format_trace_events(events: List[TraceEvent]) -> str:
     return "\n".join(lines)
 
 
-def validate_sequences_by_run(events: List[TraceEvent]) -> Tuple[bool, Dict[str, List[str]]]:
+def validate_sequences_by_run(
+    events: List[TraceEvent],
+) -> Tuple[bool, Dict[str, List[str]]]:
     """Validate sequences grouped by run_id.
 
     Returns:
@@ -147,10 +146,10 @@ def validate_sequences_by_run(events: List[TraceEvent]) -> Tuple[bool, Dict[str,
     # Group events by run_id
     runs = defaultdict(list)
     for ev in events:
-        if hasattr(ev, 'run_id') and ev.run_id:
+        if hasattr(ev, "run_id") and ev.run_id:
             runs[ev.run_id].append(ev)
         else:
-            runs['default'].append(ev)
+            runs["default"].append(ev)
 
     all_valid = True
     errors_by_run = {}
@@ -162,7 +161,6 @@ def validate_sequences_by_run(events: List[TraceEvent]) -> Tuple[bool, Dict[str,
             errors_by_run[run_id] = validator.errors
 
     return all_valid, errors_by_run
-
 
 
 class TestPortSequenceValidation:
@@ -225,13 +223,15 @@ class TestPortSequenceValidation:
         # Find REDO events and verify they follow EXIT
         events = collector.events
         for i, event in enumerate(events):
-            if event.port == 'redo':
+            if event.port == "redo":
                 # Look back for matching EXIT
                 found_exit = False
-                for j in range(i-1, -1, -1):
-                    if (events[j].port == 'exit' and
-                        events[j].pred_id == event.pred_id and
-                        events[j].frame_depth == event.frame_depth):
+                for j in range(i - 1, -1, -1):
+                    if (
+                        events[j].port == "exit"
+                        and events[j].pred_id == event.pred_id
+                        and events[j].frame_depth == event.frame_depth
+                    ):
                         found_exit = True
                         break
                 assert found_exit, f"REDO without prior EXIT for {event.pred_id}"
@@ -242,12 +242,10 @@ class TestPortSequenceValidation:
             Clause(head=Struct("a", (Int(1),)), body=()),
             Clause(head=Struct("a", (Int(2),)), body=()),
             Clause(
-                head=Struct("b", (Var(0, "X"),)),
-                body=(Struct("a", (Var(0, "X"),)),)
+                head=Struct("b", (Var(0, "X"),)), body=(Struct("a", (Var(0, "X"),)),)
             ),
             Clause(
-                head=Struct("c", (Var(0, "Y"),)),
-                body=(Struct("b", (Var(0, "Y"),)),)
+                head=Struct("c", (Var(0, "Y"),)), body=(Struct("b", (Var(0, "Y"),)),)
             ),
         ]
         program = Program(tuple(clauses))
@@ -285,14 +283,20 @@ class TestPortSequenceValidation:
             Clause(
                 head=Struct("test", (Var(0, "X"), Var(1, "Y"))),
                 body=(
-                    Struct(";", (
-                        Struct("->", (
-                            Struct("cond", (Var(0, "X"),)),
-                            Struct("=", (Var(1, "Y"), Int(10))),
-                        )),
-                        Struct("=", (Var(1, "Y"), Int(20)))
-                    )),
-                )
+                    Struct(
+                        ";",
+                        (
+                            Struct(
+                                "->",
+                                (
+                                    Struct("cond", (Var(0, "X"),)),
+                                    Struct("=", (Var(1, "Y"), Int(10))),
+                                ),
+                            ),
+                            Struct("=", (Var(1, "Y"), Int(20))),
+                        ),
+                    ),
+                ),
             ),
         ]
         program = Program(tuple(clauses))
@@ -314,16 +318,9 @@ class TestPortSequenceValidation:
         clauses = [
             Clause(
                 head=Struct("will_fail", ()),
-                body=(
-                    Struct("=", (Int(1), Int(2))),  # Will fail
-                )
+                body=(Struct("=", (Int(1), Int(2))),),  # Will fail
             ),
-            Clause(
-                head=Struct("test", ()),
-                body=(
-                    Struct("will_fail", ()),
-                )
-            ),
+            Clause(head=Struct("test", ()), body=(Struct("will_fail", ()),)),
         ]
         program = Program(tuple(clauses))
 
@@ -346,14 +343,13 @@ class TestPortSequenceValidation:
             Clause(head=Struct("b", (Int(4),)), body=()),
             Clause(head=Struct("c", (Int(5),)), body=()),
             Clause(head=Struct("c", (Int(6),)), body=()),
-
             Clause(
                 head=Struct("test", (Var(0, "X"), Var(1, "Y"), Var(2, "Z"))),
                 body=(
                     Struct("a", (Var(0, "X"),)),
                     Struct("b", (Var(1, "Y"),)),
                     Struct("c", (Var(2, "Z"),)),
-                )
+                ),
             ),
         ]
         program = Program(tuple(clauses))
@@ -370,7 +366,15 @@ class TestPortSequenceValidation:
         if not valid:
             print(f"Validation errors: {errors}")
             print("\nTrace events:")
-            print(format_trace_events([ev for ev in collector.events if ev.port in ['call', 'exit', 'redo', 'fail']]))
+            print(
+                format_trace_events(
+                    [
+                        ev
+                        for ev in collector.events
+                        if ev.port in ["call", "exit", "redo", "fail"]
+                    ]
+                )
+            )
         assert valid, f"Complex backtracking validation failed: {errors}"
 
 
@@ -381,14 +385,8 @@ class TestPortSequenceInvariants:
         """Test CALL increases frame depth for nested calls."""
         clauses = [
             Clause(head=Struct("a", ()), body=()),
-            Clause(
-                head=Struct("b", ()),
-                body=(Struct("a", ()),)
-            ),
-            Clause(
-                head=Struct("c", ()),
-                body=(Struct("b", ()),)
-            ),
+            Clause(head=Struct("b", ()), body=(Struct("a", ()),)),
+            Clause(head=Struct("c", ()), body=(Struct("b", ()),)),
         ]
         program = Program(tuple(clauses))
 
@@ -399,12 +397,12 @@ class TestPortSequenceInvariants:
         list(engine.query("c"))
 
         # Extract CALL events
-        calls = [ev for ev in collector.events if ev.port == 'call']
+        calls = [ev for ev in collector.events if ev.port == "call"]
 
         # c should be at depth 0, b at depth 1, a at depth 2
-        assert any(ev.pred_id == 'c/0' and ev.frame_depth == 0 for ev in calls)
-        assert any(ev.pred_id == 'b/0' and ev.frame_depth == 1 for ev in calls)
-        assert any(ev.pred_id == 'a/0' and ev.frame_depth == 2 for ev in calls)
+        assert any(ev.pred_id == "c/0" and ev.frame_depth == 0 for ev in calls)
+        assert any(ev.pred_id == "b/0" and ev.frame_depth == 1 for ev in calls)
+        assert any(ev.pred_id == "a/0" and ev.frame_depth == 2 for ev in calls)
 
     def test_exit_matches_call_depth(self):
         """Test EXIT has same frame depth as matching CALL."""
@@ -412,7 +410,7 @@ class TestPortSequenceInvariants:
             Clause(head=Struct("fact", (Int(42),)), body=()),
             Clause(
                 head=Struct("rule", (Var(0, "X"),)),
-                body=(Struct("fact", (Var(0, "X"),)),)
+                body=(Struct("fact", (Var(0, "X"),)),),
             ),
         ]
         program = Program(tuple(clauses))
@@ -428,21 +426,24 @@ class TestPortSequenceInvariants:
         exits_by_depth = {}
 
         for ev in collector.events:
-            if ev.port == 'call':
+            if ev.port == "call":
                 if ev.frame_depth not in calls_by_depth:
                     calls_by_depth[ev.frame_depth] = []
                 calls_by_depth[ev.frame_depth].append(ev)
-            elif ev.port == 'exit':
+            elif ev.port == "exit":
                 if ev.frame_depth not in exits_by_depth:
                     exits_by_depth[ev.frame_depth] = []
                 exits_by_depth[ev.frame_depth].append(ev)
 
         # Every exit depth should have at least one matching call at same depth
         for depth in exits_by_depth:
-            assert depth in calls_by_depth, f"EXIT at depth {depth} without any CALL at that depth"
+            assert (
+                depth in calls_by_depth
+            ), f"EXIT at depth {depth} without any CALL at that depth"
             # Also check counts are reasonable (exits <= calls at each depth)
-            assert len(exits_by_depth[depth]) <= len(calls_by_depth[depth]), \
-                f"More EXITs than CALLs at depth {depth}"
+            assert len(exits_by_depth[depth]) <= len(
+                calls_by_depth[depth]
+            ), f"More EXITs than CALLs at depth {depth}"
 
     def test_redo_preserves_depth(self):
         """Test REDO maintains same frame depth as original CALL.
@@ -468,7 +469,7 @@ class TestPortSequenceInvariants:
         pred_depths = {}
 
         for ev in collector.events:
-            if ev.port in ['call', 'exit', 'redo', 'fail']:
+            if ev.port in ["call", "exit", "redo", "fail"]:
                 if ev.pred_id not in pred_depths:
                     pred_depths[ev.pred_id] = set()
                 pred_depths[ev.pred_id].add(ev.frame_depth)
@@ -482,12 +483,9 @@ class TestPortSequenceInvariants:
         clauses = [
             Clause(
                 head=Struct("will_fail", ()),
-                body=(Struct("fail", ()),)  # Explicit fail
+                body=(Struct("fail", ()),),  # Explicit fail
             ),
-            Clause(
-                head=Struct("wrapper", ()),
-                body=(Struct("will_fail", ()),)
-            ),
+            Clause(head=Struct("wrapper", ()), body=(Struct("will_fail", ()),)),
         ]
         program = Program(tuple(clauses))
 
@@ -503,11 +501,11 @@ class TestPortSequenceInvariants:
 
         for ev in collector.events:
             ports_seen.add(ev.port)
-            if ev.port == 'call':
+            if ev.port == "call":
                 calls_by_depth[ev.frame_depth] = ev.pred_id
 
         # Should see at least one FAIL port (from fail/0)
-        assert 'fail' in ports_seen, "No FAIL port seen in trace"
+        assert "fail" in ports_seen, "No FAIL port seen in trace"
 
         # Should see CALLs at different depths
         assert len(calls_by_depth) >= 2, "Should see nested calls"
@@ -515,7 +513,9 @@ class TestPortSequenceInvariants:
         # The deepest call should be to fail/0
         max_depth = max(calls_by_depth.keys())
         deepest_pred = calls_by_depth[max_depth]
-        assert deepest_pred == 'fail/0', f"Deepest call should be fail/0, got {deepest_pred}"
+        assert (
+            deepest_pred == "fail/0"
+        ), f"Deepest call should be fail/0, got {deepest_pred}"
 
 
 class TestMultiQueryValidation:
@@ -545,7 +545,7 @@ class TestMultiQueryValidation:
         # Verify we have multiple runs
         runs = defaultdict(list)
         for ev in collector.events:
-            if ev.port in ['call', 'exit', 'redo', 'fail'] and hasattr(ev, 'run_id'):
+            if ev.port in ["call", "exit", "redo", "fail"] and hasattr(ev, "run_id"):
                 runs[ev.run_id].append(ev)
 
         assert len(runs) >= 3, f"Expected at least 3 runs, got {len(runs)}"

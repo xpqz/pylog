@@ -24,14 +24,16 @@ class TestTraceEvent:
             run_id="a3f2c8b1-4d5e-6f7a-8b9c-0d1e2f3a4b5c",
             step_id=1,
             port="call",
-            goal=Struct("append", (List((Int(1), Int(2))), List((Int(3),)), Var(1, "X"))),
+            goal=Struct(
+                "append", (List((Int(1), Int(2))), List((Int(3),)), Var(1, "X"))
+            ),
             goal_pretty="append([1,2], [3], X)",
             goal_canonical="append([1,2], [3], _G1)",
             frame_depth=2,
             cp_depth=1,
             goal_height=3,
             write_stamp=42,
-            pred_id="append/3"
+            pred_id="append/3",
         )
 
         assert event.version == 1
@@ -59,7 +61,7 @@ class TestTraceEvent:
             cp_depth=0,
             goal_height=1,
             write_stamp=1,
-            pred_id="true/0"
+            pred_id="true/0",
         )
         assert event.version == 1
 
@@ -78,7 +80,7 @@ class TestTraceEvent:
             cp_depth=0,
             goal_height=1,
             write_stamp=1,
-            pred_id="true/0"
+            pred_id="true/0",
         )
         # Should be valid UUID format
         uuid.UUID(event.run_id)  # Will raise if invalid
@@ -98,7 +100,7 @@ class TestTraceEvent:
             cp_depth=0,
             goal_height=1,
             write_stamp=1,
-            pred_id="true/0"
+            pred_id="true/0",
         )
         assert event.port == port
 
@@ -116,7 +118,7 @@ class TestTraceEvent:
             cp_depth=0,
             goal_height=1,
             write_stamp=1,
-            pred_id="true/0"
+            pred_id="true/0",
         )
         assert event.step_id == 42
         assert event.step_id > 0
@@ -135,7 +137,7 @@ class TestTraceEvent:
             cp_depth=0,
             goal_height=0,
             write_stamp=0,
-            pred_id="true/0"
+            pred_id="true/0",
         )
         assert event.frame_depth >= 0
         assert event.cp_depth >= 0
@@ -156,7 +158,7 @@ class TestTraceEvent:
             cp_depth=0,
             goal_height=1,
             write_stamp=1,
-            pred_id="true/0"
+            pred_id="true/0",
         )
 
         with pytest.raises(FrozenInstanceError):
@@ -176,13 +178,13 @@ class TestTraceEvent:
             cp_depth=0,
             goal_height=1,
             write_stamp=1,
-            pred_id="true/0"
+            pred_id="true/0",
         )
 
         # Classes with __slots__ don't have __dict__
-        assert not hasattr(event, '__dict__')
+        assert not hasattr(event, "__dict__")
         # Also check that the class has __slots__
-        assert hasattr(type(event), '__slots__')
+        assert hasattr(type(event), "__slots__")
 
     def test_trace_event_port_validation(self):
         """TraceEvent validates port values."""
@@ -200,7 +202,7 @@ class TestTraceEvent:
                 cp_depth=0,
                 goal_height=1,
                 write_stamp=1,
-                pred_id="true/0"
+                pred_id="true/0",
             )
             assert event.port == port
 
@@ -218,7 +220,7 @@ class TestTraceEvent:
                 cp_depth=0,
                 goal_height=1,
                 write_stamp=1,
-                pred_id="true/0"
+                pred_id="true/0",
             )
 
     def test_trace_event_negative_validation(self):
@@ -237,11 +239,13 @@ class TestTraceEvent:
                 cp_depth=0,
                 goal_height=1,
                 write_stamp=1,
-                pred_id="true/0"
+                pred_id="true/0",
             )
 
         # Negative depths should raise
-        with pytest.raises(ValueError, match="depths/heights/write_stamp must be non-negative"):
+        with pytest.raises(
+            ValueError, match="depths/heights/write_stamp must be non-negative"
+        ):
             TraceEvent(
                 version=1,
                 run_id="test",
@@ -254,7 +258,7 @@ class TestTraceEvent:
                 cp_depth=0,
                 goal_height=1,
                 write_stamp=1,
-                pred_id="true/0"
+                pred_id="true/0",
             )
 
 
@@ -288,7 +292,7 @@ class TestPortsTracer:
         engine = Engine(program=[], trace=False)
         tracer = PortsTracer(engine)
 
-        assert tracer.bindings_policy == 'none'
+        assert tracer.bindings_policy == "none"
 
     def test_tracer_default_max_term_depth(self):
         """Default max_term_depth is 4."""
@@ -396,7 +400,7 @@ class TestEngineIntegration:
         engine = Engine(program=[], trace=True)
 
         # Step ID management is in tracer
-        assert hasattr(engine.tracer, 'step_counter')
+        assert hasattr(engine.tracer, "step_counter")
         # Not testing for absence of _global_step_id as that's an implementation detail
 
 
@@ -606,6 +610,7 @@ class TestStackDepthTracking:
 
     def test_invariant_checker_helper(self):
         """Create invariant_checker helper (reused in later phases)."""
+
         def check_invariants(engine: Engine, event: TraceEvent) -> bool:
             """Check that all invariants hold."""
             # Depths must equal actual stack sizes
@@ -677,13 +682,16 @@ class TestPredicateInterning:
         assert id1 != id3
         assert id2 != id3
 
-    @pytest.mark.parametrize("name,arity,expected", [
-        ("true", 0, "true/0"),
-        ("fail", 0, "fail/0"),
-        ("!", 0, "!/0"),
-        ("=", 2, "=/2"),
-        ("is", 2, "is/2"),
-    ])
+    @pytest.mark.parametrize(
+        "name,arity,expected",
+        [
+            ("true", 0, "true/0"),
+            ("fail", 0, "fail/0"),
+            ("!", 0, "!/0"),
+            ("=", 2, "=/2"),
+            ("is", 2, "is/2"),
+        ],
+    )
     def test_builtin_pred_ids(self, name, arity, expected):
         """Built-ins have correct IDs."""
         engine = Engine(program=[], trace=True)
@@ -717,14 +725,16 @@ class TestPrettyOutput:
             run_id="test",
             step_id=123,
             port="call",
-            goal=Struct("append", (List((Int(1), Int(2))), List((Int(3),)), Var(1, "X"))),
+            goal=Struct(
+                "append", (List((Int(1), Int(2))), List((Int(3),)), Var(1, "X"))
+            ),
             goal_pretty="append([1,2], [3], X)",
             goal_canonical="append([1,2], [3], _G1)",
             frame_depth=2,
             cp_depth=1,
             goal_height=5,
             write_stamp=42,
-            pred_id="append/3"
+            pred_id="append/3",
         )
 
         output = sink.format_event(event)
@@ -738,11 +748,18 @@ class TestPrettyOutput:
         sink = PrettyTraceSink()
 
         event = TraceEvent(
-            version=1, run_id="test", step_id=42,
-            port="exit", goal=Atom("true"),
-            goal_pretty="true", goal_canonical="true",
-            frame_depth=0, cp_depth=0, goal_height=1,
-            write_stamp=1, pred_id="true/0"
+            version=1,
+            run_id="test",
+            step_id=42,
+            port="exit",
+            goal=Atom("true"),
+            goal_pretty="true",
+            goal_canonical="true",
+            frame_depth=0,
+            cp_depth=0,
+            goal_height=1,
+            write_stamp=1,
+            pred_id="true/0",
         )
 
         output = sink.format_event(event)
@@ -755,11 +772,18 @@ class TestPrettyOutput:
         port_map = {"call": "CALL", "exit": "EXIT", "redo": "REDO", "fail": "FAIL"}
         for port, expected_port in port_map.items():
             event = TraceEvent(
-                version=1, run_id="test", step_id=1,
-                port=port, goal=Atom("test"),
-                goal_pretty="test", goal_canonical="test",
-                frame_depth=0, cp_depth=0, goal_height=1,
-                write_stamp=1, pred_id="test/0"
+                version=1,
+                run_id="test",
+                step_id=1,
+                port=port,
+                goal=Atom("test"),
+                goal_pretty="test",
+                goal_canonical="test",
+                frame_depth=0,
+                cp_depth=0,
+                goal_height=1,
+                write_stamp=1,
+                pred_id="test/0",
             )
 
             output = sink.format_event(event)
@@ -770,13 +794,18 @@ class TestPrettyOutput:
         sink = PrettyTraceSink()
 
         event = TraceEvent(
-            version=1, run_id="test", step_id=1,
+            version=1,
+            run_id="test",
+            step_id=1,
             port="call",
             goal=Struct("member", (Var(1, "X"), List((Int(1), Int(2), Int(3))))),
             goal_pretty="member(X, [1,2,3])",
             goal_canonical="member(_G1, [1,2,3])",
-            frame_depth=1, cp_depth=0, goal_height=2,
-            write_stamp=1, pred_id="member/2"
+            frame_depth=1,
+            cp_depth=0,
+            goal_height=2,
+            write_stamp=1,
+            pred_id="member/2",
         )
 
         output = sink.format_event(event)
@@ -787,11 +816,18 @@ class TestPrettyOutput:
         sink = PrettyTraceSink()
 
         event = TraceEvent(
-            version=1, run_id="test", step_id=1,
-            port="call", goal=Atom("test"),
-            goal_pretty="test", goal_canonical="test",
-            frame_depth=3, cp_depth=2, goal_height=5,
-            write_stamp=1, pred_id="test/0"
+            version=1,
+            run_id="test",
+            step_id=1,
+            port="call",
+            goal=Atom("test"),
+            goal_pretty="test",
+            goal_canonical="test",
+            frame_depth=3,
+            cp_depth=2,
+            goal_height=5,
+            write_stamp=1,
+            pred_id="test/0",
         )
 
         output = sink.format_event(event)
@@ -804,13 +840,18 @@ class TestPrettyOutput:
 
         # Create a goal with deep nesting
         event = TraceEvent(
-            version=1, run_id="test", step_id=1,
+            version=1,
+            run_id="test",
+            step_id=1,
             port="call",
             goal=Struct("process", (Atom("test"),)),
             goal_pretty="process(f(g(h(i(j(k(deep)))))))",
             goal_canonical="process(f(g(h(i(j(k(deep)))))))",
-            frame_depth=1, cp_depth=0, goal_height=1,
-            write_stamp=1, pred_id="process/1"
+            frame_depth=1,
+            cp_depth=0,
+            goal_height=1,
+            write_stamp=1,
+            pred_id="process/1",
         )
 
         output = sink.format_event(event)
@@ -822,13 +863,18 @@ class TestPrettyOutput:
         sink = PrettyTraceSink(max_term_depth=4)
 
         event = TraceEvent(
-            version=1, run_id="test", step_id=1,
+            version=1,
+            run_id="test",
+            step_id=1,
             port="call",
             goal=Atom("test"),
             goal_pretty="test(f(g(h(i(j(deep))))))",  # 5 levels deep
             goal_canonical="test(f(g(h(i(j(deep))))))",
-            frame_depth=1, cp_depth=0, goal_height=1,
-            write_stamp=1, pred_id="test/1"
+            frame_depth=1,
+            cp_depth=0,
+            goal_height=1,
+            write_stamp=1,
+            pred_id="test/1",
         )
 
         output = sink.format_event(event)

@@ -9,9 +9,7 @@ import json
 import os
 import sys
 from abc import ABC, abstractmethod
-from collections import deque
 from typing import Optional, List, Any, TextIO, Dict, Union
-from pathlib import Path
 import shutil
 
 from prolog.debug.tracer import TraceEvent, InternalEvent
@@ -96,11 +94,14 @@ class PrettyTraceSink(TraceSink):
     Formats events with indentation, port names, and truncation.
     """
 
-    def __init__(self, output: Optional[TextIO] = None,
-                 file_path: Optional[str] = None,
-                 max_term_depth: int = 4,
-                 max_items_per_list: int = 10,
-                 **kwargs):
+    def __init__(
+        self,
+        output: Optional[TextIO] = None,
+        file_path: Optional[str] = None,
+        max_term_depth: int = 4,
+        max_items_per_list: int = 10,
+        **kwargs,
+    ):
         """
         Initialize pretty trace sink.
 
@@ -114,7 +115,7 @@ class PrettyTraceSink(TraceSink):
         super().__init__(**kwargs)
 
         if file_path:
-            self.file = open(file_path, 'w')
+            self.file = open(file_path, "w")
             self.output = self.file
             self.owns_file = True
         else:
@@ -128,10 +129,10 @@ class PrettyTraceSink(TraceSink):
         """Write events in human-readable format."""
         for event in events:
             line = self.format_event(event)
-            self.output.write(line + '\n')
+            self.output.write(line + "\n")
 
         # Flush output stream
-        if hasattr(self.output, 'flush'):
+        if hasattr(self.output, "flush"):
             self.output.flush()
 
         return True
@@ -142,21 +143,16 @@ class PrettyTraceSink(TraceSink):
         if isinstance(event, InternalEvent):
             # Format internal events differently
             # Use a simple format: [step_id] INTERNAL kind: details
-            details_str = ', '.join(f"{k}={v}" for k, v in event.details.items())
+            details_str = ", ".join(f"{k}={v}" for k, v in event.details.items())
             return f"[{event.step_id}] INTERNAL {event.kind}: {{{details_str}}}"
 
         # Otherwise it's a TraceEvent
         # Port formatting
-        port_map = {
-            'call': 'CALL',
-            'exit': 'EXIT',
-            'redo': 'REDO',
-            'fail': 'FAIL'
-        }
+        port_map = {"call": "CALL", "exit": "EXIT", "redo": "REDO", "fail": "FAIL"}
         port = port_map.get(event.port, event.port.upper())
 
         # Depth indentation (2 spaces per level)
-        indent = ' ' * (event.frame_depth * 2)
+        indent = " " * (event.frame_depth * 2)
 
         # Truncate goal if needed
         goal = self._truncate_term(event.goal_pretty, self.max_term_depth)
@@ -177,28 +173,28 @@ class PrettyTraceSink(TraceSink):
         result = []
 
         for char in term:
-            if char in '([{':
+            if char in "([{":
                 depth += 1
                 if depth > max_depth:
-                    result.append('...')
+                    result.append("...")
                     # Skip to end of this level
                     skip_depth = depth
-                    for remaining in term[len(result):]:
-                        if remaining in '([{':
+                    for remaining in term[len(result) :]:
+                        if remaining in "([{":
                             skip_depth += 1
-                        elif remaining in ')]}':
+                        elif remaining in ")]}":
                             skip_depth -= 1
                             if skip_depth == depth - 1:
                                 break
                     result.append(remaining)
                     depth = skip_depth
                     continue
-            elif char in ')]}':
+            elif char in ")]}":
                 depth -= 1
 
             result.append(char)
 
-        return ''.join(result)
+        return "".join(result)
 
     def close(self):
         """Close the sink and file if owned."""
@@ -229,11 +225,11 @@ class JSONLTraceSink(TraceSink):
         """Write events in JSONL format."""
         for event in events:
             obj = self._event_to_json(event)
-            line = json.dumps(obj, separators=(',', ':'))
-            self.output.write(line + '\n')
+            line = json.dumps(obj, separators=(",", ":"))
+            self.output.write(line + "\n")
 
         # Flush output stream
-        if hasattr(self.output, 'flush'):
+        if hasattr(self.output, "flush"):
             self.output.flush()
 
         return True
@@ -248,43 +244,38 @@ class JSONLTraceSink(TraceSink):
         if isinstance(event, InternalEvent):
             # Use a different schema for internal events
             return {
-                'v': 1,  # Schema version
-                'type': 'internal',
-                'sid': event.step_id,
-                'kind': event.kind,
-                'details': event.details
+                "v": 1,  # Schema version
+                "type": "internal",
+                "sid": event.step_id,
+                "kind": event.kind,
+                "details": event.details,
             }
 
         # Otherwise it's a TraceEvent
         # Port encoding
-        port_map = {
-            'call': 0,
-            'exit': 1,
-            'redo': 2,
-            'fail': 3
-        }
+        port_map = {"call": 0, "exit": 1, "redo": 2, "fail": 3}
 
         # Required fields with compact keys
         obj = {
-            'v': 1,  # Schema version
-            'type': 'trace',
-            'rid': event.run_id,
-            'sid': event.step_id,
-            'p': port_map.get(event.port, -1),
-            'pid': event.pred_id,
-            'g': event.goal_pretty,
-            'fd': event.frame_depth,
-            'cd': event.cp_depth,
-            'gh': event.goal_height,
-            'ws': event.write_stamp
+            "v": 1,  # Schema version
+            "type": "trace",
+            "rid": event.run_id,
+            "sid": event.step_id,
+            "p": port_map.get(event.port, -1),
+            "pid": event.pred_id,
+            "g": event.goal_pretty,
+            "fd": event.frame_depth,
+            "cd": event.cp_depth,
+            "gh": event.goal_height,
+            "ws": event.write_stamp,
         }
 
         # Optional fields (only include if not None)
-        if hasattr(event, 'monotonic_ns') and event.monotonic_ns is not None:
-            obj['ts'] = event.monotonic_ns
+        if hasattr(event, "monotonic_ns") and event.monotonic_ns is not None:
+            obj["ts"] = event.monotonic_ns
 
-        if hasattr(event, 'bindings') and event.bindings is not None:
-            obj['b'] = event.bindings
+        if hasattr(event, "bindings") and event.bindings is not None:
+            obj["b"] = event.bindings
 
         return obj
 
@@ -296,11 +287,15 @@ class FileTraceSink(TraceSink):
     Writes to files with automatic rotation when size limits are reached.
     """
 
-    def __init__(self, file_path: str, format: str = 'jsonl',
-                 max_size_mb: float = 100.0,
-                 max_files: int = 5,
-                 batch_size: int = 100,
-                 **kwargs):
+    def __init__(
+        self,
+        file_path: str,
+        format: str = "jsonl",
+        max_size_mb: float = 100.0,
+        max_files: int = 5,
+        batch_size: int = 100,
+        **kwargs,
+    ):
         """
         Initialize file trace sink.
 
@@ -322,10 +317,10 @@ class FileTraceSink(TraceSink):
         self.closed = False
 
         # Create the underlying sink
-        if format == 'jsonl':
+        if format == "jsonl":
             self.sink = None
             self._open_file()
-        elif format == 'pretty':
+        elif format == "pretty":
             self.sink = None
             self._open_file()
         else:
@@ -333,11 +328,11 @@ class FileTraceSink(TraceSink):
 
     def _open_file(self):
         """Open a new file for writing."""
-        self.file = open(self.file_path, 'w')
+        self.file = open(self.file_path, "w")
         self.current_size = 0
 
         # Create appropriate sink for the format
-        if self.format == 'jsonl':
+        if self.format == "jsonl":
             self.sink = JSONLTraceSink(output=self.file)
         else:  # pretty
             self.sink = PrettyTraceSink(output=self.file)
@@ -423,7 +418,7 @@ class FileTraceSink(TraceSink):
             if self.sink:
                 self.sink.close()
             # Close file
-            if hasattr(self, 'file'):
+            if hasattr(self, "file"):
                 self.file.close()
             self.closed = True
 

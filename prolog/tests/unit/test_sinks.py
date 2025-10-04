@@ -15,10 +15,7 @@ from io import StringIO
 
 from prolog.ast.terms import Atom
 from prolog.debug.tracer import TraceEvent
-from prolog.debug.sinks import (
-    TraceSink, PrettyTraceSink, JSONLTraceSink,
-    FileTraceSink
-)
+from prolog.debug.sinks import TraceSink, PrettyTraceSink, JSONLTraceSink, FileTraceSink
 
 
 class TestTraceSinkBase:
@@ -79,23 +76,23 @@ class TestTraceSinkBase:
 
     def _make_event(self, step_id=1, port="call", **kwargs):
         """Create a test TraceEvent."""
-        goal = kwargs.pop('goal', Atom('test'))
-        goal_pretty = kwargs.pop('goal_pretty', 'test(X)')
-        goal_canonical = kwargs.pop('goal_canonical', 'test(X)')
+        goal = kwargs.pop("goal", Atom("test"))
+        goal_pretty = kwargs.pop("goal_pretty", "test(X)")
+        goal_canonical = kwargs.pop("goal_canonical", "test(X)")
 
         defaults = {
-            'version': 1,
-            'run_id': "test_run",
-            'step_id': step_id,
-            'port': port,
-            'pred_id': "test/1",
-            'goal': goal,
-            'goal_pretty': goal_pretty,
-            'goal_canonical': goal_canonical,
-            'frame_depth': 0,
-            'cp_depth': 0,
-            'goal_height': 1,
-            'write_stamp': 0
+            "version": 1,
+            "run_id": "test_run",
+            "step_id": step_id,
+            "port": port,
+            "pred_id": "test/1",
+            "goal": goal,
+            "goal_pretty": goal_pretty,
+            "goal_canonical": goal_canonical,
+            "frame_depth": 0,
+            "cp_depth": 0,
+            "goal_height": 1,
+            "write_stamp": 0,
         }
         defaults.update(kwargs)
         return TraceEvent(**defaults)
@@ -110,10 +107,7 @@ class TestPrettyTraceSink:
         sink = PrettyTraceSink(output=output)
 
         event = self._make_event(
-            step_id=1,
-            port="call",
-            pred_id="member/2",
-            goal_pretty="member(X, [1,2,3])"
+            step_id=1, port="call", pred_id="member/2", goal_pretty="member(X, [1,2,3])"
         )
         sink.write_event(event)
         sink.flush()
@@ -124,12 +118,10 @@ class TestPrettyTraceSink:
         assert "member/2" in result  # pred_id
         assert "member(X, [1,2,3])" in result  # goal
 
-    @pytest.mark.parametrize("port,expected", [
-        ("call", "CALL"),
-        ("exit", "EXIT"),
-        ("redo", "REDO"),
-        ("fail", "FAIL")
-    ])
+    @pytest.mark.parametrize(
+        "port,expected",
+        [("call", "CALL"), ("exit", "EXIT"), ("redo", "REDO"), ("fail", "FAIL")],
+    )
     def test_pretty_port_formatting(self, port, expected):
         """Ports are formatted consistently."""
         output = StringIO()
@@ -152,7 +144,7 @@ class TestPrettyTraceSink:
 
         line = output.getvalue().splitlines()[0]
         # Check exact indentation (assuming 2 spaces per depth level)
-        m = re.match(r'^(\s*)\[\d+\]\s', line)
+        m = re.match(r"^(\s*)\[\d+\]\s", line)
         assert m, f"line not in expected format: {line!r}"
         assert len(m.group(1)) == 6  # 3 depth * 2 spaces
 
@@ -168,7 +160,7 @@ class TestPrettyTraceSink:
 
         first = output.getvalue().splitlines()[0]
         # Should start with bracket, no leading spaces
-        assert re.match(r'^\[\d+\]\s', first)  # no leading spaces
+        assert re.match(r"^\[\d+\]\s", first)  # no leading spaces
 
     def test_pretty_caps_applied(self):
         """Term depth and list length caps are applied."""
@@ -188,7 +180,7 @@ class TestPrettyTraceSink:
 
     def test_file_output(self):
         """Can write to file instead of stdout."""
-        with tempfile.NamedTemporaryFile(mode='w+', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w+", delete=False) as f:
             filepath = f.name
 
         try:
@@ -198,31 +190,38 @@ class TestPrettyTraceSink:
             sink.close()
 
             # Read back from file
-            with open(filepath, 'r') as f:
+            with open(filepath, "r") as f:
                 content = f.read()
                 assert "test/1" in content
         finally:
             os.unlink(filepath)
 
-    def _make_event(self, step_id=1, port="call", pred_id="test/1",
-                    goal_pretty="test(X)", frame_depth=0, **kwargs):
+    def _make_event(
+        self,
+        step_id=1,
+        port="call",
+        pred_id="test/1",
+        goal_pretty="test(X)",
+        frame_depth=0,
+        **kwargs,
+    ):
         """Create a test TraceEvent."""
-        goal = kwargs.pop('goal', Atom('test'))
-        goal_canonical = kwargs.pop('goal_canonical', goal_pretty)
+        goal = kwargs.pop("goal", Atom("test"))
+        goal_canonical = kwargs.pop("goal_canonical", goal_pretty)
 
         defaults = {
-            'version': 1,
-            'run_id': "test_run",
-            'step_id': step_id,
-            'port': port,
-            'pred_id': pred_id,
-            'goal': goal,
-            'goal_pretty': goal_pretty,
-            'goal_canonical': goal_canonical,
-            'frame_depth': frame_depth,
-            'cp_depth': 0,
-            'goal_height': 1,
-            'write_stamp': 0
+            "version": 1,
+            "run_id": "test_run",
+            "step_id": step_id,
+            "port": port,
+            "pred_id": pred_id,
+            "goal": goal,
+            "goal_pretty": goal_pretty,
+            "goal_canonical": goal_canonical,
+            "frame_depth": frame_depth,
+            "cp_depth": 0,
+            "goal_height": 1,
+            "write_stamp": 0,
         }
         defaults.update(kwargs)
         return TraceEvent(**defaults)
@@ -243,14 +242,14 @@ class TestJSONLTraceSink:
         sink.flush()
 
         # Each line should be valid JSON
-        lines = output.getvalue().strip().split('\n')
+        lines = output.getvalue().strip().split("\n")
         assert len(lines) == 3
 
         for line in lines:
             obj = json.loads(line)  # Should not raise
-            assert 'sid' in obj  # step_id
-            assert 'p' in obj    # port
-            assert 'pid' in obj  # pred_id
+            assert "sid" in obj  # step_id
+            assert "p" in obj  # port
+            assert "pid" in obj  # pred_id
 
     def test_compact_keys(self):
         """Uses compact keys per schema v1."""
@@ -265,22 +264,19 @@ class TestJSONLTraceSink:
         obj = json.loads(line)
 
         # Check compact key mappings
-        assert 'sid' in obj  # step_id
-        assert 'p' in obj    # port
-        assert 'fd' in obj   # frame_depth
-        assert 'cd' in obj   # cp_depth
-        assert 'gh' in obj   # goal_height
-        assert 'ws' in obj   # write_stamp
-        assert 'pid' in obj  # pred_id
-        assert 'g' in obj    # goal
-        assert 'rid' in obj  # run_id
+        assert "sid" in obj  # step_id
+        assert "p" in obj  # port
+        assert "fd" in obj  # frame_depth
+        assert "cd" in obj  # cp_depth
+        assert "gh" in obj  # goal_height
+        assert "ws" in obj  # write_stamp
+        assert "pid" in obj  # pred_id
+        assert "g" in obj  # goal
+        assert "rid" in obj  # run_id
 
-    @pytest.mark.parametrize("port_name,port_code", [
-        ("call", 0),
-        ("exit", 1),
-        ("redo", 2),
-        ("fail", 3)
-    ])
+    @pytest.mark.parametrize(
+        "port_name,port_code", [("call", 0), ("exit", 1), ("redo", 2), ("fail", 3)]
+    )
     def test_port_encoding(self, port_name, port_code):
         """Ports encoded as integers 0-3."""
         output = StringIO()
@@ -291,7 +287,7 @@ class TestJSONLTraceSink:
         sink.flush()
 
         obj = json.loads(output.getvalue().strip())
-        assert obj['p'] == port_code
+        assert obj["p"] == port_code
 
     def test_optional_fields_omitted(self):
         """None fields are omitted from output."""
@@ -310,8 +306,8 @@ class TestJSONLTraceSink:
         obj = json.loads(line)
 
         # Optional fields should not be present
-        assert 'ts' not in obj  # timestamp
-        assert 'b' not in obj   # bindings
+        assert "ts" not in obj  # timestamp
+        assert "b" not in obj  # bindings
 
     def test_timestamp_included_when_present(self):
         """Timestamp included when not None."""
@@ -323,8 +319,8 @@ class TestJSONLTraceSink:
         sink.flush()
 
         obj = json.loads(output.getvalue().strip())
-        assert 'ts' in obj
-        assert obj['ts'] == 1234567890123000000
+        assert "ts" in obj
+        assert obj["ts"] == 1234567890123000000
 
     def test_jsonl_includes_version(self):
         """JSONL includes schema version."""
@@ -335,40 +331,40 @@ class TestJSONLTraceSink:
         sink.flush()
 
         obj = json.loads(output.getvalue().strip())
-        assert obj.get('v') == 1
+        assert obj.get("v") == 1
 
     def test_jsonl_bindings_serialised_when_present(self):
         """Bindings included when not None."""
         output = StringIO()
         sink = JSONLTraceSink(output=output)
 
-        event = self._make_event(bindings={'X': 1, 'Y': 2})
+        event = self._make_event(bindings={"X": 1, "Y": 2})
         sink.write_event(event)
         sink.flush()
 
         obj = json.loads(output.getvalue().strip())
-        assert 'b' in obj
-        assert obj['b'] == {'X': 1, 'Y': 2}
+        assert "b" in obj
+        assert obj["b"] == {"X": 1, "Y": 2}
 
     def _make_event(self, step_id=1, port="call", **kwargs):
         """Create a test TraceEvent."""
-        goal = kwargs.pop('goal', Atom('test'))
-        goal_pretty = kwargs.pop('goal_pretty', 'test(X)')
-        goal_canonical = kwargs.pop('goal_canonical', 'test(X)')
+        goal = kwargs.pop("goal", Atom("test"))
+        goal_pretty = kwargs.pop("goal_pretty", "test(X)")
+        goal_canonical = kwargs.pop("goal_canonical", "test(X)")
 
         defaults = {
-            'version': 1,
-            'run_id': "test_run",
-            'step_id': step_id,
-            'port': port,
-            'pred_id': "test/1",
-            'goal': goal,
-            'goal_pretty': goal_pretty,
-            'goal_canonical': goal_canonical,
-            'frame_depth': 0,
-            'cp_depth': 0,
-            'goal_height': 1,
-            'write_stamp': 0
+            "version": 1,
+            "run_id": "test_run",
+            "step_id": step_id,
+            "port": port,
+            "pred_id": "test/1",
+            "goal": goal,
+            "goal_pretty": goal_pretty,
+            "goal_canonical": goal_canonical,
+            "frame_depth": 0,
+            "cp_depth": 0,
+            "goal_height": 1,
+            "write_stamp": 0,
         }
         defaults.update(kwargs)
         return TraceEvent(**defaults)
@@ -388,7 +384,7 @@ class TestFileTraceSink:
             sink.close()
 
             assert os.path.exists(filepath)
-            with open(filepath, 'r') as f:
+            with open(filepath, "r") as f:
                 content = f.read()
                 assert len(content) > 0
 
@@ -398,9 +394,7 @@ class TestFileTraceSink:
             filepath = os.path.join(tmpdir, "trace.jsonl")
             # Very small max size to trigger rotation
             sink = FileTraceSink(
-                filepath,
-                format="jsonl",
-                max_size_mb=0.0001  # ~100 bytes
+                filepath, format="jsonl", max_size_mb=0.0001  # ~100 bytes
             )
 
             # Write many events to trigger rotation
@@ -411,10 +405,13 @@ class TestFileTraceSink:
 
             # Should have created rotated files
             import re
+
             files = os.listdir(tmpdir)
             assert len(files) > 1  # Original + rotated
             assert os.path.basename(filepath) in files  # Base file exists
-            assert any(re.match(r"trace\.jsonl\.\d+$", f) for f in files)  # Rotated file exists
+            assert any(
+                re.match(r"trace\.jsonl\.\d+$", f) for f in files
+            )  # Rotated file exists
 
     def test_max_rotated_files(self):
         """Keeps only max_files rotated files."""
@@ -424,7 +421,7 @@ class TestFileTraceSink:
                 filepath,
                 format="jsonl",
                 max_size_mb=0.0001,  # ~100 bytes
-                max_files=2  # Keep only 2 rotated files
+                max_files=2,  # Keep only 2 rotated files
             )
 
             # Write many events to create multiple rotations
@@ -435,7 +432,7 @@ class TestFileTraceSink:
 
             # Count rotated files
             files = os.listdir(tmpdir)
-            rotated = [f for f in files if '.jsonl.' in f]
+            rotated = [f for f in files if ".jsonl." in f]
             assert len(rotated) <= 2  # Should not exceed max_files
 
     def test_batch_writing(self):
@@ -443,11 +440,7 @@ class TestFileTraceSink:
         with tempfile.TemporaryDirectory() as tmpdir:
             filepath = os.path.join(tmpdir, "trace.jsonl")
 
-            sink = FileTraceSink(
-                filepath,
-                format="jsonl",
-                batch_size=10
-            )
+            sink = FileTraceSink(filepath, format="jsonl", batch_size=10)
 
             # Write less than batch size
             for i in range(5):
@@ -455,7 +448,7 @@ class TestFileTraceSink:
                 sink.write_event(event)
 
             # File should still be empty (not flushed)
-            with open(filepath, 'r') as f:
+            with open(filepath, "r") as f:
                 content = f.read()
                 assert len(content) == 0
 
@@ -465,9 +458,9 @@ class TestFileTraceSink:
                 sink.write_event(event)
 
             # Now should have written to file
-            with open(filepath, 'r') as f:
+            with open(filepath, "r") as f:
                 content = f.read()
-                lines = content.strip().split('\n')
+                lines = content.strip().split("\n")
                 assert len(lines) == 10  # All events written
 
             sink.close()
@@ -477,9 +470,7 @@ class TestFileTraceSink:
         with tempfile.TemporaryDirectory() as tmpdir:
             filepath = os.path.join(tmpdir, "trace.jsonl")
             sink = FileTraceSink(
-                filepath,
-                format="jsonl",
-                batch_size=100  # Large batch
+                filepath, format="jsonl", batch_size=100  # Large batch
             )
 
             # Write fewer than batch size
@@ -490,7 +481,7 @@ class TestFileTraceSink:
             sink.close()
 
             # File should contain the event
-            with open(filepath, 'r') as f:
+            with open(filepath, "r") as f:
                 content = f.read()
                 assert "test/1" in content
 
@@ -504,7 +495,7 @@ class TestFileTraceSink:
             jsonl_sink.write_event(event)
             jsonl_sink.close()
 
-            with open(jsonl_path, 'r') as f:
+            with open(jsonl_path, "r") as f:
                 json.loads(f.read().strip())  # Should be valid JSON
 
             # Test pretty format
@@ -513,7 +504,7 @@ class TestFileTraceSink:
             pretty_sink.write_event(event)
             pretty_sink.close()
 
-            with open(pretty_path, 'r') as f:
+            with open(pretty_path, "r") as f:
                 content = f.read()
                 assert "CALL" in content  # Pretty format indicator
 
@@ -534,23 +525,23 @@ class TestFileTraceSink:
 
     def _make_event(self, step_id=1, port="call", **kwargs):
         """Create a test TraceEvent."""
-        goal = kwargs.pop('goal', Atom('test'))
-        goal_pretty = kwargs.pop('goal_pretty', 'test(X)')
-        goal_canonical = kwargs.pop('goal_canonical', 'test(X)')
+        goal = kwargs.pop("goal", Atom("test"))
+        goal_pretty = kwargs.pop("goal_pretty", "test(X)")
+        goal_canonical = kwargs.pop("goal_canonical", "test(X)")
 
         defaults = {
-            'version': 1,
-            'run_id': "test_run",
-            'step_id': step_id,
-            'port': port,
-            'pred_id': "test/1",
-            'goal': goal,
-            'goal_pretty': goal_pretty,
-            'goal_canonical': goal_canonical,
-            'frame_depth': 0,
-            'cp_depth': 0,
-            'goal_height': 1,
-            'write_stamp': 0
+            "version": 1,
+            "run_id": "test_run",
+            "step_id": step_id,
+            "port": port,
+            "pred_id": "test/1",
+            "goal": goal,
+            "goal_pretty": goal_pretty,
+            "goal_canonical": goal_canonical,
+            "frame_depth": 0,
+            "cp_depth": 0,
+            "goal_height": 1,
+            "write_stamp": 0,
         }
         defaults.update(kwargs)
         return TraceEvent(**defaults)
@@ -567,10 +558,10 @@ class TestBackpressure:
         results = [sink.write_event(self._make_event(step_id=i)) for i in range(5)]
 
         # First maxlen writes should succeed
-        assert results[:2] == [True, True]          # capacity accepts first two
-        assert results[2:] == [False, False, False] # subsequent writes dropped
+        assert results[:2] == [True, True]  # capacity accepts first two
+        assert results[2:] == [False, False, False]  # subsequent writes dropped
         assert sink.events_dropped_total == 3
-        assert sink.drop_reason == 'buffer_full'
+        assert sink.drop_reason == "buffer_full"
 
     def test_step_id_is_monotonic_under_drops(self):
         """step_id is monotonic despite drops."""
@@ -593,8 +584,9 @@ class TestBackpressure:
             sink.write_event(event)
         sink.flush()
 
-        step_ids = [json.loads(line)['sid']
-                    for line in output.getvalue().splitlines() if line]
+        step_ids = [
+            json.loads(line)["sid"] for line in output.getvalue().splitlines() if line
+        ]
         # Strict contiguity (no drops expected)
         assert step_ids == list(range(10))
 
@@ -623,28 +615,28 @@ class TestBackpressure:
             sink.write_event(event)
 
         # Should have specific drop reason
-        assert hasattr(sink, 'drop_reason')
-        assert sink.drop_reason == 'buffer_full'
+        assert hasattr(sink, "drop_reason")
+        assert sink.drop_reason == "buffer_full"
 
     def _make_event(self, step_id=1, port="call", **kwargs):
         """Create a test TraceEvent."""
-        goal = kwargs.pop('goal', Atom('test'))
-        goal_pretty = kwargs.pop('goal_pretty', 'test(X)')
-        goal_canonical = kwargs.pop('goal_canonical', 'test(X)')
+        goal = kwargs.pop("goal", Atom("test"))
+        goal_pretty = kwargs.pop("goal_pretty", "test(X)")
+        goal_canonical = kwargs.pop("goal_canonical", "test(X)")
 
         defaults = {
-            'version': 1,
-            'run_id': "test_run",
-            'step_id': step_id,
-            'port': port,
-            'pred_id': "test/1",
-            'goal': goal,
-            'goal_pretty': goal_pretty,
-            'goal_canonical': goal_canonical,
-            'frame_depth': 0,
-            'cp_depth': 0,
-            'goal_height': 1,
-            'write_stamp': 0
+            "version": 1,
+            "run_id": "test_run",
+            "step_id": step_id,
+            "port": port,
+            "pred_id": "test/1",
+            "goal": goal,
+            "goal_pretty": goal_pretty,
+            "goal_canonical": goal_canonical,
+            "frame_depth": 0,
+            "cp_depth": 0,
+            "goal_height": 1,
+            "write_stamp": 0,
         }
         defaults.update(kwargs)
         return TraceEvent(**defaults)
@@ -694,23 +686,23 @@ class TestMemoryBounds:
 
     def _make_event(self, step_id=1, port="call", **kwargs):
         """Create a test TraceEvent."""
-        goal = kwargs.pop('goal', Atom('test'))
-        goal_pretty = kwargs.pop('goal_pretty', 'test(X)')
-        goal_canonical = kwargs.pop('goal_canonical', 'test(X)')
+        goal = kwargs.pop("goal", Atom("test"))
+        goal_pretty = kwargs.pop("goal_pretty", "test(X)")
+        goal_canonical = kwargs.pop("goal_canonical", "test(X)")
 
         defaults = {
-            'version': 1,
-            'run_id': "test_run",
-            'step_id': step_id,
-            'port': port,
-            'pred_id': "test/1",
-            'goal': goal,
-            'goal_pretty': goal_pretty,
-            'goal_canonical': goal_canonical,
-            'frame_depth': 0,
-            'cp_depth': 0,
-            'goal_height': 1,
-            'write_stamp': 0
+            "version": 1,
+            "run_id": "test_run",
+            "step_id": step_id,
+            "port": port,
+            "pred_id": "test/1",
+            "goal": goal,
+            "goal_pretty": goal_pretty,
+            "goal_canonical": goal_canonical,
+            "frame_depth": 0,
+            "cp_depth": 0,
+            "goal_height": 1,
+            "write_stamp": 0,
         }
         defaults.update(kwargs)
         return TraceEvent(**defaults)
@@ -735,16 +727,20 @@ class MemoryTraceSink(TraceSink):
             if self.buffer.maxlen and len(self.buffer) >= self.buffer.maxlen:
                 # Ring buffer behavior: oldest item is automatically removed by deque
                 self.events_dropped_total += 1
-                self.drop_reason = 'buffer_full'
+                self.drop_reason = "buffer_full"
             self.buffer.append(event)
         self.flush_count += 1
         return True
 
     def write_event(self, event):
         """Override to handle drop_on_full correctly."""
-        if self.drop_on_full and self.buffer.maxlen and len(self.buffer) >= self.buffer.maxlen:
+        if (
+            self.drop_on_full
+            and self.buffer.maxlen
+            and len(self.buffer) >= self.buffer.maxlen
+        ):
             self.events_dropped_total += 1
-            self.drop_reason = 'buffer_full'
+            self.drop_reason = "buffer_full"
             return False
         return super().write_event(event)
 

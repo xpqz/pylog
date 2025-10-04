@@ -119,13 +119,9 @@ class TestUnboundTails:
         # [1, 2 | [3, 4]] = X
         X = Var(0, "X")
         # Build [1, 2 | [3, 4]]
-        concat_list = Struct(".", (
-            Int(1),
-            Struct(".", (
-                Int(2),
-                List((Int(3), Int(4)))
-            ))
-        ))
+        concat_list = Struct(
+            ".", (Int(1), Struct(".", (Int(2), List((Int(3), Int(4))))))
+        )
         query = Struct("=", (concat_list, X))
         solutions = empty_engine.run([query])
         assert len(solutions) == 1
@@ -166,13 +162,9 @@ class TestListStructures:
     def test_dot_structure_as_list(self, empty_engine):
         """Test dot structure represents lists correctly."""
         # Manually construct [1, 2, 3] as dot structure
-        list_struct = Struct(".", (
-            Int(1),
-            Struct(".", (
-                Int(2),
-                Struct(".", (Int(3), Atom("[]")))
-            ))
-        ))
+        list_struct = Struct(
+            ".", (Int(1), Struct(".", (Int(2), Struct(".", (Int(3), Atom("[]"))))))
+        )
         # Unify with List form
         query = Struct("=", (list_struct, List((Int(1), Int(2), Int(3)))))
         solutions = empty_engine.run([query])
@@ -195,10 +187,7 @@ class TestListStructures:
     def test_nested_lists(self, empty_engine):
         """Test nested list structures."""
         # [[1, 2], [3, 4]]
-        nested = List((
-            List((Int(1), Int(2))),
-            List((Int(3), Int(4)))
-        ))
+        nested = List((List((Int(1), Int(2))), List((Int(3), Int(4)))))
         X = Var(0, "X")
         query = Struct("=", (X, nested))
         solutions = empty_engine.run([query])
@@ -282,12 +271,14 @@ class TestListMembershipEdgeCases:
             # member(X, [X|_]).
             mk_fact("member", Var(0, "X"), Struct(".", (Var(0, "X"), Var(1, "_")))),
             # member(X, [_|T]) :- member(X, T).
-            mk_rule("member", (Var(0, "X"), Struct(".", (Var(1, "_"), Var(2, "T")))),
-                Struct("member", (Var(0, "X"), Var(2, "T")))
-            )
+            mk_rule(
+                "member",
+                (Var(0, "X"), Struct(".", (Var(1, "_"), Var(2, "T")))),
+                Struct("member", (Var(0, "X"), Var(2, "T"))),
+            ),
         )
         engine = Engine(p)
-        
+
         # member(2, [1|2]) - improper list with 2 as tail
         improper = Struct(".", (Int(1), Int(2)))
         query = Struct("member", (Int(2), improper))
@@ -301,18 +292,20 @@ class TestListMembershipEdgeCases:
         # Define member/2
         p = program(
             mk_fact("member", Var(0, "X"), Struct(".", (Var(0, "X"), Var(1, "_")))),
-            mk_rule("member", (Var(0, "X"), Struct(".", (Var(1, "_"), Var(2, "T")))),
-                Struct("member", (Var(0, "X"), Var(2, "T")))
-            )
+            mk_rule(
+                "member",
+                (Var(0, "X"), Struct(".", (Var(1, "_"), Var(2, "T")))),
+                Struct("member", (Var(0, "X"), Var(2, "T"))),
+            ),
         )
         engine = Engine(p)
-        
+
         X = Var(0, "X")
         # X = [1, 2 | X] - would create circular structure if allowed
         # This should fail with occurs check
         circular = Struct(".", (Int(1), Struct(".", (Int(2), X))))
         query_circular = Struct("=", (X, circular))
-        
+
         if engine.occurs_check:
             solutions = engine.run([query_circular])
             assert len(solutions) == 0  # Should fail with occurs check
@@ -322,18 +315,20 @@ class TestListMembershipEdgeCases:
         # Define member/2
         p = program(
             mk_fact("member", Var(0, "X"), Struct(".", (Var(0, "X"), Var(1, "_")))),
-            mk_rule("member", (Var(0, "X"), Struct(".", (Var(1, "_"), Var(2, "T")))),
-                Struct("member", (Var(0, "X"), Var(2, "T")))
-            )
+            mk_rule(
+                "member",
+                (Var(0, "X"), Struct(".", (Var(1, "_"), Var(2, "T")))),
+                Struct("member", (Var(0, "X"), Var(2, "T"))),
+            ),
         )
         engine = Engine(p)
-        
+
         X = Var(0, "X")
         # member(X, [a, b, c])
         list_abc = List((Atom("a"), Atom("b"), Atom("c")))
         query = Struct("member", (X, list_abc))
         solutions = engine.run([query])
-        
+
         # Should generate all three elements
         assert len(solutions) == 3
         values = [sol["X"] for sol in solutions]

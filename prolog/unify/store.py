@@ -159,7 +159,7 @@ class Store:
         old_value = None
         if root_vid in self.attrs and module in self.attrs[root_vid]:
             old_value = self.attrs[root_vid][module]
-        trail.push(('attr', root_vid, module, old_value))
+        trail.push(("attr", root_vid, module, old_value))
 
         # Set new value
         if root_vid not in self.attrs:
@@ -184,7 +184,7 @@ class Store:
         # Only act if attribute exists
         if root_vid in self.attrs and module in self.attrs[root_vid]:
             old_value = self.attrs[root_vid][module]
-            trail.push(('attr', root_vid, module, old_value))
+            trail.push(("attr", root_vid, module, old_value))
             del self.attrs[root_vid][module]
 
             # Clean up empty dict

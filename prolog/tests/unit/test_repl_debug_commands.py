@@ -7,18 +7,7 @@ Tests command parsing, execution, and state management for:
 - Debug commands (snapshot/metrics)
 """
 
-import pytest
-from io import StringIO
-from pathlib import Path
-import tempfile
-import json
-
 from prolog.repl import PrologREPL
-from prolog.engine.engine import Engine, Program
-from prolog.ast.terms import Atom, Struct
-from prolog.ast.clauses import Clause
-from prolog.debug.tracer import PortsTracer
-from prolog.debug.sinks import CollectorSink, PrettyTraceSink, JSONLTraceSink
 
 
 class TestTraceCommands:
@@ -28,54 +17,54 @@ class TestTraceCommands:
         """Test parsing 'trace on' command."""
         repl = PrologREPL()
         cmd = repl.parse_command("trace on")
-        assert cmd['type'] == 'trace'
-        assert cmd['action'] == 'on'
+        assert cmd["type"] == "trace"
+        assert cmd["action"] == "on"
 
     def test_parse_trace_off(self):
         """Test parsing 'trace off' command."""
         repl = PrologREPL()
         cmd = repl.parse_command("trace off")
-        assert cmd['type'] == 'trace'
-        assert cmd['action'] == 'off'
+        assert cmd["type"] == "trace"
+        assert cmd["action"] == "off"
 
     def test_parse_trace_json(self):
         """Test parsing 'trace json FILE' command."""
         repl = PrologREPL()
         cmd = repl.parse_command("trace json output.jsonl")
-        assert cmd['type'] == 'trace'
-        assert cmd['action'] == 'json'
-        assert cmd['file'] == 'output.jsonl'
+        assert cmd["type"] == "trace"
+        assert cmd["action"] == "json"
+        assert cmd["file"] == "output.jsonl"
 
     def test_parse_trace_pretty(self):
         """Test parsing 'trace pretty FILE' command."""
         repl = PrologREPL()
         cmd = repl.parse_command("trace pretty trace.log")
-        assert cmd['type'] == 'trace'
-        assert cmd['action'] == 'pretty'
-        assert cmd['file'] == 'trace.log'
+        assert cmd["type"] == "trace"
+        assert cmd["action"] == "pretty"
+        assert cmd["file"] == "trace.log"
 
     def test_parse_trace_sample(self):
         """Test parsing 'trace sample N' command."""
         repl = PrologREPL()
         cmd = repl.parse_command("trace sample 100")
-        assert cmd['type'] == 'trace'
-        assert cmd['action'] == 'sample'
-        assert cmd['rate'] == 100
+        assert cmd["type"] == "trace"
+        assert cmd["action"] == "sample"
+        assert cmd["rate"] == 100
 
     def test_execute_trace_on(self):
         """Test executing 'trace on' enables tracing."""
         repl = PrologREPL()
-        repl.execute_trace_command({'action': 'on'})
+        repl.execute_trace_command({"action": "on"})
 
         # Engine should be created with trace=True
         assert repl.trace_enabled is True
-        assert repl.trace_mode == 'pretty'
+        assert repl.trace_mode == "pretty"
 
     def test_execute_trace_off(self):
         """Test executing 'trace off' disables tracing."""
         repl = PrologREPL()
         repl.trace_enabled = True
-        repl.execute_trace_command({'action': 'off'})
+        repl.execute_trace_command({"action": "off"})
 
         assert repl.trace_enabled is False
 
@@ -83,16 +72,16 @@ class TestTraceCommands:
         """Test 'trace json FILE' sets correct state."""
         repl = PrologREPL()
 
-        repl.execute_trace_command({'action': 'json', 'file': 'output.jsonl'})
+        repl.execute_trace_command({"action": "json", "file": "output.jsonl"})
 
         assert repl.trace_enabled is True
-        assert repl.trace_mode == 'json'
-        assert repl.trace_file == 'output.jsonl'
+        assert repl.trace_mode == "json"
+        assert repl.trace_file == "output.jsonl"
 
     def test_execute_trace_sample(self):
         """Test 'trace sample N' sets sampling rate."""
         repl = PrologREPL()
-        repl.execute_trace_command({'action': 'sample', 'rate': 10})
+        repl.execute_trace_command({"action": "sample", "rate": 10})
 
         assert repl.trace_enabled is True
         assert repl.trace_sample_rate == 10
@@ -105,52 +94,52 @@ class TestSpyCommands:
         """Test parsing 'spy name/arity' command."""
         repl = PrologREPL()
         cmd = repl.parse_command("spy append/3")
-        assert cmd['type'] == 'spy'
-        assert cmd['action'] == 'add'
-        assert cmd['predicate'] == 'append/3'
+        assert cmd["type"] == "spy"
+        assert cmd["action"] == "add"
+        assert cmd["predicate"] == "append/3"
 
     def test_parse_unspy(self):
         """Test parsing 'unspy name/arity' command."""
         repl = PrologREPL()
         cmd = repl.parse_command("unspy append/3")
-        assert cmd['type'] == 'spy'
-        assert cmd['action'] == 'remove'
-        assert cmd['predicate'] == 'append/3'
+        assert cmd["type"] == "spy"
+        assert cmd["action"] == "remove"
+        assert cmd["predicate"] == "append/3"
 
     def test_parse_spys(self):
         """Test parsing 'spys' command to list spypoints."""
         repl = PrologREPL()
         cmd = repl.parse_command("spys")
-        assert cmd['type'] == 'spy'
-        assert cmd['action'] == 'list'
+        assert cmd["type"] == "spy"
+        assert cmd["action"] == "list"
 
     def test_parse_untrace(self):
         """Test parsing 'untrace' command."""
         repl = PrologREPL()
         cmd = repl.parse_command("untrace")
-        assert cmd['type'] == 'spy'
-        assert cmd['action'] == 'clear'
+        assert cmd["type"] == "spy"
+        assert cmd["action"] == "clear"
 
     def test_execute_spy_add(self):
         """Test adding a spypoint."""
         repl = PrologREPL()
-        repl.execute_spy_command({'action': 'add', 'predicate': 'append/3'})
+        repl.execute_spy_command({"action": "add", "predicate": "append/3"})
 
-        assert 'append/3' in repl.spypoints
+        assert "append/3" in repl.spypoints
 
     def test_execute_unspy(self):
         """Test removing a spypoint."""
         repl = PrologREPL()
-        repl.spypoints.add('append/3')
-        repl.execute_spy_command({'action': 'remove', 'predicate': 'append/3'})
+        repl.spypoints.add("append/3")
+        repl.execute_spy_command({"action": "remove", "predicate": "append/3"})
 
-        assert 'append/3' not in repl.spypoints
+        assert "append/3" not in repl.spypoints
 
     def test_execute_spys_list(self, capsys):
         """Test listing spypoints."""
         repl = PrologREPL()
-        repl.spypoints = {'append/3', 'member/2', 'parent/2'}
-        repl.execute_spy_command({'action': 'list'})
+        repl.spypoints = {"append/3", "member/2", "parent/2"}
+        repl.execute_spy_command({"action": "list"})
 
         captured = capsys.readouterr()
         assert "append/3" in captured.out
@@ -160,8 +149,8 @@ class TestSpyCommands:
     def test_execute_untrace(self):
         """Test clearing all spypoints."""
         repl = PrologREPL()
-        repl.spypoints = {'append/3', 'member/2'}
-        repl.execute_spy_command({'action': 'clear'})
+        repl.spypoints = {"append/3", "member/2"}
+        repl.execute_spy_command({"action": "clear"})
 
         assert len(repl.spypoints) == 0
 
@@ -170,16 +159,16 @@ class TestSpyCommands:
         repl = PrologREPL()
 
         # Add spypoints
-        repl.spypoints.add('test/0')
-        repl.spypoints.add('other/1')
+        repl.spypoints.add("test/0")
+        repl.spypoints.add("other/1")
 
-        assert 'test/0' in repl.spypoints
-        assert 'other/1' in repl.spypoints
+        assert "test/0" in repl.spypoints
+        assert "other/1" in repl.spypoints
 
         # Remove one
-        repl.spypoints.discard('test/0')
-        assert 'test/0' not in repl.spypoints
-        assert 'other/1' in repl.spypoints
+        repl.spypoints.discard("test/0")
+        assert "test/0" not in repl.spypoints
+        assert "other/1" in repl.spypoints
 
 
 class TestDebugCommands:
@@ -189,29 +178,29 @@ class TestDebugCommands:
         """Test parsing 'snapshot' command."""
         repl = PrologREPL()
         cmd = repl.parse_command("snapshot")
-        assert cmd['type'] == 'debug'
-        assert cmd['action'] == 'snapshot'
+        assert cmd["type"] == "debug"
+        assert cmd["action"] == "snapshot"
 
     def test_parse_metrics(self):
         """Test parsing 'metrics' command."""
         repl = PrologREPL()
         cmd = repl.parse_command("metrics")
-        assert cmd['type'] == 'debug'
-        assert cmd['action'] == 'metrics'
+        assert cmd["type"] == "debug"
+        assert cmd["action"] == "metrics"
 
     def test_parse_metrics_reset(self):
         """Test parsing 'metrics reset' command."""
         repl = PrologREPL()
         cmd = repl.parse_command("metrics reset")
-        assert cmd['type'] == 'debug'
-        assert cmd['action'] == 'metrics_reset'
+        assert cmd["type"] == "debug"
+        assert cmd["action"] == "metrics_reset"
 
     def test_execute_snapshot(self, capsys):
         """Test snapshot displays engine state."""
         repl = PrologREPL()
 
         # Execute snapshot
-        repl.execute_debug_command({'action': 'snapshot'})
+        repl.execute_debug_command({"action": "snapshot"})
 
         captured = capsys.readouterr()
         # Should show some engine state info
@@ -225,7 +214,7 @@ class TestDebugCommands:
         repl.metrics_enabled = True
 
         # Display metrics
-        repl.execute_debug_command({'action': 'metrics'})
+        repl.execute_debug_command({"action": "metrics"})
 
         captured = capsys.readouterr()
         # Should show metrics
@@ -236,11 +225,13 @@ class TestDebugCommands:
         repl = PrologREPL()
 
         # Reset metrics
-        repl.execute_debug_command({'action': 'metrics_reset'})
+        repl.execute_debug_command({"action": "metrics_reset"})
 
         captured = capsys.readouterr()
         # Should acknowledge reset or say metrics not available
-        assert "reset" in captured.out.lower() or "not available" in captured.out.lower()
+        assert (
+            "reset" in captured.out.lower() or "not available" in captured.out.lower()
+        )
 
 
 class TestREPLIntegration:
@@ -264,28 +255,28 @@ class TestREPLIntegration:
         initial_count = len(repl.engine.program.clauses)
 
         # Consult some clauses directly via engine
-        repl.engine.consult_string('foo.\nbar.\nbaz(1).')
+        repl.engine.consult_string("foo.\nbar.\nbaz(1).")
 
         # Verify clauses were added
         after_consult = len(repl.engine.program.clauses)
         assert after_consult == initial_count + 3
 
         # Toggle trace on (triggers _recreate_engine)
-        repl.execute_trace_command({'action': 'on'})
+        repl.execute_trace_command({"action": "on"})
 
         # Clauses should still be there
         after_trace_on = len(repl.engine.program.clauses)
         assert after_trace_on == after_consult, "Clauses lost after trace on"
 
         # Toggle trace off
-        repl.execute_trace_command({'action': 'off'})
+        repl.execute_trace_command({"action": "off"})
 
         # Clauses should still be there
         after_trace_off = len(repl.engine.program.clauses)
         assert after_trace_off == after_consult, "Clauses lost after trace off"
 
         # Toggle metrics
-        repl.execute_debug_command({'action': 'metrics_on'})
+        repl.execute_debug_command({"action": "metrics_on"})
 
         # Clauses should still be there
         after_metrics = len(repl.engine.program.clauses)
@@ -296,29 +287,29 @@ class TestREPLIntegration:
         repl = PrologREPL()
 
         # Enable tracing
-        repl.execute_trace_command({'action': 'on'})
+        repl.execute_trace_command({"action": "on"})
         assert repl.trace_enabled is True
 
         # Do other operations (simulated by just checking state)
         assert repl.trace_enabled is True
 
         # Change mode
-        repl.execute_trace_command({'action': 'json', 'file': 'test.jsonl'})
+        repl.execute_trace_command({"action": "json", "file": "test.jsonl"})
         assert repl.trace_enabled is True
-        assert repl.trace_mode == 'json'
+        assert repl.trace_mode == "json"
 
     def test_spypoints_state_persistence(self):
         """Test spypoints persist."""
         repl = PrologREPL()
 
         # Add spypoint
-        repl.execute_spy_command({'action': 'add', 'predicate': 'test/0'})
-        assert 'test/0' in repl.spypoints
+        repl.execute_spy_command({"action": "add", "predicate": "test/0"})
+        assert "test/0" in repl.spypoints
 
         # Add another
-        repl.execute_spy_command({'action': 'add', 'predicate': 'other/1'})
-        assert 'test/0' in repl.spypoints
-        assert 'other/1' in repl.spypoints
+        repl.execute_spy_command({"action": "add", "predicate": "other/1"})
+        assert "test/0" in repl.spypoints
+        assert "other/1" in repl.spypoints
 
     def test_invalid_commands_handled_gracefully(self):
         """Test that invalid commands produce helpful errors."""
@@ -326,10 +317,14 @@ class TestREPLIntegration:
 
         # Invalid trace command - without period it's incomplete
         cmd = repl.parse_command("trace invalid")
-        assert cmd['type'] == 'incomplete' or cmd['type'] == 'error' or cmd['type'] == 'query'
+        assert (
+            cmd["type"] == "incomplete"
+            or cmd["type"] == "error"
+            or cmd["type"] == "query"
+        )
 
         # Invalid spy predicate
-        result = repl.execute_spy_command({'action': 'add', 'predicate': 'invalid'})
+        result = repl.execute_spy_command({"action": "add", "predicate": "invalid"})
         # Should handle gracefully, not crash
         assert result is False or result is None
 
@@ -338,11 +333,11 @@ class TestREPLIntegration:
         repl = PrologREPL()
 
         # Enable file tracing
-        repl.execute_trace_command({'action': 'json', 'file': 'output.jsonl'})
-        assert repl.trace_file == 'output.jsonl'
+        repl.execute_trace_command({"action": "json", "file": "output.jsonl"})
+        assert repl.trace_file == "output.jsonl"
 
         # Disable tracing - should clear file reference
-        repl.execute_trace_command({'action': 'off'})
+        repl.execute_trace_command({"action": "off"})
         assert repl.trace_file is None  # File reference should be cleared
 
 
@@ -354,25 +349,25 @@ class TestCommandParsing:
         repl = PrologREPL()
 
         # These should all parse correctly
-        assert repl.parse_command("TRACE ON")['type'] == 'trace'
-        assert repl.parse_command("Spy append/3")['type'] == 'spy'
-        assert repl.parse_command("METRICS")['type'] == 'debug'
+        assert repl.parse_command("TRACE ON")["type"] == "trace"
+        assert repl.parse_command("Spy append/3")["type"] == "spy"
+        assert repl.parse_command("METRICS")["type"] == "debug"
 
     def test_trailing_period_optional(self):
         """Test commands work with or without trailing period."""
         repl = PrologREPL()
 
-        assert repl.parse_command("trace on")['type'] == 'trace'
-        assert repl.parse_command("trace on.")['type'] == 'trace'
-        assert repl.parse_command("spy test/0")['type'] == 'spy'
-        assert repl.parse_command("spy test/0.")['type'] == 'spy'
+        assert repl.parse_command("trace on")["type"] == "trace"
+        assert repl.parse_command("trace on.")["type"] == "trace"
+        assert repl.parse_command("spy test/0")["type"] == "spy"
+        assert repl.parse_command("spy test/0.")["type"] == "spy"
 
     def test_whitespace_handling(self):
         """Test commands handle extra whitespace."""
         repl = PrologREPL()
 
-        assert repl.parse_command("  trace   on  ")['type'] == 'trace'
-        assert repl.parse_command("\tspy\ttest/0\t")['type'] == 'spy'
+        assert repl.parse_command("  trace   on  ")["type"] == "trace"
+        assert repl.parse_command("\tspy\ttest/0\t")["type"] == "spy"
 
     def test_ambiguous_commands_resolved(self):
         """Test that trace/1 predicate doesn't conflict with trace command."""
@@ -380,9 +375,9 @@ class TestCommandParsing:
 
         # Command should be recognized
         cmd = repl.parse_command("trace on")
-        assert cmd['type'] == 'trace'
+        assert cmd["type"] == "trace"
 
         # Query should still work
         cmd = repl.parse_command("?- trace(X).")
-        assert cmd['type'] == 'query'
-        assert cmd['content'] == 'trace(X)'
+        assert cmd["type"] == "query"
+        assert cmd["content"] == "trace(X)"

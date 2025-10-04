@@ -4,8 +4,7 @@ Tests unification with FD variables, constraint posting during
 unification, and backtracking behavior.
 """
 
-import pytest
-from prolog.ast.terms import Atom, Int, Var, Struct, List
+from prolog.ast.terms import Atom, Int, Var, Struct
 from prolog.engine.engine import Engine, Program
 from prolog.engine.builtins_clpfd import _builtin_in, _builtin_fd_eq, _builtin_fd_lt
 from prolog.clpfd.api import get_domain

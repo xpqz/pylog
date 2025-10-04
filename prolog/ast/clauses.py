@@ -34,6 +34,7 @@ class Clause:
             ParseError: If the text cannot be parsed as a clause
         """
         from prolog.parser.parser import parse_clause
+
         return parse_clause(text)
 
 

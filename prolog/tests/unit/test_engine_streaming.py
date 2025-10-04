@@ -6,29 +6,29 @@ trace ordering, and result correctness.
 """
 
 import pytest
-import os
-from typing import List
 
 from prolog.engine.engine import Engine, Program
 from prolog.ast.terms import Atom, Struct, Int, Var, List as PrologList
 from prolog.ast.clauses import Clause
-from prolog.debug.tracer import PortsTracer, TraceEvent
 from prolog.debug.sinks import CollectorSink
 
 
 class TestEngineStreamingResultParity:
     """Test result parity across different engine configurations."""
 
-    @pytest.mark.parametrize("first_arg_type", [
-        "int_pos",      # Positive integer
-        "int_neg",      # Negative integer
-        "atom",         # Regular atom
-        "empty_list",   # Empty list atom
-        # "list_sugar",   # List sugar - SKIP: PrologList not hashable (IndexedProgram issue)
-        "list_canon",   # List canonical '.'/2
-        "struct",       # Regular struct
-        "var",          # Variable
-    ])
+    @pytest.mark.parametrize(
+        "first_arg_type",
+        [
+            "int_pos",  # Positive integer
+            "int_neg",  # Negative integer
+            "atom",  # Regular atom
+            "empty_list",  # Empty list atom
+            # "list_sugar",   # List sugar - SKIP: PrologList not hashable (IndexedProgram issue)
+            "list_canon",  # List canonical '.'/2
+            "struct",  # Regular struct
+            "var",  # Variable
+        ],
+    )
     def test_mixed_first_arg_types(self, first_arg_type):
         """Test streaming with various first argument types."""
         # Create clauses fresh for each test to avoid hashing issues
@@ -74,14 +74,13 @@ class TestEngineStreamingResultParity:
             # Facts
             Clause(head=Struct("parent", (Atom("tom"), Atom("bob"))), body=()),
             Clause(head=Struct("parent", (Atom("bob"), Atom("ann"))), body=()),
-
             # Rule
             Clause(
                 head=Struct("grandparent", (Var(0, "X"), Var(1, "Z"))),
                 body=(
                     Struct("parent", (Var(0, "X"), Var(2, "Y"))),
                     Struct("parent", (Var(2, "Y"), Var(1, "Z"))),
-                )
+                ),
             ),
         ]
         program = Program(tuple(clauses))
@@ -177,11 +176,13 @@ class TestEngineStreamingResultParity:
         clauses = [
             # Rule that binds then calls
             Clause(
-                head=Struct("test", (Var(0, "X"),)),  # Note comma for single-element tuple
+                head=Struct(
+                    "test", (Var(0, "X"),)
+                ),  # Note comma for single-element tuple
                 body=(
                     Struct("=", (Var(0, "X"), Int(42))),
                     Struct("data", (Var(0, "X"), Var(1, "Y"))),
-                )
+                ),
             ),
             # Data facts
             Clause(head=Struct("data", (Int(1), Atom("one"))), body=()),
@@ -210,8 +211,7 @@ class TestEngineStreamingTraceOrder:
             Clause(head=Struct("p", (Atom("a"),)), body=()),
             Clause(head=Struct("p", (Atom("b"),)), body=()),
             Clause(
-                head=Struct("q", (Var(0, "X"),)),
-                body=(Struct("p", (Var(0, "X"),)),)
+                head=Struct("q", (Var(0, "X"),)), body=(Struct("p", (Var(0, "X"),)),)
             ),
         ]
         program = Program(tuple(clauses))
@@ -219,10 +219,7 @@ class TestEngineStreamingTraceOrder:
         # Collect traces from both engines
         collector_indexed = CollectorSink()
         engine_indexed = Engine(
-            program,
-            use_indexing=True,
-            use_streaming=False,
-            trace=True
+            program, use_indexing=True, use_streaming=False, trace=True
         )
         # Add collector sink to the tracer
         engine_indexed.tracer.add_sink(collector_indexed)
@@ -230,10 +227,7 @@ class TestEngineStreamingTraceOrder:
 
         collector_streaming = CollectorSink()
         engine_streaming = Engine(
-            program,
-            use_indexing=True,
-            use_streaming=True,
-            trace=True
+            program, use_indexing=True, use_streaming=True, trace=True
         )
         # Add collector sink to the tracer
         engine_streaming.tracer.add_sink(collector_streaming)
@@ -299,7 +293,7 @@ class TestEngineStreamingBacktracking:
         # Cut should prevent backtracking
         assert len(results_streaming) == 1
         assert results_streaming == results_indexed
-        assert results_streaming[0]['X'] == Int(1)
+        assert results_streaming[0]["X"] == Int(1)
 
     def test_disjunction_with_streaming(self):
         """Test disjunction (;) works with streaming."""
@@ -307,11 +301,14 @@ class TestEngineStreamingBacktracking:
             Clause(
                 head=Struct("test", (Var(0, "X"),)),
                 body=(
-                    Struct(";", (
-                        Struct("=", (Var(0, "X"), Atom("a"))),
-                        Struct("=", (Var(0, "X"), Atom("b")))
-                    )),
-                )
+                    Struct(
+                        ";",
+                        (
+                            Struct("=", (Var(0, "X"), Atom("a"))),
+                            Struct("=", (Var(0, "X"), Atom("b"))),
+                        ),
+                    ),
+                ),
             ),
         ]
         program = Program(tuple(clauses))
@@ -331,12 +328,15 @@ class TestEngineStreamingBacktracking:
             Clause(
                 head=Struct("test", (Var(0, "X"), Var(1, "Y"))),
                 body=(
-                    Struct("->", (
-                        Struct("=", (Var(0, "X"), Int(1))),
-                        Struct("=", (Var(1, "Y"), Atom("one"))),
-                        Struct("=", (Var(1, "Y"), Atom("other")))
-                    )),
-                )
+                    Struct(
+                        "->",
+                        (
+                            Struct("=", (Var(0, "X"), Int(1))),
+                            Struct("=", (Var(1, "Y"), Atom("one"))),
+                            Struct("=", (Var(1, "Y"), Atom("other"))),
+                        ),
+                    ),
+                ),
             ),
         ]
         program = Program(tuple(clauses))
@@ -363,14 +363,16 @@ class TestEngineStreamingRecursion:
         clauses = [
             # member/2
             Clause(
-                head=Struct("member", (Var(0, "X"),
-                    Struct(".", (Var(0, "X"), Var(1, "_"))))),
-                body=()
+                head=Struct(
+                    "member", (Var(0, "X"), Struct(".", (Var(0, "X"), Var(1, "_"))))
+                ),
+                body=(),
             ),
             Clause(
-                head=Struct("member", (Var(0, "X"),
-                    Struct(".", (Var(1, "_"), Var(2, "T"))))),
-                body=(Struct("member", (Var(0, "X"), Var(2, "T"))),)
+                head=Struct(
+                    "member", (Var(0, "X"), Struct(".", (Var(1, "_"), Var(2, "T"))))
+                ),
+                body=(Struct("member", (Var(0, "X"), Var(2, "T"))),),
             ),
         ]
         program = Program(tuple(clauses))
@@ -390,20 +392,15 @@ class TestEngineStreamingRecursion:
         """Test recursive predicate with accumulator."""
         clauses = [
             # length/2 using accumulator
+            Clause(head=Struct("length", (Atom("[]"), Int(0))), body=()),
             Clause(
-                head=Struct("length", (Atom("[]"), Int(0))),
-                body=()
-            ),
-            Clause(
-                head=Struct("length", (
-                    Struct(".", (Var(0, "_"), Var(1, "T"))),
-                    Var(2, "N")
-                )),
+                head=Struct(
+                    "length", (Struct(".", (Var(0, "_"), Var(1, "T"))), Var(2, "N"))
+                ),
                 body=(
                     Struct("length", (Var(1, "T"), Var(3, "N1"))),
-                    Struct("is", (Var(2, "N"),
-                        Struct("+", (Var(3, "N1"), Int(1))))),
-                )
+                    Struct("is", (Var(2, "N"), Struct("+", (Var(3, "N1"), Int(1))))),
+                ),
             ),
         ]
         program = Program(tuple(clauses))
@@ -418,7 +415,7 @@ class TestEngineStreamingRecursion:
 
         assert len(results_streaming) == 1
         assert results_streaming == results_indexed
-        assert results_streaming[0]['L'] == Int(2)
+        assert results_streaming[0]["L"] == Int(2)
 
 
 class TestEngineStreamingPerformance:
@@ -439,7 +436,7 @@ class TestEngineStreamingPerformance:
         # Query for first item - should terminate early
         results = list(engine_streaming.query("data(0, X)"))
         assert len(results) == 1
-        assert results[0]['X'] == Atom("v0")
+        assert results[0]["X"] == Atom("v0")
 
         # Only first solution produced, no errors
         results = list(engine_streaming.query("data(0, X)"))
@@ -451,9 +448,7 @@ class TestEngineStreamingPerformance:
         # Create very large predicate
         clauses = []
         for i in range(10000):
-            clauses.append(
-                Clause(head=Struct("big", (Int(i), Atom(f"v{i}"))), body=())
-            )
+            clauses.append(Clause(head=Struct("big", (Int(i), Atom(f"v{i}"))), body=()))
         program = Program(tuple(clauses))
 
         engine_streaming = Engine(program, use_indexing=True, use_streaming=True)
@@ -461,7 +456,7 @@ class TestEngineStreamingPerformance:
         # Should efficiently find early match
         results = list(engine_streaming.query("big(5, X)"))
         assert len(results) == 1
-        assert results[0]['X'] == Atom("v5")
+        assert results[0]["X"] == Atom("v5")
 
 
 class TestEngineStreamingFeatureGating:
@@ -469,10 +464,7 @@ class TestEngineStreamingFeatureGating:
 
     def test_streaming_disabled_when_debug_enabled(self):
         """Test streaming disabled with debug mode."""
-        clauses = [
-            Clause(head=Struct("test", (Int(i),)), body=())
-            for i in range(10)
-        ]
+        clauses = [Clause(head=Struct("test", (Int(i),)), body=()) for i in range(10)]
         program = Program(tuple(clauses))
 
         # With debug tracer, streaming should be disabled
@@ -480,7 +472,7 @@ class TestEngineStreamingFeatureGating:
             program,
             use_indexing=True,
             use_streaming=True,  # Request streaming
-            trace=True  # But debug is enabled
+            trace=True,  # But debug is enabled
         )
 
         # Should still work correctly (falls back to materialized)
@@ -489,17 +481,14 @@ class TestEngineStreamingFeatureGating:
 
     def test_streaming_disabled_when_metrics_enabled(self):
         """Test streaming disabled with metrics."""
-        clauses = [
-            Clause(head=Struct("test", (Int(i),)), body=())
-            for i in range(10)
-        ]
+        clauses = [Clause(head=Struct("test", (Int(i),)), body=()) for i in range(10)]
         program = Program(tuple(clauses))
 
         engine = Engine(
             program,
             use_indexing=True,
             use_streaming=True,  # Request streaming
-            metrics=True  # Metrics enabled
+            metrics=True,  # Metrics enabled
         )
 
         # Should work correctly (falls back to materialized)
@@ -508,19 +497,12 @@ class TestEngineStreamingFeatureGating:
 
     def test_streaming_enabled_conditions(self):
         """Test streaming enabled when conditions are met."""
-        clauses = [
-            Clause(head=Struct("test", (Int(i),)), body=())
-            for i in range(10)
-        ]
+        clauses = [Clause(head=Struct("test", (Int(i),)), body=()) for i in range(10)]
         program = Program(tuple(clauses))
 
         # Streaming enabled: indexing on, debug off, metrics off
         engine = Engine(
-            program,
-            use_indexing=True,
-            use_streaming=True,
-            trace=None,
-            metrics=False
+            program, use_indexing=True, use_streaming=True, trace=None, metrics=False
         )
 
         results = list(engine.query("test(X)"))
@@ -528,28 +510,18 @@ class TestEngineStreamingFeatureGating:
 
     def test_streaming_requires_indexing(self):
         """Test streaming ignored without indexing."""
-        clauses = [
-            Clause(head=Struct("test", (Int(i),)), body=())
-            for i in range(10)
-        ]
+        clauses = [Clause(head=Struct("test", (Int(i),)), body=()) for i in range(10)]
         program = Program(tuple(clauses))
 
         # Streaming ignored without indexing
-        engine = Engine(
-            program,
-            use_indexing=False,
-            use_streaming=True  # Ignored
-        )
+        engine = Engine(program, use_indexing=False, use_streaming=True)  # Ignored
 
         results = list(engine.query("test(X)"))
         assert len(results) == 10
 
     def test_env_override(self, monkeypatch):
         """Test PYLOG_STREAM_SELECTION environment variable."""
-        clauses = [
-            Clause(head=Struct("test", (Int(i),)), body=())
-            for i in range(10)
-        ]
+        clauses = [Clause(head=Struct("test", (Int(i),)), body=()) for i in range(10)]
         program = Program(tuple(clauses))
 
         # Force streaming off

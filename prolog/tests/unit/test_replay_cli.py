@@ -23,12 +23,11 @@ class TestReplayToolCLI:
         """Test basic replay tool CLI usage."""
         trace_file = tmp_path / "trace.jsonl"
         events = [
-            {"sid": i, "p": i % 4, "pid": f"pred{i}/0", "fd": 0}
-            for i in range(1, 11)
+            {"sid": i, "p": i % 4, "pid": f"pred{i}/0", "fd": 0} for i in range(1, 11)
         ]
         _write_events(trace_file, events)
 
-        with patch.object(sys, 'argv', ['replay_trace', str(trace_file)]):
+        with patch.object(sys, "argv", ["replay_trace", str(trace_file)]):
             replay_main()
 
         captured = capsys.readouterr()
@@ -40,17 +39,20 @@ class TestReplayToolCLI:
         """Test replay tool with --last N option."""
         trace_file = tmp_path / "trace.jsonl"
         events = [
-            {"sid": i, "p": 0, "pid": f"pred{i}/0", "fd": 0}
-            for i in range(1, 301)
+            {"sid": i, "p": 0, "pid": f"pred{i}/0", "fd": 0} for i in range(1, 301)
         ]
         _write_events(trace_file, events)
 
-        with patch.object(sys, 'argv', ['replay_trace', str(trace_file), '--last', '50', '--format', 'json']):
+        with patch.object(
+            sys,
+            "argv",
+            ["replay_trace", str(trace_file), "--last", "50", "--format", "json"],
+        ):
             replay_main()
 
         captured = capsys.readouterr()
         data = json.loads(captured.out)
-        sids = [e['sid'] for e in data.get('events', [])]
+        sids = [e["sid"] for e in data.get("events", [])]
         assert sids == list(range(251, 301))  # exactly the last 50
 
     def test_replay_cli_check_invariants(self, tmp_path, capsys):
@@ -63,7 +65,9 @@ class TestReplayToolCLI:
         ]
         _write_events(trace_file, events)
 
-        with patch.object(sys, 'argv', ['replay_trace', str(trace_file), '--check-invariants']):
+        with patch.object(
+            sys, "argv", ["replay_trace", str(trace_file), "--check-invariants"]
+        ):
             with pytest.raises(SystemExit) as exc:
                 replay_main()
             assert exc.value.code != 0
@@ -83,7 +87,9 @@ class TestReplayToolCLI:
                 f.write(json.dumps(event) + "\n")
 
         # Test JSON output
-        with patch.object(sys, 'argv', ['replay_trace', str(trace_file), '--format', 'json']):
+        with patch.object(
+            sys, "argv", ["replay_trace", str(trace_file), "--format", "json"]
+        ):
             replay_main()
 
         captured = capsys.readouterr()
@@ -102,7 +108,7 @@ class TestReplayToolCLI:
             for event in events:
                 f.write(json.dumps(event) + "\n")
 
-        with patch.object(sys, 'argv', ['replay_trace', str(trace_file), '-v']):
+        with patch.object(sys, "argv", ["replay_trace", str(trace_file), "-v"]):
             replay_main()
 
         captured = capsys.readouterr()
@@ -111,7 +117,7 @@ class TestReplayToolCLI:
 
     def test_replay_cli_handles_missing_file(self, capsys):
         """Test replay tool handles missing file gracefully."""
-        with patch.object(sys, 'argv', ['replay_trace', 'nonexistent.jsonl']):
+        with patch.object(sys, "argv", ["replay_trace", "nonexistent.jsonl"]):
             with pytest.raises(SystemExit) as exc:
                 replay_main()
             assert exc.value.code != 0
@@ -125,7 +131,7 @@ class TestReplayToolCLI:
         trace_file = tmp_path / "trace.jsonl"
         trace_file.write_text("not valid json\n")
 
-        with patch.object(sys, 'argv', ['replay_trace', str(trace_file)]):
+        with patch.object(sys, "argv", ["replay_trace", str(trace_file)]):
             with pytest.raises(SystemExit) as exc:
                 replay_main()
             assert exc.value.code != 0
@@ -134,10 +140,9 @@ class TestReplayToolCLI:
         assert captured.err  # non-empty error channel
         assert "error" in captured.err.lower() or "invalid" in captured.err.lower()
 
-
     def test_replay_cli_help(self, capsys):
         """Test replay tool help/usage output."""
-        with patch.object(sys, 'argv', ['replay_trace', '--help']):
+        with patch.object(sys, "argv", ["replay_trace", "--help"]):
             with pytest.raises(SystemExit) as exc:
                 replay_main()
             assert exc.value.code == 0
@@ -160,11 +165,13 @@ class TestAnalyzeToolCLI:
             for event in events:
                 f.write(json.dumps(event) + "\n")
 
-        with patch.object(sys, 'argv', ['analyze_trace', str(trace_file)]):
+        with patch.object(sys, "argv", ["analyze_trace", str(trace_file)]):
             analyze_main()
 
         captured = capsys.readouterr()
-        assert "Total Events: 100" in captured.out or "100 events" in captured.out.lower()
+        assert (
+            "Total Events: 100" in captured.out or "100 events" in captured.out.lower()
+        )
         assert "Hot Predicates" in captured.out or "predicates" in captured.out.lower()
 
     def test_analyze_cli_statistics_output(self, tmp_path, capsys):
@@ -178,7 +185,7 @@ class TestAnalyzeToolCLI:
         ]
         _write_events(trace_file, events)
 
-        with patch.object(sys, 'argv', ['analyze_trace', str(trace_file), '--stats']):
+        with patch.object(sys, "argv", ["analyze_trace", str(trace_file), "--stats"]):
             analyze_main()
 
         captured = capsys.readouterr()
@@ -196,7 +203,9 @@ class TestAnalyzeToolCLI:
             for event in events:
                 f.write(json.dumps(event) + "\n")
 
-        with patch.object(sys, 'argv', ['analyze_trace', str(trace_file), '--format', 'json']):
+        with patch.object(
+            sys, "argv", ["analyze_trace", str(trace_file), "--format", "json"]
+        ):
             analyze_main()
 
         captured = capsys.readouterr()
@@ -217,7 +226,9 @@ class TestAnalyzeToolCLI:
             for event in events:
                 f.write(json.dumps(event) + "\n")
 
-        with patch.object(sys, 'argv', ['analyze_trace', str(trace_file), '--top', '3']):
+        with patch.object(
+            sys, "argv", ["analyze_trace", str(trace_file), "--top", "3"]
+        ):
             analyze_main()
 
         captured = capsys.readouterr()
@@ -236,7 +247,9 @@ class TestAnalyzeToolCLI:
             for event in events:
                 f.write(json.dumps(event) + "\n")
 
-        with patch.object(sys, 'argv', ['analyze_trace', str(trace_file), '-o', str(output_file)]):
+        with patch.object(
+            sys, "argv", ["analyze_trace", str(trace_file), "-o", str(output_file)]
+        ):
             analyze_main()
 
         assert output_file.exists()
@@ -254,7 +267,9 @@ class TestAnalyzeToolCLI:
         ]
         _write_events(trace_file, events)
 
-        with patch.object(sys, 'argv', ['analyze_trace', str(trace_file), '--performance']):
+        with patch.object(
+            sys, "argv", ["analyze_trace", str(trace_file), "--performance"]
+        ):
             analyze_main()
 
         captured = capsys.readouterr()
@@ -264,7 +279,7 @@ class TestAnalyzeToolCLI:
 
     def test_analyze_cli_help(self, capsys):
         """Test analyze tool help/usage output."""
-        with patch.object(sys, 'argv', ['analyze_trace', '--help']):
+        with patch.object(sys, "argv", ["analyze_trace", "--help"]):
             with pytest.raises(SystemExit) as exc:
                 analyze_main()
             assert exc.value.code == 0
@@ -277,7 +292,9 @@ class TestAnalyzeToolCLI:
         trace_file = tmp_path / "trace.jsonl"
         _write_events(trace_file, [{"sid": 1, "p": 0}])
 
-        with patch.object(sys, 'argv', ['analyze_trace', str(trace_file), '--format', 'yaml']):
+        with patch.object(
+            sys, "argv", ["analyze_trace", str(trace_file), "--format", "yaml"]
+        ):
             with pytest.raises(SystemExit) as exc:
                 analyze_main()
             assert exc.value.code != 0
@@ -288,7 +305,18 @@ class TestAnalyzeToolCLI:
         output_file = tmp_path / "report.json"
         _write_events(trace_file, [{"sid": 1, "p": 0}, {"sid": 2, "p": 1}])
 
-        with patch.object(sys, 'argv', ['analyze_trace', str(trace_file), '--format', 'json', '-o', str(output_file)]):
+        with patch.object(
+            sys,
+            "argv",
+            [
+                "analyze_trace",
+                str(trace_file),
+                "--format",
+                "json",
+                "-o",
+                str(output_file),
+            ],
+        ):
             analyze_main()
 
         assert output_file.exists()
@@ -307,7 +335,9 @@ class TestAnalyzeToolCLI:
             for event in events:
                 f.write(json.dumps(event) + "\n")
 
-        with patch.object(sys, 'argv', ['analyze_trace', str(trace_file), '--backtrack']):
+        with patch.object(
+            sys, "argv", ["analyze_trace", str(trace_file), "--backtrack"]
+        ):
             analyze_main()
 
         captured = capsys.readouterr()

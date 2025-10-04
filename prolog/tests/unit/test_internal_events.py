@@ -1,13 +1,11 @@
 """Tests for internal debug events (beyond standard 4-port tracing)."""
 
 import json
-from typing import List, Dict, Any
-from dataclasses import dataclass
 
 from prolog.ast.terms import Atom, Var, Struct, Int
 from prolog.ast.clauses import Clause
 from prolog.engine.engine import Engine, Program
-from prolog.debug.tracer import PortsTracer, TraceEvent, InternalEvent
+from prolog.debug.tracer import TraceEvent, InternalEvent
 from prolog.debug.sinks import CollectorSink
 
 
@@ -17,13 +15,12 @@ class TestInternalEventStructure:
     def test_internal_event_dataclass(self):
         """InternalEvent should be frozen with slots."""
         event = InternalEvent(
-            step_id=1,
-            kind="cp_push",
-            details={"pred_id": "append/3", "trail_top": 42}
+            step_id=1, kind="cp_push", details={"pred_id": "append/3", "trail_top": 42}
         )
 
         # Should be frozen (immutable)
         import pytest
+
         with pytest.raises(AttributeError):
             event.step_id = 2
 
@@ -36,9 +33,12 @@ class TestInternalEventStructure:
     def test_internal_event_types(self):
         """All internal event types should be recognized."""
         valid_kinds = [
-            "cp_push", "cp_pop",
-            "frame_push", "frame_pop",
-            "cut_commit", "catch_switch"
+            "cp_push",
+            "cp_pop",
+            "frame_push",
+            "frame_pop",
+            "cut_commit",
+            "catch_switch",
         ]
 
         for kind in valid_kinds:
@@ -59,14 +59,10 @@ class TestInternalEventStructure:
             cp_depth=0,
             goal_height=0,
             write_stamp=0,
-            pred_id="test/0"
+            pred_id="test/0",
         )
 
-        internal_event = InternalEvent(
-            step_id=2,
-            kind="cp_push",
-            details={}
-        )
+        internal_event = InternalEvent(step_id=2, kind="cp_push", details={})
 
         # Should be different types
         assert type(trace_event) != type(internal_event)
@@ -89,9 +85,7 @@ class TestInternalEventGeneration:
 
     def test_internal_events_off_by_default(self):
         """Internal events should be OFF by default."""
-        program = Program((
-            Clause(Struct("test", ()), ()),
-        ))
+        program = Program((Clause(Struct("test", ()), ()),))
 
         engine = Engine(program, trace=True)
         sink = CollectorSink()
@@ -108,9 +102,7 @@ class TestInternalEventGeneration:
 
     def test_enable_internal_events(self):
         """When enabled, internal events should be generated."""
-        program = Program((
-            Clause(Struct("test", ()), ()),
-        ))
+        program = Program((Clause(Struct("test", ()), ()),))
 
         engine = Engine(program, trace=True)
         sink = CollectorSink()
@@ -123,8 +115,11 @@ class TestInternalEventGeneration:
         list(engine.query("?- test."))
 
         # Should have both TraceEvents and InternalEvents
-        trace_events = [e for e in sink.events if isinstance(e, TraceEvent)
-                       and not isinstance(e, InternalEvent)]
+        trace_events = [
+            e
+            for e in sink.events
+            if isinstance(e, TraceEvent) and not isinstance(e, InternalEvent)
+        ]
         internal_events = [e for e in sink.events if isinstance(e, InternalEvent)]
 
         assert len(trace_events) > 0  # Standard events still present
@@ -138,18 +133,36 @@ class TestInternalEventGeneration:
 
     def test_four_port_stream_unchanged(self):
         """Enabling internal events should not change 4-port stream."""
-        program = Program((
-            Clause(Struct("test", (Var(0, "X"),)), (
-                Struct("member", (Var(0, "X"),
-                       Struct(".", (Int(1), Struct(".", (Int(2), Atom("[]"))))))),
-            )),
-            Clause(Struct("member", (Var(0, "X"),
-                   Struct(".", (Var(0, "X"), Var(1, "_"))))), ()),
-            Clause(Struct("member", (Var(0, "X"),
-                   Struct(".", (Var(1, "_"), Var(2, "T"))))), (
-                Struct("member", (Var(0, "X"), Var(2, "T"))),
-            )),
-        ))
+        program = Program(
+            (
+                Clause(
+                    Struct("test", (Var(0, "X"),)),
+                    (
+                        Struct(
+                            "member",
+                            (
+                                Var(0, "X"),
+                                Struct(
+                                    ".", (Int(1), Struct(".", (Int(2), Atom("[]"))))
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+                Clause(
+                    Struct(
+                        "member", (Var(0, "X"), Struct(".", (Var(0, "X"), Var(1, "_"))))
+                    ),
+                    (),
+                ),
+                Clause(
+                    Struct(
+                        "member", (Var(0, "X"), Struct(".", (Var(1, "_"), Var(2, "T"))))
+                    ),
+                    (Struct("member", (Var(0, "X"), Var(2, "T"))),),
+                ),
+            )
+        )
 
         engine1 = Engine(program, trace=True)
         sink1 = CollectorSink()
@@ -167,12 +180,14 @@ class TestInternalEventGeneration:
         list(engine2.query("?- test(X)."))
 
         # Extract only 4-port events from both (ignoring step_id)
-        ports1 = [(e.port, e.pred_id)
-                  for e in sink1.events
-                  if isinstance(e, TraceEvent)]
-        ports2 = [(e.port, e.pred_id)
-                  for e in sink2.events
-                  if isinstance(e, TraceEvent) and not isinstance(e, InternalEvent)]
+        ports1 = [
+            (e.port, e.pred_id) for e in sink1.events if isinstance(e, TraceEvent)
+        ]
+        ports2 = [
+            (e.port, e.pred_id)
+            for e in sink2.events
+            if isinstance(e, TraceEvent) and not isinstance(e, InternalEvent)
+        ]
 
         # 4-port sequence should be identical (ignoring step_ids which will differ)
         assert ports1 == ports2
@@ -183,12 +198,14 @@ class TestChoicepointEvents:
 
     def test_cp_push_event(self):
         """cp_push events should be generated when choicepoints are created."""
-        program = Program((
-            # Multiple clauses create choicepoints
-            Clause(Struct("multi", (Int(1),)), ()),
-            Clause(Struct("multi", (Int(2),)), ()),
-            Clause(Struct("multi", (Int(3),)), ()),
-        ))
+        program = Program(
+            (
+                # Multiple clauses create choicepoints
+                Clause(Struct("multi", (Int(1),)), ()),
+                Clause(Struct("multi", (Int(2),)), ()),
+                Clause(Struct("multi", (Int(3),)), ()),
+            )
+        )
 
         engine = Engine(program, trace=True)
         sink = CollectorSink()
@@ -197,8 +214,11 @@ class TestChoicepointEvents:
 
         list(engine.query("?- multi(X)."))
 
-        cp_pushes = [e for e in sink.events
-                     if isinstance(e, InternalEvent) and e.kind == "cp_push"]
+        cp_pushes = [
+            e
+            for e in sink.events
+            if isinstance(e, InternalEvent) and e.kind == "cp_push"
+        ]
 
         # Should have CP pushes for multi/1
         assert len(cp_pushes) > 0
@@ -212,11 +232,13 @@ class TestChoicepointEvents:
 
     def test_cp_pop_event(self):
         """cp_pop events should be generated when choicepoints are removed."""
-        program = Program((
-            Clause(Struct("single", ()), ()),  # No choicepoint
-            Clause(Struct("multi", (Int(1),)), ()),
-            Clause(Struct("multi", (Int(2),)), ()),
-        ))
+        program = Program(
+            (
+                Clause(Struct("single", ()), ()),  # No choicepoint
+                Clause(Struct("multi", (Int(1),)), ()),
+                Clause(Struct("multi", (Int(2),)), ()),
+            )
+        )
 
         engine = Engine(program, trace=True)
         sink = CollectorSink()
@@ -227,8 +249,11 @@ class TestChoicepointEvents:
         solutions = list(engine.query("?- multi(X)."))
         assert len(solutions) == 2
 
-        cp_pops = [e for e in sink.events
-                   if isinstance(e, InternalEvent) and e.kind == "cp_pop"]
+        cp_pops = [
+            e
+            for e in sink.events
+            if isinstance(e, InternalEvent) and e.kind == "cp_pop"
+        ]
 
         # Should have CP pops when exhausting alternatives
         assert len(cp_pops) > 0
@@ -238,14 +263,16 @@ class TestChoicepointEvents:
 
     def test_cp_events_balanced(self):
         """CP push/pop events should be balanced."""
-        program = Program((
-            Clause(Struct("test", (Var(0, "X"),)), (
-                Struct("multi", (Var(0, "X"),)),
-            )),
-            Clause(Struct("multi", (Atom("a"),)), ()),
-            Clause(Struct("multi", (Atom("b"),)), ()),
-            Clause(Struct("multi", (Atom("c"),)), ()),
-        ))
+        program = Program(
+            (
+                Clause(
+                    Struct("test", (Var(0, "X"),)), (Struct("multi", (Var(0, "X"),)),)
+                ),
+                Clause(Struct("multi", (Atom("a"),)), ()),
+                Clause(Struct("multi", (Atom("b"),)), ()),
+                Clause(Struct("multi", (Atom("c"),)), ()),
+            )
+        )
 
         engine = Engine(program, trace=True)
         sink = CollectorSink()
@@ -255,15 +282,22 @@ class TestChoicepointEvents:
         # Get all solutions to ensure all CPs are popped
         list(engine.query("?- test(X)."))
 
-        cp_pushes = [e for e in sink.events
-                     if isinstance(e, InternalEvent) and e.kind == "cp_push"]
-        cp_pops = [e for e in sink.events
-                   if isinstance(e, InternalEvent) and e.kind == "cp_pop"]
+        cp_pushes = [
+            e
+            for e in sink.events
+            if isinstance(e, InternalEvent) and e.kind == "cp_push"
+        ]
+        cp_pops = [
+            e
+            for e in sink.events
+            if isinstance(e, InternalEvent) and e.kind == "cp_pop"
+        ]
 
         # All pushed CPs should eventually be popped when query completes
         # (CP stack should be empty at end)
-        assert len(cp_pops) == len(cp_pushes), \
-            f"Unbalanced CP events: {len(cp_pushes)} pushes but {len(cp_pops)} pops"
+        assert len(cp_pops) == len(
+            cp_pushes
+        ), f"Unbalanced CP events: {len(cp_pushes)} pushes but {len(cp_pops)} pops"
 
 
 class TestFrameEvents:
@@ -271,12 +305,12 @@ class TestFrameEvents:
 
     def test_frame_push_event(self):
         """frame_push events should be generated for goal activation."""
-        program = Program((
-            Clause(Struct("parent", ()), (
-                Struct("child", ()),
-            )),
-            Clause(Struct("child", ()), ()),
-        ))
+        program = Program(
+            (
+                Clause(Struct("parent", ()), (Struct("child", ()),)),
+                Clause(Struct("child", ()), ()),
+            )
+        )
 
         engine = Engine(program, trace=True)
         sink = CollectorSink()
@@ -285,8 +319,11 @@ class TestFrameEvents:
 
         list(engine.query("?- parent."))
 
-        frame_pushes = [e for e in sink.events
-                        if isinstance(e, InternalEvent) and e.kind == "frame_push"]
+        frame_pushes = [
+            e
+            for e in sink.events
+            if isinstance(e, InternalEvent) and e.kind == "frame_push"
+        ]
 
         # Should have frame pushes for both parent and child
         assert len(frame_pushes) >= 2
@@ -302,9 +339,7 @@ class TestFrameEvents:
 
     def test_frame_pop_event(self):
         """frame_pop events should be generated when goals complete."""
-        program = Program((
-            Clause(Struct("test", ()), ()),
-        ))
+        program = Program((Clause(Struct("test", ()), ()),))
 
         engine = Engine(program, trace=True)
         sink = CollectorSink()
@@ -313,8 +348,11 @@ class TestFrameEvents:
 
         list(engine.query("?- test."))
 
-        frame_pops = [e for e in sink.events
-                      if isinstance(e, InternalEvent) and e.kind == "frame_pop"]
+        frame_pops = [
+            e
+            for e in sink.events
+            if isinstance(e, InternalEvent) and e.kind == "frame_pop"
+        ]
 
         # Should have frame pop for test/0
         assert len(frame_pops) >= 1
@@ -325,11 +363,13 @@ class TestFrameEvents:
 
     def test_frame_events_nested(self):
         """Frame events should properly track nested calls."""
-        program = Program((
-            Clause(Struct("a", ()), (Struct("b", ()),)),
-            Clause(Struct("b", ()), (Struct("c", ()),)),
-            Clause(Struct("c", ()), ()),
-        ))
+        program = Program(
+            (
+                Clause(Struct("a", ()), (Struct("b", ()),)),
+                Clause(Struct("b", ()), (Struct("c", ()),)),
+                Clause(Struct("c", ()), ()),
+            )
+        )
 
         engine = Engine(program, trace=True)
         sink = CollectorSink()
@@ -338,10 +378,16 @@ class TestFrameEvents:
 
         list(engine.query("?- a."))
 
-        frame_pushes = [e for e in sink.events
-                        if isinstance(e, InternalEvent) and e.kind == "frame_push"]
-        frame_pops = [e for e in sink.events
-                      if isinstance(e, InternalEvent) and e.kind == "frame_pop"]
+        frame_pushes = [
+            e
+            for e in sink.events
+            if isinstance(e, InternalEvent) and e.kind == "frame_push"
+        ]
+        frame_pops = [
+            e
+            for e in sink.events
+            if isinstance(e, InternalEvent) and e.kind == "frame_pop"
+        ]
 
         # Push order should be: a, b, c
         push_preds = [e.details["pred_id"] for e in frame_pushes]
@@ -357,15 +403,20 @@ class TestCutEvents:
 
     def test_cut_commit_event(self):
         """cut_commit events should track alternatives pruned."""
-        program = Program((
-            Clause(Struct("cuttest", (Var(0, "X"),)), (
-                Struct("multi", (Var(0, "X"),)),
-                Atom("!"),
-            )),
-            Clause(Struct("multi", (Int(1),)), ()),
-            Clause(Struct("multi", (Int(2),)), ()),
-            Clause(Struct("multi", (Int(3),)), ()),
-        ))
+        program = Program(
+            (
+                Clause(
+                    Struct("cuttest", (Var(0, "X"),)),
+                    (
+                        Struct("multi", (Var(0, "X"),)),
+                        Atom("!"),
+                    ),
+                ),
+                Clause(Struct("multi", (Int(1),)), ()),
+                Clause(Struct("multi", (Int(2),)), ()),
+                Clause(Struct("multi", (Int(3),)), ()),
+            )
+        )
 
         engine = Engine(program, trace=True)
         sink = CollectorSink()
@@ -376,8 +427,11 @@ class TestCutEvents:
         solutions = list(engine.query("?- cuttest(X)."))
         assert len(solutions) == 1  # Only first solution
 
-        cut_events = [e for e in sink.events
-                      if isinstance(e, InternalEvent) and e.kind == "cut_commit"]
+        cut_events = [
+            e
+            for e in sink.events
+            if isinstance(e, InternalEvent) and e.kind == "cut_commit"
+        ]
 
         # Should have a cut event
         assert len(cut_events) >= 1
@@ -385,16 +439,13 @@ class TestCutEvents:
         for event in cut_events:
             assert "alternatives_pruned" in event.details
             # Should have pruned the other 2 alternatives (multi/1 has 3 clauses)
-            assert event.details["alternatives_pruned"] == 2, \
-                f"Expected 2 alternatives pruned, got {event.details['alternatives_pruned']}"
+            assert (
+                event.details["alternatives_pruned"] == 2
+            ), f"Expected 2 alternatives pruned, got {event.details['alternatives_pruned']}"
 
     def test_cut_no_alternatives(self):
         """Cut with no alternatives should still generate event."""
-        program = Program((
-            Clause(Struct("noalt", ()), (
-                Atom("!"),
-            )),
-        ))
+        program = Program((Clause(Struct("noalt", ()), (Atom("!"),)),))
 
         engine = Engine(program, trace=True)
         sink = CollectorSink()
@@ -403,8 +454,11 @@ class TestCutEvents:
 
         list(engine.query("?- noalt."))
 
-        cut_events = [e for e in sink.events
-                      if isinstance(e, InternalEvent) and e.kind == "cut_commit"]
+        cut_events = [
+            e
+            for e in sink.events
+            if isinstance(e, InternalEvent) and e.kind == "cut_commit"
+        ]
 
         # Should still have cut event
         assert len(cut_events) >= 1
@@ -419,18 +473,24 @@ class TestCatchEvents:
 
     def test_catch_switch_event(self):
         """catch_switch events should be generated when catching exceptions."""
-        program = Program((
-            Clause(Struct("safe", (Var(0, "Result"),)), (
-                Struct("catch", (
-                    Struct("risky", ()),
-                    Var(1, "Error"),
-                    Struct("=", (Var(0, "Result"), Atom("caught")))
-                )),
-            )),
-            Clause(Struct("risky", ()), (
-                Struct("throw", (Atom("error"),)),
-            )),
-        ))
+        program = Program(
+            (
+                Clause(
+                    Struct("safe", (Var(0, "Result"),)),
+                    (
+                        Struct(
+                            "catch",
+                            (
+                                Struct("risky", ()),
+                                Var(1, "Error"),
+                                Struct("=", (Var(0, "Result"), Atom("caught"))),
+                            ),
+                        ),
+                    ),
+                ),
+                Clause(Struct("risky", ()), (Struct("throw", (Atom("error"),)),)),
+            )
+        )
 
         engine = Engine(program, trace=True)
         sink = CollectorSink()
@@ -441,8 +501,11 @@ class TestCatchEvents:
         assert len(solutions) == 1
         assert solutions[0]["R"] == Atom("caught")
 
-        catch_events = [e for e in sink.events
-                        if isinstance(e, InternalEvent) and e.kind == "catch_switch"]
+        catch_events = [
+            e
+            for e in sink.events
+            if isinstance(e, InternalEvent) and e.kind == "catch_switch"
+        ]
 
         # Should have catch event
         assert len(catch_events) >= 1
@@ -453,15 +516,23 @@ class TestCatchEvents:
 
     def test_no_catch_event_on_success(self):
         """No catch_switch event when goal succeeds."""
-        program = Program((
-            Clause(Struct("safe", ()), (
-                Struct("catch", (
-                    Atom("true"),  # Always succeeds
-                    Var(0, "_"),
-                    Atom("fail")
-                )),
-            )),
-        ))
+        program = Program(
+            (
+                Clause(
+                    Struct("safe", ()),
+                    (
+                        Struct(
+                            "catch",
+                            (
+                                Atom("true"),  # Always succeeds
+                                Var(0, "_"),
+                                Atom("fail"),
+                            ),
+                        ),
+                    ),
+                ),
+            )
+        )
 
         engine = Engine(program, trace=True)
         sink = CollectorSink()
@@ -470,8 +541,11 @@ class TestCatchEvents:
 
         list(engine.query("?- safe."))
 
-        catch_events = [e for e in sink.events
-                        if isinstance(e, InternalEvent) and e.kind == "catch_switch"]
+        catch_events = [
+            e
+            for e in sink.events
+            if isinstance(e, InternalEvent) and e.kind == "catch_switch"
+        ]
 
         # Should NOT have catch event (no exception)
         assert len(catch_events) == 0
@@ -480,15 +554,25 @@ class TestCatchEvents:
         """Regression test: CATCH choicepoint goal height tracking with POP_FRAME sentinel."""
         # This tests the specific bug where CATCH CP stored stale goal height
         # when POP_FRAME sentinel was consumed before backtracking
-        program = Program((
-            Clause(Struct("test_catch_backtrack", ()), (
-                Struct("catch", (
-                    Struct(";", (Atom("true"), Atom("fail"))),  # Disjunction that backtracks
-                    Var(0, "_"),
-                    Atom("fail")
-                )),
-            )),
-        ))
+        program = Program(
+            (
+                Clause(
+                    Struct("test_catch_backtrack", ()),
+                    (
+                        Struct(
+                            "catch",
+                            (
+                                Struct(
+                                    ";", (Atom("true"), Atom("fail"))
+                                ),  # Disjunction that backtracks
+                                Var(0, "_"),
+                                Atom("fail"),
+                            ),
+                        ),
+                    ),
+                ),
+            )
+        )
 
         engine = Engine(program, trace=True)
         sink = CollectorSink()
@@ -501,10 +585,16 @@ class TestCatchEvents:
         assert len(results) == 1
 
         # Verify CP events are balanced
-        cp_push = [e for e in sink.events
-                   if isinstance(e, InternalEvent) and e.kind == "cp_push"]
-        cp_pop = [e for e in sink.events
-                  if isinstance(e, InternalEvent) and e.kind == "cp_pop"]
+        cp_push = [
+            e
+            for e in sink.events
+            if isinstance(e, InternalEvent) and e.kind == "cp_push"
+        ]
+        cp_pop = [
+            e
+            for e in sink.events
+            if isinstance(e, InternalEvent) and e.kind == "cp_pop"
+        ]
 
         # Should have at least one CP (for disjunction)
         # CATCH doesn't always create a CP - only when needed
@@ -518,9 +608,7 @@ class TestEventOrdering:
 
     def test_frame_before_port(self):
         """frame_push should come after CALL port."""
-        program = Program((
-            Clause(Struct("test", ()), ()),
-        ))
+        program = Program((Clause(Struct("test", ()), ()),))
 
         engine = Engine(program, trace=True)
         sink = CollectorSink()
@@ -532,18 +620,18 @@ class TestEventOrdering:
         # Find frame_push for test/0
         frame_idx = None
         for i, e in enumerate(sink.events):
-            if (isinstance(e, InternalEvent) and
-                e.kind == "frame_push" and
-                e.details.get("pred_id") == "test/0"):
+            if (
+                isinstance(e, InternalEvent)
+                and e.kind == "frame_push"
+                and e.details.get("pred_id") == "test/0"
+            ):
                 frame_idx = i
                 break
 
         # Find CALL port for test/0
         call_idx = None
         for i, e in enumerate(sink.events):
-            if (isinstance(e, TraceEvent) and
-                e.port == "call" and
-                e.pred_id == "test/0"):
+            if isinstance(e, TraceEvent) and e.port == "call" and e.pred_id == "test/0":
                 call_idx = i
                 break
 
@@ -553,9 +641,7 @@ class TestEventOrdering:
 
     def test_port_before_frame_pop(self):
         """EXIT/FAIL port should come after frame_pop."""
-        program = Program((
-            Clause(Struct("test", ()), ()),
-        ))
+        program = Program((Clause(Struct("test", ()), ()),))
 
         engine = Engine(program, trace=True)
         sink = CollectorSink()
@@ -567,18 +653,18 @@ class TestEventOrdering:
         # Find EXIT port for test/0
         exit_idx = None
         for i, e in enumerate(sink.events):
-            if (isinstance(e, TraceEvent) and
-                e.port == "exit" and
-                e.pred_id == "test/0"):
+            if isinstance(e, TraceEvent) and e.port == "exit" and e.pred_id == "test/0":
                 exit_idx = i
                 break
 
         # Find frame_pop for test/0
         frame_idx = None
         for i, e in enumerate(sink.events):
-            if (isinstance(e, InternalEvent) and
-                e.kind == "frame_pop" and
-                e.details.get("pred_id") == "test/0"):
+            if (
+                isinstance(e, InternalEvent)
+                and e.kind == "frame_pop"
+                and e.details.get("pred_id") == "test/0"
+            ):
                 frame_idx = i
                 break
 
@@ -592,14 +678,19 @@ class TestEventCounting:
 
     def test_internal_events_increase_event_count(self):
         """Enabling internal events should increase total event count."""
-        program = Program((
-            Clause(Struct("test", ()), (
-                Struct("child1", ()),
-                Struct("child2", ()),
-            )),
-            Clause(Struct("child1", ()), ()),
-            Clause(Struct("child2", ()), ()),
-        ))
+        program = Program(
+            (
+                Clause(
+                    Struct("test", ()),
+                    (
+                        Struct("child1", ()),
+                        Struct("child2", ()),
+                    ),
+                ),
+                Clause(Struct("child1", ()), ()),
+                Clause(Struct("child2", ()), ()),
+            )
+        )
 
         # Run without internal events
         engine1 = Engine(program, trace=True)
@@ -620,8 +711,13 @@ class TestEventCounting:
 
         # Calculate overhead ratio
         internal_count = len([e for e in sink2.events if isinstance(e, InternalEvent)])
-        trace_count = len([e for e in sink2.events
-                          if isinstance(e, TraceEvent) and not isinstance(e, InternalEvent)])
+        trace_count = len(
+            [
+                e
+                for e in sink2.events
+                if isinstance(e, TraceEvent) and not isinstance(e, InternalEvent)
+            ]
+        )
 
         # Should have both types of events
         assert internal_count > 0
@@ -633,9 +729,7 @@ class TestEventCounting:
 
     def test_no_internal_events_when_debug_false(self):
         """No events at all when trace=False."""
-        program = Program((
-            Clause(Struct("test", ()), ()),
-        ))
+        program = Program((Clause(Struct("test", ()), ()),))
 
         engine = Engine(program, trace=False)
         # No tracer at all when trace=False
@@ -643,6 +737,7 @@ class TestEventCounting:
 
         # Query should still work without tracer
         list(engine.query("?- test."))
+
 
 class TestBuiltinTracing:
     """Test that builtins emit trace events correctly."""
@@ -705,10 +800,8 @@ class TestSinkCompatibility:
         """PrettyTraceSink should format internal events without crashing."""
         import io
         from prolog.debug.sinks import PrettyTraceSink
-        
-        program = Program((
-            Clause(Struct("test", ()), ()),
-        ))
+
+        program = Program((Clause(Struct("test", ()), ()),))
 
         output = io.StringIO()
         engine = Engine(program, trace=True)
@@ -730,12 +823,9 @@ class TestSinkCompatibility:
     def test_jsonl_sink_with_internal_events(self):
         """JSONLTraceSink should serialize internal events without crashing."""
         import io
-        import json
         from prolog.debug.sinks import JSONLTraceSink
-        
-        program = Program((
-            Clause(Struct("test", ()), ()),
-        ))
+
+        program = Program((Clause(Struct("test", ()), ()),))
 
         output = io.StringIO()
         engine = Engine(program, trace=True)
@@ -748,12 +838,12 @@ class TestSinkCompatibility:
         sink.flush()  # Make sure everything is written
 
         # Parse each line as JSON to verify format
-        lines = output.getvalue().strip().split('\n')
+        lines = output.getvalue().strip().split("\n")
         for line in lines:
             obj = json.loads(line)
-            assert 'v' in obj
-            assert 'type' in obj
-            assert obj['type'] in ['trace', 'internal']
-            if obj['type'] == 'internal':
-                assert 'kind' in obj
-                assert 'details' in obj
+            assert "v" in obj
+            assert "type" in obj
+            assert obj["type"] in ["trace", "internal"]
+            if obj["type"] == "internal":
+                assert "kind" in obj
+                assert "details" in obj

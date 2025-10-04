@@ -29,7 +29,15 @@ class StreamingClauseCursor:
     undefined if you interleave take() calls between original and clone.
     """
 
-    __slots__ = ('functor', 'arity', '_it', '_buffer', '_consumed', '_exhausted', '_exception')
+    __slots__ = (
+        "functor",
+        "arity",
+        "_it",
+        "_buffer",
+        "_consumed",
+        "_exhausted",
+        "_exception",
+    )
 
     def __init__(self, functor: str, arity: int, it: Iterator[Any]):
         """
@@ -130,7 +138,7 @@ class StreamingClauseCursor:
             self._exception = e
             raise e
 
-    def clone(self) -> 'StreamingClauseCursor':
+    def clone(self) -> "StreamingClauseCursor":
         """
         Create a cursor at the same logical position.
 

@@ -3,10 +3,9 @@
 Tests hook registration, dispatch, and integration with unification.
 """
 
-import pytest
 from prolog.engine.engine import Engine
-from prolog.ast.clauses import Clause, Program
-from prolog.ast.terms import Atom, Int, Var, Struct
+from prolog.ast.clauses import Program
+from prolog.ast.terms import Atom, Int, Struct
 
 
 class TestHookRegistry:
@@ -126,6 +125,7 @@ class TestHookDispatch:
             def hook(eng, vid, other):
                 call_order.append(name)
                 return True
+
             return hook
 
         # Register hooks in non-alphabetical order
@@ -135,11 +135,7 @@ class TestHookDispatch:
 
         # Create variable with all three attributes
         varid = engine.store.new_var("X")
-        engine.store.attrs[varid] = {
-            "zebra": "z",
-            "apple": "a",
-            "monkey": "m"
-        }
+        engine.store.attrs[varid] = {"zebra": "z", "apple": "a", "monkey": "m"}
 
         # Dispatch should call in alphabetical order
         result = engine.dispatch_attr_hooks(varid, Int(42))
@@ -227,11 +223,7 @@ class TestHookDispatch:
 
         # Variable with all three attributes
         varid = engine.store.new_var("X")
-        engine.store.attrs[varid] = {
-            "a_mod": "val1",
-            "b_mod": "val2",
-            "c_mod": "val3"
-        }
+        engine.store.attrs[varid] = {"a_mod": "val1", "b_mod": "val2", "c_mod": "val3"}
 
         # Should call hook1, hook2 (returns False), then stop
         result = engine.dispatch_attr_hooks(varid, Int(42))
@@ -257,7 +249,7 @@ class TestHookDispatch:
         varid = engine.store.new_var("X")
         engine.store.attrs[varid] = {
             "mod1": "value1",
-            "mod2": "value2"  # No hook for mod2
+            "mod2": "value2",  # No hook for mod2
         }
 
         # Should call hook for mod1, skip mod2
@@ -518,7 +510,9 @@ class TestVarVarUnification:
 
         # This query puts different attributes on X and Y, then unifies them
         # After unification, both attributes should be on the root
-        query = "?- put_attr(X, mod_a, data_a), put_attr(Y, mod_b, data_b), X = Y, X = 42."
+        query = (
+            "?- put_attr(X, mod_a, data_a), put_attr(Y, mod_b, data_b), X = Y, X = 42."
+        )
         solutions = list(engine.query(query))
 
         # The query should succeed

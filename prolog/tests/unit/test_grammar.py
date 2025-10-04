@@ -9,7 +9,7 @@ def test_get_grammar_text():
     assert isinstance(text, str)
     assert len(text) > 0
     assert "start:" in text  # Grammar should have a start rule
-    assert "term:" in text   # Grammar should define terms
+    assert "term:" in text  # Grammar should define terms
 
 
 def test_grammar_text_export():

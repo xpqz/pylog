@@ -13,7 +13,6 @@ from prolog.debug.trace_stats import (
     compute_trace_statistics,
     generate_statistics_report,
     analyze_performance_metrics,
-    detect_performance_anomalies
 )
 
 
@@ -28,27 +27,17 @@ def main():
         "--format",
         choices=["text", "json", "csv", "markdown", "html"],
         default="text",
-        help="Output format"
+        help="Output format",
     )
     parser.add_argument(
-        "--top",
-        type=int,
-        default=5,
-        help="Number of top predicates to show"
+        "--top", type=int, default=5, help="Number of top predicates to show"
+    )
+    parser.add_argument("-o", "--output", help="Output file (default: stdout)")
+    parser.add_argument(
+        "--performance", action="store_true", help="Analyze performance metrics"
     )
     parser.add_argument(
-        "-o", "--output",
-        help="Output file (default: stdout)"
-    )
-    parser.add_argument(
-        "--performance",
-        action="store_true",
-        help="Analyze performance metrics"
-    )
-    parser.add_argument(
-        "--backtrack",
-        action="store_true",
-        help="Analyze backtracking patterns"
+        "--backtrack", action="store_true", help="Analyze backtracking patterns"
     )
 
     args = parser.parse_args()
@@ -86,11 +75,10 @@ def main():
                 stats = compute_trace_statistics(trace_path)
                 total = stats["total_events"]
                 backtrack_count = sum(
-                    stats["port_distribution"].get(p, 0)
-                    for p in ["redo", "fail"]
+                    stats["port_distribution"].get(p, 0) for p in ["redo", "fail"]
                 )
                 if args.format == "text":
-                    report += f"\n\nBacktrack Analysis:\n"
+                    report += "\n\nBacktrack Analysis:\n"
                     report += f"  Total events: {total}\n"
                     report += f"  Backtrack events: {backtrack_count}\n"
                     if total > 0:

@@ -15,8 +15,9 @@ from prolog.ast.terms import Int
 
 class Entailment(Enum):
     """Entailment states for constraint satisfaction."""
-    TRUE = 1      # Constraint is definitely satisfied
-    FALSE = 0     # Constraint is definitely violated
+
+    TRUE = 1  # Constraint is definitely satisfied
+    FALSE = 0  # Constraint is definitely violated
     UNKNOWN = -1  # Constraint satisfaction is undetermined
 
 
@@ -25,7 +26,9 @@ class Entailment(Enum):
 ConstraintArg = Union[int, Tuple[None, int]]
 
 
-def normalize_arg(store: 'Store', arg: ConstraintArg) -> Tuple[Optional[int], Optional[Domain]]:
+def normalize_arg(
+    store: "Store", arg: ConstraintArg
+) -> Tuple[Optional[int], Optional[Domain]]:
     """Normalize a constraint argument to (value, domain) pair.
 
     Args:
@@ -61,7 +64,9 @@ def normalize_arg(store: 'Store', arg: ConstraintArg) -> Tuple[Optional[int], Op
         return (None, dom)
 
 
-def check_equality_entailment(store: 'Store', x_arg: ConstraintArg, y_arg: ConstraintArg) -> Entailment:
+def check_equality_entailment(
+    store: "Store", x_arg: ConstraintArg, y_arg: ConstraintArg
+) -> Entailment:
     """Check if X #= Y is entailed, dis-entailed, or unknown.
 
     Args:
@@ -132,7 +137,9 @@ def check_equality_entailment(store: 'Store', x_arg: ConstraintArg, y_arg: Const
     return Entailment.UNKNOWN
 
 
-def check_less_than_entailment(store, x_arg: ConstraintArg, y_arg: ConstraintArg) -> Entailment:
+def check_less_than_entailment(
+    store, x_arg: ConstraintArg, y_arg: ConstraintArg
+) -> Entailment:
     """Check if X #< Y is entailed, dis-entailed, or unknown.
 
     Args:
@@ -182,7 +189,9 @@ def check_less_than_entailment(store, x_arg: ConstraintArg, y_arg: ConstraintArg
     return Entailment.UNKNOWN
 
 
-def check_less_equal_entailment(store, x_arg: ConstraintArg, y_arg: ConstraintArg) -> Entailment:
+def check_less_equal_entailment(
+    store, x_arg: ConstraintArg, y_arg: ConstraintArg
+) -> Entailment:
     """Check if X #=< Y is entailed, dis-entailed, or unknown.
 
     Args:
@@ -232,7 +241,9 @@ def check_less_equal_entailment(store, x_arg: ConstraintArg, y_arg: ConstraintAr
     return Entailment.UNKNOWN
 
 
-def check_greater_than_entailment(store, x_arg: ConstraintArg, y_arg: ConstraintArg) -> Entailment:
+def check_greater_than_entailment(
+    store, x_arg: ConstraintArg, y_arg: ConstraintArg
+) -> Entailment:
     """Check if X #> Y is entailed, dis-entailed, or unknown.
 
     Args:
@@ -247,7 +258,9 @@ def check_greater_than_entailment(store, x_arg: ConstraintArg, y_arg: Constraint
     return check_less_than_entailment(store, y_arg, x_arg)
 
 
-def check_greater_equal_entailment(store, x_arg: ConstraintArg, y_arg: ConstraintArg) -> Entailment:
+def check_greater_equal_entailment(
+    store, x_arg: ConstraintArg, y_arg: ConstraintArg
+) -> Entailment:
     """Check if X #>= Y is entailed, dis-entailed, or unknown.
 
     Args:
@@ -262,7 +275,9 @@ def check_greater_equal_entailment(store, x_arg: ConstraintArg, y_arg: Constrain
     return check_less_equal_entailment(store, y_arg, x_arg)
 
 
-def check_not_equal_entailment(store, x_arg: ConstraintArg, y_arg: ConstraintArg) -> Entailment:
+def check_not_equal_entailment(
+    store, x_arg: ConstraintArg, y_arg: ConstraintArg
+) -> Entailment:
     """Check if X #\\= Y is entailed, dis-entailed, or unknown.
 
     Args:
@@ -286,10 +301,10 @@ def check_not_equal_entailment(store, x_arg: ConstraintArg, y_arg: ConstraintArg
 
 # Negation mappings for constraints
 CONSTRAINT_NEGATIONS = {
-    "#=": "#\\=",     # ¬(X #= Y) = X #\\= Y
-    "#\\=": "#=",     # ¬(X #\\= Y) = X #= Y
-    "#<": "#>=",      # ¬(X #< Y) = X #>= Y
-    "#=<": "#>",      # ¬(X #=< Y) = X #> Y
-    "#>": "#=<",      # ¬(X #> Y) = X #=< Y
-    "#>=": "#<",      # ¬(X #>= Y) = X #< Y
+    "#=": "#\\=",  # ¬(X #= Y) = X #\\= Y
+    "#\\=": "#=",  # ¬(X #\\= Y) = X #= Y
+    "#<": "#>=",  # ¬(X #< Y) = X #>= Y
+    "#=<": "#>",  # ¬(X #=< Y) = X #> Y
+    "#>": "#=<",  # ¬(X #> Y) = X #=< Y
+    "#>=": "#<",  # ¬(X #>= Y) = X #< Y
 }

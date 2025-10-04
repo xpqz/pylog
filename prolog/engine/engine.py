@@ -1,8 +1,8 @@
 """Prolog Engine with Explicit Stacks (Stage 0) - Fixed Implementation."""
 
 import os
-from typing import Dict, List, Optional, Any, Tuple
-from prolog.ast.terms import Term, Atom, Int, Var, Struct, List as PrologList
+from typing import Dict, List, Optional, Any, Tuple, Union
+from prolog.ast.terms import Term, Atom, Int, Float, Var, Struct, List as PrologList
 from prolog.ast.clauses import Program, ClauseCursor
 from prolog.engine.rename import VarRenamer
 from prolog.unify.store import Store, Cell
@@ -443,6 +443,34 @@ class Engine:
         self._builtins[("var", 1)] = lambda eng, args: eng._builtin_var(args)
         self._builtins[("nonvar", 1)] = lambda eng, args: eng._builtin_nonvar(args)
         self._builtins[("atom", 1)] = lambda eng, args: eng._builtin_atom(args)
+        self._builtins[("integer", 1)] = lambda eng, args: eng._builtin_integer(args)
+        self._builtins[("float", 1)] = lambda eng, args: eng._builtin_float(args)
+        self._builtins[("number", 1)] = lambda eng, args: eng._builtin_number(args)
+        self._builtins[("atomic", 1)] = lambda eng, args: eng._builtin_atomic(args)
+        self._builtins[("compound", 1)] = lambda eng, args: eng._builtin_compound(args)
+        self._builtins[("callable", 1)] = lambda eng, args: eng._builtin_callable(args)
+        self._builtins[("ground", 1)] = lambda eng, args: eng._builtin_ground(args)
+        # All-solutions predicates
+        self._builtins[("findall", 3)] = lambda eng, args: eng._builtin_findall(args)
+        self._builtins[("bagof", 3)] = lambda eng, args: eng._builtin_bagof(args)
+        self._builtins[("setof", 3)] = lambda eng, args: eng._builtin_setof(args)
+        # Extended call predicates
+        self._builtins[("call", 2)] = lambda eng, args: eng._builtin_call_n(args)
+        self._builtins[("call", 3)] = lambda eng, args: eng._builtin_call_n(args)
+        self._builtins[("call", 4)] = lambda eng, args: eng._builtin_call_n(args)
+        self._builtins[("call", 5)] = lambda eng, args: eng._builtin_call_n(args)
+        self._builtins[("call", 6)] = lambda eng, args: eng._builtin_call_n(args)
+        self._builtins[("call", 7)] = lambda eng, args: eng._builtin_call_n(args)
+        self._builtins[("call", 8)] = lambda eng, args: eng._builtin_call_n(args)
+        # Negation as failure
+        self._builtins[("\\+", 1)] = lambda eng, args: eng._builtin_not_provable(args)
+        # Additional meta-predicates
+        self._builtins[("copy_term", 2)] = lambda eng, args: eng._builtin_copy_term(
+            args
+        )
+        self._builtins[("unify_with_occurs_check", 2)] = (
+            lambda eng, args: eng._builtin_unify_with_occurs_check(args)
+        )
         self._builtins[("is", 2)] = lambda eng, args: eng._builtin_is(args)
         self._builtins[(">", 2)] = lambda eng, args: eng._builtin_gt(args)
         self._builtins[("<", 2)] = lambda eng, args: eng._builtin_lt(args)
@@ -973,7 +1001,7 @@ class Engine:
                     result = Var(varid, var_name)
                 processed[id(current)] = result
 
-            elif isinstance(current, (Atom, Int)):
+            elif isinstance(current, (Atom, Int, Float)):
                 processed[id(current)] = current
 
             elif isinstance(current, Struct):
@@ -2149,7 +2177,7 @@ class Engine:
                 else:
                     raise ValueError(f"Unknown cell tag: {result[0]}")
 
-            elif isinstance(current, (Atom, Int)):
+            elif isinstance(current, (Atom, Int, Float)):
                 reified[term_id] = current
 
             elif isinstance(current, Struct):
@@ -2388,6 +2416,509 @@ class Engine:
                 return isinstance(bound_term, Atom)
             return False
         return isinstance(term, Atom)
+
+    def _builtin_integer(self, args: tuple) -> bool:
+        """integer(X) - true if X is an integer."""
+        if len(args) != 1:
+            return False
+        term = args[0]
+        if isinstance(term, Var):
+            result = self.store.deref(term.id)
+            if result[0] == "BOUND":
+                _, _, bound_term = result
+                return isinstance(bound_term, Int)
+            return False
+        return isinstance(term, Int)
+
+    def _builtin_float(self, args: tuple) -> bool:
+        """float(X) - true if X is a float."""
+        if len(args) != 1:
+            return False
+        term = args[0]
+        if isinstance(term, Var):
+            result = self.store.deref(term.id)
+            if result[0] == "BOUND":
+                _, _, bound_term = result
+                return isinstance(bound_term, Float)
+            return False
+        return isinstance(term, Float)
+
+    def _builtin_number(self, args: tuple) -> bool:
+        """number(X) - true if X is a number (integer or float)."""
+        if len(args) != 1:
+            return False
+        term = args[0]
+        if isinstance(term, Var):
+            result = self.store.deref(term.id)
+            if result[0] == "BOUND":
+                _, _, bound_term = result
+                return isinstance(bound_term, (Int, Float))
+            return False
+        return isinstance(term, (Int, Float))
+
+    def _builtin_atomic(self, args: tuple) -> bool:
+        """atomic(X) - true if X is atomic (atom, number, or other atomic term)."""
+        if len(args) != 1:
+            return False
+        term = args[0]
+        if isinstance(term, Var):
+            result = self.store.deref(term.id)
+            if result[0] == "BOUND":
+                _, _, bound_term = result
+                return isinstance(bound_term, (Atom, Int, Float))
+            return False
+        return isinstance(term, (Atom, Int, Float))
+
+    def _builtin_compound(self, args: tuple) -> bool:
+        """compound(X) - true if X is a compound term."""
+        if len(args) != 1:
+            return False
+        term = args[0]
+        if isinstance(term, Var):
+            result = self.store.deref(term.id)
+            if result[0] == "BOUND":
+                _, _, bound_term = result
+                return isinstance(bound_term, (Struct, PrologList))
+            return False
+        return isinstance(term, (Struct, PrologList))
+
+    def _builtin_callable(self, args: tuple) -> bool:
+        """callable(X) - true if X is callable (atom or compound)."""
+        if len(args) != 1:
+            return False
+        term = args[0]
+        if isinstance(term, Var):
+            result = self.store.deref(term.id)
+            if result[0] == "BOUND":
+                _, _, bound_term = result
+                return isinstance(bound_term, (Atom, Struct, PrologList))
+            return False
+        return isinstance(term, (Atom, Struct, PrologList))
+
+    def _builtin_ground(self, args: tuple) -> bool:
+        """ground(X) - true if X contains no unbound variables."""
+        if len(args) != 1:
+            return False
+        term = args[0]
+        return self._is_ground(term)
+
+    def _is_ground(self, term: Term) -> bool:
+        """Helper method to check if a term is ground (contains no unbound variables)."""
+        if isinstance(term, Var):
+            result = self.store.deref(term.id)
+            if result[0] == "BOUND":
+                _, _, bound_term = result
+                return self._is_ground(bound_term)
+            return False
+        elif isinstance(term, (Atom, Int, Float)):
+            return True
+        elif isinstance(term, Struct):
+            return all(self._is_ground(arg) for arg in term.args)
+        elif isinstance(term, PrologList):
+            return all(
+                self._is_ground(item) for item in term.items
+            ) and self._is_ground(term.tail)
+        return True
+
+    def _builtin_findall(self, args: tuple) -> bool:
+        """findall(+Template, :Goal, -List) - collect all solutions.
+
+        findall/3 always succeeds. If Goal has no solutions, List is bound to [].
+        All free variables in Goal are automatically existentially quantified.
+        """
+        if len(args) != 3:
+            return False
+
+        template, goal, result_list = args
+
+        # Collect all solutions by running goal in isolation
+        solutions = self._collect_all_solutions(template, goal, existential_all=True)
+
+        # Create result list term
+        if not solutions:
+            result_term = Atom("[]")  # Empty list
+        else:
+            result_term = self._build_prolog_list(solutions)
+
+        # Unify with result list
+        trail_adapter = TrailAdapter(self.trail)
+        return unify(
+            result_list, result_term, self.store, trail_adapter, self.occurs_check
+        )
+
+    def _builtin_bagof(self, args: tuple) -> bool:
+        """bagof(+Template, :Goal, -Bag) - collect solutions with free variable grouping.
+
+        bagof/3 fails if Goal has no solutions. It backtracks over free variables
+        unless they are existentially quantified with the ^ operator.
+
+        CURRENT LIMITATIONS:
+        - No support for existential quantification (^/2) - all variables treated as existential
+        - No grouping/backtracking by free variables - simplified to behave like findall that fails on empty
+        - These will be addressed in future implementations for full ISO compliance
+        """
+        if len(args) != 3:
+            return False
+
+        template, goal, result_bag = args
+
+        # Extract existentially quantified variables and clean goal
+        clean_goal, existential_vars = self._extract_existential_vars(goal)
+
+        # Find free variables in clean_goal that are not in template or existential_vars
+        free_vars = self._find_free_variables(clean_goal, template, existential_vars)
+
+        if not free_vars:
+            # No free variables - behave like findall but fail on empty
+            solutions = self._collect_all_solutions(
+                template, clean_goal, existential_all=True
+            )
+            if not solutions:
+                return False  # bagof fails on empty results
+
+            result_term = self._build_prolog_list(solutions)
+
+            trail_adapter = TrailAdapter(self.trail)
+            return unify(
+                result_bag, result_term, self.store, trail_adapter, self.occurs_check
+            )
+        else:
+            # Has free variables - create choicepoint to backtrack over them
+            # This is a simplified implementation - full bagof/3 is quite complex
+            # For now, just collect all solutions treating free vars as existential
+            solutions = self._collect_all_solutions(
+                template, clean_goal, existential_all=True
+            )
+            if not solutions:
+                return False
+
+            result_term = self._build_prolog_list(solutions)
+
+            trail_adapter = TrailAdapter(self.trail)
+            return unify(
+                result_bag, result_term, self.store, trail_adapter, self.occurs_check
+            )
+
+    def _builtin_setof(self, args: tuple) -> bool:
+        """setof(+Template, :Goal, -Set) - collect sorted unique solutions.
+
+        setof/3 is like bagof/3 but sorts results and removes duplicates.
+        Fails if Goal has no solutions.
+
+        CURRENT LIMITATIONS:
+        - No support for existential quantification (^/2) - all variables treated as existential
+        - No grouping/backtracking by free variables - simplified to behave like findall that fails on empty
+        - Uses string representation for sorting/deduplication, not standard term ordering
+        - These will be addressed in future implementations for full ISO compliance
+        """
+        if len(args) != 3:
+            return False
+
+        template, goal, result_set = args
+
+        # Use bagof logic but sort and deduplicate
+        clean_goal, existential_vars = self._extract_existential_vars(goal)
+        free_vars = self._find_free_variables(clean_goal, template, existential_vars)
+
+        if not free_vars:
+            solutions = self._collect_all_solutions(
+                template, clean_goal, existential_all=True
+            )
+            if not solutions:
+                return False  # setof fails on empty results
+
+            # Sort and deduplicate solutions
+            unique_solutions = self._sort_and_deduplicate(solutions)
+            result_term = self._build_prolog_list(unique_solutions)
+
+            trail_adapter = TrailAdapter(self.trail)
+            return unify(
+                result_set, result_term, self.store, trail_adapter, self.occurs_check
+            )
+        else:
+            # Simplified implementation for now
+            solutions = self._collect_all_solutions(
+                template, clean_goal, existential_all=True
+            )
+            if not solutions:
+                return False
+
+            unique_solutions = self._sort_and_deduplicate(solutions)
+            result_term = self._build_prolog_list(unique_solutions)
+
+            trail_adapter = TrailAdapter(self.trail)
+            return unify(
+                result_set, result_term, self.store, trail_adapter, self.occurs_check
+            )
+
+    def _collect_all_solutions(
+        self, template: Term, goal: Term, existential_all: bool = False
+    ) -> List[Term]:
+        """Collect all solutions for a goal, instantiating template for each solution.
+
+        Args:
+            template: Template term to collect instances of
+            goal: Goal to solve
+            existential_all: If True, all variables in goal are existentially quantified
+
+        Returns:
+            List of template instances for each solution
+        """
+        # Create a fresh engine instance to avoid state interference
+
+        # Create minimal sub-engine with same program
+        sub_engine = Engine(
+            self.program,
+            occurs_check=self.occurs_check,
+            max_solutions=None,
+            trace=False,
+            use_indexing=False,
+        )
+
+        try:
+            # Copy template and goal with fresh variables for the sub-engine
+            var_mapping = {}
+            template_copy = self._copy_term_recursive(
+                template, var_mapping, sub_engine.store
+            )
+            goal_copy = self._copy_term_recursive(goal, var_mapping, sub_engine.store)
+
+            # Run the goal to collect all solutions
+            solutions = sub_engine.solve(goal_copy)
+
+            # Extract template instances from solutions
+            result_instances = []
+            for solution in solutions:
+                # Create a reified version of the template with solution bindings
+                instantiated_template = self._reify_term_with_solution(
+                    template_copy, solution
+                )
+                result_instances.append(instantiated_template)
+
+            return result_instances
+
+        except Exception:
+            # If goal execution fails, return empty list (findall semantics)
+            return []
+
+    def _copy_term_with_fresh_vars(self, term: Term) -> Term:
+        """Create a copy of a term with fresh variables."""
+        var_mapping = {}
+        return self._copy_term_recursive(term, var_mapping)
+
+    def _copy_term_recursive(
+        self, term: Term, var_mapping: Dict[int, int], target_store=None
+    ) -> Term:
+        """Recursively copy a term, mapping old var IDs to new ones."""
+        if target_store is None:
+            target_store = self.store
+
+        if isinstance(term, Var):
+            if term.id not in var_mapping:
+                var_mapping[term.id] = target_store.new_var(term.hint)
+            return Var(var_mapping[term.id], term.hint)
+        elif isinstance(term, (Atom, Int, Float)):
+            return term
+        elif isinstance(term, Struct):
+            new_args = tuple(
+                self._copy_term_recursive(arg, var_mapping, target_store)
+                for arg in term.args
+            )
+            return Struct(term.functor, new_args)
+        elif isinstance(term, PrologList):
+            new_items = tuple(
+                self._copy_term_recursive(item, var_mapping, target_store)
+                for item in term.items
+            )
+            new_tail = self._copy_term_recursive(term.tail, var_mapping, target_store)
+            return PrologList(new_items, new_tail)
+        return term
+
+    def _build_prolog_list(self, items: List[Term]) -> Term:
+        """Build a Prolog list term from a list of items."""
+        if not items:
+            return Atom("[]")
+
+        # Build list from right to left
+        result = Atom("[]")
+        for item in reversed(items):
+            result = PrologList((item,), tail=result)
+
+        return result
+
+    def _extract_existential_vars(self, goal: Term) -> Tuple[Term, List[int]]:
+        """Extract existentially quantified variables (^) from goal.
+
+        Returns (clean_goal, existential_var_ids)
+        For now, this is a stub - full ^ operator support would need parser changes.
+        """
+        # Simplified: no ^ operator support yet
+        return goal, []
+
+    def _find_free_variables(
+        self, goal: Term, template: Term, existential_vars: List[int]
+    ) -> List[int]:
+        """Find free variables in goal that are not in template or existential list.
+
+        For now, returns empty list (simplified implementation).
+        """
+        # Simplified: assume no free variables for now
+        return []
+
+    def _sort_and_deduplicate(self, solutions: List[Term]) -> List[Term]:
+        """Sort solutions and remove duplicates for setof/3."""
+        # Simple deduplication by converting to string and back
+        # This is not the most efficient but works for basic cases
+        seen = set()
+        unique = []
+
+        for solution in solutions:
+            str_repr = str(solution)  # Using string representation for comparison
+            if str_repr not in seen:
+                seen.add(str_repr)
+                unique.append(solution)
+
+        # Sort by string representation (simplified)
+        unique.sort(key=str)
+        return unique
+
+    def _reify_term_with_solution(self, term: Term, solution: Dict[str, Any]) -> Term:
+        """Apply a solution dictionary to instantiate a term."""
+        if isinstance(term, Var):
+            # Look for variable in solution
+            var_name = term.hint or f"_{term.id}"
+            if var_name in solution:
+                return solution[var_name]
+            else:
+                # Unbound variable remains as-is
+                return term
+        elif isinstance(term, (Atom, Int, Float)):
+            return term
+        elif isinstance(term, Struct):
+            new_args = tuple(
+                self._reify_term_with_solution(arg, solution) for arg in term.args
+            )
+            return Struct(term.functor, new_args)
+        elif isinstance(term, PrologList):
+            new_items = tuple(
+                self._reify_term_with_solution(item, solution) for item in term.items
+            )
+            new_tail = self._reify_term_with_solution(term.tail, solution)
+            return PrologList(new_items, new_tail)
+        return term
+
+    def _builtin_call_n(self, args: tuple) -> bool:
+        """call/2 through call/8 - extended meta-call with additional arguments.
+
+        call(Goal, Arg1) is equivalent to calling Goal with Arg1 added as first argument.
+        call(Goal, Arg1, Arg2) adds Arg1 and Arg2 as first and second arguments, etc.
+
+        NOTE: Unlike call/1 which uses CONTROL operations for transparency, call/2-8
+        directly push goals. This may affect trace/port behavior but provides correct
+        semantics. Future versions may align with call/1's transparency approach.
+        """
+        if len(args) < 2:
+            return False
+
+        goal_arg = args[0]
+        extra_args = args[1:]
+
+        # Dereference the goal argument
+        if isinstance(goal_arg, Var):
+            result = self.store.deref(goal_arg.id)
+            if result[0] == "BOUND":
+                _, _, bound_term = result
+                goal_arg = bound_term
+            else:
+                return False  # Unbound variable
+
+        # Build new goal with additional arguments
+        if isinstance(goal_arg, Atom):
+            # call(foo, X, Y) -> foo(X, Y)
+            new_goal = Struct(goal_arg.name, extra_args)
+        elif isinstance(goal_arg, Struct):
+            # call(foo(A), X, Y) -> foo(A, X, Y)
+            combined_args = goal_arg.args + extra_args
+            new_goal = Struct(goal_arg.functor, combined_args)
+        else:
+            return False  # Goal must be atom or compound
+
+        # Check if the new goal is callable
+        if not isinstance(new_goal, (Atom, Struct)):
+            return False
+
+        # Push the new goal for execution
+        self._push_goal(Goal.from_term(new_goal))
+        return True
+
+    def _builtin_not_provable(self, args: tuple) -> bool:
+        """\\+/1 - negation as failure.
+
+        \\+(Goal) succeeds if Goal fails (cannot be proved).
+        This implements negation as failure semantics.
+        """
+        if len(args) != 1:
+            return False
+
+        goal_arg = args[0]
+
+        # Save current engine state (query state only - no store changes)
+        saved_solutions = self.solutions[:]
+        saved_query_vars = self._query_vars[:]
+
+        try:
+            # Create a minimal sub-engine to test the goal
+            sub_engine = Engine(
+                self.program,
+                occurs_check=self.occurs_check,
+                max_solutions=1,  # We only need to know if it succeeds once
+                trace=False,
+                use_indexing=False,
+            )
+
+            # Copy goal directly into sub-engine (avoid main store allocation)
+            var_mapping = {}
+            goal_for_sub = self._copy_term_recursive(
+                goal_arg, var_mapping, sub_engine.store
+            )
+
+            solutions = sub_engine.solve(goal_for_sub)
+
+            # Negation as failure: succeed if goal has no solutions
+            return len(solutions) == 0
+
+        except Exception:
+            # In ISO Prolog, exceptions should propagate through negation
+            raise
+        finally:
+            # Restore engine state (no store/trail changes to undo)
+            self.solutions = saved_solutions
+            self._query_vars = saved_query_vars
+
+    def _builtin_copy_term(self, args: tuple) -> bool:
+        """copy_term(+Term, -Copy) - create a copy of term with fresh variables."""
+        if len(args) != 2:
+            return False
+
+        original, copy = args
+
+        # Create a copy with fresh variables
+        copied_term = self._copy_term_with_fresh_vars(original)
+
+        # Unify the copy with the second argument
+        trail_adapter = TrailAdapter(self.trail)
+        return unify(copy, copied_term, self.store, trail_adapter, self.occurs_check)
+
+    def _builtin_unify_with_occurs_check(self, args: tuple) -> bool:
+        """unify_with_occurs_check(+Term1, +Term2) - unify with occurs check enabled."""
+        if len(args) != 2:
+            return False
+
+        term1, term2 = args
+
+        # Unify with occurs check forced on
+        trail_adapter = TrailAdapter(self.trail)
+        return unify(term1, term2, self.store, trail_adapter, occurs_check=True)
 
     def _eval_int(self, t: Term) -> int:
         """Evaluate a term as an integer.
@@ -3435,14 +3966,14 @@ class Engine:
         # All hooks accepted
         return True
 
-    def _eval_arithmetic(self, term: Term) -> int:
+    def _eval_arithmetic(self, term: Term) -> Union[int, float]:
         """Evaluate an arithmetic expression iteratively.
 
         Args:
             term: The term to evaluate.
 
         Returns:
-            The integer result.
+            The numeric result (int or float).
 
         Raises:
             ValueError: If evaluation fails.
@@ -3469,9 +4000,12 @@ class Engine:
 
                 if isinstance(t, Int):
                     value_stack.append(t.value)
+                elif isinstance(t, Float):
+                    value_stack.append(t.value)
                 elif isinstance(t, Struct):
                     if (
-                        t.functor in ["+", "-", "*", "//", "mod", "max", "min", "**"]
+                        t.functor
+                        in ["+", "-", "*", "//", "/", "mod", "max", "min", "**"]
                         and len(t.args) == 2
                     ):
                         # Binary operator: evaluate args then apply
@@ -3510,6 +4044,10 @@ class Engine:
                     if right == 0:
                         raise ValueError("Division by zero")
                     value_stack.append(left // right)
+                elif op == "/":
+                    if right == 0:
+                        raise ValueError("Division by zero")
+                    value_stack.append(left / right)  # Float division
                 elif op == "mod":
                     if right == 0:
                         raise ValueError("Modulo by zero")
@@ -3521,7 +4059,7 @@ class Engine:
                 elif op == "**":
                     try:
                         result = left**right
-                        value_stack.append(int(result))  # Convert to int for now
+                        value_stack.append(result)
                     except (OverflowError, ValueError):
                         raise ValueError("Power operation overflow or invalid")
 

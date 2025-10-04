@@ -13,10 +13,10 @@ from prolog.engine.errors import PrologThrow
 
 def create_dev_engine(base_engine_class):
     """Create a dev mode engine class that handles uncaught throws as failures."""
-    
+
     class DevEngine(base_engine_class):
         """Engine with dev mode error handling."""
-        
+
         def run(self, goals, max_solutions=None):
             """Run with dev mode error handling."""
             try:
@@ -28,15 +28,15 @@ def create_dev_engine(base_engine_class):
                 self.goal_stack.shrink_to(0)
                 self.frame_stack.clear()
                 self.cp_stack.clear()
-                
+
                 # Reset the trail write stamp and var stamps to avoid
                 # "already trailed" suppression on subsequent runs
-                if hasattr(self.trail, 'set_current_stamp'):
+                if hasattr(self.trail, "set_current_stamp"):
                     self.trail.set_current_stamp(0)
-                if hasattr(self.trail, '_var_stamps'):
+                if hasattr(self.trail, "_var_stamps"):
                     self.trail._var_stamps.clear()
-                    
+
                 return []  # Return empty solutions (failure)
             # All other exceptions are re-raised (not masked)
-    
+
     return DevEngine

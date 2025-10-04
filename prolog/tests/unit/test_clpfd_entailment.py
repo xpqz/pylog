@@ -4,15 +4,12 @@ Tests entailment detection for all constraint types with various
 domain configurations including var-var, var-int, and int-int cases.
 """
 
-import pytest
-from enum import Enum
-
 from prolog.unify.store import Store
 from prolog.unify.trail import Trail
 from prolog.unify.unify import bind
-from prolog.ast.terms import Var, Int, Atom
+from prolog.ast.terms import Int, Atom
 from prolog.clpfd.domain import Domain
-from prolog.clpfd.api import get_domain, set_domain
+from prolog.clpfd.api import set_domain
 from prolog.clpfd.entailment import (
     Entailment,
     check_equality_entailment,
@@ -457,7 +454,9 @@ class TestConstraintNegations:
         for constraint, negation in CONSTRAINT_NEGATIONS.items():
             # Double negation should give back the original
             double_neg = CONSTRAINT_NEGATIONS[negation]
-            assert double_neg == constraint, f"¬¬{constraint} should be {constraint}, got {double_neg}"
+            assert (
+                double_neg == constraint
+            ), f"¬¬{constraint} should be {constraint}, got {double_neg}"
 
 
 class TestEdgeCases:
@@ -531,8 +530,8 @@ class TestPerformanceCharacteristics:
         for i in range(100):
             x_id = store.new_var(f"X{i}")
             y_id = store.new_var(f"Y{i}")
-            set_domain(store, x_id, Domain(((i*10, i*10+4),)), trail)
-            set_domain(store, y_id, Domain(((i*10+5, i*10+9),)), trail)
+            set_domain(store, x_id, Domain(((i * 10, i * 10 + 4),)), trail)
+            set_domain(store, y_id, Domain(((i * 10 + 5, i * 10 + 9),)), trail)
 
             # Should be fast (just compare bounds)
             result = check_less_than_entailment(store, x_id, y_id)

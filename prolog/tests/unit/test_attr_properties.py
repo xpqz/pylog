@@ -4,11 +4,10 @@ Tests confluence, associativity, and correctness properties of the
 attributed variables system using Hypothesis.
 """
 
-import pytest
 from hypothesis import given, strategies as st, assume, settings
-from hypothesis.stateful import RuleBasedStateMachine, rule, invariant, precondition
+from hypothesis.stateful import RuleBasedStateMachine, rule, invariant
 
-from prolog.ast.terms import Atom, Int, Var
+from prolog.ast.terms import Int, Var
 from prolog.unify.store import Store
 from prolog.unify.unify import unify
 from prolog.unify.trail import undo_to
@@ -20,8 +19,8 @@ class TestAttributeConfluence:
     """Test that attribute operations are confluent."""
 
     @given(
-        module1=st.text(min_size=1, max_size=10, alphabet='abcdefghijklmnopqrstuvwxyz'),
-        module2=st.text(min_size=1, max_size=10, alphabet='abcdefghijklmnopqrstuvwxyz'),
+        module1=st.text(min_size=1, max_size=10, alphabet="abcdefghijklmnopqrstuvwxyz"),
+        module2=st.text(min_size=1, max_size=10, alphabet="abcdefghijklmnopqrstuvwxyz"),
         value1=st.integers(min_value=0, max_value=100),
         value2=st.integers(min_value=0, max_value=100),
     )
@@ -33,14 +32,18 @@ class TestAttributeConfluence:
 
         # Scenario 1: module1 then module2
         engine1 = Engine(program)
-        query1 = f"?- put_attr(X, {module1}, {value1}), put_attr(X, {module2}, {value2}), " \
-                f"get_attr(X, {module1}, V1), get_attr(X, {module2}, V2)."
+        query1 = (
+            f"?- put_attr(X, {module1}, {value1}), put_attr(X, {module2}, {value2}), "
+            f"get_attr(X, {module1}, V1), get_attr(X, {module2}, V2)."
+        )
         solutions1 = list(engine1.query(query1))
 
         # Scenario 2: module2 then module1
         engine2 = Engine(program)
-        query2 = f"?- put_attr(X, {module2}, {value2}), put_attr(X, {module1}, {value1}), " \
-                f"get_attr(X, {module1}, V1), get_attr(X, {module2}, V2)."
+        query2 = (
+            f"?- put_attr(X, {module2}, {value2}), put_attr(X, {module1}, {value1}), "
+            f"get_attr(X, {module1}, V1), get_attr(X, {module2}, V2)."
+        )
         solutions2 = list(engine2.query(query2))
 
         # Both should give the same result
@@ -49,8 +52,10 @@ class TestAttributeConfluence:
         assert solutions1[0]["V2"] == solutions2[0]["V2"] == Int(value2)
 
     @given(
-        module=st.text(min_size=1, max_size=10, alphabet='abcdefghijklmnopqrstuvwxyz'),
-        values=st.lists(st.integers(min_value=0, max_value=100), min_size=2, max_size=5)
+        module=st.text(min_size=1, max_size=10, alphabet="abcdefghijklmnopqrstuvwxyz"),
+        values=st.lists(
+            st.integers(min_value=0, max_value=100), min_size=2, max_size=5
+        ),
     )
     def test_last_put_attr_wins(self, module, values):
         """Multiple put_attr on same module should have last value win."""
@@ -79,7 +84,7 @@ class TestAliasingAssociativity:
         z_id = store.new_var("Z")
 
         # Add attributes to each
-        if not hasattr(store, 'attrs'):
+        if not hasattr(store, "attrs"):
             store.attrs = {}
         store.attrs[x_id] = {"a": Int(1)}
         store.attrs[y_id] = {"b": Int(2)}
@@ -131,10 +136,14 @@ class TestBacktrackingCompleteness:
 
     @given(
         modules=st.lists(
-            st.text(min_size=1, max_size=5, alphabet='abcdefghijklmnopqrstuvwxyz'),
-            min_size=1, max_size=3, unique=True
+            st.text(min_size=1, max_size=5, alphabet="abcdefghijklmnopqrstuvwxyz"),
+            min_size=1,
+            max_size=3,
+            unique=True,
         ),
-        values=st.lists(st.integers(min_value=0, max_value=100), min_size=1, max_size=3)
+        values=st.lists(
+            st.integers(min_value=0, max_value=100), min_size=1, max_size=3
+        ),
     )
     def test_backtrack_restores_attributes(self, modules, values):
         """Backtracking should restore exact attribute state."""
@@ -150,7 +159,7 @@ class TestBacktrackingCompleteness:
         var_id = store.new_var("X")
 
         # Add attributes
-        if not hasattr(store, 'attrs'):
+        if not hasattr(store, "attrs"):
             store.attrs = {}
 
         # Save original state (no attributes)
@@ -162,7 +171,7 @@ class TestBacktrackingCompleteness:
                 store.attrs[var_id] = {}
             # Simulate proper trailing
             old_value = store.attrs[var_id].get(module)
-            trail.append(('attr', var_id, module, old_value))
+            trail.append(("attr", var_id, module, old_value))
             store.attrs[var_id][module] = Int(value)
 
         # Verify attributes are set
@@ -205,10 +214,10 @@ class AttributeStateMachine(RuleBasedStateMachine):
         self.trail = []
         self.vars = {}
         self.expected_attrs = {}
-        if not hasattr(self.store, 'attrs'):
+        if not hasattr(self.store, "attrs"):
             self.store.attrs = {}
 
-    @rule(var_name=st.text(min_size=1, max_size=3, alphabet='XYZ'))
+    @rule(var_name=st.text(min_size=1, max_size=3, alphabet="XYZ"))
     def create_var(self, var_name):
         """Create a new variable."""
         if var_name not in self.vars:
@@ -217,9 +226,9 @@ class AttributeStateMachine(RuleBasedStateMachine):
             self.expected_attrs[var_id] = {}
 
     @rule(
-        var_name=st.text(min_size=1, max_size=3, alphabet='XYZ'),
-        module=st.text(min_size=1, max_size=5, alphabet='abc'),
-        value=st.integers(min_value=0, max_value=10)
+        var_name=st.text(min_size=1, max_size=3, alphabet="XYZ"),
+        module=st.text(min_size=1, max_size=5, alphabet="abc"),
+        value=st.integers(min_value=0, max_value=10),
     )
     def put_attribute(self, var_name, module, value):
         """Put an attribute on a variable."""
@@ -235,7 +244,7 @@ class AttributeStateMachine(RuleBasedStateMachine):
 
         # Trail the change
         old_value = self.store.attrs[root].get(module)
-        self.trail.append(('attr', root, module, old_value))
+        self.trail.append(("attr", root, module, old_value))
 
         # Set new value
         self.store.attrs[root][module] = Int(value)
@@ -246,8 +255,8 @@ class AttributeStateMachine(RuleBasedStateMachine):
         self.expected_attrs[root][module] = Int(value)
 
     @rule(
-        var1=st.text(min_size=1, max_size=3, alphabet='XYZ'),
-        var2=st.text(min_size=1, max_size=3, alphabet='XYZ')
+        var1=st.text(min_size=1, max_size=3, alphabet="XYZ"),
+        var2=st.text(min_size=1, max_size=3, alphabet="XYZ"),
     )
     def unify_vars(self, var1, var2):
         """Unify two variables."""
@@ -309,8 +318,9 @@ class AttributeStateMachine(RuleBasedStateMachine):
             # Non-overlapping modules should all be present
             for module in set(actual.keys()) | set(expected.keys()):
                 if module in actual and module in expected:
-                    assert actual[module] == expected[module], \
-                        f"Mismatch for {var_name} module {module}"
+                    assert (
+                        actual[module] == expected[module]
+                    ), f"Mismatch for {var_name} module {module}"
 
 
 # Create the test case from the state machine
