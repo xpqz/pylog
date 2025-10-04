@@ -23,6 +23,7 @@ See also: [Runtime Database Predicates](./runtime-db.md)
 - `dynamic(Name/Arity)` or `dynamic([PI...])` or `dynamic((PI1,PI2))` — declare dynamic
 - `assertz(Clause)` | `asserta(Clause)` — add clause to a dynamic predicate
 - `retract(Clause)` — remove one matching clause (pattern unifies; variables bind)
+- `retractall(HeadOrClause)` — remove all matching clauses at once (no bindings)
 - `abolish(Name/Arity)` or list/conjunction forms — remove all clauses for predicate(s)
 
 ## Tracing

@@ -4250,25 +4250,7 @@ class Engine:
         if len(args) != 1:
             return False
         pattern = args[0]
-        # Build list of candidate indices for the predicate to reduce scanning
-        # Extract key from pattern if possible
-        key: Optional[tuple[str, int]] = None
-        if isinstance(pattern, Atom):
-            key = (pattern.name, 0)
-        elif isinstance(pattern, Struct) and pattern.functor != ":-":
-            key = (pattern.functor, len(pattern.args))
-        elif (
-            isinstance(pattern, Struct)
-            and pattern.functor == ":-"
-            and len(pattern.args) == 2
-            and isinstance(pattern.args[0], (Atom, Struct))
-        ):
-            head_t = pattern.args[0]
-            if isinstance(head_t, Atom):
-                key = (head_t.name, 0)
-            else:
-                key = (head_t.functor, len(head_t.args))
-
+        key = self._extract_predicate_key(pattern)
         if key is None or not self._require_dynamic(key):
             return False
 
@@ -4277,29 +4259,11 @@ class Engine:
         for i, existing in enumerate(clauses):
             # Quick skip if different predicate
             eh = existing.head
-            ek = (eh.name, 0) if isinstance(eh, Atom) else (eh.functor, len(eh.args))
+            ek = self._clause_key_from_head(eh)
             if ek != key:
                 continue
 
-            # Copy clause head/body to fresh vars in current store
-            def conjunct_from_body(goals: Tuple[Term, ...]) -> Term:
-                if not goals:
-                    return Atom("true")
-                t = goals[-1]
-                for g in reversed(goals[:-1]):
-                    t = Struct(",", (g, t))
-                return t
-
-            var_map: Dict[int, int] = {}
-            head_copy = self._copy_term_recursive(existing.head, var_map)
-            clause_term: Term
-            if existing.body:
-                body_term = conjunct_from_body(
-                    tuple(self._copy_term_recursive(g, var_map) for g in existing.body)
-                )
-                clause_term = Struct(":-", (head_copy, body_term))
-            else:
-                clause_term = head_copy
+            clause_term = self._build_clause_term_copy(existing)
 
             # Try unify pattern with clause_term; keep bindings on success
             trail_pos = self.trail.position()
@@ -4372,82 +4336,43 @@ class Engine:
         if len(args) != 1:
             return False
         pattern = args[0]
-
-        # Determine key (name/arity) from pattern head
-        key: Optional[tuple[str, int]] = None
-        pat_body: Optional[Term] = None
-        if isinstance(pattern, Atom):
-            key = (pattern.name, 0)
-        elif isinstance(pattern, Struct) and pattern.functor != ":-":
-            key = (pattern.functor, len(pattern.args))
-        elif (
-            isinstance(pattern, Struct)
-            and pattern.functor == ":-"
-            and len(pattern.args) == 2
-            and isinstance(pattern.args[0], (Atom, Struct))
-        ):
-            head_t, body_t = pattern.args
-            if isinstance(head_t, Atom):
-                key = (head_t.name, 0)
-            else:
-                key = (head_t.functor, len(head_t.args))
-            pat_body = body_t
-        else:
-            return False
-
+        # Extract key for candidate filtering; also detect if pattern includes a body
+        key = self._extract_predicate_key(pattern)
         if key is None or not self._require_dynamic(key):
             return False
 
-        # Build new clause list filtering out all matches
-        def build_clause_term(existing: Clause) -> Term:
-            var_map: Dict[int, int] = {}
-            head_copy = self._copy_term_recursive(existing.head, var_map)
-            if existing.body:
-                body_term = None
-                # Rebuild conjunction from body goals
-                for g in reversed(existing.body):
-                    g_copy = self._copy_term_recursive(g, var_map)
-                    body_term = (
-                        g_copy
-                        if body_term is None
-                        else Struct(",", (g_copy, body_term))
-                    )
-                return Struct(":-", (head_copy, body_term))  # type: ignore
-            else:
-                return head_copy
-
+        # Use a temporary store+trail per clause match to avoid touching the engine store/trail
         remaining: list[Clause] = []
         for cl in self.program.clauses:
             # Skip non-key predicates quickly
             eh = cl.head
-            ek = (eh.name, 0) if isinstance(eh, Atom) else (eh.functor, len(eh.args))
+            ek = self._clause_key_from_head(eh)
             if ek != key:
                 remaining.append(cl)
                 continue
 
-            # For key matches, verify full unification against requested pattern
-            clause_term = build_clause_term(cl)
-            # If the user supplied a head-only pattern but the clause is a rule,
-            # match only on the head (common retractall semantics).
+            # Build terms for matching within a temporary store
+            temp_store = Store()
+            # Copy clause into temp store
+            clause_term = self._build_clause_term_copy(cl, target_store=temp_store)
+            # Copy pattern into temp store
+            pat_copy = self._copy_term_recursive(pattern, {}, target_store=temp_store)
+            # For head-only patterns and rules, match on head only
             candidate: Term = clause_term
             if (
-                pat_body is None
+                isinstance(pat_copy, (Atom, Struct))
+                and not (isinstance(pat_copy, Struct) and pat_copy.functor == ":-")
                 and isinstance(clause_term, Struct)
                 and clause_term.functor == ":-"
             ):
                 candidate = clause_term.args[0]
 
-            # Use a fresh copy of pattern so we don't bind query variables
-            pat_copy = self._copy_term_recursive(pattern, {})
-            trail_pos = self.trail.position()
-            trail_adapter = TrailAdapter(self.trail)
-            if unify(pat_copy, candidate, self.store, trail_adapter, self.occurs_check):
-                # Match: remove this clause, but do not keep bindings
-                self.trail.unwind_to(trail_pos, self.store)
+            temp_trail = Trail()
+            temp_adapter = TrailAdapter(temp_trail)
+            if unify(pat_copy, candidate, temp_store, temp_adapter, self.occurs_check):
+                # Match: drop clause (do not keep)
                 continue
             else:
-                # No match: keep clause and undo any bindings
-                self.trail.unwind_to(trail_pos, self.store)
                 remaining.append(cl)
 
         # Update program if any clause was removed
@@ -4455,6 +4380,53 @@ class Engine:
             self._set_program_clauses(remaining)
 
         return True
+
+    # --- Helpers (dynamic DB) ---
+    def _clause_key_from_head(self, head: Term) -> tuple[str, int]:
+        if isinstance(head, Atom):
+            return (head.name, 0)
+        assert isinstance(head, Struct)
+        return (head.functor, len(head.args))
+
+    def _extract_predicate_key(self, pattern: Term) -> Optional[tuple[str, int]]:
+        """Extract predicate (name, arity) from a head or Head :- Body pattern."""
+        if isinstance(pattern, Atom):
+            return (pattern.name, 0)
+        if isinstance(pattern, Struct) and pattern.functor != ":-":
+            return (pattern.functor, len(pattern.args))
+        if (
+            isinstance(pattern, Struct)
+            and pattern.functor == ":-"
+            and len(pattern.args) == 2
+            and isinstance(pattern.args[0], (Atom, Struct))
+        ):
+            head_t = pattern.args[0]
+            if isinstance(head_t, Atom):
+                return (head_t.name, 0)
+            return (head_t.functor, len(head_t.args))
+        return None
+
+    def _build_clause_term_copy(
+        self, existing: Clause, target_store: Optional[Store] = None
+    ) -> Term:
+        """Copy a clause (fact or rule) into a term; optionally into target_store."""
+        var_map: Dict[int, int] = {}
+        head_copy = self._copy_term_recursive(
+            existing.head, var_map, target_store=target_store
+        )
+        if existing.body:
+            # Rebuild conjunction from body goals
+            body_term: Optional[Term] = None
+            for g in reversed(existing.body):
+                g_copy = self._copy_term_recursive(
+                    g, var_map, target_store=target_store
+                )
+                body_term = (
+                    g_copy if body_term is None else Struct(",", (g_copy, body_term))
+                )
+            return Struct(":-", (head_copy, body_term))  # type: ignore
+        else:
+            return head_copy
 
     def query(self, query_text: str) -> List[Dict[str, Any]]:
         """Execute a query and return all solutions.
