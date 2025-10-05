@@ -3,7 +3,7 @@
 Tests for builtin infrastructure and basic builtins like true/0, fail/0, and call/1.
 """
 
-from prolog.ast.terms import Atom, Var, Struct, Int, List
+from prolog.ast.terms import Atom, Var, Struct, Int, List, PrologDict
 from prolog.engine.engine import Engine
 
 
@@ -789,8 +789,6 @@ class TestStructureBuiltinArity:
         assert len(solutions1) == 0
 
         # =.. with 3 arguments
-        from prolog.ast.terms import List
-
         query2 = Struct("=..", (Atom("foo"), List((Atom("foo"),)), Atom("extra")))
         solutions2 = engine.run([query2])
         assert len(solutions2) == 0
@@ -1182,7 +1180,6 @@ class TestMixedTypeChecking:
         """Test type checking predicates in compound goals."""
         engine = Engine(program())
         X = Var(0, "X")
-        Y = Var(1, "Y")
         # (var(X) ; atom(X)), X = abc, atom(X)
         query = Struct(
             ",",
@@ -1194,3 +1191,491 @@ class TestMixedTypeChecking:
         solutions = engine.run([query])
         assert len(solutions) == 1
         assert solutions[0]["X"] == Atom("abc")
+
+
+class TestDictBuiltins:
+    """Tests for dict manipulation builtins: dict_create/3, get_dict/3, put_dict/3."""
+
+    def test_dict_create_basic_key_value_pairs(self):
+        """Test dict_create/3 with basic key-value pairs."""
+        engine = Engine(program())
+        D = Var(0, "D")
+        # dict_create(D, none, [a-1, b-2])
+        data = List(
+            (Struct("-", (Atom("a"), Int(1))), Struct("-", (Atom("b"), Int(2))))
+        )
+        query = Struct("dict_create", (D, Atom("none"), data))
+        solutions = engine.run([query])
+        assert len(solutions) == 1
+        dict_result = solutions[0]["D"]
+        assert isinstance(dict_result, PrologDict)
+        assert dict_result.pairs == ((Atom("a"), Int(1)), (Atom("b"), Int(2)))
+        assert dict_result.tag is None
+
+    def test_dict_create_key_colon_value_pairs(self):
+        """Test dict_create/3 with key:value pairs."""
+        engine = Engine(program())
+        D = Var(0, "D")
+        # dict_create(D, none, [a:1, b:2])
+        data = List(
+            (Struct(":", (Atom("a"), Int(1))), Struct(":", (Atom("b"), Int(2))))
+        )
+        query = Struct("dict_create", (D, Atom("none"), data))
+        solutions = engine.run([query])
+        assert len(solutions) == 1
+        dict_result = solutions[0]["D"]
+        assert isinstance(dict_result, PrologDict)
+        assert dict_result.pairs == ((Atom("a"), Int(1)), (Atom("b"), Int(2)))
+
+    def test_dict_create_key_value_function_pairs(self):
+        """Test dict_create/3 with key(value) pairs."""
+        engine = Engine(program())
+        D = Var(0, "D")
+        # dict_create(D, none, [a(1), b(2)])
+        data = List((Struct("a", (Int(1),)), Struct("b", (Int(2),))))
+        query = Struct("dict_create", (D, Atom("none"), data))
+        solutions = engine.run([query])
+        assert len(solutions) == 1
+        dict_result = solutions[0]["D"]
+        assert isinstance(dict_result, PrologDict)
+        assert dict_result.pairs == ((Atom("a"), Int(1)), (Atom("b"), Int(2)))
+
+    def test_dict_create_empty_dict(self):
+        """Test dict_create/3 with empty data list."""
+        engine = Engine(program())
+        D = Var(0, "D")
+        # dict_create(D, none, [])
+        data = List(())
+        query = Struct("dict_create", (D, Atom("none"), data))
+        solutions = engine.run([query])
+        assert len(solutions) == 1
+        dict_result = solutions[0]["D"]
+        assert isinstance(dict_result, PrologDict)
+        assert dict_result.pairs == ()
+
+    def test_dict_create_sorted_output(self):
+        """Test dict_create/3 creates sorted output."""
+        engine = Engine(program())
+        D = Var(0, "D")
+        # dict_create(D, none, [z-3, a-1, m-2])
+        data = List(
+            (
+                Struct("-", (Atom("z"), Int(3))),
+                Struct("-", (Atom("a"), Int(1))),
+                Struct("-", (Atom("m"), Int(2))),
+            )
+        )
+        query = Struct("dict_create", (D, Atom("none"), data))
+        solutions = engine.run([query])
+        assert len(solutions) == 1
+        dict_result = solutions[0]["D"]
+        assert isinstance(dict_result, PrologDict)
+        # Should be sorted: a, m, z
+        assert dict_result.pairs == (
+            (Atom("a"), Int(1)),
+            (Atom("m"), Int(2)),
+            (Atom("z"), Int(3)),
+        )
+
+    def test_dict_create_duplicate_keys_fails(self):
+        """Test dict_create/3 fails with duplicate keys."""
+        engine = Engine(program())
+        D = Var(0, "D")
+        # dict_create(D, none, [a-1, a-2]) - should fail
+        data = List(
+            (Struct("-", (Atom("a"), Int(1))), Struct("-", (Atom("a"), Int(2))))
+        )
+        query = Struct("dict_create", (D, Atom("none"), data))
+        solutions = engine.run([query])
+        assert len(solutions) == 0
+
+    def test_dict_create_invalid_key_type_fails(self):
+        """Test dict_create/3 fails with invalid key types."""
+        engine = Engine(program())
+        D = Var(0, "D")
+        # dict_create(D, none, [f(x)-1]) - compound key should fail
+        data = List((Struct("-", (Struct("f", (Atom("x"),)), Int(1))),))
+        query = Struct("dict_create", (D, Atom("none"), data))
+        solutions = engine.run([query])
+        assert len(solutions) == 0
+
+    def test_dict_create_invalid_data_format_fails(self):
+        """Test dict_create/3 fails with invalid data format."""
+        engine = Engine(program())
+        D = Var(0, "D")
+        # dict_create(D, none, [a]) - not a pair, should fail
+        data = List((Atom("a"),))
+        query = Struct("dict_create", (D, Atom("none"), data))
+        solutions = engine.run([query])
+        assert len(solutions) == 0
+
+    def test_dict_create_non_none_tag_fails(self):
+        """Test dict_create/3 fails with non-none tag (not supported yet)."""
+        engine = Engine(program())
+        D = Var(0, "D")
+        # dict_create(D, person, [name-alice]) - should fail, only none tag supported
+        data = List((Struct("-", (Atom("name"), Atom("alice"))),))
+        query = Struct("dict_create", (D, Atom("person"), data))
+        solutions = engine.run([query])
+        assert len(solutions) == 0
+
+    def test_dict_create_variable_tag_fails(self):
+        """Test dict_create/3 fails with variable tag."""
+        engine = Engine(program())
+        D = Var(0, "D")
+        T = Var(1, "T")
+        # dict_create(D, T, [a-1]) - should fail, tag must be ground
+        data = List((Struct("-", (Atom("a"), Int(1))),))
+        query = Struct("dict_create", (D, T, data))
+        solutions = engine.run([query])
+        assert len(solutions) == 0
+
+    def test_dict_create_integer_keys(self):
+        """Test dict_create/3 with integer keys."""
+        engine = Engine(program())
+        D = Var(0, "D")
+        # dict_create(D, none, [1-foo, 2-bar])
+        data = List(
+            (Struct("-", (Int(1), Atom("foo"))), Struct("-", (Int(2), Atom("bar"))))
+        )
+        query = Struct("dict_create", (D, Atom("none"), data))
+        solutions = engine.run([query])
+        assert len(solutions) == 1
+        dict_result = solutions[0]["D"]
+        assert isinstance(dict_result, PrologDict)
+        # Atoms sort before integers, so if we had mixed types, atoms would come first
+        # But here we only have integers
+        assert dict_result.pairs == ((Int(1), Atom("foo")), (Int(2), Atom("bar")))
+
+    def test_dict_create_mixed_formats(self):
+        """Test dict_create/3 with mixed data formats."""
+        engine = Engine(program())
+        D = Var(0, "D")
+        # dict_create(D, none, [a-1, b:2, c(3)])
+        data = List(
+            (
+                Struct("-", (Atom("a"), Int(1))),
+                Struct(":", (Atom("b"), Int(2))),
+                Struct("c", (Int(3),)),
+            )
+        )
+        query = Struct("dict_create", (D, Atom("none"), data))
+        solutions = engine.run([query])
+        assert len(solutions) == 1
+        dict_result = solutions[0]["D"]
+        assert isinstance(dict_result, PrologDict)
+        assert dict_result.pairs == (
+            (Atom("a"), Int(1)),
+            (Atom("b"), Int(2)),
+            (Atom("c"), Int(3)),
+        )
+
+    def test_dict_create_cross_format_duplicate_keys_fails(self):
+        """Test dict_create/3 fails with duplicate keys across different formats."""
+        engine = Engine(program())
+        D = Var(0, "D")
+        # dict_create(D, none, [a-1, a:2]) - should fail, duplicate key 'a'
+        data = List(
+            (Struct("-", (Atom("a"), Int(1))), Struct(":", (Atom("a"), Int(2))))
+        )
+        query = Struct("dict_create", (D, Atom("none"), data))
+        solutions = engine.run([query])
+        assert len(solutions) == 0
+
+    def test_dict_create_non_list_data_fails(self):
+        """Test dict_create/3 fails with non-list data argument."""
+        engine = Engine(program())
+        D = Var(0, "D")
+        # dict_create(D, none, pairs) - should fail, third arg must be list
+        query = Struct("dict_create", (D, Atom("none"), Atom("pairs")))
+        solutions = engine.run([query])
+        assert len(solutions) == 0
+
+    def test_get_dict_basic_lookup(self):
+        """Test get_dict/3 basic key lookup."""
+        engine = Engine(program())
+        V = Var(0, "V")
+        test_dict = PrologDict(((Atom("name"), Atom("alice")), (Atom("age"), Int(30))))
+        # get_dict(name, {name:alice, age:30}, V)
+        query = Struct("get_dict", (Atom("name"), test_dict, V))
+        solutions = engine.run([query])
+        assert len(solutions) == 1
+        assert solutions[0]["V"] == Atom("alice")
+
+    def test_get_dict_key_not_found_fails(self):
+        """Test get_dict/3 fails when key not found."""
+        engine = Engine(program())
+        V = Var(0, "V")
+        test_dict = PrologDict(((Atom("name"), Atom("alice")), (Atom("age"), Int(30))))
+        # get_dict(city, {name:alice, age:30}, V) - should fail
+        query = Struct("get_dict", (Atom("city"), test_dict, V))
+        solutions = engine.run([query])
+        assert len(solutions) == 0
+
+    def test_get_dict_empty_dict_fails(self):
+        """Test get_dict/3 fails on empty dict."""
+        engine = Engine(program())
+        V = Var(0, "V")
+        test_dict = PrologDict(())
+        # get_dict(key, {}, V) - should fail
+        query = Struct("get_dict", (Atom("key"), test_dict, V))
+        solutions = engine.run([query])
+        assert len(solutions) == 0
+
+    def test_get_dict_non_dict_fails(self):
+        """Test get_dict/3 fails with non-dict argument."""
+        engine = Engine(program())
+        V = Var(0, "V")
+        # get_dict(key, [a, b], V) - should fail with list
+        query = Struct("get_dict", (Atom("key"), List((Atom("a"), Atom("b"))), V))
+        solutions = engine.run([query])
+        assert len(solutions) == 0
+
+    def test_get_dict_unification_success(self):
+        """Test get_dict/3 succeeds when value matches bound variable."""
+        engine = Engine(program())
+        test_dict = PrologDict(((Atom("age"), Int(30)),))
+        # get_dict(age, {age:30}, 30) - should succeed
+        query = Struct("get_dict", (Atom("age"), test_dict, Int(30)))
+        solutions = engine.run([query])
+        assert len(solutions) == 1
+
+    def test_get_dict_unification_failure(self):
+        """Test get_dict/3 fails when value doesn't match bound variable."""
+        engine = Engine(program())
+        test_dict = PrologDict(((Atom("age"), Int(30)),))
+        # get_dict(age, {age:30}, 99) - should fail
+        query = Struct("get_dict", (Atom("age"), test_dict, Int(99)))
+        solutions = engine.run([query])
+        assert len(solutions) == 0
+
+    def test_get_dict_integer_key(self):
+        """Test get_dict/3 with integer key."""
+        engine = Engine(program())
+        V = Var(0, "V")
+        test_dict = PrologDict(((Int(1), Atom("foo")), (Int(2), Atom("bar"))))
+        # get_dict(1, {1:foo, 2:bar}, V)
+        query = Struct("get_dict", (Int(1), test_dict, V))
+        solutions = engine.run([query])
+        assert len(solutions) == 1
+        assert solutions[0]["V"] == Atom("foo")
+
+    def test_get_dict_variable_key_fails(self):
+        """Test get_dict/3 fails with variable key."""
+        engine = Engine(program())
+        K = Var(0, "K")
+        V = Var(1, "V")
+        test_dict = PrologDict(((Atom("name"), Atom("alice")),))
+        # get_dict(K, {name:alice}, V) - should fail, key must be ground
+        query = Struct("get_dict", (K, test_dict, V))
+        solutions = engine.run([query])
+        assert len(solutions) == 0
+
+    def test_get_dict_compound_key_fails(self):
+        """Test get_dict/3 fails with compound key."""
+        engine = Engine(program())
+        V = Var(0, "V")
+        test_dict = PrologDict(((Atom("name"), Atom("alice")),))
+        # get_dict(f(x), {name:alice}, V) - should fail, compound key not allowed
+        query = Struct("get_dict", (Struct("f", (Atom("x"),)), test_dict, V))
+        solutions = engine.run([query])
+        assert len(solutions) == 0
+
+    def test_put_dict_add_new_key(self):
+        """Test put_dict/3 adding new key to dict."""
+        engine = Engine(program())
+        D = Var(0, "D")
+        input_dict = PrologDict(((Atom("a"), Int(1)), (Atom("b"), Int(2))))
+        # put_dict([c-3], {a:1, b:2}, D)
+        new_pairs = List((Struct("-", (Atom("c"), Int(3))),))
+        query = Struct("put_dict", (new_pairs, input_dict, D))
+        solutions = engine.run([query])
+        assert len(solutions) == 1
+        result_dict = solutions[0]["D"]
+        assert isinstance(result_dict, PrologDict)
+        # Should be sorted: a, b, c
+        assert result_dict.pairs == (
+            (Atom("a"), Int(1)),
+            (Atom("b"), Int(2)),
+            (Atom("c"), Int(3)),
+        )
+
+    def test_put_dict_update_existing_key(self):
+        """Test put_dict/3 updating existing key."""
+        engine = Engine(program())
+        D = Var(0, "D")
+        input_dict = PrologDict(((Atom("a"), Int(1)), (Atom("b"), Int(2))))
+        # put_dict([a-99], {a:1, b:2}, D)
+        new_pairs = List((Struct("-", (Atom("a"), Int(99))),))
+        query = Struct("put_dict", (new_pairs, input_dict, D))
+        solutions = engine.run([query])
+        assert len(solutions) == 1
+        result_dict = solutions[0]["D"]
+        assert isinstance(result_dict, PrologDict)
+        assert result_dict.pairs == ((Atom("a"), Int(99)), (Atom("b"), Int(2)))
+
+    def test_put_dict_multiple_pairs(self):
+        """Test put_dict/3 with multiple key-value pairs."""
+        engine = Engine(program())
+        D = Var(0, "D")
+        input_dict = PrologDict(((Atom("a"), Int(1)),))
+        # put_dict([b-2, c-3], {a:1}, D)
+        new_pairs = List(
+            (Struct("-", (Atom("b"), Int(2))), Struct("-", (Atom("c"), Int(3))))
+        )
+        query = Struct("put_dict", (new_pairs, input_dict, D))
+        solutions = engine.run([query])
+        assert len(solutions) == 1
+        result_dict = solutions[0]["D"]
+        assert isinstance(result_dict, PrologDict)
+        assert result_dict.pairs == (
+            (Atom("a"), Int(1)),
+            (Atom("b"), Int(2)),
+            (Atom("c"), Int(3)),
+        )
+
+    def test_put_dict_empty_pairs_list(self):
+        """Test put_dict/3 with empty pairs list returns original dict."""
+        engine = Engine(program())
+        D = Var(0, "D")
+        input_dict = PrologDict(((Atom("a"), Int(1)), (Atom("b"), Int(2))))
+        # put_dict([], {a:1, b:2}, D)
+        new_pairs = List(())
+        query = Struct("put_dict", (new_pairs, input_dict, D))
+        solutions = engine.run([query])
+        assert len(solutions) == 1
+        result_dict = solutions[0]["D"]
+        assert isinstance(result_dict, PrologDict)
+        assert result_dict.pairs == input_dict.pairs
+
+    def test_put_dict_on_empty_dict(self):
+        """Test put_dict/3 on empty dict."""
+        engine = Engine(program())
+        D = Var(0, "D")
+        input_dict = PrologDict(())
+        # put_dict([a-1, b-2], {}, D)
+        new_pairs = List(
+            (Struct("-", (Atom("a"), Int(1))), Struct("-", (Atom("b"), Int(2))))
+        )
+        query = Struct("put_dict", (new_pairs, input_dict, D))
+        solutions = engine.run([query])
+        assert len(solutions) == 1
+        result_dict = solutions[0]["D"]
+        assert isinstance(result_dict, PrologDict)
+        assert result_dict.pairs == ((Atom("a"), Int(1)), (Atom("b"), Int(2)))
+
+    def test_put_dict_non_dict_fails(self):
+        """Test put_dict/3 fails with non-dict argument."""
+        engine = Engine(program())
+        D = Var(0, "D")
+        # put_dict([a-1], [x, y], D) - should fail with list
+        new_pairs = List((Struct("-", (Atom("a"), Int(1))),))
+        query = Struct("put_dict", (new_pairs, List((Atom("x"), Atom("y"))), D))
+        solutions = engine.run([query])
+        assert len(solutions) == 0
+
+    def test_put_dict_invalid_pair_format_fails(self):
+        """Test put_dict/3 fails with invalid pair format."""
+        engine = Engine(program())
+        D = Var(0, "D")
+        input_dict = PrologDict(((Atom("a"), Int(1)),))
+        # put_dict([notapair], {a:1}, D) - should fail
+        new_pairs = List((Atom("notapair"),))
+        query = Struct("put_dict", (new_pairs, input_dict, D))
+        solutions = engine.run([query])
+        assert len(solutions) == 0
+
+    def test_put_dict_mixed_formats(self):
+        """Test put_dict/3 with mixed key-value formats."""
+        engine = Engine(program())
+        D = Var(0, "D")
+        input_dict = PrologDict(((Atom("a"), Int(1)),))
+        # put_dict([b:2, c(3)], {a:1}, D)
+        new_pairs = List((Struct(":", (Atom("b"), Int(2))), Struct("c", (Int(3),))))
+        query = Struct("put_dict", (new_pairs, input_dict, D))
+        solutions = engine.run([query])
+        assert len(solutions) == 1
+        result_dict = solutions[0]["D"]
+        assert isinstance(result_dict, PrologDict)
+        assert result_dict.pairs == (
+            (Atom("a"), Int(1)),
+            (Atom("b"), Int(2)),
+            (Atom("c"), Int(3)),
+        )
+
+    def test_put_dict_duplicate_keys_last_wins(self):
+        """Test put_dict/3 with duplicate keys in new pairs (last wins)."""
+        engine = Engine(program())
+        D = Var(0, "D")
+        input_dict = PrologDict(((Atom("a"), Int(1)),))
+        # put_dict([b-2, b-99], {a:1}, D) - last value should win
+        new_pairs = List(
+            (Struct("-", (Atom("b"), Int(2))), Struct("-", (Atom("b"), Int(99))))
+        )
+        query = Struct("put_dict", (new_pairs, input_dict, D))
+        solutions = engine.run([query])
+        assert len(solutions) == 1
+        result_dict = solutions[0]["D"]
+        assert isinstance(result_dict, PrologDict)
+        assert result_dict.pairs == ((Atom("a"), Int(1)), (Atom("b"), Int(99)))
+
+    def test_put_dict_non_list_pairs_fails(self):
+        """Test put_dict/3 fails with non-list pairs argument."""
+        engine = Engine(program())
+        D = Var(0, "D")
+        input_dict = PrologDict(((Atom("a"), Int(1)),))
+        # put_dict(a-1, {a:1}, D) - should fail, first arg must be list
+        query = Struct("put_dict", (Struct("-", (Atom("a"), Int(1))), input_dict, D))
+        solutions = engine.run([query])
+        assert len(solutions) == 0
+
+    def test_put_dict_immutability(self):
+        """Test put_dict/3 doesn't mutate input dict."""
+        engine = Engine(program())
+        D = Var(0, "D")
+        input_dict = PrologDict(((Atom("a"), Int(1)), (Atom("b"), Int(2))))
+        original_pairs = input_dict.pairs
+        # put_dict([c-3], {a:1, b:2}, D)
+        new_pairs = List((Struct("-", (Atom("c"), Int(3))),))
+        query = Struct("put_dict", (new_pairs, input_dict, D))
+        solutions = engine.run([query])
+        assert len(solutions) == 1
+        result_dict = solutions[0]["D"]
+        # Input dict should be unchanged
+        assert input_dict.pairs == original_pairs
+        # Result should be different object
+        assert result_dict is not input_dict
+        # Result should have new key
+        assert result_dict.pairs == (
+            (Atom("a"), Int(1)),
+            (Atom("b"), Int(2)),
+            (Atom("c"), Int(3)),
+        )
+
+
+class TestDictBuiltinArity:
+    """Tests for dict builtin arity errors."""
+
+    def test_dict_create_wrong_arity(self):
+        """Test dict_create with wrong arity fails."""
+        engine = Engine(program())
+        # dict_create/2 should not be recognized as builtin
+        query = Struct("dict_create", (Var(0, "D"), Atom("none")))
+        solutions = engine.run([query])
+        assert len(solutions) == 0  # Should fail to find predicate
+
+    def test_get_dict_wrong_arity(self):
+        """Test get_dict with wrong arity fails."""
+        engine = Engine(program())
+        # get_dict/2 should not be recognized as builtin
+        query = Struct("get_dict", (Atom("key"), PrologDict(())))
+        solutions = engine.run([query])
+        assert len(solutions) == 0  # Should fail to find predicate
+
+    def test_put_dict_wrong_arity(self):
+        """Test put_dict with wrong arity fails."""
+        engine = Engine(program())
+        # put_dict/2 should not be recognized as builtin
+        query = Struct("put_dict", (List(()), PrologDict(())))
+        solutions = engine.run([query])
+        assert len(solutions) == 0  # Should fail to find predicate
