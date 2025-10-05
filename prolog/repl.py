@@ -1127,6 +1127,14 @@ During query results:
 Examples:
     ?- parent(X, Y).     Find parent relationships
     ?- member(2, [1,2,3]). Check list membership
+
+Runtime Database:
+    dynamic(Name/Arity)      Declare predicate dynamic
+    assertz(Clause)          Append a clause (fact or Head :- Body)
+    asserta(Clause)          Prepend a clause
+    retract(Clause)          Remove one matching clause (variables bind)
+    retractall(HeadOrClause) Remove all matching clauses (no bindings)
+    abolish(Name/Arity)      Remove all clauses for a predicate
 """
 
     def run_session(self):
