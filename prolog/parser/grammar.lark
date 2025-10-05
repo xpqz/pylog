@@ -12,6 +12,7 @@ term: atom
     | variable
     | list
     | structure
+    | dict
     | parenthesized
 
 atom_only: atom  // For testing atoms specifically
@@ -55,6 +56,13 @@ list: LBRACKET RBRACKET                           -> empty_list
     | LBRACKET term_list PIPE term RBRACKET        -> list_with_tail
 
 term_list: term (COMMA term)*
+
+// Dictionaries
+dict: LBRACE RBRACE                           -> empty_dict
+    | LBRACE dict_pairs RBRACE                -> proper_dict
+
+dict_pairs: dict_pair (COMMA dict_pair)*
+dict_pair: term COLON term
 
 // Structures (compound terms)
 structure: atom LPAREN term_list RPAREN
@@ -148,16 +156,19 @@ STAR: "*"
 SLASH: "/"
 
 
-// Parentheses (needed for operator expressions)
+// Parentheses and brackets (needed for operator expressions and containers)
 LPAREN: "("
 RPAREN: ")"
 LBRACKET: "["
 RBRACKET: "]"
+LBRACE: "{"
+RBRACE: "}"
 
 // Other punctuation
 PIPE: "|"
 COLON_MINUS: ":-"
 QUESTION_MINUS: "?-"
+COLON: ":"
 
 // Single character last (DOT must be after DOT_DOT!)
 DOT: "."

@@ -9,9 +9,9 @@ For Stage 1.5, this module integrates with the reader for operator support.
 import pathlib
 from typing import List, Dict, Any
 from lark import Lark, Token, Transformer
-from lark.exceptions import UnexpectedCharacters, UnexpectedToken
+from lark.exceptions import UnexpectedCharacters, UnexpectedToken, VisitError
 
-from prolog.ast.terms import Atom, Int, Var, Struct, List as PrologList
+from prolog.ast.terms import Atom, Int, Var, Struct, List as PrologList, PrologDict
 from prolog.ast.clauses import Clause
 from prolog.parser.reader import Reader, ReaderError
 
@@ -139,6 +139,41 @@ class PrologTransformer(Transformer):
         # Filter out COMMA tokens
         return [c for c in children if not isinstance(c, Token)]
 
+    def empty_dict(self, children):
+        """Empty dict {}."""
+        return PrologDict(())
+
+    def proper_dict(self, children):
+        """Dict with key-value pairs {k1:v1, k2:v2}."""
+        # Filter out LBRACE and RBRACE tokens
+        non_tokens = [c for c in children if not isinstance(c, Token)]
+        pairs = non_tokens[0] if non_tokens else []  # dict_pairs
+        try:
+            return PrologDict(tuple(pairs))
+        except ValueError as e:
+            # Convert duplicate key error to ParseError
+            if "unique" in str(e):
+                raise ParseError("Duplicate keys in dict")
+            elif "atoms or integers" in str(e):
+                raise ParseError("Dict keys must be atoms or integers")
+            else:
+                raise ParseError(f"Invalid dict: {e}")
+
+    def dict_pairs(self, children):
+        """List of key-value pairs separated by commas."""
+        # Filter out COMMA tokens
+        return [c for c in children if not isinstance(c, Token)]
+
+    def dict_pair(self, children):
+        """Single key:value pair."""
+        # Filter out COLON token
+        non_tokens = [c for c in children if not isinstance(c, Token)]
+        if len(non_tokens) != 2:
+            raise ParseError(
+                f"Dict pair must have exactly 2 terms, got {len(non_tokens)}"
+            )
+        return (non_tokens[0], non_tokens[1])
+
     def structure(self, children):
         """Structure foo(args)."""
         # Filter out LPAREN and RPAREN tokens
@@ -249,6 +284,12 @@ def parse_term(text: str) -> Any:
         tree = parser.parse(text)
         transformer = PrologTransformer()
         return transformer.transform(tree)
+    except VisitError as e:
+        # Check if the original exception is a ParseError
+        if isinstance(e.orig_exc, ParseError):
+            raise e.orig_exc
+        else:
+            raise ParseError(f"Transform error: {e.orig_exc}")
     except (UnexpectedCharacters, UnexpectedToken) as e:
         line = getattr(e, "line", None)
         column = getattr(e, "column", None)
