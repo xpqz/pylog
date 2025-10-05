@@ -2,7 +2,16 @@
 
 import os
 from typing import Dict, List, Optional, Any, Tuple, Union
-from prolog.ast.terms import Term, Atom, Int, Float, Var, Struct, List as PrologList
+from prolog.ast.terms import (
+    Term,
+    Atom,
+    Int,
+    Float,
+    Var,
+    Struct,
+    List as PrologList,
+    PrologDict,
+)
 from prolog.ast.clauses import Program, Clause, ClauseCursor
 from prolog.engine.rename import VarRenamer
 from prolog.unify.store import Store, Cell
@@ -505,6 +514,13 @@ class Engine:
         self._builtins[("get_attr", 3)] = lambda eng, args: eng._builtin_get_attr(args)
         self._builtins[("del_attr", 2)] = lambda eng, args: eng._builtin_del_attr(args)
 
+        # Dict builtins
+        self._builtins[("dict_create", 3)] = lambda eng, args: eng._builtin_dict_create(
+            args
+        )
+        self._builtins[("get_dict", 3)] = lambda eng, args: eng._builtin_get_dict(args)
+        self._builtins[("put_dict", 3)] = lambda eng, args: eng._builtin_put_dict(args)
+
         # CLP(FD) builtins
 
         self._builtins[("in", 2)] = lambda eng, args: _builtin_in(eng, *args)
@@ -998,6 +1014,13 @@ class Engine:
                     for item in reversed(current.items):
                         if id(item) not in visited:
                             temp_stack.append((item, False))
+                elif isinstance(current, PrologDict):
+                    # Process all values in the dict pairs
+                    for key, value in reversed(current.pairs):
+                        if id(value) not in visited:
+                            temp_stack.append((value, False))
+                        if id(key) not in visited:
+                            temp_stack.append((key, False))
 
         # Second pass: process terms bottom-up (children before parents)
         for current in all_terms:
@@ -1035,6 +1058,15 @@ class Engine:
                     new_items.append(processed.get(id(item), item))
                 new_tail = processed.get(id(current.tail), current.tail)
                 processed[id(current)] = PrologList(tuple(new_items), tail=new_tail)
+
+            elif isinstance(current, PrologDict):
+                # Process keys and values in dict pairs
+                new_pairs = []
+                for key, value in current.pairs:
+                    new_key = processed.get(id(key), key)
+                    new_value = processed.get(id(value), value)
+                    new_pairs.append((new_key, new_value))
+                processed[id(current)] = PrologDict(tuple(new_pairs), tag=current.tag)
             else:
                 raise TypeError(f"Unknown term type: {type(current)}")
 
@@ -4428,6 +4460,268 @@ class Engine:
             return Struct(":-", (head_copy, body_term))  # type: ignore
         else:
             return head_copy
+
+    # Dict builtin predicates
+
+    def _builtin_dict_create(self, args: tuple) -> bool:
+        """dict_create(-Dict, +Tag, +Data) - create dict from key-value data.
+
+        Args:
+            args: (dict_var, tag, data_list)
+
+        Returns:
+            True if dict created successfully, False otherwise
+        """
+        if len(args) != 3:
+            return False
+
+        dict_arg, tag_arg, data_arg = args
+
+        # Tag must be 'none' for now (anonymous dicts only)
+        if not isinstance(tag_arg, Atom) or tag_arg.name != "none":
+            return False
+
+        # Data must be a list
+        if not isinstance(data_arg, PrologList):
+            return False
+
+        # Extract key-value pairs from the data list
+        try:
+            pairs = self._extract_dict_pairs(data_arg)
+        except (ValueError, TypeError):
+            return False
+
+        # Create the dict
+        try:
+            result_dict = PrologDict(pairs)
+        except ValueError:
+            # Duplicate keys or invalid key types
+            return False
+
+        # Unify with the dict argument
+        trail_adapter = TrailAdapter(self.trail, engine=self, store=self.store)
+        return unify(dict_arg, result_dict, self.store, trail_adapter)
+
+    def _builtin_get_dict(self, args: tuple) -> bool:
+        """get_dict(+Key, +Dict, -Value) - get value for key from dict.
+
+        Args:
+            args: (key, dict, value)
+
+        Returns:
+            True if key found and value unified, False otherwise
+        """
+        if len(args) != 3:
+            return False
+
+        key_arg, dict_arg, value_arg = args
+
+        # Dict must be a PrologDict
+        if not isinstance(dict_arg, PrologDict):
+            return False
+
+        # Key must be ground and valid type
+        if isinstance(key_arg, Var):
+            return False
+        if not isinstance(key_arg, (Atom, Int)):
+            return False
+
+        # Look up the value using binary search
+        value = self._dict_lookup(dict_arg, key_arg)
+        if value is None:
+            return False
+
+        # Unify with the value argument
+        trail_adapter = TrailAdapter(self.trail, engine=self, store=self.store)
+        return unify(value_arg, value, self.store, trail_adapter)
+
+    def _builtin_put_dict(self, args: tuple) -> bool:
+        """put_dict(+KeyValuePairs, +DictIn, -DictOut) - add/update pairs in dict.
+
+        Args:
+            args: (pairs_list, input_dict, output_dict)
+
+        Returns:
+            True if dict updated successfully, False otherwise
+        """
+        if len(args) != 3:
+            return False
+
+        pairs_arg, dict_in_arg, dict_out_arg = args
+
+        # Input dict must be a PrologDict
+        if not isinstance(dict_in_arg, PrologDict):
+            return False
+
+        # Pairs must be a list
+        if not isinstance(pairs_arg, PrologList):
+            return False
+
+        # Extract new key-value pairs (allow duplicates for put_dict)
+        try:
+            new_pairs = self._extract_dict_pairs(pairs_arg, allow_duplicates=True)
+        except (ValueError, TypeError):
+            return False
+
+        # Merge with existing dict
+        try:
+            merged_pairs = self._merge_dict_pairs(dict_in_arg.pairs, new_pairs)
+            result_dict = PrologDict(merged_pairs)
+        except ValueError:
+            return False
+
+        # Unify with the output argument
+        trail_adapter = TrailAdapter(self.trail, engine=self, store=self.store)
+        return unify(dict_out_arg, result_dict, self.store, trail_adapter)
+
+    def _extract_dict_pairs(
+        self, data_list: PrologList, allow_duplicates: bool = False
+    ) -> Tuple[Tuple[Term, Term], ...]:
+        """Extract key-value pairs from various formats in a list.
+
+        Supports:
+        - key-value: [a-1, b-2]
+        - key:value: [a:1, b:2]
+        - key(value): [a(1), b(2)]
+
+        Args:
+            data_list: List containing key-value data
+            allow_duplicates: If True, allows duplicate keys (for put_dict)
+
+        Returns:
+            Tuple of (key, value) pairs
+
+        Raises:
+            ValueError: If invalid format or duplicate keys (when not allowed)
+        """
+        pairs = []
+        seen_keys = set()
+
+        for item in data_list.items:
+            key, value = None, None
+
+            if isinstance(item, Struct):
+                if item.functor == "-" and len(item.args) == 2:
+                    # key-value format
+                    key, value = item.args
+                elif item.functor == ":" and len(item.args) == 2:
+                    # key:value format
+                    key, value = item.args
+                elif len(item.args) == 1:
+                    # key(value) format
+                    key = Atom(item.functor)
+                    value = item.args[0]
+                else:
+                    raise ValueError(f"Invalid pair format: {item}")
+            else:
+                raise ValueError(f"Invalid pair format: {item}")
+
+            # Validate key type
+            if not isinstance(key, (Atom, Int)):
+                raise ValueError(f"Invalid key type: {key}")
+
+            # Check for duplicates only if not allowed
+            if not allow_duplicates and key in seen_keys:
+                raise ValueError(f"Duplicate key: {key}")
+            seen_keys.add(key)
+
+            pairs.append((key, value))
+
+        return tuple(pairs)
+
+    def _dict_lookup(self, dict_term: PrologDict, key: Term) -> Optional[Term]:
+        """Look up a value in a dict using binary search.
+
+        Args:
+            dict_term: The dict to search
+            key: The key to find
+
+        Returns:
+            The value if found, None otherwise
+        """
+        pairs = dict_term.pairs
+        left, right = 0, len(pairs) - 1
+
+        while left <= right:
+            mid = (left + right) // 2
+            mid_key = pairs[mid][0]
+
+            cmp = self._key_less_than(key, mid_key)
+            if cmp == 0:  # Equal
+                return pairs[mid][1]
+            elif cmp < 0:  # key < mid_key
+                right = mid - 1
+            else:  # key > mid_key
+                left = mid + 1
+
+        return None
+
+    def _key_less_than(self, key1: Term, key2: Term) -> int:
+        """Compare two dict keys for sorting.
+
+        Args:
+            key1, key2: Keys to compare
+
+        Returns:
+            < 0 if key1 < key2, 0 if equal, > 0 if key1 > key2
+        """
+
+        # Get sort values (atoms sort before integers)
+        def sort_value(key):
+            if isinstance(key, Atom):
+                return (0, key.name)
+            elif isinstance(key, Int):
+                return (1, key.value)
+            else:
+                raise ValueError(f"Invalid key type: {key}")
+
+        val1 = sort_value(key1)
+        val2 = sort_value(key2)
+
+        if val1 < val2:
+            return -1
+        elif val1 > val2:
+            return 1
+        else:
+            return 0
+
+    def _merge_dict_pairs(
+        self,
+        existing_pairs: Tuple[Tuple[Term, Term], ...],
+        new_pairs: Tuple[Tuple[Term, Term], ...],
+    ) -> Tuple[Tuple[Term, Term], ...]:
+        """Merge new pairs with existing dict pairs.
+
+        Args:
+            existing_pairs: Existing key-value pairs (sorted)
+            new_pairs: New key-value pairs to add/update
+
+        Returns:
+            Merged pairs (sorted)
+        """
+        # Convert to dict for easy merging (last value wins for duplicates)
+        merged = {}
+
+        # Add existing pairs
+        for key, value in existing_pairs:
+            merged[key] = value
+
+        # Add/update with new pairs (last wins for duplicates in new_pairs)
+        for key, value in new_pairs:
+            merged[key] = value
+
+        # Convert back to sorted tuple using our key comparison
+        def sort_key(pair):
+            key = pair[0]
+            if isinstance(key, Atom):
+                return (0, key.name)
+            elif isinstance(key, Int):
+                return (1, key.value)
+            else:
+                raise ValueError(f"Invalid key type: {key}")
+
+        sorted_pairs = sorted(merged.items(), key=sort_key)
+        return tuple(sorted_pairs)
 
     def query(self, query_text: str) -> List[Dict[str, Any]]:
         """Execute a query and return all solutions.
