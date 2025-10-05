@@ -12,7 +12,7 @@ Key invariants:
 
 from typing import Any, List, Tuple
 
-from prolog.ast.terms import Atom, Int, Var, Struct, List as PrologList
+from prolog.ast.terms import Atom, Int, Var, Struct, List as PrologList, PrologDict
 from prolog.unify.store import Store
 from prolog.unify.trail import undo_to
 from prolog.unify.unify_helpers import union_vars, bind_root_to_term, deref_term
@@ -215,6 +215,23 @@ def _unify_nonvars(t1: Any, t2: Any, stack: List[Tuple[Any, Any]]) -> bool:
     # Standard PrologList unification
     if isinstance(t1, PrologList) and isinstance(t2, PrologList):
         return _unify_lists(t1, t2, stack)
+
+    # Dicts - exact key set matching required
+    if isinstance(t1, PrologDict) and isinstance(t2, PrologDict):
+        # Key sets must be identical (already sorted in canonical order)
+        if len(t1.pairs) != len(t2.pairs):
+            return False
+
+        # Check keys match exactly
+        for (k1, _), (k2, _) in zip(t1.pairs, t2.pairs):
+            if k1 != k2:  # Exact key equality required
+                return False
+
+        # Push all value pairs onto stack for unification
+        for (_, v1), (_, v2) in zip(t1.pairs, t2.pairs):
+            stack.append((v1, v2))
+
+        return True
 
     # Type mismatch
     return False
