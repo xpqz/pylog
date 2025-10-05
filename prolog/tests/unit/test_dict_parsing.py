@@ -220,6 +220,22 @@ class TestDictParsingErrors:
         with pytest.raises(ParseError):
             parse_term("{,}")
 
+    def test_quoted_numeric_keys(self):
+        """Test that quoted numeric keys are treated as atoms."""
+        result = parse_term("{'123':value, '456':other}")
+        assert isinstance(result, PrologDict)
+        assert len(result.pairs) == 2
+        # All keys should be atoms, not integers
+        for key, _ in result.pairs:
+            assert isinstance(key, Atom)
+            assert key.name in ["123", "456"]
+
+    def test_duplicate_keys_different_forms(self):
+        """Test duplicate detection for same atom in different forms."""
+        # Both 'a' and a represent the same atom
+        with pytest.raises(ParseError, match="Duplicate keys"):
+            parse_term("{'a':1, a:2}")
+
 
 class TestDictParsingRoundTrip:
     """Test round-trip parsing and pretty printing."""
@@ -319,11 +335,24 @@ class TestDictParsingGrammarIntegration:
         for item in result.items:
             assert isinstance(item, PrologDict)
 
-    def test_dict_with_compound_terms(self):
-        """Test dict with compound term keys and values."""
-        result = parse_term("{func(a):result, key:value(x, y)}")
+    def test_compound_term_keys_rejected(self):
+        """Test that compound term keys are rejected with ParseError."""
+        # Compound terms not allowed as keys per Phase 1 policy
+        with pytest.raises(ParseError, match="Dict keys must be atoms or integers"):
+            parse_term("{func(a):result}")
+
+    def test_variable_keys_rejected(self):
+        """Test that variable keys are rejected with ParseError."""
+        # Variables not allowed as keys per Phase 1 policy
+        with pytest.raises(ParseError, match="Dict keys must be atoms or integers"):
+            parse_term("{X:value}")
+
+    def test_dict_with_compound_values(self):
+        """Test dict with compound term values (allowed)."""
+        # Values can be any term type, only keys are restricted
+        result = parse_term("{key:value(x, y), other:func(a)}")
         assert isinstance(result, PrologDict)
         assert len(result.pairs) == 2
-
-        # Note: depends on whether compound terms are allowed as keys
-        # For now, assume only atoms/ints are valid keys per Phase 1
+        # All values should be structures
+        for _, value in result.pairs:
+            assert isinstance(value, Struct)
