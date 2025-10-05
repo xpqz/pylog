@@ -256,6 +256,17 @@ class TestREPLCommands:
         assert "?-" in help_text  # Query syntax
         assert "consult" in help_text  # File loading
         assert "quit" in help_text  # Exit command
+        # Should mention runtime DB commands in the default help
+        assert "Runtime Database" in help_text
+
+        # Topic list should include expected entries
+        topics = repl.get_help_topics()
+        assert set(topics) >= {"repl", "db", "trace", "files", "operators"}
+
+        # Topic help should return informative text
+        topic_help = repl.get_topic_help("db")
+        assert "dynamic" in topic_help
+        assert "retractall" in topic_help
 
     def test_parse_command(self):
         """Test parsing different command types."""
@@ -276,6 +287,16 @@ class TestREPLCommands:
         # Test help command
         cmd = repl.parse_command("help.")
         assert cmd["type"] == "help"
+
+        # Topic help with space
+        cmd = repl.parse_command("help db")
+        assert cmd["type"] == "help"
+        assert cmd["topic"] == "db"
+
+        # Topic help with parentheses
+        cmd = repl.parse_command("help(trace)")
+        assert cmd["type"] == "help"
+        assert cmd["topic"] == "trace"
 
         # Test quit command
         cmd = repl.parse_command("quit.")
@@ -310,6 +331,11 @@ class TestREPLCommands:
         cmd = repl.parse_command('consult("file.pl")')
         assert cmd["type"] == "consult"
         assert cmd["file"] == "file.pl"
+
+        # Unknown topic falls back to informative message
+        cmd = repl.parse_command("help unknown_topic")
+        assert cmd["type"] == "help"
+        assert cmd["topic"] == "unknown_topic"
 
 
 class TestREPLInteraction:

@@ -58,14 +58,14 @@ true.
 Remove clause(s) matching the given pattern from a dynamic predicate.
 
 - `retract/1`:
-  - Succeeds once per call, removing the first matching clause.
-  - Matches by unification (variables in the pattern are bound on success).
-  - Effects persist across backtracking (i.e., removed clauses stay removed).
+  - Removes the first matching clause per call.
+  - Matches by unification (variables in the query pattern bind to clause values).
+  - Effects persist across backtracking (removed clauses stay removed).
 
 - `retractall/1`:
   - Removes all matching clauses in one call.
-  - Matches by unification but does not bind variables in the query.
-  - Always succeeds (even if nothing matched).
+  - Matches by unification but does **not** bind variables in the query.
+  - Always succeeds, even if nothing matched.
 
 Examples:
 
@@ -81,20 +81,11 @@ false.
 
 ?- p(2).
 true.
-```
 
-Call `retract/1` again to remove the next matching clause.
-
-Using retractall/1:
-
-```prolog
-?- dynamic(p/1), assertz(p(1)), assertz(p(2)).
+?- retractall(p(Y)).
 true.
 
-?- retractall(p(X)).
-true.
-
-?- p(X).
+?- p(Z).
 false.
 ```
 
