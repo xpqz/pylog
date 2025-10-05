@@ -15,7 +15,15 @@ Operator mode:
 """
 
 from typing import Dict, Optional, List, Tuple, Union
-from prolog.ast.terms import Term, Atom, Int, Var, Struct, List as PrologList
+from prolog.ast.terms import (
+    Term,
+    Atom,
+    Int,
+    Var,
+    Struct,
+    List as PrologList,
+    PrologDict,
+)
 from prolog.ast.clauses import Clause
 from prolog.parser.operators import get_operator_info
 
@@ -330,6 +338,18 @@ def pretty(
             )
             return f"[{items_str}]"
 
+    elif isinstance(term, PrologDict):
+        if not term.pairs:
+            return "{}"
+
+        items = []
+        for key, value in term.pairs:
+            key_str = pretty(key, var_names, operator_mode)
+            value_str = pretty(value, var_names, operator_mode)
+            items.append(f"{key_str}:{value_str}")
+
+        return "{" + ", ".join(items) + "}"
+
     else:
         raise ValueError(f"Unknown term type: {type(term)}")
 
@@ -416,9 +436,6 @@ def pretty_program(clauses: List[Clause]) -> str:
     if not clauses:
         return ""
 
-    # Use a shared var_names dict for the whole program
-    # to ensure consistent variable naming
-    var_names = {}
     clause_strs = []
 
     for clause in clauses:
