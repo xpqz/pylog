@@ -7,6 +7,7 @@ Commands are entered at the `?-` prompt without a trailing period, unless noted.
 ## Session control
 
 - `help` — show inline help
+- `help TOPIC` or `help(TOPIC)` — topic help (`repl`, `db`, `trace`, `files`, `operators`)
 - `quit` | `exit` | `halt` — exit the REPL
 
 ## Loading code

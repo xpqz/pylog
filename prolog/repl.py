@@ -627,8 +627,15 @@ class PrologREPL:
         input_lower = input_text.lower()
 
         # Check for help
+        # Help with optional topic: 'help', 'help topic', or 'help(topic)'
         if input_lower == "help":
             return {"type": "help"}
+        if input_lower.startswith("help "):
+            topic = input_text.split(None, 1)[1].strip().lower()
+            return {"type": "help", "topic": topic}
+        m = re.match(r"^help\s*\(\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\)\s*$", input_text)
+        if m:
+            return {"type": "help", "topic": m.group(1).lower()}
 
         # Check for quit
         if input_lower in ["quit", "exit", "halt"]:
@@ -1124,7 +1131,7 @@ During query results:
     ;                    Show next solution
     .                    Stop searching for solutions
 
-Examples:
+    Examples:
     ?- parent(X, Y).     Find parent relationships
     ?- member(2, [1,2,3]). Check list membership
 
@@ -1136,6 +1143,58 @@ Runtime Database:
     retractall(HeadOrClause) Remove all matching clauses (no bindings)
     abolish(Name/Arity)      Remove all clauses for a predicate
 """
+
+    def get_help_topics(self) -> list[str]:
+        """Return available help topics."""
+        return ["repl", "db", "trace", "files", "operators"]
+
+    def get_topic_help(self, topic: str) -> str:
+        """Get help for a specific topic.
+
+        Topics: repl, db, trace, files, operators
+        """
+        t = topic.lower()
+        if t in ("repl", "intro"):
+            return (
+                "REPL basics:\n"
+                "  - Type goals and end with a period: ?- parent(X,Y).\n"
+                "  - Use ';' for next solution and '.' to stop.\n"
+                "  - Tab: cycle completions; Tab/Right: accept history suggestion.\n"
+                "  - History saved in ~/.pylog_history (Ctrl-R for search).\n"
+            )
+        if t in ("db", "runtime", "dynamic"):
+            return (
+                "Runtime database:\n"
+                "  - dynamic(Name/Arity) or dynamic([p/1,q/2])\n"
+                "  - assertz(Clause) / asserta(Clause)\n"
+                "  - retract(Clause): removes first match, binds variables\n"
+                "  - retractall(HeadOrClause): removes all matches, no bindings\n"
+                "  - abolish(Name/Arity): removes all clauses for predicate\n"
+            )
+        if t == "trace":
+            return (
+                "Tracing:\n"
+                "  - trace on|off\n"
+                "  - trace pretty FILE | trace json FILE\n"
+                "  - trace sample N (1-in-N events)\n"
+                "  - spy name/arity, unspy name/arity, spys, untrace\n"
+            )
+        if t in ("files", "consult"):
+            return (
+                "Files and listing:\n"
+                "  - consult('path/to/file.pl').\n"
+                "  - consult(user).  (Type clauses; end with '.' or Ctrl-D)\n"
+                "  - listing.  |  listing(name/N).\n"
+            )
+        if t == "operators":
+            return (
+                "Operators (reader-based):\n"
+                "  - Use standard Prolog operator syntax; reader desugars to functors.\n"
+                "  - Examples: A -> B ; C, X =:= Y, X #= Y (CLP(FD)).\n"
+            )
+        # Fallback
+        topics = ", ".join(self.get_help_topics())
+        return f"Unknown topic '{topic}'. Available: {topics}"
 
     def run_session(self):
         """Run the interactive REPL session."""
@@ -1175,7 +1234,11 @@ Runtime Database:
                     break
 
                 elif cmd["type"] == "help":
-                    print(self.get_help_text())
+                    topic = cmd.get("topic")
+                    if topic:
+                        print(self.get_topic_help(topic))
+                    else:
+                        print(self.get_help_text())
 
                 elif cmd["type"] == "consult":
                     self.load_file(cmd["file"])
