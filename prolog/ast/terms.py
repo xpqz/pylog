@@ -10,11 +10,11 @@ Terms are the building blocks of Prolog programs:
 """
 
 from dataclasses import dataclass, field
-from typing import Tuple, Optional, Union
+from typing import Tuple, Optional, Union, Any
 
 
 # Type alias for any term
-Term = Union["Atom", "Int", "Float", "Var", "Struct", "List"]
+Term = Union["Atom", "Int", "Float", "Var", "Struct", "List", "PrologDict"]
 
 
 @dataclass(frozen=True)
@@ -102,3 +102,50 @@ class List:
 
     items: Tuple[Term, ...]
     tail: Term = field(default_factory=lambda: Atom("[]"))
+
+
+@dataclass(frozen=True)
+class PrologDict:
+    """A dictionary in Prolog.
+
+    Dicts store key-value pairs in sorted order for canonical representation.
+    Keys must be atoms or small integers. Values can be any Prolog terms.
+
+    Dicts are immutable and can be used as dict keys or in sets.
+    """
+
+    pairs: Tuple[Tuple[Term, Term], ...]  # Sorted by key
+    tag: Optional[Term] = None  # Reserved for future tagged dict support
+
+    def __post_init__(self):
+        """Validate dict invariants."""
+        # Validate key types first
+        for key, _ in self.pairs:
+            if not isinstance(key, (Atom, Int)):
+                raise ValueError("Dict keys must be atoms or integers")
+
+        # Ensure pairs are sorted by key for canonical representation
+        if not self._is_sorted():
+            sorted_pairs = tuple(
+                sorted(self.pairs, key=lambda pair: self._key_sort_value(pair[0]))
+            )
+            object.__setattr__(self, "pairs", sorted_pairs)
+
+        # Check for duplicate keys
+        keys = [pair[0] for pair in self.pairs]
+        if len(keys) != len(set(keys)):
+            raise ValueError("Dict keys must be unique")
+
+    def _is_sorted(self) -> bool:
+        """Check if pairs are sorted by key."""
+        keys = [self._key_sort_value(pair[0]) for pair in self.pairs]
+        return keys == sorted(keys)
+
+    def _key_sort_value(self, key: Term) -> Any:
+        """Get sort value for a key term."""
+        if isinstance(key, Atom):
+            return (0, key.name)  # Atoms sort first
+        elif isinstance(key, Int):
+            return (1, key.value)  # Then integers
+        else:
+            raise ValueError("Dict keys must be atoms or integers")
