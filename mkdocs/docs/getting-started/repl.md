@@ -85,7 +85,8 @@ The REPL uses `prompt_toolkit` for a pleasant terminal experience:
 
 Tips:
 - Press Tab to complete a partially typed predicate
-- Use Ctrl‑C to cancel the current input; Ctrl‑D (EOF) to exit
+- Use Ctrl-C to cancel the current input; Ctrl-D (EOF) to exit
+- Type `help.` for a quick summary, or `help db`, `help trace`, etc. for topic-specific notes
 
 ## Loading code
 

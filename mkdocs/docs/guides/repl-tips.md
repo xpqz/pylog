@@ -40,6 +40,12 @@ X = 3
 
 The REPL prints `.` after the last solution to indicate completion.
 
+## Help & guidance
+
+- `help.` shows a quick-reference table.
+- `help TOPIC` or `help(TOPIC)` gives focused notes. Topics: `repl`, `db`, `trace`, `files`, `operators`.
+- Inline reminders appear when you enter `consult(user).` or other modes.
+
 ## Loading files and interactive input
 
 Use `consult('path/to/file.pl').` (quoted string) to load a file, or `consult(user).` to type clauses inline:
