@@ -521,6 +521,23 @@ class Engine:
         self._builtins[("get_dict", 3)] = lambda eng, args: eng._builtin_get_dict(args)
         self._builtins[("put_dict", 3)] = lambda eng, args: eng._builtin_put_dict(args)
 
+        # JSON support predicates
+        self._builtins[("json_read", 3)] = lambda eng, args: eng._builtin_json_read(
+            args
+        )
+        self._builtins[("json_write", 3)] = lambda eng, args: eng._builtin_json_write(
+            args
+        )
+        self._builtins[("json_read_dict", 3)] = (
+            lambda eng, args: eng._builtin_json_read_dict(args)
+        )
+        self._builtins[("json_write_dict", 3)] = (
+            lambda eng, args: eng._builtin_json_write_dict(args)
+        )
+        self._builtins[("atom_json_term", 3)] = (
+            lambda eng, args: eng._builtin_atom_json_term(args)
+        )
+
         # CLP(FD) builtins
 
         self._builtins[("in", 2)] = lambda eng, args: _builtin_in(eng, *args)
@@ -4722,6 +4739,43 @@ class Engine:
 
         sorted_pairs = sorted(merged.items(), key=sort_key)
         return tuple(sorted_pairs)
+
+    # JSON builtin predicates
+
+    def _builtin_json_read(self, args: tuple) -> bool:
+        """json_read(+Stream, -Term, +Options) - read JSON from stream.
+
+        NOTE: This predicate is not yet implemented (Phase 2).
+        """
+        raise RuntimeError("json_read/3 not yet implemented - coming in Phase 2")
+
+    def _builtin_json_write(self, args: tuple) -> bool:
+        """json_write(+Stream, +Term, +Options) - write JSON to stream.
+
+        NOTE: This predicate is not yet implemented (Phase 2).
+        """
+        raise RuntimeError("json_write/3 not yet implemented - coming in Phase 2")
+
+    def _builtin_json_read_dict(self, args: tuple) -> bool:
+        """json_read_dict(+Stream, -Dict, +Options) - read JSON as dict.
+
+        NOTE: This predicate is not yet implemented (Phase 2).
+        """
+        raise RuntimeError("json_read_dict/3 not yet implemented - coming in Phase 2")
+
+    def _builtin_json_write_dict(self, args: tuple) -> bool:
+        """json_write_dict(+Stream, +Dict, +Options) - write dict as JSON.
+
+        NOTE: This predicate is not yet implemented (Phase 2).
+        """
+        raise RuntimeError("json_write_dict/3 not yet implemented - coming in Phase 2")
+
+    def _builtin_atom_json_term(self, args: tuple) -> bool:
+        """atom_json_term(?Atom, ?Term, +Options) - convert between atom and term.
+
+        NOTE: This predicate is not yet implemented (Phase 2).
+        """
+        raise RuntimeError("atom_json_term/3 not yet implemented - coming in Phase 2")
 
     def query(self, query_text: str) -> List[Dict[str, Any]]:
         """Execute a query and return all solutions.
