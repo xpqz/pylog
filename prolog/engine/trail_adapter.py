@@ -1,6 +1,6 @@
 """Adapter to make Trail class work with existing unify module."""
 
-from typing import Any, Tuple
+from typing import Tuple
 from prolog.engine.runtime import Trail
 
 
