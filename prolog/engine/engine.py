@@ -1,5 +1,6 @@
 """Prolog Engine with Explicit Stacks (Stage 0) - Fixed Implementation."""
 
+import json
 import os
 from typing import Dict, List, Optional, Any, Tuple, Union
 from prolog.ast.terms import (
@@ -31,6 +32,15 @@ from prolog.engine.runtime import (
 from prolog.engine.trail_adapter import TrailAdapter
 from prolog.engine.errors import PrologThrow, UndefinedPredicateError
 from prolog.engine.cursors import StreamingClauseCursor
+
+# JSON support imports
+from prolog.engine.json_convert import (
+    json_to_prolog,
+    prolog_to_json,
+    CLASSIC_MODE,
+    DICT_MODE,
+)
+from prolog.engine.streams import is_stream_like
 
 # Debug imports (conditional imports moved here)
 from prolog.debug.tracer import PortsTracer
@@ -4745,37 +4755,294 @@ class Engine:
     def _builtin_json_read(self, args: tuple) -> bool:
         """json_read(+Stream, -Term, +Options) - read JSON from stream.
 
-        NOTE: This predicate is not yet implemented (Phase 2).
+        Args:
+            args: (stream, term, options) where stream is input stream,
+                  term is variable to unify with result, options is option list
+
+        Returns:
+            True if JSON was successfully read and unified, False otherwise
         """
-        raise RuntimeError("json_read/3 not yet implemented - coming in Phase 2")
+        if len(args) != 3:
+            return False
+
+        stream_arg, term_arg, options_arg = args
+
+        # Check if stream argument is stream-like
+        if not is_stream_like(stream_arg):
+            return False
+
+        try:
+            # Read JSON text from stream
+            json_text = stream_arg.read()
+
+            # Parse JSON
+            json_obj = json.loads(json_text)
+
+            # Convert to Prolog term (classic mode by default)
+            mode = self._extract_json_mode(options_arg, CLASSIC_MODE)
+            constants = self._extract_json_constants(options_arg, mode)
+            prolog_term = json_to_prolog(json_obj, mode, constants)
+
+            # Unify with term argument
+            trail_adapter = TrailAdapter(self.trail, engine=self, store=self.store)
+            return unify(term_arg, prolog_term, self.store, trail_adapter)
+
+        except (json.JSONDecodeError, ValueError, IOError):
+            # Failed to parse JSON or convert
+            return False
+        except Exception:
+            # Unexpected error
+            return False
 
     def _builtin_json_write(self, args: tuple) -> bool:
         """json_write(+Stream, +Term, +Options) - write JSON to stream.
 
-        NOTE: This predicate is not yet implemented (Phase 2).
+        Args:
+            args: (stream, term, options) where stream is output stream,
+                  term is term to convert to JSON, options is option list
+
+        Returns:
+            True if term was successfully converted and written, False otherwise
         """
-        raise RuntimeError("json_write/3 not yet implemented - coming in Phase 2")
+        if len(args) != 3:
+            return False
+
+        stream_arg, term_arg, options_arg = args
+
+        # Check if stream argument is stream-like
+        if not is_stream_like(stream_arg):
+            return False
+
+        try:
+            # Convert Prolog term to JSON (classic mode by default)
+            mode = self._extract_json_mode(options_arg, CLASSIC_MODE)
+            constants = self._extract_json_constants(options_arg, mode)
+            json_obj = prolog_to_json(term_arg, mode, constants)
+
+            # Write JSON to stream
+            json_text = json.dumps(json_obj)
+            stream_arg.write(json_text)
+
+            return True
+
+        except (ValueError, IOError):
+            # Failed to convert term or write to stream
+            return False
+        except Exception:
+            # Unexpected error
+            return False
 
     def _builtin_json_read_dict(self, args: tuple) -> bool:
         """json_read_dict(+Stream, -Dict, +Options) - read JSON as dict.
 
-        NOTE: This predicate is not yet implemented (Phase 2).
+        Args:
+            args: (stream, dict, options) where stream is input stream,
+                  dict is variable to unify with result, options is option list
+
+        Returns:
+            True if JSON was successfully read and unified, False otherwise
         """
-        raise RuntimeError("json_read_dict/3 not yet implemented - coming in Phase 2")
+        if len(args) != 3:
+            return False
+
+        stream_arg, dict_arg, options_arg = args
+
+        # Check if stream argument is stream-like
+        if not is_stream_like(stream_arg):
+            return False
+
+        try:
+            # Read JSON text from stream
+            json_text = stream_arg.read()
+
+            # Parse JSON
+            json_obj = json.loads(json_text)
+
+            # Convert to Prolog term (dict mode)
+            mode = self._extract_json_mode(options_arg, DICT_MODE)
+            constants = self._extract_json_constants(options_arg, mode)
+            prolog_term = json_to_prolog(json_obj, mode, constants)
+
+            # Unify with dict argument
+            trail_adapter = TrailAdapter(self.trail, engine=self, store=self.store)
+            return unify(dict_arg, prolog_term, self.store, trail_adapter)
+
+        except (json.JSONDecodeError, ValueError, IOError):
+            # Failed to parse JSON or convert
+            return False
+        except Exception:
+            # Unexpected error
+            return False
 
     def _builtin_json_write_dict(self, args: tuple) -> bool:
         """json_write_dict(+Stream, +Dict, +Options) - write dict as JSON.
 
-        NOTE: This predicate is not yet implemented (Phase 2).
+        Args:
+            args: (stream, dict, options) where stream is output stream,
+                  dict is term to convert to JSON, options is option list
+
+        Returns:
+            True if dict was successfully converted and written, False otherwise
         """
-        raise RuntimeError("json_write_dict/3 not yet implemented - coming in Phase 2")
+        if len(args) != 3:
+            return False
+
+        stream_arg, dict_arg, options_arg = args
+
+        # Check if stream argument is stream-like
+        if not is_stream_like(stream_arg):
+            return False
+
+        try:
+            # Convert Prolog term to JSON (dict mode)
+            mode = self._extract_json_mode(options_arg, DICT_MODE)
+            constants = self._extract_json_constants(options_arg, mode)
+            json_obj = prolog_to_json(dict_arg, mode, constants)
+
+            # Write JSON to stream
+            json_text = json.dumps(json_obj)
+            stream_arg.write(json_text)
+
+            return True
+
+        except (ValueError, IOError):
+            # Failed to convert term or write to stream
+            return False
+        except Exception:
+            # Unexpected error
+            return False
 
     def _builtin_atom_json_term(self, args: tuple) -> bool:
         """atom_json_term(?Atom, ?Term, +Options) - convert between atom and term.
 
-        NOTE: This predicate is not yet implemented (Phase 2).
+        Args:
+            args: (atom, term, options) where atom and term can be bound or unbound,
+                  options is option list
+
+        Returns:
+            True if conversion and unification succeeded, False otherwise
         """
-        raise RuntimeError("atom_json_term/3 not yet implemented - coming in Phase 2")
+        if len(args) != 3:
+            return False
+
+        atom_arg, term_arg, options_arg = args
+        trail_adapter = TrailAdapter(self.trail, engine=self, store=self.store)
+
+        # Determine conversion mode
+        mode = self._extract_json_mode(options_arg, CLASSIC_MODE)
+        constants = self._extract_json_constants(options_arg, mode)
+
+        try:
+            # Check what's bound - need to handle dereferencing properly
+            if isinstance(atom_arg, Var):
+                atom_deref_result = self.store.deref(atom_arg.id)
+                if atom_deref_result[0] == "BOUND":
+                    atom_deref = atom_deref_result[2]
+                else:
+                    atom_deref = atom_arg  # Still a variable
+            else:
+                atom_deref = atom_arg
+
+            if isinstance(term_arg, Var):
+                term_deref_result = self.store.deref(term_arg.id)
+                if term_deref_result[0] == "BOUND":
+                    term_deref = term_deref_result[2]
+                else:
+                    term_deref = term_arg  # Still a variable
+            else:
+                term_deref = term_arg
+
+            if isinstance(atom_deref, Atom) and not isinstance(term_deref, Var):
+                # Both bound - check consistency
+                try:
+                    # Parse atom as JSON and convert to term
+                    json_obj = json.loads(atom_deref.name)
+                    expected_term = json_to_prolog(json_obj, mode, constants)
+                    return unify(term_arg, expected_term, self.store, trail_adapter)
+                except (json.JSONDecodeError, ValueError):
+                    return False
+
+            elif isinstance(atom_deref, Atom):
+                # Atom bound, term unbound - convert atom to term
+                try:
+                    json_obj = json.loads(atom_deref.name)
+                    prolog_term = json_to_prolog(json_obj, mode, constants)
+                    return unify(term_arg, prolog_term, self.store, trail_adapter)
+                except (json.JSONDecodeError, ValueError):
+                    return False
+
+            elif not isinstance(term_deref, Var):
+                # Term bound, atom unbound - convert term to atom
+                try:
+                    json_obj = prolog_to_json(term_deref, mode, constants)
+                    json_text = json.dumps(json_obj)
+                    atom_result = Atom(json_text)
+                    return unify(atom_arg, atom_result, self.store, trail_adapter)
+                except ValueError:
+                    return False
+
+            else:
+                # Both unbound - cannot proceed
+                return False
+
+        except Exception:
+            # Unexpected error
+            return False
+
+    def _extract_json_mode(self, options_arg: Term, default: str) -> str:
+        """Extract JSON mode from options list.
+
+        Args:
+            options_arg: Options term (should be a list)
+            default: Default mode if not specified
+
+        Returns:
+            Mode string (CLASSIC_MODE or DICT_MODE)
+        """
+        try:
+            if isinstance(options_arg, PrologList):
+                for option in options_arg.items:
+                    if (
+                        isinstance(option, Struct)
+                        and option.functor == "mode"
+                        and len(option.args) == 1
+                    ):
+                        mode_arg = option.args[0]
+                        if isinstance(mode_arg, Atom):
+                            if mode_arg.name == "classic":
+                                return CLASSIC_MODE
+                            elif mode_arg.name == "dict":
+                                return DICT_MODE
+            return default
+        except Exception:
+            return default
+
+    def _extract_json_constants(
+        self, options_arg: Term, mode: str
+    ) -> Optional[Dict[str, Term]]:
+        """Extract custom constants from options list.
+
+        Args:
+            options_arg: Options term (should be a list)
+            mode: Current JSON mode
+
+        Returns:
+            Custom constants dict or None for default
+        """
+        try:
+            if isinstance(options_arg, PrologList):
+                for option in options_arg.items:
+                    if (
+                        isinstance(option, Struct)
+                        and option.functor == "constants"
+                        and len(option.args) == 1
+                    ):
+                        # For now, return None to use defaults
+                        # Full custom constants implementation could be added later
+                        pass
+            return None
+        except Exception:
+            return None
 
     def query(self, query_text: str) -> List[Dict[str, Any]]:
         """Execute a query and return all solutions.
