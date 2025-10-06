@@ -4743,29 +4743,39 @@ class Engine:
     # JSON builtin predicates
 
     def _builtin_json_read(self, args: tuple) -> bool:
-        """json_read(+Stream, -Term, +Options) - read JSON from stream."""
-        # Placeholder for Phase 2 implementation
-        return False
+        """json_read(+Stream, -Term, +Options) - read JSON from stream.
+
+        NOTE: This predicate is not yet implemented (Phase 2).
+        """
+        raise RuntimeError("json_read/3 not yet implemented - coming in Phase 2")
 
     def _builtin_json_write(self, args: tuple) -> bool:
-        """json_write(+Stream, +Term, +Options) - write JSON to stream."""
-        # Placeholder for Phase 2 implementation
-        return False
+        """json_write(+Stream, +Term, +Options) - write JSON to stream.
+
+        NOTE: This predicate is not yet implemented (Phase 2).
+        """
+        raise RuntimeError("json_write/3 not yet implemented - coming in Phase 2")
 
     def _builtin_json_read_dict(self, args: tuple) -> bool:
-        """json_read_dict(+Stream, -Dict, +Options) - read JSON as dict."""
-        # Placeholder for Phase 2 implementation
-        return False
+        """json_read_dict(+Stream, -Dict, +Options) - read JSON as dict.
+
+        NOTE: This predicate is not yet implemented (Phase 2).
+        """
+        raise RuntimeError("json_read_dict/3 not yet implemented - coming in Phase 2")
 
     def _builtin_json_write_dict(self, args: tuple) -> bool:
-        """json_write_dict(+Stream, +Dict, +Options) - write dict as JSON."""
-        # Placeholder for Phase 2 implementation
-        return False
+        """json_write_dict(+Stream, +Dict, +Options) - write dict as JSON.
+
+        NOTE: This predicate is not yet implemented (Phase 2).
+        """
+        raise RuntimeError("json_write_dict/3 not yet implemented - coming in Phase 2")
 
     def _builtin_atom_json_term(self, args: tuple) -> bool:
-        """atom_json_term(?Atom, ?Term, +Options) - convert between atom and term."""
-        # Placeholder for Phase 2 implementation
-        return False
+        """atom_json_term(?Atom, ?Term, +Options) - convert between atom and term.
+
+        NOTE: This predicate is not yet implemented (Phase 2).
+        """
+        raise RuntimeError("atom_json_term/3 not yet implemented - coming in Phase 2")
 
     def query(self, query_text: str) -> List[Dict[str, Any]]:
         """Execute a query and return all solutions.

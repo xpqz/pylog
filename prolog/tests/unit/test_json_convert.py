@@ -535,3 +535,47 @@ class TestEdgeCasesAndExtensions:
 
                 converted_back = prolog_to_json(prolog_term, mode)
                 assert converted_back == large_int
+
+    def test_string_vs_boolean_ambiguity_dict_mode(self):
+        """Test string vs boolean ambiguity in dict mode - documents current behavior."""
+        # In dict mode, Atom('true')/Atom('false') map to JSON booleans
+        # This means JSON strings "true"/"false" cannot be distinguished from booleans
+        # after roundtrip conversion - this is acceptable given current AST design
+
+        # Direct boolean conversion works as expected
+        assert json_to_prolog(True, DICT_MODE) == Atom("true")
+        assert prolog_to_json(Atom("true"), DICT_MODE) is True
+
+        # String "true" also becomes Atom("true"), which converts to boolean True
+        string_true_term = json_to_prolog("true", DICT_MODE)
+        assert string_true_term == Atom("true")  # Same as boolean True conversion
+
+        # Converting back gives boolean, not string (documented limitation)
+        converted_back = prolog_to_json(string_true_term, DICT_MODE)
+        assert converted_back is True  # Boolean, not string "true"
+
+        # This demonstrates the ambiguity:
+        # JSON string "true" → Atom("true") → JSON boolean true
+        # This is acceptable given that strings and atoms are unified in PyLog's AST
+
+    def test_int_keys_in_prolog_dict_to_json(self):
+        """Test PrologDict with Int keys converts to JSON with string keys."""
+        # PrologDict allows Int keys, which become string keys in JSON
+        dict_with_int_keys = PrologDict(
+            (
+                (Int(1), Atom("first")),
+                (Int(2), Atom("second")),
+                (Atom("name"), Atom("test")),
+            )
+        )
+
+        result = prolog_to_json(dict_with_int_keys, DICT_MODE)
+        expected = {
+            "1": "first",  # Int key becomes string
+            "2": "second",
+            "name": "test",  # Atom key stays string
+        }
+        assert result == expected
+
+        # Note: This is asymmetric with JSON→Prolog where non-string keys are rejected
+        # This is intentional design to leverage PrologDict's flexibility

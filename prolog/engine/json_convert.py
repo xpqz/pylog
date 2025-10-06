@@ -7,7 +7,7 @@ representations, following SWI-Prolog's dual representation approach.
 """
 
 import math
-from typing import Any, Dict, Optional
+from typing import Any, Optional, Mapping
 
 from prolog.ast.terms import Term, Atom, Int, Float, Struct, List, PrologDict
 
@@ -30,7 +30,9 @@ DEFAULT_DICT_CONSTANTS = {
 
 
 def json_to_prolog(
-    json_obj: Any, mode: str = CLASSIC_MODE, constants: Optional[Dict] = None
+    json_obj: Any,
+    mode: str = CLASSIC_MODE,
+    constants: Optional[Mapping[str, Term]] = None,
 ) -> Term:
     """Convert JSON object to Prolog term.
 
@@ -38,12 +40,18 @@ def json_to_prolog(
         json_obj: JSON value to convert (dict, list, str, int, float, bool, None)
         mode: Conversion mode - either CLASSIC_MODE or DICT_MODE
         constants: Optional custom constant mappings for null/true/false
+                  (accepts any Mapping, not just Dict)
 
     Returns:
         Corresponding Prolog term
 
     Raises:
-        ValueError: If mode is invalid or JSON contains unsupported values
+        ValueError: If mode is invalid, JSON contains unsupported values,
+                   or JSON object has non-string keys
+
+    Note:
+        In DICT_MODE, JSON strings "true"/"false" are indistinguishable from
+        JSON booleans true/false after conversion (both become Atom("true")/Atom("false")).
     """
     if mode not in (CLASSIC_MODE, DICT_MODE):
         raise ValueError(f"Unknown mode: {mode}")
@@ -60,7 +68,7 @@ def json_to_prolog(
 
 
 def prolog_to_json(
-    term: Term, mode: str = CLASSIC_MODE, constants: Optional[Dict] = None
+    term: Term, mode: str = CLASSIC_MODE, constants: Optional[Mapping[str, Term]] = None
 ) -> Any:
     """Convert Prolog term to JSON object.
 
@@ -68,12 +76,18 @@ def prolog_to_json(
         term: Prolog term to convert
         mode: Conversion mode - either CLASSIC_MODE or DICT_MODE
         constants: Optional custom constant mappings for null/true/false
+                  (accepts any Mapping, not just Dict)
 
     Returns:
         Corresponding JSON value
 
     Raises:
-        ValueError: If mode is invalid or term cannot be converted to JSON
+        ValueError: If mode is invalid, term cannot be converted to JSON,
+                   or term contains invalid structures
+
+    Note:
+        PrologDict with Int keys converts them to string keys in JSON.
+        This is asymmetric with JSON→Prolog which rejects non-string keys.
     """
     if mode not in (CLASSIC_MODE, DICT_MODE):
         raise ValueError(f"Unknown mode: {mode}")
@@ -89,7 +103,9 @@ def prolog_to_json(
     return _prolog_to_json_recursive(term, mode, constants)
 
 
-def _json_to_prolog_recursive(json_obj: Any, mode: str, constants: Dict) -> Term:
+def _json_to_prolog_recursive(
+    json_obj: Any, mode: str, constants: Mapping[str, Term]
+) -> Term:
     """Recursively convert JSON object to Prolog term."""
 
     # Handle None (null)
@@ -156,7 +172,9 @@ def _json_to_prolog_recursive(json_obj: Any, mode: str, constants: Dict) -> Term
     raise ValueError(f"Cannot convert JSON type {type(json_obj)} to Prolog term")
 
 
-def _prolog_to_json_recursive(term: Term, mode: str, constants: Dict) -> Any:
+def _prolog_to_json_recursive(
+    term: Term, mode: str, constants: Mapping[str, Term]
+) -> Any:
     """Recursively convert Prolog term to JSON object."""
 
     # Create reverse mapping for constants (term -> json_value)
