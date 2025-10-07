@@ -5012,6 +5012,18 @@ class Engine:
                                 return CLASSIC_MODE
                             elif mode_arg.name == "dict":
                                 return DICT_MODE
+                    # SWI-Prolog compatibility: json_object(dict|term)
+                    elif (
+                        isinstance(option, Struct)
+                        and option.functor == "json_object"
+                        and len(option.args) == 1
+                    ):
+                        json_object_arg = option.args[0]
+                        if isinstance(json_object_arg, Atom):
+                            if json_object_arg.name == "dict":
+                                return DICT_MODE
+                            elif json_object_arg.name == "term":
+                                return CLASSIC_MODE
             return default
         except Exception:
             return default

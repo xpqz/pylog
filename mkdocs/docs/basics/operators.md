@@ -23,6 +23,7 @@ Higher precedence binds tighter. Associativity determines grouping at the same p
 - `is/2` and arithmetic comparisons are at precedence 700.
 - `+` and `-` (500, yfx) are left‑associative; `*`, `/`, `//`, `mod` (400, yfx) bind tighter than `+`/`-`.
 - Prefix `-`, `+` have high precedence (200, fy): `-3 + 2` parses as `(-3) + 2`.
+- Term order comparisons `@<`, `@=<`, `@>`, `@>=` compare terms by standard order.
 
 Examples
 --------
@@ -54,6 +55,7 @@ Prefix operators
 
 - Unary `-` and `+` apply to numeric expressions.
 - `\+/1` is negation as failure; see Basics → Control for semantics and caveats.
+- `@/1` is recognized for classic JSON constants: `@(null)`, `@(true)`, `@(false)` (see Reference → JSON).
 
 Comma: operator vs separator
 ----------------------------
@@ -76,3 +78,4 @@ See also
 
 - Basics → Arithmetic for `is/2` and numeric comparisons
 - Reference → Operators table for a compact overview
+

@@ -28,11 +28,13 @@ nav:
       - Installation: getting-started/install.md
       - REPL: getting-started/repl.md
       - Hello Prolog: getting-started/hello-prolog.md
+      - JSON Quickstart: getting-started/json-quickstart.md
   - Prolog Basics:
       - Terms: basics/terms.md
       - Facts and Rules: basics/facts-and-rules.md
       - Queries and Unification: basics/queries-and-unification.md
       - Lists and Structures: basics/lists-and-structures.md
+      - Dicts: basics/dicts.md
       - Control: basics/control.md
       - Arithmetic: basics/arithmetic.md
       - Operators: basics/operators.md
@@ -68,8 +70,10 @@ nav:
       - Sudoku (9x9): cookbook/sudoku.md
       - N‑queens: cookbook/n-queens.md
       - Scheduling: cookbook/scheduling.md
+      - JSON recipes: cookbook/json-recipes.md
   - Reference:
       - Built-ins: reference/builtins-reference.md
+      - JSON: reference/json.md
       - REPL commands: reference/repl-commands.md
       - Runtime database: reference/runtime-db.md
       - CLI: reference/cli.md
@@ -81,6 +85,7 @@ nav:
   - Guides:
       - REPL tips & shortcuts: guides/repl-tips.md
       - Tracing and debugging: guides/tracing-and-debugging.md
+      - Embedding JSON I/O: guides/embedding-json-io.md
       - Fast CLP(FD) in REPL: guides/fast-clpfd-repl.md
       - Control gotchas: guides/control-gotchas.md
       - Performance and limits: guides/performance-and-limits.md
