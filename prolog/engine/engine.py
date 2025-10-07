@@ -50,6 +50,22 @@ from prolog.engine.utils.copy import (
 )
 from prolog.engine.utils.arithmetic import eval_int
 
+# Builtin registration system
+from prolog.engine.builtins import register_all
+from prolog.engine.builtins.types import (
+    builtin_var,
+    builtin_nonvar,
+    builtin_atom,
+    builtin_integer,
+    builtin_float,
+    builtin_number,
+    builtin_atomic,
+    builtin_compound,
+    builtin_callable,
+    builtin_ground,
+    is_ground,
+)
+
 # Debug imports (conditional imports moved here)
 from prolog.debug.tracer import PortsTracer
 from prolog.debug.metrics import EngineMetrics
@@ -463,6 +479,9 @@ class Engine:
         All builtins use uniform signature: fn(engine, args_tuple) -> bool
         This simplifies dispatch and makes nondeterministic builtins easier.
         """
+        # Register type-checking and other organized builtins via registry system
+        register_all(self._builtins)
+
         # Core control flow
         self._builtins[("true", 0)] = lambda eng, args: True
         self._builtins[("fail", 0)] = lambda eng, args: False
@@ -470,16 +489,6 @@ class Engine:
         self._builtins[("call", 1)] = lambda eng, args: eng._builtin_call(args)
         self._builtins[("=", 2)] = lambda eng, args: eng._builtin_unify(args)
         self._builtins[("\\=", 2)] = lambda eng, args: eng._builtin_not_unify(args)
-        self._builtins[("var", 1)] = lambda eng, args: eng._builtin_var(args)
-        self._builtins[("nonvar", 1)] = lambda eng, args: eng._builtin_nonvar(args)
-        self._builtins[("atom", 1)] = lambda eng, args: eng._builtin_atom(args)
-        self._builtins[("integer", 1)] = lambda eng, args: eng._builtin_integer(args)
-        self._builtins[("float", 1)] = lambda eng, args: eng._builtin_float(args)
-        self._builtins[("number", 1)] = lambda eng, args: eng._builtin_number(args)
-        self._builtins[("atomic", 1)] = lambda eng, args: eng._builtin_atomic(args)
-        self._builtins[("compound", 1)] = lambda eng, args: eng._builtin_compound(args)
-        self._builtins[("callable", 1)] = lambda eng, args: eng._builtin_callable(args)
-        self._builtins[("ground", 1)] = lambda eng, args: eng._builtin_ground(args)
         # All-solutions predicates
         self._builtins[("findall", 3)] = lambda eng, args: eng._builtin_findall(args)
         self._builtins[("bagof", 3)] = lambda eng, args: eng._builtin_bagof(args)
@@ -2179,6 +2188,62 @@ class Engine:
         """Reify a term, following variable bindings."""
         return reify_term(self.store, self._qname_by_id, term)
 
+    # Compatibility wrapper methods for legacy tests
+    # These delegate to the new builtin system while preserving the old API
+    def _builtin_var(self, args: tuple) -> bool:
+        """Legacy compatibility wrapper for var/1."""
+        return builtin_var(self, args)
+
+    def _builtin_nonvar(self, args: tuple) -> bool:
+        """Legacy compatibility wrapper for nonvar/1."""
+
+        return builtin_nonvar(self, args)
+
+    def _builtin_atom(self, args: tuple) -> bool:
+        """Legacy compatibility wrapper for atom/1."""
+
+        return builtin_atom(self, args)
+
+    def _builtin_integer(self, args: tuple) -> bool:
+        """Legacy compatibility wrapper for integer/1."""
+
+        return builtin_integer(self, args)
+
+    def _builtin_float(self, args: tuple) -> bool:
+        """Legacy compatibility wrapper for float/1."""
+
+        return builtin_float(self, args)
+
+    def _builtin_number(self, args: tuple) -> bool:
+        """Legacy compatibility wrapper for number/1."""
+
+        return builtin_number(self, args)
+
+    def _builtin_atomic(self, args: tuple) -> bool:
+        """Legacy compatibility wrapper for atomic/1."""
+
+        return builtin_atomic(self, args)
+
+    def _builtin_compound(self, args: tuple) -> bool:
+        """Legacy compatibility wrapper for compound/1."""
+
+        return builtin_compound(self, args)
+
+    def _builtin_callable(self, args: tuple) -> bool:
+        """Legacy compatibility wrapper for callable/1."""
+
+        return builtin_callable(self, args)
+
+    def _builtin_ground(self, args: tuple) -> bool:
+        """Legacy compatibility wrapper for ground/1."""
+
+        return builtin_ground(self, args)
+
+    def _is_ground(self, term: Term) -> bool:
+        """Legacy compatibility wrapper for is_ground helper."""
+
+        return is_ground(self, term)
+
     def _execute_builtin(self, term: Term) -> bool:
         """Execute a builtin directly (for testing).
 
@@ -2360,138 +2425,6 @@ class Engine:
         # Undo any bindings
         self.trail.unwind_to(trail_pos, self.store)
         return not success
-
-    def _builtin_var(self, args: tuple) -> bool:
-        """var(X) - true if X is an unbound variable."""
-        if len(args) != 1:
-            return False
-        term = args[0]
-        if isinstance(term, Var):
-            result = self.store.deref(term.id)
-            return result[0] == "UNBOUND"
-        return False
-
-    def _builtin_nonvar(self, args: tuple) -> bool:
-        """nonvar(X) - true if X is not an unbound variable."""
-        if len(args) != 1:
-            return False
-        return not self._builtin_var(args)
-
-    def _builtin_atom(self, args: tuple) -> bool:
-        """atom(X) - true if X is an atom."""
-        if len(args) != 1:
-            return False
-        term = args[0]
-        if isinstance(term, Var):
-            result = self.store.deref(term.id)
-            if result[0] == "BOUND":
-                _, _, bound_term = result
-                return isinstance(bound_term, Atom)
-            return False
-        return isinstance(term, Atom)
-
-    def _builtin_integer(self, args: tuple) -> bool:
-        """integer(X) - true if X is an integer."""
-        if len(args) != 1:
-            return False
-        term = args[0]
-        if isinstance(term, Var):
-            result = self.store.deref(term.id)
-            if result[0] == "BOUND":
-                _, _, bound_term = result
-                return isinstance(bound_term, Int)
-            return False
-        return isinstance(term, Int)
-
-    def _builtin_float(self, args: tuple) -> bool:
-        """float(X) - true if X is a float."""
-        if len(args) != 1:
-            return False
-        term = args[0]
-        if isinstance(term, Var):
-            result = self.store.deref(term.id)
-            if result[0] == "BOUND":
-                _, _, bound_term = result
-                return isinstance(bound_term, Float)
-            return False
-        return isinstance(term, Float)
-
-    def _builtin_number(self, args: tuple) -> bool:
-        """number(X) - true if X is a number (integer or float)."""
-        if len(args) != 1:
-            return False
-        term = args[0]
-        if isinstance(term, Var):
-            result = self.store.deref(term.id)
-            if result[0] == "BOUND":
-                _, _, bound_term = result
-                return isinstance(bound_term, (Int, Float))
-            return False
-        return isinstance(term, (Int, Float))
-
-    def _builtin_atomic(self, args: tuple) -> bool:
-        """atomic(X) - true if X is atomic (atom, number, or other atomic term)."""
-        if len(args) != 1:
-            return False
-        term = args[0]
-        if isinstance(term, Var):
-            result = self.store.deref(term.id)
-            if result[0] == "BOUND":
-                _, _, bound_term = result
-                return isinstance(bound_term, (Atom, Int, Float))
-            return False
-        return isinstance(term, (Atom, Int, Float))
-
-    def _builtin_compound(self, args: tuple) -> bool:
-        """compound(X) - true if X is a compound term."""
-        if len(args) != 1:
-            return False
-        term = args[0]
-        if isinstance(term, Var):
-            result = self.store.deref(term.id)
-            if result[0] == "BOUND":
-                _, _, bound_term = result
-                return isinstance(bound_term, (Struct, PrologList))
-            return False
-        return isinstance(term, (Struct, PrologList))
-
-    def _builtin_callable(self, args: tuple) -> bool:
-        """callable(X) - true if X is callable (atom or compound)."""
-        if len(args) != 1:
-            return False
-        term = args[0]
-        if isinstance(term, Var):
-            result = self.store.deref(term.id)
-            if result[0] == "BOUND":
-                _, _, bound_term = result
-                return isinstance(bound_term, (Atom, Struct, PrologList))
-            return False
-        return isinstance(term, (Atom, Struct, PrologList))
-
-    def _builtin_ground(self, args: tuple) -> bool:
-        """ground(X) - true if X contains no unbound variables."""
-        if len(args) != 1:
-            return False
-        term = args[0]
-        return self._is_ground(term)
-
-    def _is_ground(self, term: Term) -> bool:
-        """Helper method to check if a term is ground (contains no unbound variables)."""
-        if isinstance(term, Var):
-            result = self.store.deref(term.id)
-            if result[0] == "BOUND":
-                _, _, bound_term = result
-                return self._is_ground(bound_term)
-            return False
-        elif isinstance(term, (Atom, Int, Float)):
-            return True
-        elif isinstance(term, Struct):
-            return all(self._is_ground(arg) for arg in term.args)
-        elif isinstance(term, PrologList):
-            return all(
-                self._is_ground(item) for item in term.items
-            ) and self._is_ground(term.tail)
-        return True
 
     def _builtin_findall(self, args: tuple) -> bool:
         """findall(+Template, :Goal, -List) - collect all solutions.
