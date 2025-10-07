@@ -2,7 +2,7 @@
 
 import json
 import os
-from typing import Dict, List, Optional, Any, Tuple, Union
+from typing import Dict, List, Optional, Any, Tuple
 from prolog.ast.terms import (
     Term,
     Atom,
@@ -523,13 +523,6 @@ class Engine:
         self._builtins[("unify_with_occurs_check", 2)] = (
             lambda eng, args: eng._builtin_unify_with_occurs_check(args)
         )
-        self._builtins[("is", 2)] = lambda eng, args: eng._builtin_is(args)
-        self._builtins[(">", 2)] = lambda eng, args: eng._builtin_gt(args)
-        self._builtins[("<", 2)] = lambda eng, args: eng._builtin_lt(args)
-        self._builtins[(">=", 2)] = lambda eng, args: eng._builtin_ge(args)
-        self._builtins[("=<", 2)] = lambda eng, args: eng._builtin_le(args)
-        self._builtins[("=:=", 2)] = lambda eng, args: eng._builtin_num_eq(args)
-        self._builtins[("=\\=", 2)] = lambda eng, args: eng._builtin_num_ne(args)
         self._builtins[("=..", 2)] = lambda eng, args: eng._builtin_univ(args)
         self._builtins[("functor", 3)] = lambda eng, args: eng._builtin_functor(args)
         self._builtins[("arg", 3)] = lambda eng, args: eng._builtin_arg(args)
@@ -2801,60 +2794,6 @@ class Engine:
         """Evaluate a term as an integer."""
         return eval_int(self.store, t)
 
-    def _builtin_gt(self, args: tuple) -> bool:
-        """>(X, Y) - arithmetic greater-than comparison."""
-        if len(args) != 2:
-            return False
-        try:
-            return self._eval_arithmetic(args[0]) > self._eval_arithmetic(args[1])
-        except (ValueError, TypeError):
-            return False  # ISO: type/instantiation errors
-
-    def _builtin_num_eq(self, args: tuple) -> bool:
-        """=:=(X, Y) - arithmetic equality comparison."""
-        if len(args) != 2:
-            return False
-        try:
-            return self._eval_arithmetic(args[0]) == self._eval_arithmetic(args[1])
-        except (ValueError, TypeError):
-            return False  # ISO: type/instantiation errors
-
-    def _builtin_lt(self, args: tuple) -> bool:
-        """<(X, Y) - arithmetic less-than comparison."""
-        if len(args) != 2:
-            return False
-        try:
-            return self._eval_arithmetic(args[0]) < self._eval_arithmetic(args[1])
-        except (ValueError, TypeError):
-            return False  # ISO: type/instantiation errors
-
-    def _builtin_ge(self, args: tuple) -> bool:
-        """>=(X, Y) - arithmetic greater-or-equal comparison."""
-        if len(args) != 2:
-            return False
-        try:
-            return self._eval_arithmetic(args[0]) >= self._eval_arithmetic(args[1])
-        except (ValueError, TypeError):
-            return False  # ISO: type/instantiation errors
-
-    def _builtin_le(self, args: tuple) -> bool:
-        """=<(X, Y) - arithmetic less-or-equal comparison."""
-        if len(args) != 2:
-            return False
-        try:
-            return self._eval_arithmetic(args[0]) <= self._eval_arithmetic(args[1])
-        except (ValueError, TypeError):
-            return False  # ISO: type/instantiation errors
-
-    def _builtin_num_ne(self, args: tuple) -> bool:
-        """=\\=(X, Y) - arithmetic inequality comparison."""
-        if len(args) != 2:
-            return False
-        try:
-            return self._eval_arithmetic(args[0]) != self._eval_arithmetic(args[1])
-        except (ValueError, TypeError):
-            return False  # ISO: type/instantiation errors
-
     def _builtin_univ(self, args: tuple) -> bool:
         """=..(Term, List) - structure ↔ list conversion (univ).
 
@@ -3472,27 +3411,6 @@ class Engine:
 
         return True
 
-    def _builtin_is(self, args: tuple) -> bool:
-        """is(X, Y) - arithmetic evaluation."""
-        if len(args) != 2:
-            return False
-        left, right = args
-        # Evaluate right side
-        try:
-            value = self._eval_arithmetic(right)
-            # Unify with left side
-            result_term = Int(value)
-            trail_adapter = TrailAdapter(self.trail, engine=self, store=self.store)
-            return unify(
-                left,
-                result_term,
-                self.store,
-                trail_adapter,  # type: ignore
-                occurs_check=self.occurs_check,
-            )
-        except (ValueError, TypeError):
-            return False
-
     def _builtin_put_attr(self, args: tuple) -> bool:
         """put_attr(Var, Module, Value) - attach attribute to variable.
 
@@ -3825,123 +3743,6 @@ class Engine:
 
         # All hooks accepted
         return True
-
-    def _eval_arithmetic(self, term: Term) -> Union[int, float]:
-        """Evaluate an arithmetic expression iteratively.
-
-        Args:
-            term: The term to evaluate.
-
-        Returns:
-            The numeric result (int or float).
-
-        Raises:
-            ValueError: If evaluation fails.
-        """
-        # Stack-based evaluation to avoid recursion
-        # Each entry is either ('eval', term) or ('apply', op, values)
-        eval_stack = [("eval", term)]
-        value_stack = []
-
-        while eval_stack:
-            action, data = eval_stack.pop()
-
-            if action == "eval":
-                t = data
-
-                # Dereference if variable
-                if isinstance(t, Var):
-                    result = self.store.deref(t.id)
-                    if result[0] == "BOUND":
-                        _, _, bound_term = result
-                        t = bound_term
-                    else:
-                        raise ValueError("Unbound variable in arithmetic")
-
-                if isinstance(t, Int):
-                    value_stack.append(t.value)
-                elif isinstance(t, Float):
-                    value_stack.append(t.value)
-                elif isinstance(t, Struct):
-                    if (
-                        t.functor
-                        in ["+", "-", "*", "//", "/", "mod", "max", "min", "**"]
-                        and len(t.args) == 2
-                    ):
-                        # Binary operator: evaluate args then apply
-                        eval_stack.append(("apply", Atom(t.functor)))
-                        # Push args in reverse order for correct evaluation
-                        eval_stack.append(("eval", t.args[1]))
-                        eval_stack.append(("eval", t.args[0]))
-                    elif t.functor == "-" and len(t.args) == 1:
-                        # Unary minus
-                        eval_stack.append(("apply_unary", Atom("-")))
-                        eval_stack.append(("eval", t.args[0]))
-                    else:
-                        raise ValueError(
-                            f"Unknown arithmetic operator: {t.functor}/{len(t.args)}"
-                        )
-                else:
-                    raise ValueError(f"Cannot evaluate arithmetic: {t}")
-
-            elif action == "apply":
-                op_atom = data
-                # Extract operator name from Atom
-                op = op_atom.name if isinstance(op_atom, Atom) else str(op_atom)
-                if len(value_stack) < 2:
-                    raise ValueError(f"Not enough values for operator {op}")
-
-                right = value_stack.pop()
-                left = value_stack.pop()
-
-                if op == "+":
-                    value_stack.append(left + right)
-                elif op == "-":
-                    value_stack.append(left - right)
-                elif op == "*":
-                    value_stack.append(left * right)
-                elif op == "//":
-                    if right == 0:
-                        raise ValueError("Division by zero")
-                    value_stack.append(left // right)
-                elif op == "/":
-                    if right == 0:
-                        raise ValueError("Division by zero")
-                    value_stack.append(left / right)  # Float division
-                elif op == "mod":
-                    if right == 0:
-                        raise ValueError("Modulo by zero")
-                    value_stack.append(left % right)
-                elif op == "max":
-                    value_stack.append(max(left, right))
-                elif op == "min":
-                    value_stack.append(min(left, right))
-                elif op == "**":
-                    try:
-                        result = left**right
-                        value_stack.append(result)
-                    except (OverflowError, ValueError):
-                        raise ValueError("Power operation overflow or invalid")
-
-            elif action == "apply_unary":
-                op_atom = data
-                # Extract operator name from Atom
-                op = op_atom.name if isinstance(op_atom, Atom) else str(op_atom)
-                if not value_stack:
-                    raise ValueError("Not enough values for unary operator")
-                value = value_stack.pop()
-
-                if op == "-":
-                    value_stack.append(-value)
-                else:
-                    raise ValueError(f"Unknown unary operator: {op}")
-
-        if len(value_stack) != 1:
-            raise ValueError(
-                f"Arithmetic evaluation error: expected 1 value, got {len(value_stack)}"
-            )
-
-        return value_stack[0]
 
     # Debug methods
     def get_trace(self) -> List[str]:
