@@ -523,8 +523,6 @@ class Engine:
         self._builtins[("unify_with_occurs_check", 2)] = (
             lambda eng, args: eng._builtin_unify_with_occurs_check(args)
         )
-        self._builtins[("=..", 2)] = lambda eng, args: eng._builtin_univ(args)
-        self._builtins[("functor", 3)] = lambda eng, args: eng._builtin_functor(args)
         self._builtins[("arg", 3)] = lambda eng, args: eng._builtin_arg(args)
         self._builtins[("once", 1)] = lambda eng, args: eng._builtin_once(args)
         self._builtins[("throw", 1)] = lambda eng, args: eng._builtin_throw(args)
@@ -604,22 +602,6 @@ class Engine:
         )
         self._builtins[("table", 2)] = lambda eng, args: _builtin_table(eng, *args)
         self._builtins[("#\\/", 2)] = lambda eng, args: _builtin_fd_disj(eng, *args)
-
-        # Structural comparison operators
-        self._builtins[("==", 2)] = lambda eng, args: eng._builtin_structural_equal(
-            args
-        )
-        self._builtins[("\\==", 2)] = (
-            lambda eng, args: eng._builtin_structural_not_equal(args)
-        )
-        self._builtins[("@<", 2)] = lambda eng, args: eng._builtin_term_less(args)
-        self._builtins[("@>", 2)] = lambda eng, args: eng._builtin_term_greater(args)
-        self._builtins[("@=<", 2)] = lambda eng, args: eng._builtin_term_less_equal(
-            args
-        )
-        self._builtins[("@>=", 2)] = lambda eng, args: eng._builtin_term_greater_equal(
-            args
-        )
 
     def solve(
         self, goal: Term, max_solutions: Optional[int] = None
