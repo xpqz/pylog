@@ -95,6 +95,10 @@ from prolog.engine.builtins_clpfd import (
     _builtin_table,
 )
 from prolog.clpfd.label import _builtin_label, _builtin_labeling, push_labeling_choices
+from prolog.engine.builtins.solutions import (
+    collect_all_solutions,
+    _sort_and_deduplicate,
+)
 
 # Parser imports (conditional imports moved here)
 from prolog.parser.parser import parse_program, parse_query
@@ -4395,3 +4399,24 @@ class Engine:
             query_text = query_text + "."
         goals = parse_query(query_text)
         return self.run(goals)
+
+    # Backward compatibility wrappers for extracted all-solutions builtins
+    def _builtin_findall(self, args: tuple) -> bool:
+        """Wrapper for extracted findall/3 builtin."""
+        return self._builtins[("findall", 3)](self, args)
+
+    def _builtin_bagof(self, args: tuple) -> bool:
+        """Wrapper for extracted bagof/3 builtin."""
+        return self._builtins[("bagof", 3)](self, args)
+
+    def _builtin_setof(self, args: tuple) -> bool:
+        """Wrapper for extracted setof/3 builtin."""
+        return self._builtins[("setof", 3)](self, args)
+
+    def _collect_all_solutions(self, template, goal, existential_all=True):
+        """Wrapper for extracted collect_all_solutions function."""
+        return collect_all_solutions(self, template, goal, existential_all)
+
+    def _sort_and_deduplicate(self, solutions):
+        """Wrapper for extracted _sort_and_deduplicate function."""
+        return _sort_and_deduplicate(solutions)
