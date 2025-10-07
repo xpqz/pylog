@@ -104,6 +104,9 @@ def eval_arithmetic(store, term: Term) -> Union[int, float]:
             elif op == "//":
                 if right == 0:
                     raise ValueError("Division by zero")
+                # Integer division requires both operands to be integers
+                if not isinstance(left, int) or not isinstance(right, int):
+                    raise ValueError("Integer division requires integer operands")
                 value_stack.append(left // right)
             elif op == "/":
                 if right == 0:
@@ -112,6 +115,9 @@ def eval_arithmetic(store, term: Term) -> Union[int, float]:
             elif op == "mod":
                 if right == 0:
                     raise ValueError("Modulo by zero")
+                # Modulo operation requires both operands to be integers
+                if not isinstance(left, int) or not isinstance(right, int):
+                    raise ValueError("Modulo operation requires integer operands")
                 value_stack.append(left % right)
             elif op == "max":
                 value_stack.append(max(left, right))

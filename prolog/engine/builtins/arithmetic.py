@@ -13,7 +13,7 @@ All predicates use the eval_arithmetic function from utils.arithmetic for evalua
 """
 
 from typing import Dict, Tuple, Callable
-from prolog.ast.terms import Int
+from prolog.ast.terms import Int, Float
 from prolog.engine.utils.arithmetic import eval_arithmetic
 from prolog.unify.unify import unify
 from prolog.engine.trail_adapter import TrailAdapter
@@ -27,8 +27,11 @@ def builtin_is(engine, args: tuple) -> bool:
     # Evaluate right side
     try:
         value = eval_arithmetic(engine.store, right)
-        # Unify with left side
-        result_term = Int(value)
+        # Unify with left side - use Float for float results, Int for integer results
+        if isinstance(value, float):
+            result_term = Float(value)
+        else:
+            result_term = Int(value)
         trail_adapter = TrailAdapter(engine.trail, engine=engine, store=engine.store)
         return unify(
             left,
