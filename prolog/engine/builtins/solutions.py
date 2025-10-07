@@ -10,6 +10,7 @@ engine refactoring plan.
 """
 
 from typing import Dict, Tuple, Callable, List, Any, TYPE_CHECKING
+from functools import cmp_to_key
 from prolog.ast.terms import Term, Atom, Int, Float, Var, Struct, List as PrologList
 from prolog.unify.unify import unify
 from prolog.engine.trail_adapter import TrailAdapter
@@ -17,6 +18,7 @@ from prolog.engine.utils.copy import (
     copy_term_recursive,
     build_prolog_list,
 )
+from prolog.engine.builtins.terms import structural_compare
 
 if TYPE_CHECKING:
     pass
@@ -151,7 +153,7 @@ def builtin_setof(engine, args: tuple) -> bool:
             return False  # setof fails on empty results
 
         # Sort and deduplicate solutions
-        unique_solutions = _sort_and_deduplicate(solutions)
+        unique_solutions = _sort_and_deduplicate(engine, solutions)
         result_term = build_prolog_list(unique_solutions)
 
         trail_adapter = TrailAdapter(engine.trail, engine=engine, store=engine.store)
@@ -166,7 +168,7 @@ def builtin_setof(engine, args: tuple) -> bool:
         if not solutions:
             return False
 
-        unique_solutions = _sort_and_deduplicate(solutions)
+        unique_solutions = _sort_and_deduplicate(engine, solutions)
         result_term = build_prolog_list(unique_solutions)
 
         trail_adapter = TrailAdapter(engine.trail, engine=engine, store=engine.store)
@@ -193,14 +195,16 @@ def collect_all_solutions(
         List of template instances for each solution
     """
     # Create a fresh engine instance to avoid state interference
-    # Create minimal sub-engine with same program
+    # Mirror parent engine configuration for performance parity while ensuring isolation
     # Use engine.__class__ to avoid circular import
     sub_engine = engine.__class__(
         engine.program,
         occurs_check=engine.occurs_check,
-        max_solutions=None,
-        trace=False,
-        use_indexing=False,
+        max_solutions=None,  # Always unlimited for all-solutions collection
+        trace=False,  # Disable tracing to avoid interference/overhead
+        use_indexing=getattr(
+            engine, "use_indexing", True
+        ),  # Mirror parent indexing setting
     )
 
     try:
@@ -247,21 +251,24 @@ def _find_free_variables(
     return []
 
 
-def _sort_and_deduplicate(solutions: List[Term]) -> List[Term]:
-    """Sort solutions and remove duplicates for setof/3."""
-    # Simple deduplication by converting to string and back
-    # This is not the most efficient but works for basic cases
-    seen = set()
+def _sort_and_deduplicate(engine, solutions: List[Term]) -> List[Term]:
+    """Sort solutions and remove duplicates for setof/3 using proper term ordering."""
+    # Deduplication using structural equality
     unique = []
 
     for solution in solutions:
-        str_repr = str(solution)  # Using string representation for comparison
-        if str_repr not in seen:
-            seen.add(str_repr)
+        # Check if this solution is already in unique list using structural comparison
+        is_duplicate = False
+        for existing in unique:
+            if structural_compare(engine, solution, existing) == 0:
+                is_duplicate = True
+                break
+        if not is_duplicate:
             unique.append(solution)
 
-    # Sort by string representation (simplified)
-    unique.sort(key=str)
+    # Sort using proper term ordering (ISO Prolog standard)
+    # Use functools.cmp_to_key to convert comparison function to key function
+    unique.sort(key=cmp_to_key(lambda x, y: structural_compare(engine, x, y)))
     return unique
 
 

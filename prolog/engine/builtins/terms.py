@@ -24,6 +24,7 @@ __all__ = [
     "builtin_term_greater",
     "builtin_term_less_equal",
     "builtin_term_greater_equal",
+    "structural_compare",
 ]
 
 
@@ -577,3 +578,14 @@ def _structural_equality_compare(engine, term1: Term, term2: Term) -> bool:
     else:
         # Unknown types - use string comparison as fallback
         return str(term1) == str(term2)
+
+
+def structural_compare(engine, term1: Term, term2: Term) -> int:
+    """Public wrapper for structural term ordering comparison.
+
+    Returns: -1 if term1 < term2, 0 if equal, 1 if term1 > term2
+    Standard order: variables < numbers < atoms < compound terms
+
+    This implements ISO Prolog standard term ordering.
+    """
+    return _structural_compare(engine, term1, term2)
