@@ -8,6 +8,7 @@ These tests verify the implementation of type predicates required by ISO Prolog:
 from prolog.ast.terms import Atom, Int, Float, Var, Struct, List as PrologList
 from prolog.ast.clauses import Program
 from prolog.engine.engine import Engine
+from prolog.engine.utils.arithmetic import eval_arithmetic
 from prolog.unify.unify import bind
 
 
@@ -330,24 +331,24 @@ class TestISOTypePredicates:
         engine = Engine(program)
 
         # Test float arithmetic evaluation
-        result = engine._eval_arithmetic(Float(3.14))
+        result = eval_arithmetic(engine.store, Float(3.14))
         assert result == 3.14
         assert isinstance(result, float)
 
         # Test mixed integer/float arithmetic
         expr = Struct("+", (Int(1), Float(2.5)))
-        result = engine._eval_arithmetic(expr)
+        result = eval_arithmetic(engine.store, expr)
         assert result == 3.5
         assert isinstance(result, float)
 
         # Test float division
         expr = Struct("/", (Int(7), Int(2)))
-        result = engine._eval_arithmetic(expr)
+        result = eval_arithmetic(engine.store, expr)
         assert result == 3.5
         assert isinstance(result, float)
 
         # Test integer division still works
         expr = Struct("//", (Int(7), Int(2)))
-        result = engine._eval_arithmetic(expr)
+        result = eval_arithmetic(engine.store, expr)
         assert result == 3
         assert isinstance(result, int)
