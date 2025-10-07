@@ -40,7 +40,6 @@ from prolog.engine.json_convert import (
     CLASSIC_MODE,
     DICT_MODE,
 )
-from prolog.engine.streams import is_stream_like
 
 # Debug imports (conditional imports moved here)
 from prolog.debug.tracer import PortsTracer
@@ -4767,8 +4766,8 @@ class Engine:
 
         stream_arg, term_arg, options_arg = args
 
-        # Check if stream argument is stream-like
-        if not is_stream_like(stream_arg):
+        # Check if stream argument supports reading
+        if not hasattr(stream_arg, "read"):
             return False
 
         try:
@@ -4809,8 +4808,8 @@ class Engine:
 
         stream_arg, term_arg, options_arg = args
 
-        # Check if stream argument is stream-like
-        if not is_stream_like(stream_arg):
+        # Check if stream argument supports writing
+        if not hasattr(stream_arg, "write"):
             return False
 
         try:
@@ -4820,7 +4819,7 @@ class Engine:
             json_obj = prolog_to_json(term_arg, mode, constants)
 
             # Write JSON to stream
-            json_text = json.dumps(json_obj)
+            json_text = json.dumps(json_obj, allow_nan=False)
             stream_arg.write(json_text)
 
             return True
@@ -4847,8 +4846,8 @@ class Engine:
 
         stream_arg, dict_arg, options_arg = args
 
-        # Check if stream argument is stream-like
-        if not is_stream_like(stream_arg):
+        # Check if stream argument supports reading
+        if not hasattr(stream_arg, "read"):
             return False
 
         try:
@@ -4889,8 +4888,8 @@ class Engine:
 
         stream_arg, dict_arg, options_arg = args
 
-        # Check if stream argument is stream-like
-        if not is_stream_like(stream_arg):
+        # Check if stream argument supports writing
+        if not hasattr(stream_arg, "write"):
             return False
 
         try:
@@ -4900,7 +4899,7 @@ class Engine:
             json_obj = prolog_to_json(dict_arg, mode, constants)
 
             # Write JSON to stream
-            json_text = json.dumps(json_obj)
+            json_text = json.dumps(json_obj, allow_nan=False)
             stream_arg.write(json_text)
 
             return True
@@ -4975,7 +4974,7 @@ class Engine:
                 # Term bound, atom unbound - convert term to atom
                 try:
                     json_obj = prolog_to_json(term_deref, mode, constants)
-                    json_text = json.dumps(json_obj)
+                    json_text = json.dumps(json_obj, allow_nan=False)
                     atom_result = Atom(json_text)
                     return unify(atom_arg, atom_result, self.store, trail_adapter)
                 except ValueError:

@@ -183,7 +183,7 @@ class PrologStream:
 - [x] JSON files can be read into Prolog terms ✅ **COMPLETED**
 - [x] Prolog terms can be written as valid JSON ✅ **COMPLETED**
 - [x] Error handling works for malformed JSON ✅ **COMPLETED**
-- [x] Stream operations work with files and strings ✅ **COMPLETED**
+- [x] Stream operations work with file objects and StringIO ✅ **COMPLETED**
 
 **✅ PHASE 2 COMPLETED** - All 5 JSON builtins implemented and tested
 
