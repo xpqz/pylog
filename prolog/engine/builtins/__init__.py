@@ -14,10 +14,11 @@ The following builtin groups are currently implemented:
 
 - **terms**: Term construction/inspection (=../2, functor/3, ==/2, \\==/2, @</2, @>/2, @=</2, @>=/2)
 
+- **solutions**: All-solutions predicates (findall/3, bagof/3, setof/3)
+
 ## Future Groups
 
 The following groups are planned for subsequent phases:
-- **solutions**: All-solutions predicates (findall/3, bagof/3, setof/3)
 - **exceptions**: Exception handling (throw/1, catch/3)
 - **dynamic_db**: Dynamic database operations (dynamic/1, assert*/1, retract*/1, abolish/1)
 """
@@ -28,6 +29,7 @@ from typing import Dict, Tuple, Callable
 from prolog.engine.builtins.types import register as register_types
 from prolog.engine.builtins.arithmetic import register as register_arithmetic
 from prolog.engine.builtins.terms import register as register_terms
+from prolog.engine.builtins.solutions import register as register_solutions
 
 
 def register_all(registry: Dict[Tuple[str, int], Callable]) -> None:
@@ -47,3 +49,6 @@ def register_all(registry: Dict[Tuple[str, int], Callable]) -> None:
 
     # Register term construction/inspection predicates
     register_terms(registry)
+
+    # Register all-solutions predicates
+    register_solutions(registry)
