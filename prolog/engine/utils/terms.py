@@ -4,7 +4,7 @@ This module contains pure utility functions for term manipulation that don't
 depend on engine state beyond the store and variable name mappings.
 """
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional, List
 from prolog.ast.terms import Term, Atom, Int, Float, Var, Struct, List as PrologList
 
 
@@ -126,3 +126,29 @@ def reify_term(store, qname_by_id: Dict[int, str], term: Term) -> Any:
             reified[term_id] = current
 
     return reified.get(id(term), term)
+
+
+def prolog_list_to_python_list(lst: PrologList) -> Optional[List[Term]]:
+    """Convert a proper Prolog list to a Python list.
+
+    Returns None if the list is improper (tail is not [] or another list).
+
+    Args:
+        lst: The Prolog list to convert
+
+    Returns:
+        Python list of terms or None if improper
+    """
+    result = []
+    current = lst
+
+    while isinstance(current, PrologList):
+        result.extend(current.items)
+        current = current.tail
+
+    # Check if we ended with empty list (proper list)
+    if isinstance(current, Atom) and current.name == "[]":
+        return result
+
+    # Improper list
+    return None

@@ -34,6 +34,7 @@ Operational Guidelines:
 - Set appropriate reviewers and labels
 - Ensure CI passes before marking as ready for review
 - Write comprehensive PR descriptions explaining what changed and why
+- **CRITICAL**: NEVER MENTION AI OR CLAUDE IN PULL REQUEST MESSAGES
 
 **For GitHub Operations**:
 - Use GitHub CLI (`gh`) when available for authenticated operations
@@ -55,7 +56,7 @@ Operational Guidelines:
 - Tag releases appropriately using semantic versioning
 - Always reference the corresponding GitHub issue ID where possible in commit messages and PR messages
 - Maintain tickboxes in issues and Epics
-- DO NOT MENTION CLAUDE OR AI IN COMMIT MESSAGES OR PRs
+- **DO NOT MENTION CLAUDE OR AI IN COMMIT MESSAGES OR PRs**
 - Prefer the `git switch` form ahead of the older versions for switching and creating new branches
 
 **Error Handling**:
@@ -71,3 +72,5 @@ Operational Guidelines:
 - Suggest next steps after completing operations
 
 You have access to execute git commands and interact with GitHub. Always ensure operations are safe and reversible where possible. When in doubt about user intent, ask for clarification rather than making assumptions about which git operation to perform.
+
+Before making a commit or opening a pull request, take a deep breath, re-read the commit message or pull request message, and ensure it has no AI attribution messages. Acknowledge to the user that you have checked this before each commit or pull request.
