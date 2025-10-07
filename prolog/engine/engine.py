@@ -52,6 +52,7 @@ from prolog.engine.utils.arithmetic import eval_int
 
 # Builtin registration system
 from prolog.engine.builtins import register_all
+from prolog.engine.builtins.exceptions import builtin_throw, builtin_catch, handle_throw
 from prolog.engine.builtins.types import (
     builtin_var,
     builtin_nonvar,
@@ -522,8 +523,6 @@ class Engine:
         )
         self._builtins[("arg", 3)] = lambda eng, args: eng._builtin_arg(args)
         self._builtins[("once", 1)] = lambda eng, args: eng._builtin_once(args)
-        self._builtins[("throw", 1)] = lambda eng, args: eng._builtin_throw(args)
-        self._builtins[("catch", 3)] = lambda eng, args: eng._builtin_catch(args)
         # Attributed variable builtins
         self._builtins[("put_attr", 3)] = lambda eng, args: eng._builtin_put_attr(args)
         self._builtins[("get_attr", 3)] = lambda eng, args: eng._builtin_get_attr(args)
@@ -890,102 +889,9 @@ class Engine:
     def _handle_throw(self, ball: Term) -> bool:
         """Handle a thrown exception by searching for a matching catch.
 
-        Args:
-            ball: The thrown exception term
-
-        Returns:
-            True if exception was caught and handled, False otherwise
+        Thin wrapper around extracted handle_throw function.
         """
-
-        # Search from inner to outer
-        i = len(self.cp_stack) - 1
-        while i >= 0:
-            cp = self.cp_stack[i]
-            i -= 1
-
-            if cp.kind != ChoicepointKind.CATCH:
-                continue
-            if cp.payload.get("phase") != "GOAL":
-                continue
-
-            # Scope guard: only catch if cp window encloses current point
-            cp_height = cp.payload.get("cp_height", 0)
-            if cp_height > len(self.cp_stack) - 1:
-                continue
-
-            # --- Two-phase unification: check match without side effects ---
-            if not self._match_only(ball, cp.payload.get("catcher")):
-                continue
-
-            # --- We have a matching catcher: restore to catch baselines ---
-            if self.trace:
-                self._trace_log.append(
-                    f"[CATCH] Restoring: cp_height={cp_height}, current cp_stack len={len(self.cp_stack)}"
-                )
-
-            self.trail.unwind_to(cp.trail_top, self.store)
-            self._shrink_goal_stack_to(cp.goal_stack_height)
-            while len(self.frame_stack) > cp.frame_stack_height:
-                self.frame_stack.pop()
-            while len(self.cp_stack) > cp_height:
-                removed = self.cp_stack.pop()
-                if self.trace:
-                    self._trace_log.append(f"[CATCH] Removing CP: {removed.kind.name}")
-
-            # Switch to the catch window stamp
-            self.trail.set_current_stamp(cp.stamp)
-
-            # Restore streaming cursors (conservative approach)
-            cursor_snapshots = cp.payload.get("cursor_snapshots", {})
-            for other_cp in self.cp_stack[:cp_height]:
-                if other_cp.kind == ChoicepointKind.PREDICATE:
-                    cursor = other_cp.payload.get("cursor")
-                    if hasattr(cursor, "clone") and callable(cursor.clone):
-                        snapshot = cursor_snapshots.get(id(cursor))
-                        if snapshot:
-                            # Replace with snapshot directly (already cloned at catch time)
-                            other_cp.payload["cursor"] = snapshot
-
-            # Re-unify to make catcher bindings visible to Recovery
-            ok2 = self._unify(ball, cp.payload.get("catcher"))
-            assert ok2, "ball unified in trial but failed after restore (bug)"
-
-            # Validate frame stack consistency for recursive predicates
-            expected_depth = cp.payload.get("recursion_depth", 0)
-            if expected_depth > 0 and len(self.frame_stack) > 0:
-                current_pred = self.frame_stack[-1].pred
-                actual_depth = sum(
-                    1 for f in self.frame_stack if f.pred == current_pred
-                )
-
-                if actual_depth != expected_depth:
-                    # Log the inconsistency but don't fail - this is defensive
-                    if self.trace:
-                        self._trace_log.append(
-                            f"[CATCH] Frame depth mismatch: expected {expected_depth}, actual {actual_depth}"
-                        )
-
-            # Debug assertions
-            assert self.goal_stack.height() == cp.goal_stack_height
-            assert len(self.cp_stack) == cp_height
-            assert len(self.frame_stack) >= cp.frame_stack_height
-
-            # Emit catch_switch event when we catch an exception
-            if self.tracer:
-                self.tracer.emit_internal_event(
-                    "catch_switch",
-                    {
-                        "exception": str(ball),
-                        "handler": str(cp.payload.get("recovery")),
-                    },
-                )
-
-            # Push only the recovery goal - DO NOT re-install the CATCH choicepoint
-            # If recovery fails, we backtrack transparently to outer choicepoints
-            self._push_goal(Goal.from_term(cp.payload.get("recovery")))
-            return True
-
-        return False  # No catcher matched
+        return handle_throw(self, ball)
 
     def _allocate_query_vars(self, term: Term) -> Term:
         """Allocate fresh variables for query terms and track them.
@@ -3015,138 +2921,16 @@ class Engine:
     def _builtin_throw(self, args: tuple) -> bool:
         """throw(Ball) - throw an exception.
 
-        Raises an exception with the given ball term. The exception
-        propagates up the execution stack until caught by catch/3.
+        Thin wrapper around extracted builtin_throw function.
         """
-        if len(args) != 1:
-            return False
-
-        ball = args[0]
-
-        # Dereference the ball
-        if isinstance(ball, Var):
-            ball_result = self.store.deref(ball.id)
-            if ball_result[0] == "BOUND":
-                ball = ball_result[2]
-            else:
-                # Stage-1 policy: require instantiated ball
-                # ISO would allow throwing unbound variables
-                return False  # Dev-mode: fail on unbound
-
-        # Reify the ball to capture current bindings
-        # This ensures that variable bindings are preserved in the thrown term
-        reified_ball = self._reify_term(ball)
-
-        # Record metrics for exception thrown
-        if self.metrics:
-            self.metrics.record_exception_thrown()
-
-        # Raise PrologThrow directly
-        raise PrologThrow(reified_ball)
+        return builtin_throw(self, args)
 
     def _builtin_catch(self, args: tuple) -> bool:
         """catch(Goal, Catcher, Recovery) - catch exceptions.
 
-        Executes Goal. If Goal throws an exception that unifies with
-        Catcher, executes Recovery. Otherwise the exception propagates.
+        Thin wrapper around extracted builtin_catch function.
         """
-        if len(args) != 3:
-            return False
-
-        goal_arg, catcher_arg, recovery_arg = args
-
-        # Dereference the goal
-        if isinstance(goal_arg, Var):
-            goal_result = self.store.deref(goal_arg.id)
-            if goal_result[0] == "BOUND":
-                goal = goal_result[2]
-            else:
-                # Unbound goal - insufficient instantiation
-                return False  # Dev-mode: fail
-        else:
-            goal = goal_arg
-
-        # Goal must be callable
-        if not isinstance(goal, (Atom, Struct)):
-            return False  # Dev-mode: fail on non-callable
-
-        # Capture baseline heights BEFORE pushing anything
-        # These represent the state at the call site of catch/3
-        base_trail_top = self.trail.position()
-        base_goal_height = self.goal_stack.height()
-        base_frame_height = len(self.frame_stack)
-        base_cp_height = len(self.cp_stack)
-
-        # Check if there's a POP_FRAME sentinel on top of the goal stack
-        # If so, we need to track that it might be consumed before we backtrack
-        top_goal = self.goal_stack.peek()
-        has_pop_frame_sentinel = (
-            top_goal is not None and top_goal.type == GoalType.POP_FRAME
-        )
-
-        # Count frames for the same predicate for recursion tracking
-        recursion_depth = 0
-        if self.frame_stack:
-            current_pred = self.frame_stack[-1].pred
-            for frame in self.frame_stack:
-                if frame.pred == current_pred:
-                    recursion_depth += 1
-
-        # Snapshot active streaming cursors for restoration after exception
-        cursor_snapshots = {}
-        for cp in self.cp_stack:
-            if cp.kind == ChoicepointKind.PREDICATE:
-                cursor = cp.payload.get("cursor")
-                if hasattr(cursor, "clone") and callable(cursor.clone):
-                    # Clone the cursor for restoration
-                    cursor_snapshots[id(cursor)] = cursor.clone()
-
-        # Create CATCH choicepoint (phase=GOAL)
-        stamp = self.trail.next_stamp()
-        catch_cp = Choicepoint(
-            kind=ChoicepointKind.CATCH,
-            trail_top=base_trail_top,
-            goal_stack_height=base_goal_height,
-            frame_stack_height=base_frame_height,
-            payload={
-                "phase": "GOAL",
-                "catcher": catcher_arg,
-                "recovery": recovery_arg,
-                "cp_height": base_cp_height,  # Store CP height for restoration
-                "has_pop_frame": has_pop_frame_sentinel,  # Track if we have a POP_FRAME that might be consumed
-                "cursor_snapshots": cursor_snapshots,  # Snapshot for cursor restoration
-                "recursion_depth": recursion_depth,  # Track recursion depth for frame validation
-            },
-            stamp=stamp,
-        )
-        self.cp_stack.append(catch_cp)
-
-        # Emit internal event for CP push
-        if self.tracer:
-            self.tracer.emit_internal_event(
-                "cp_push", {"pred_id": "catch", "trail_top": base_trail_top}
-            )
-
-        # Create a frame to establish cut barrier for the catch scope
-        # This prevents cuts within Goal from escaping the catch boundary
-        self._next_frame_id += 1
-        catch_frame = Frame(
-            frame_id=self._next_frame_id,
-            cut_barrier=len(self.cp_stack),  # Cut stops at the CATCH CP
-            goal_height=self.goal_stack.height(),
-            pred=("catch", 3),
-        )
-        self.frame_stack.append(catch_frame)
-
-        # Push POP_FRAME to clean up the catch frame after Goal completes
-        self._push_goal(
-            Goal(GoalType.POP_FRAME, None, payload={"frame_id": self._next_frame_id})
-        )
-
-        # Push the user's Goal to execute
-        self._push_goal(Goal.from_term(goal))
-
-        return True
+        return builtin_catch(self, args)
 
     def _builtin_put_attr(self, args: tuple) -> bool:
         """put_attr(Var, Module, Value) - attach attribute to variable.
