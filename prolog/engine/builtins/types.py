@@ -7,6 +7,24 @@ These predicates test the type of Prolog terms.
 from typing import Dict, Tuple, Callable
 from prolog.ast.terms import Term, Atom, Int, Float, Var, Struct, List as PrologList
 
+__all__ = [
+    # Registration function
+    "register",
+    # Type-checking predicates
+    "builtin_var",
+    "builtin_nonvar",
+    "builtin_atom",
+    "builtin_integer",
+    "builtin_float",
+    "builtin_number",
+    "builtin_atomic",
+    "builtin_compound",
+    "builtin_callable",
+    "builtin_ground",
+    # Helper functions
+    "is_ground",
+]
+
 
 def register(registry: Dict[Tuple[str, int], Callable]) -> None:
     """Register type-checking builtin predicates.
@@ -14,16 +32,16 @@ def register(registry: Dict[Tuple[str, int], Callable]) -> None:
     Args:
         registry: Dictionary mapping (predicate_name, arity) -> callable
     """
-    registry[("var", 1)] = lambda eng, args: builtin_var(eng, args)
-    registry[("nonvar", 1)] = lambda eng, args: builtin_nonvar(eng, args)
-    registry[("atom", 1)] = lambda eng, args: builtin_atom(eng, args)
-    registry[("integer", 1)] = lambda eng, args: builtin_integer(eng, args)
-    registry[("float", 1)] = lambda eng, args: builtin_float(eng, args)
-    registry[("number", 1)] = lambda eng, args: builtin_number(eng, args)
-    registry[("atomic", 1)] = lambda eng, args: builtin_atomic(eng, args)
-    registry[("compound", 1)] = lambda eng, args: builtin_compound(eng, args)
-    registry[("callable", 1)] = lambda eng, args: builtin_callable(eng, args)
-    registry[("ground", 1)] = lambda eng, args: builtin_ground(eng, args)
+    registry[("var", 1)] = builtin_var
+    registry[("nonvar", 1)] = builtin_nonvar
+    registry[("atom", 1)] = builtin_atom
+    registry[("integer", 1)] = builtin_integer
+    registry[("float", 1)] = builtin_float
+    registry[("number", 1)] = builtin_number
+    registry[("atomic", 1)] = builtin_atomic
+    registry[("compound", 1)] = builtin_compound
+    registry[("callable", 1)] = builtin_callable
+    registry[("ground", 1)] = builtin_ground
 
 
 def builtin_var(engine, args: tuple) -> bool:
