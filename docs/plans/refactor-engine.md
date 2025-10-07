@@ -58,11 +58,12 @@ Each phase ends with a full test run. Order chosen to minimize coupling risk.
 - Keep existing Engine methods as thin wrappers initially to avoid touching call sites.
 - Acceptance: no behavior change; `test_list_edge_cases.py`, `test_univ.py`, `test_functor.py`, and CLP(FD) scenario tests green.
 
-2) Builtins: Types/Predicates Group
-- Move `var/nonvar/atom/integer/float/number/atomic/compound/callable/ground` to `builtins/types.py`.
-- Add `builtins/__init__.py` and `builtins/types.py::register(reg)`.
-- Wire via `Engine._register_builtins()` using the registry function.
-- Acceptance: `prolog/tests/unit/test_builtins.py::TestBuiltinInfrastructure` and type predicate tests green.
+2) Builtins: Types/Predicates Group ✅ **COMPLETED**
+- ✅ Move `var/nonvar/atom/integer/float/number/atomic/compound/callable/ground` to `builtins/types.py`.
+- ✅ Add `builtins/__init__.py` and `builtins/types.py::register(reg)`.
+- ✅ Wire via `Engine._register_builtins()` using the registry function.
+- ✅ Acceptance: `prolog/tests/unit/test_builtins.py::TestBuiltinInfrastructure` and type predicate tests green.
+- **Implementation:** PR #254 - Registry pattern established, function references used directly, comprehensive unit tests added.
 
 3) Builtins: Arithmetic
 - Move `is/2`, `=:=/2`, `=\\=/2`, `>/</>=/=/` to `builtins/arithmetic.py` using `utils.arithmetic.eval_arithmetic`.
