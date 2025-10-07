@@ -1,6 +1,6 @@
 """Variable Renaming for Clause Isolation (Stage 0)."""
 
-from typing import Dict, Optional
+from typing import Dict
 from prolog.ast.terms import Term, Atom, Int, Var, Struct, List as PrologList
 from prolog.ast.clauses import Clause
 from prolog.unify.store import Store
@@ -120,7 +120,6 @@ class VarRenamer:
         if __debug__:
             # Check that repeated variables in head are properly shared
             head_vars = self._collect_vars(clause.head)
-            renamed_head_vars = self._collect_vars(renamed_head)
             for orig_id in head_vars:
                 occurrences = [v for v in head_vars[orig_id]]
                 if len(occurrences) > 1:

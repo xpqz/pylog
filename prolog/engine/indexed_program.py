@@ -6,14 +6,14 @@ expected Program interface, enabling transparent indexing integration.
 """
 
 from typing import List, Iterator, Optional, Tuple
-
-# Type aliases for readability
-PredKey = Tuple[str, int]  # (predicate_name, arity)
-ClauseIdx = int  # Index into the clauses tuple
 from prolog.ast.terms import Term, Struct, Atom
 from prolog.ast.clauses import Clause, Program
 from prolog.engine.indexing import ClauseIndex, build_from_clauses
 from prolog.unify.store import Store
+
+# Type aliases for readability
+PredKey = Tuple[str, int]  # (predicate_name, arity)
+ClauseIdx = int  # Index into the clauses tuple
 
 
 class IndexedProgram:
@@ -80,8 +80,6 @@ class IndexedProgram:
             List of clause indices in source order
         """
         # Build list of matching clause indices
-        pred_key = (functor, arity)
-
         # For compatibility, we need to return global clause indices
         # We'll iterate through all clauses and collect matching indices
         result = []
