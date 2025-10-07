@@ -7,6 +7,7 @@ Supports operators: +, -, * (with constants only)
 from typing import Dict, Tuple
 from prolog.ast.terms import Term, Var, Int, Struct
 from prolog.clpfd.api import get_domain
+from prolog.engine.utils.arithmetic import eval_arithmetic
 
 
 def _is_ground_arithmetic(expr: Term, engine) -> bool:
@@ -94,7 +95,7 @@ def parse_linear_expression(expr: Term, engine) -> Tuple[Dict[int, int], int]:
         if _is_ground_arithmetic(expr, engine):
             # Convert singleton domains to Int values for evaluation
             ground_expr = _convert_to_ground_expr(expr, engine)
-            value = engine._eval_arithmetic(ground_expr)
+            value = eval_arithmetic(engine.store, ground_expr)
             return {}, value
     except (ValueError, AttributeError):
         # Not a ground arithmetic expression, continue with linear parsing
