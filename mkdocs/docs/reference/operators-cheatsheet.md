@@ -9,10 +9,11 @@ Precedence (higher binds tighter)
 - 1050 xfy: `->`
 - 1000 xfy: `,`
 - 900  xfx: CLP(FD) reification `#<=>`, `#==>`, `#<==`
-- 700  xfx: `=`, `\=`, `==`, `\==`, `=..`, `is`, `=:=`, `=\=`, `<`, `=<`, `>`, `>=`, `in`
+- 700  xfx: `=`, `\=`, `==`, `\==`, `=..`, `is`, `=:=`, `=\=`, `<`, `=<`, `>`, `>=`, `in`, `@<`, `@=<`, `@>`, `@>=`
 - 500  yfx: `+`, `-`
 - 400  yfx: `*`, `/`, `//`, `mod`
 - 200   fy: unary `-`, unary `+`
+- 300   fy: `@` (JSON constants)
 
 Associativity
 -------------
@@ -41,6 +42,12 @@ Prefix operators
 
 - `-3 + 2` parses as `(-3) + 2`
 - `\+ Goal` is negation as failure (see Control)
+- `@/1` writes classic JSON constants: `@(null)`, `@(true)`, `@(false)`
+
+Term order operators
+--------------------
+
+- `@<`, `@=<`, `@>`, `@>=` compare terms by standard order (not numeric/semantic comparisons)
 
 If–then–else
 ------------
@@ -55,3 +62,4 @@ CLP(FD)
 - Reification: `#<=>`, `#==>`, `#<==` (xfx at 900)
 
 See also: Basics → Operators, Reference → Operators table
+

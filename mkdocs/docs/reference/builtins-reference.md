@@ -29,3 +29,21 @@ Reification
 -----------
 
 - `#<=>/2`, `#==>/2`, `#<==/2` — relate a Boolean to a constraint's truth. See CLP(FD) → Reification for semantics and examples.
+
+Dicts
+-----
+
+- `dict_create/3` — create a dict from key‑value data (tag currently `none`)
+- `get_dict/3` — get a value by key
+- `put_dict/3` — add/update pairs (last‑wins)
+
+JSON
+----
+
+- `json_read/3` — read JSON from stream (classic by default; `mode(dict)` supported)
+- `json_write/3` — write term as JSON (classic by default; `mode(dict)` supported)
+- `json_read_dict/3` — read JSON as dict (dict mode)
+- `json_write_dict/3` — write dict as JSON (dict mode)
+- `atom_json_term/3` — convert between atom and term (supports `mode(classic|dict)`)
+
+See Reference → JSON for details and examples.
