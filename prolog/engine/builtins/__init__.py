@@ -16,10 +16,11 @@ The following builtin groups are currently implemented:
 
 - **solutions**: All-solutions predicates (findall/3, bagof/3, setof/3)
 
+- **exceptions**: Exception handling (throw/1, catch/3)
+
 ## Future Groups
 
 The following groups are planned for subsequent phases:
-- **exceptions**: Exception handling (throw/1, catch/3)
 - **dynamic_db**: Dynamic database operations (dynamic/1, assert*/1, retract*/1, abolish/1)
 """
 
@@ -30,6 +31,7 @@ from prolog.engine.builtins.types import register as register_types
 from prolog.engine.builtins.arithmetic import register as register_arithmetic
 from prolog.engine.builtins.terms import register as register_terms
 from prolog.engine.builtins.solutions import register as register_solutions
+from prolog.engine.builtins.exceptions import register as register_exceptions
 
 
 def register_all(registry: Dict[Tuple[str, int], Callable]) -> None:
@@ -52,3 +54,6 @@ def register_all(registry: Dict[Tuple[str, int], Callable]) -> None:
 
     # Register all-solutions predicates
     register_solutions(registry)
+
+    # Register exception handling predicates
+    register_exceptions(registry)
