@@ -97,12 +97,12 @@ class TestSpanPreservation:
         """Unknown operator should show its position."""
         reader = Reader()
         with pytest.raises(ReaderError) as exc_info:
-            # Using @@ which is not a defined operator
-            reader.read_term("X @@ Y")
+            # Using ## which is not a defined operator
+            reader.read_term("X ## Y")
 
         error = exc_info.value
         assert error.position == 2  # Position of @@
-        assert error.token == "@@"
+        assert error.token == "##"
         assert "unknown" in str(error).lower() or "undefined" in str(error).lower()
 
 
@@ -190,12 +190,12 @@ class TestFixSuggestions:
         """Unknown operator should suggest checking operator table."""
         reader = Reader()
         with pytest.raises(ReaderError) as exc_info:
-            reader.read_term("X @@ Y")
+            reader.read_term("X ## Y")
 
         error_str = str(exc_info.value)
         # Should mention the operator is unknown/undefined
         assert "unknown" in error_str.lower() or "undefined" in error_str.lower()
-        assert "@@" in error_str
+        assert "##" in error_str
 
 
 class TestEdgeCases:
@@ -332,8 +332,8 @@ class TestErrorRecovery:
 
         # Third error
         with pytest.raises(ReaderError) as exc3:
-            reader.read_term("X @@ Y")
-        assert exc3.value.token == "@@"
+            reader.read_term("X ## Y")
+        assert exc3.value.token == "##"
 
 
 class TestRegressionGuards:

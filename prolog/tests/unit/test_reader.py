@@ -14,6 +14,7 @@ Test Coverage:
 - Error reporting with positions
 """
 
+import logging
 import pytest
 from prolog.ast.terms import Atom, Int, Var, Struct, List
 from prolog.ast.terms import List as PrologList
@@ -290,7 +291,6 @@ class TestPrattParser:
 
     def test_unsupported_operator_warning(self, caplog):
         """Unsupported operators should parse but warn in dev mode."""
-        import logging
 
         reader = Reader()
         # //, mod, ** are marked as unsupported in Stage 1
@@ -528,14 +528,14 @@ class TestPrattParser:
 
     def test_unknown_operator_error_fields(self):
         """Unknown operator errors should include lexeme and position."""
-        src = "X @@ Y"
+        src = "X ## Y"
         with pytest.raises(ReaderError) as exc_info:
             Reader().read_term(src)
         err = exc_info.value
 
         # Should have lexeme/token field
         assert (
-            getattr(err, "lexeme", None) == "@@" or getattr(err, "token", None) == "@@"
+            getattr(err, "lexeme", None) == "##" or getattr(err, "token", None) == "##"
         )
 
         # Should have position/column

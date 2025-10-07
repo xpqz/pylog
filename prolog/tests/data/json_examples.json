@@ -1,0 +1,96 @@
+{
+  "simple_object": {
+    "name": "test",
+    "value": 42
+  },
+  "simple_array": [1, 2, 3, "hello"],
+  "nested_structure": {
+    "level1": {
+      "level2": {
+        "deep": true
+      }
+    }
+  },
+  "json_constants": {
+    "null_val": null,
+    "bool_true": true,
+    "bool_false": false
+  },
+  "mixed_array": [
+    42,
+    "hello",
+    true,
+    null,
+    {"nested": "object"}
+  ],
+  "empty_structures": {
+    "empty_object": {},
+    "empty_array": []
+  },
+  "number_types": {
+    "integer": 42,
+    "float": 3.14,
+    "zero": 0,
+    "negative": -17,
+    "scientific": 1.23e-4
+  },
+  "string_escaping": {
+    "quote": "\"hello\"",
+    "newline": "line1\nline2",
+    "tab": "col1\tcol2",
+    "backslash": "path\\to\\file",
+    "unicode": "café"
+  },
+  "complex_nested": {
+    "users": [
+      {
+        "id": 1,
+        "name": "Alice",
+        "active": true,
+        "roles": ["admin", "user"],
+        "metadata": {
+          "created": "2024-01-01",
+          "preferences": {
+            "theme": "dark",
+            "notifications": true
+          }
+        }
+      },
+      {
+        "id": 2,
+        "name": "Bob",
+        "active": false,
+        "roles": ["user"],
+        "metadata": {
+          "created": "2024-01-15",
+          "preferences": {
+            "theme": "light",
+            "notifications": false
+          }
+        }
+      }
+    ],
+    "total_count": 2,
+    "last_updated": null
+  },
+  "edge_cases": {
+    "very_long_string": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.",
+    "special_chars": "!@#$%^&*()_+-=[]{}|;':\",./<>?",
+    "numbers_as_strings": "123",
+    "large_integer": 9223372036854775807,
+    "small_float": 0.000001,
+    "deeply_nested": {
+      "a": {
+        "b": {
+          "c": {
+            "d": {
+              "e": {
+                "f": "deep_value"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
