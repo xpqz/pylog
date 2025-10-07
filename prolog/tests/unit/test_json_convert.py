@@ -95,8 +95,8 @@ class TestJSONToPrologConversion:
             (
                 List(
                     (
-                        Struct("-", (Atom("name"), Atom("test"))),
-                        Struct("-", (Atom("value"), Int(42))),
+                        Struct("=", (Atom("name"), Atom("test"))),
+                        Struct("=", (Atom("value"), Int(42))),
                     )
                 ),
             ),
@@ -194,8 +194,8 @@ class TestPrologToJSONConversion:
             (
                 List(
                     (
-                        Struct("-", (Atom("name"), Atom("test"))),
-                        Struct("-", (Atom("value"), Int(42))),
+                        Struct("=", (Atom("name"), Atom("test"))),
+                        Struct("=", (Atom("value"), Int(42))),
                     )
                 ),
             ),
@@ -464,8 +464,8 @@ class TestEdgeCasesAndExtensions:
             (
                 List(
                     (
-                        Struct("-", (Atom("key"), Atom("value1"))),
-                        Struct("-", (Atom("key"), Atom("value2"))),  # Duplicate key
+                        Struct("=", (Atom("key"), Atom("value1"))),
+                        Struct("=", (Atom("key"), Atom("value2"))),  # Duplicate key
                     )
                 ),
             ),

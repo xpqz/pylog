@@ -47,6 +47,7 @@ _OPERATOR_TABLE_MUTABLE: Dict[Tuple[str, str], OperatorInfo] = {
     ("-", "prefix"): (200, "fy", "'-'"),  # Unary minus
     ("+", "prefix"): (200, "fy", "'+'"),  # Unary plus
     ("\\+", "prefix"): (900, "fy", "'\\\\+'"),  # Negation as failure
+    ("@", "prefix"): (300, "fy", "'@'"),  # JSON constants (e.g., @(null))
     # Other standard operators
     ("is", "infix"): (700, "xfx", "'is'"),  # Arithmetic evaluation
     # CLP(FD) operators

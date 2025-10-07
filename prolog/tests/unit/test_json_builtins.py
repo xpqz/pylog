@@ -56,9 +56,9 @@ class TestJSONReadBuiltin:
 
         # Check pairs are sorted: name-test, value-42
         pair1, pair2 = pairs_list.items
-        assert isinstance(pair1, Struct) and pair1.functor == "-"
+        assert isinstance(pair1, Struct) and pair1.functor == "="
         assert pair1.args == (Atom("name"), Atom("test"))
-        assert isinstance(pair2, Struct) and pair2.functor == "-"
+        assert isinstance(pair2, Struct) and pair2.functor == "="
         assert pair2.args == (Atom("value"), Int(42))
 
     def test_json_read_array_from_string(self):
@@ -152,7 +152,7 @@ class TestJSONReadBuiltin:
 
         level1_pair = pairs_list.items[0]
         assert isinstance(level1_pair, Struct)
-        assert level1_pair.functor == "-"
+        assert level1_pair.functor == "="
         assert level1_pair.args[0] == Atom("level1")
 
         # The value should be another json(...) structure
@@ -265,8 +265,8 @@ class TestJSONWriteBuiltin:
         # Create json([name-test, value-42]) term
         pairs = List(
             (
-                Struct("-", (Atom("name"), Atom("test"))),
-                Struct("-", (Atom("value"), Int(42))),
+                Struct("=", (Atom("name"), Atom("test"))),
+                Struct("=", (Atom("value"), Int(42))),
             )
         )
         json_term = Struct("json", (pairs,))
@@ -341,10 +341,10 @@ class TestJSONWriteBuiltin:
         engine = Engine(program())
 
         # Create nested json structure
-        inner_pairs = List((Struct("-", (Atom("value"), Int(42))),))
+        inner_pairs = List((Struct("=", (Atom("value"), Int(42))),))
         inner_json = Struct("json", (inner_pairs,))
 
-        outer_pairs = List((Struct("-", (Atom("inner"), inner_json)),))
+        outer_pairs = List((Struct("=", (Atom("inner"), inner_json)),))
         outer_json = Struct("json", (outer_pairs,))
 
         stream = StringIO()
@@ -406,7 +406,7 @@ class TestJSONWriteBuiltin:
         engine = Engine(program())
 
         # Create json term
-        pairs = List((Struct("-", (Atom("test"), Atom("file"))),))
+        pairs = List((Struct("=", (Atom("test"), Atom("file"))),))
         json_term = Struct("json", (pairs,))
 
         # Create temporary file
@@ -662,7 +662,7 @@ class TestAtomJSONTermBuiltin:
         """Test atom_json_term/3 converting term to atom (classic mode)."""
         engine = Engine(program())
 
-        pairs = List((Struct("-", (Atom("name"), Atom("test"))),))
+        pairs = List((Struct("=", (Atom("name"), Atom("test"))),))
         json_term = Struct("json", (pairs,))
         atom_var = Var(engine.store.new_var("Atom"), "Atom")
         options = List(())
@@ -752,7 +752,7 @@ class TestAtomJSONTermBuiltin:
 
         # JSON atom and corresponding term
         json_atom = Atom('{"test": "value"}')
-        pairs = List((Struct("-", (Atom("test"), Atom("value"))),))
+        pairs = List((Struct("=", (Atom("test"), Atom("value"))),))
         json_term = Struct("json", (pairs,))
         options = List(())
 
@@ -766,7 +766,7 @@ class TestAtomJSONTermBuiltin:
 
         json_atom = Atom('{"test": "value"}')
         # Different term that doesn't match
-        pairs = List((Struct("-", (Atom("other"), Atom("data"))),))
+        pairs = List((Struct("=", (Atom("other"), Atom("data"))),))
         json_term = Struct("json", (pairs,))
         options = List(())
 
@@ -1120,8 +1120,8 @@ class TestJSONBuiltinKeyOrderingAndDuplicates:
             (
                 List(
                     (
-                        Struct("-", (Atom("key"), Atom("value1"))),
-                        Struct("-", (Atom("key"), Atom("value2"))),  # Duplicate key
+                        Struct("=", (Atom("key"), Atom("value1"))),
+                        Struct("=", (Atom("key"), Atom("value2"))),  # Duplicate key
                     )
                 ),
             ),

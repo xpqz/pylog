@@ -810,7 +810,7 @@ class PrattParser:
 
     def _get_prefix_info(self, token: Token) -> Optional[Tuple[int, str, str]]:
         """Get operator info for prefix position."""
-        if token.type in ["PLUS", "MINUS", "BACKSLASH_PLUS"]:
+        if token.type in ["PLUS", "MINUS", "BACKSLASH_PLUS", "@"]:
             return get_operator_info(token.value, "prefix")
         return None
 

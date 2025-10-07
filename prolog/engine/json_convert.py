@@ -153,7 +153,7 @@ def _json_to_prolog_recursive(
             for key, value in sorted_items:
                 key_term = Atom(key)
                 value_term = _json_to_prolog_recursive(value, mode, constants)
-                pair = Struct("-", (key_term, value_term))
+                pair = Struct("=", (key_term, value_term))
                 pairs.append(pair)
 
             return Struct("json", (List(tuple(pairs)),))
@@ -246,7 +246,7 @@ def _prolog_to_json_recursive(
         for pair in list_arg.items:
             if (
                 not isinstance(pair, Struct)
-                or pair.functor != "-"
+                or pair.functor != "="
                 or len(pair.args) != 2
             ):
                 raise ValueError("Invalid json structure: malformed key-value pair")
