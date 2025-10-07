@@ -41,6 +41,15 @@ from prolog.engine.json_convert import (
     DICT_MODE,
 )
 
+# Utility function imports
+from prolog.engine.utils.terms import reify_var, reify_term
+from prolog.engine.utils.copy import (
+    copy_term_with_fresh_vars,
+    copy_term_recursive,
+    build_prolog_list,
+)
+from prolog.engine.utils.arithmetic import eval_int
+
 # Debug imports (conditional imports moved here)
 from prolog.debug.tracer import PortsTracer
 from prolog.debug.metrics import EngineMetrics
@@ -2163,122 +2172,12 @@ class Engine:
                 pass
 
     def _reify_var(self, varid: int) -> Any:
-        """Follow bindings to get the value of a variable.
-
-        Args:
-            varid: The variable ID to reify.
-
-        Returns:
-            The ground term or a variable representation.
-        """
-        # Dereference to find what it's bound to
-        result = self.store.deref(varid)
-
-        if result[0] == "UNBOUND":
-            # Unbound variable - return a representation
-            _, ref = result
-            # Fast lookup for query var name, default to _<id>
-            hint = self._qname_by_id.get(ref, f"_{ref}")
-            return Var(ref, hint)
-
-        elif result[0] == "BOUND":
-            # Bound to a term - reify iteratively
-            _, ref, term = result
-            return self._reify_term(term)
-
-        else:
-            raise ValueError(f"Unknown cell tag: {result[0]}")
+        """Follow bindings to get the value of a variable."""
+        return reify_var(self.store, self._qname_by_id, varid)
 
     def _reify_term(self, term: Term) -> Any:
-        """Reify a term, following variable bindings (iterative).
-
-        Reified lists are always flattened: nested PrologList structures
-        where the tail is also a PrologList will be combined into a single
-        PrologList. Improper lists (with non-list tails) retain their tail.
-
-        Args:
-            term: The term to reify.
-
-        Returns:
-            The ground term with variables reified.
-        """
-        # Use iterative approach to avoid stack overflow
-        stack = [term]
-        visited = set()
-        all_terms = []
-
-        # First pass: collect all terms in dependency order
-        while stack:
-            current = stack.pop()
-            term_id = id(current)
-
-            if term_id in visited:
-                continue
-            visited.add(term_id)
-            all_terms.append(current)
-
-            if isinstance(current, Var):
-                # Will need to check binding
-                result = self.store.deref(current.id)
-                if result[0] == "BOUND":
-                    _, _, bound_term = result
-                    stack.append(bound_term)
-            elif isinstance(current, Struct):
-                for arg in reversed(current.args):
-                    stack.append(arg)
-            elif isinstance(current, PrologList):
-                stack.append(current.tail)
-                for item in reversed(current.items):
-                    stack.append(item)
-
-        # Second pass: reify bottom-up
-        reified = {}
-        for current in reversed(all_terms):
-            term_id = id(current)
-
-            if isinstance(current, Var):
-                result = self.store.deref(current.id)
-                if result[0] == "UNBOUND":
-                    # Unbound variable - return a representation
-                    _, ref = result
-                    # Fast lookup for query var name
-                    hint = self._qname_by_id.get(ref, f"_{ref}")
-                    reified[term_id] = Var(ref, hint)
-                elif result[0] == "BOUND":
-                    # Use reified version of bound term
-                    _, _, bound_term = result
-                    reified[term_id] = reified.get(id(bound_term), bound_term)
-                else:
-                    raise ValueError(f"Unknown cell tag: {result[0]}")
-
-            elif isinstance(current, (Atom, Int, Float)):
-                reified[term_id] = current
-
-            elif isinstance(current, Struct):
-                reified_args = tuple(reified.get(id(arg), arg) for arg in current.args)
-                reified[term_id] = Struct(current.functor, reified_args)
-
-            elif isinstance(current, PrologList):
-                reified_items = list(
-                    reified.get(id(item), item) for item in current.items
-                )
-                reified_tail = reified.get(id(current.tail), current.tail)
-
-                # Flatten if tail is also a PrologList
-                if isinstance(reified_tail, PrologList):
-                    # Combine items from current list with items from tail list
-                    all_items = reified_items + list(reified_tail.items)
-                    final_tail = reified_tail.tail
-                    reified[term_id] = PrologList(tuple(all_items), tail=final_tail)
-                else:
-                    reified[term_id] = PrologList(
-                        tuple(reified_items), tail=reified_tail
-                    )
-            else:
-                # Unknown term type
-                reified[term_id] = current
-
-        return reified.get(id(term), term)
+        """Reify a term, following variable bindings."""
+        return reify_term(self.store, self._qname_by_id, term)
 
     def _execute_builtin(self, term: Term) -> bool:
         """Execute a builtin directly (for testing).
@@ -2777,8 +2676,7 @@ class Engine:
 
     def _copy_term_with_fresh_vars(self, term: Term) -> Term:
         """Create a copy of a term with fresh variables."""
-        var_mapping = {}
-        return self._copy_term_recursive(term, var_mapping)
+        return copy_term_with_fresh_vars(self.store, term)
 
     def _copy_term_recursive(
         self, term: Term, var_mapping: Dict[int, int], target_store=None
@@ -2786,39 +2684,11 @@ class Engine:
         """Recursively copy a term, mapping old var IDs to new ones."""
         if target_store is None:
             target_store = self.store
-
-        if isinstance(term, Var):
-            if term.id not in var_mapping:
-                var_mapping[term.id] = target_store.new_var(term.hint)
-            return Var(var_mapping[term.id], term.hint)
-        elif isinstance(term, (Atom, Int, Float)):
-            return term
-        elif isinstance(term, Struct):
-            new_args = tuple(
-                self._copy_term_recursive(arg, var_mapping, target_store)
-                for arg in term.args
-            )
-            return Struct(term.functor, new_args)
-        elif isinstance(term, PrologList):
-            new_items = tuple(
-                self._copy_term_recursive(item, var_mapping, target_store)
-                for item in term.items
-            )
-            new_tail = self._copy_term_recursive(term.tail, var_mapping, target_store)
-            return PrologList(new_items, new_tail)
-        return term
+        return copy_term_recursive(term, var_mapping, target_store)
 
     def _build_prolog_list(self, items: List[Term]) -> Term:
         """Build a Prolog list term from a list of items."""
-        if not items:
-            return Atom("[]")
-
-        # Build list from right to left
-        result = Atom("[]")
-        for item in reversed(items):
-            result = PrologList((item,), tail=result)
-
-        return result
+        return build_prolog_list(items)
 
     def _extract_existential_vars(self, goal: Term) -> Tuple[Term, List[int]]:
         """Extract existentially quantified variables (^) from goal.
@@ -2995,25 +2865,8 @@ class Engine:
         return unify(term1, term2, self.store, trail_adapter, occurs_check=True)
 
     def _eval_int(self, t: Term) -> int:
-        """Evaluate a term as an integer.
-
-        Args:
-            t: The term to evaluate.
-
-        Returns:
-            The integer value.
-
-        Raises:
-            ValueError: If the term is not an integer.
-        """
-        if isinstance(t, Int):
-            return t.value
-        if isinstance(t, Var):
-            r = self.store.deref(t.id)
-            if r[0] == "BOUND":
-                _, _, b = r
-                return self._eval_int(b)
-        raise ValueError("non-integer")
+        """Evaluate a term as an integer."""
+        return eval_int(self.store, t)
 
     def _builtin_gt(self, args: tuple) -> bool:
         """>(X, Y) - arithmetic greater-than comparison."""
