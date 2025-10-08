@@ -10,9 +10,21 @@ class StepController:
         self._mode = "running"
         self._barrier = threading.Event()
         self._baseline_depth = -1
-        self.eligible_ports = eligible_ports
+        # Normalize ports to uppercase for case-insensitive matching
+        self.eligible_ports = (
+            {p.upper() for p in eligible_ports} if eligible_ports else None
+        )
 
     def set_mode(self, mode, depth=None):
+        """Set the stepping mode.
+
+        Args:
+            mode: One of 'running', 'paused', 'step_in', 'step_over', 'step_out'
+            depth: Required for step_over and step_out modes (current frame depth)
+
+        Raises:
+            ValueError: If mode is invalid or depth is missing for step_over/step_out
+        """
         if mode not in VALID_MODES:
             raise ValueError(f"Invalid mode: {mode}. Must be one of {VALID_MODES}")
 
@@ -29,9 +41,19 @@ class StepController:
         return self._mode
 
     def should_pause(self, event):
-        # Check port eligibility first
-        if self.eligible_ports and event.get("port") not in self.eligible_ports:
-            return False
+        """Check if execution should pause at this event.
+
+        Args:
+            event: Dict with 'port', 'depth' keys (from DAP event format)
+
+        Returns:
+            True if execution should pause at this event, False otherwise
+        """
+        # Check port eligibility first (normalize to uppercase)
+        if self.eligible_ports:
+            event_port = event.get("port", "").upper()
+            if event_port not in self.eligible_ports:
+                return False
 
         if self._mode == "running":
             return False

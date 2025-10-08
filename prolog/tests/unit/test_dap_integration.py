@@ -134,6 +134,26 @@ def test_should_pause_with_port_filter(mode, port, eligible_ports, expected):
     assert controller.should_pause(event) == expected
 
 
+def test_port_case_normalization():
+    """Port filtering is case-insensitive."""
+    # Create controller with lowercase ports
+    controller = StepController(eligible_ports={"call", "exit"})
+    controller.set_mode("step_in")
+
+    # Should match uppercase event ports
+    assert controller.should_pause({"depth": 0, "port": "CALL"})
+    assert controller.should_pause({"depth": 0, "port": "EXIT"})
+    assert not controller.should_pause({"depth": 0, "port": "REDO"})
+
+    # Should also match lowercase event ports
+    assert controller.should_pause({"depth": 0, "port": "call"})
+    assert controller.should_pause({"depth": 0, "port": "exit"})
+
+    # Should also match mixed case
+    assert controller.should_pause({"depth": 0, "port": "Call"})
+    assert controller.should_pause({"depth": 0, "port": "eXiT"})
+
+
 # --- BreakpointStore Tests ---
 
 
