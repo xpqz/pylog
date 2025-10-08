@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional, Callable
 
 from prolog.ast.terms import Term, Atom, Struct, Var
 from prolog.debug.filters import TraceFilters, should_emit_event
+from prolog.debug.dap import StepController, BreakpointStore, create_snapshot
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,7 +81,13 @@ class PortsTracer:
     - Default bindings_policy='none'
     """
 
-    def __init__(self, engine, filters: Optional[TraceFilters] = None):
+    def __init__(
+        self,
+        engine,
+        filters: Optional[TraceFilters] = None,
+        step_controller: Optional[StepController] = None,
+        breakpoint_store: Optional[BreakpointStore] = None,
+    ):
         """Initialize tracer with engine reference and optional filters."""
         self.engine = engine
         self.step_counter = 0
@@ -98,6 +105,10 @@ class PortsTracer:
         # Filters (TraceFilters integration)
         self._filters: Optional[TraceFilters] = filters
         self._custom_filter: Optional[Callable] = None
+
+        # DAP integration (optional)
+        self.step_controller = step_controller
+        self.breakpoint_store = breakpoint_store
 
     def _intern_pred_id(self, name: str, arity: int) -> str:
         """
@@ -285,6 +296,55 @@ class PortsTracer:
         # No filters - emit all events
         return True
 
+    def _to_dap_event(self, event: TraceEvent) -> Dict[str, Any]:
+        """
+        Convert TraceEvent to DAP event format.
+
+        DAP components expect events with: functor, arity, port, depth, goal
+        """
+        # Extract functor and arity from goal
+        if isinstance(event.goal, Atom):
+            functor = event.goal.name
+            arity = 0
+        elif isinstance(event.goal, Struct):
+            functor = event.goal.functor
+            arity = len(event.goal.args)
+        else:
+            # For Var or other types, use a generic functor
+            functor = "var" if isinstance(event.goal, Var) else str(event.goal)
+            arity = 0
+
+        return {
+            "functor": functor,
+            "arity": arity,
+            "port": event.port.upper(),  # Convert to uppercase for consistency
+            "depth": event.frame_depth,
+            "goal": event.goal,
+        }
+
+    def _should_pause_for_dap(self, event: TraceEvent) -> bool:
+        """
+        Check if execution should pause for DAP debugging.
+
+        Returns True if either:
+        - StepController says we should pause at this depth/port
+        - BreakpointStore has a matching breakpoint
+        """
+        if not self.step_controller and not self.breakpoint_store:
+            return False
+
+        dap_event = self._to_dap_event(event)
+
+        # Check step controller
+        if self.step_controller and self.step_controller.should_pause(dap_event):
+            return True
+
+        # Check breakpoints
+        if self.breakpoint_store and self.breakpoint_store.matches(dap_event):
+            return True
+
+        return False
+
     def emit_event(self, port_or_event, goal: Term = None):
         """
         Emit a trace event through configured sinks.
@@ -331,6 +391,14 @@ class PortsTracer:
         for sink in self.sinks:
             sink.write_event(event)
 
+        # DAP debugging: Check if we should pause execution
+        if self._should_pause_for_dap(event):
+            # Create snapshot for debugger (currently unused, reserved for future DAP server)
+            _snapshot = create_snapshot(self.engine, self._to_dap_event(event))
+            # Wait for debugger to resume (this blocks execution)
+            if self.step_controller:
+                self.step_controller.wait_for_resume()
+
     def emit_event_with_bindings(self, port: str, goal: Term, bindings: Dict[str, Any]):
         """
         Emit a trace event with variable bindings through configured sinks.
@@ -356,6 +424,14 @@ class PortsTracer:
         # Send to all sinks
         for sink in self.sinks:
             sink.write_event(event)
+
+        # DAP debugging: Check if we should pause execution
+        if self._should_pause_for_dap(event):
+            # Create snapshot for debugger (currently unused, reserved for future DAP server)
+            _snapshot = create_snapshot(self.engine, self._to_dap_event(event))
+            # Wait for debugger to resume (this blocks execution)
+            if self.step_controller:
+                self.step_controller.wait_for_resume()
 
     def emit_internal_event(self, kind: str, details: Dict[str, Any]):
         """
