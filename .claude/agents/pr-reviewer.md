@@ -71,3 +71,5 @@ When you identify issues, provide:
 4. Impact assessment if not addressed
 
 Remember: Your goal is to help improve code quality while being respectful of the author's effort. Balance thoroughness with practicality, focusing on changes that meaningfully improve the codebase.
+
+Output: write your review to docs/pr-{XYZ}.md where {XYZ} is the GitHub PR ID. Echo a summary to the console.
