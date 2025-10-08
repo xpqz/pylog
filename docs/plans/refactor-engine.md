@@ -88,10 +88,11 @@ Each phase ends with a full test run. Order chosen to minimize coupling risk.
 - Preserve indexing rebuild via `IndexedProgram.from_clauses` when `use_indexing=True`.
 - Acceptance: dynamic DB unit tests and `test_predicate_isolation.py` green.
 
-8) Clause Selection Wrapper
-- Extract clause selection and cursor management to `utils/selection.py` and call from `_dispatch_predicate`.
-- Keep streaming/non-streaming decision points and metrics accounting intact.
-- Acceptance: general engine tests (`test_performance.py`, `test_builtins.py` dispatch paths) green.
+8) Clause Selection Wrapper ✅ **COMPLETED**
+- ✅ Extract clause selection and cursor management to `utils/selection.py` and call from `_dispatch_predicate`.
+- ✅ Keep streaming/non-streaming decision points and metrics accounting intact.
+- ✅ Acceptance: general engine tests (`test_performance.py`, `test_builtins.py` dispatch paths) green.
+- **Implementation:** PR #266 - Extracted 80+ lines of clause selection logic to dedicated utilities with comprehensive unit tests
 
 9) Optional: Dispatch Module
 - If `_dispatch_*` bodies remain large, move them to `prolog/engine/dispatch.py` as free functions (e.g., `dispatch_predicate(engine, goal, depth, call_emitted)`), keeping Engine methods as thin delegates.

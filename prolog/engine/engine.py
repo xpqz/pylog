@@ -13,7 +13,7 @@ from prolog.ast.terms import (
     List as PrologList,
     PrologDict,
 )
-from prolog.ast.clauses import Program, Clause, ClauseCursor
+from prolog.ast.clauses import Program, Clause
 from prolog.engine.rename import VarRenamer
 from prolog.unify.store import Store, Cell
 from prolog.unify.unify import unify
@@ -31,7 +31,6 @@ from prolog.engine.runtime import (
 )
 from prolog.engine.trail_adapter import TrailAdapter
 from prolog.engine.errors import PrologThrow, UndefinedPredicateError
-from prolog.engine.cursors import StreamingClauseCursor
 
 # JSON support imports
 from prolog.engine.json_convert import (
@@ -49,6 +48,11 @@ from prolog.engine.utils.copy import (
     build_prolog_list,
 )
 from prolog.engine.utils.arithmetic import eval_int
+from prolog.engine.utils.selection import (
+    select_clauses,
+    extract_predicate_key,
+    SelectionContext,
+)
 
 # Builtin registration system
 from prolog.engine.builtins import register_all
@@ -993,87 +997,52 @@ class Engine:
         Returns:
             True if successful, False if failed.
         """
-        # Get matching clauses
-        if isinstance(goal.term, Atom):
-            functor = goal.term.name
-            arity = 0
-        elif isinstance(goal.term, Struct):
-            functor = goal.term.functor
-            arity = len(goal.term.args)
-        else:
+        # Extract predicate key and emit ports
+        pred_key = extract_predicate_key(goal.term)
+        if pred_key is None:
             # Can't match a variable or other term
             return False
 
+        functor, arity = pred_key
+        pred_id = f"{functor}/{arity}"
+
         # Emit CALL port before processing (only once per logical call)
         if not call_emitted:
-            self._port("CALL", f"{functor}/{arity}")
+            self._port("CALL", pred_id)
         # Also emit to tracer if enabled (always emit for tracer consumers)
         self._trace_port("call", goal.term, depth_override=call_depth)
 
         # Record metrics for CALL
-        pred_id = f"{functor}/{arity}"
         if self.metrics:
             self.metrics.record_call(pred_id)
 
-        # Get matching clauses - use indexing if available
-        if self.use_indexing and hasattr(self.program, "select"):
-            # Use indexed selection
-            pred_key = (functor, arity)
+        # Select clauses using utilities
+        context = SelectionContext(
+            use_indexing=self.use_indexing,
+            use_streaming=self.use_streaming,
+            debug=self.debug,
+            metrics=self.metrics,
+            tracer=self.tracer,
+            trace=self.trace,
+        )
+        selection = select_clauses(
+            program=self.program, goal_term=goal.term, store=self.store, context=context
+        )
+        cursor = selection.cursor
 
-            # Determine if we should use streaming
-            # Streaming is disabled when debug or metrics are enabled to preserve candidate counting
-            should_stream = (
-                self.use_streaming
-                and not self.debug
-                and not self.metrics
-                and not self.tracer  # Also disable with tracer to preserve debug behavior
-            )
-
-            if should_stream:
-                # Use streaming cursor for memory efficiency
-                clause_iterator = self.program.select(pred_key, goal.term, self.store)
-                cursor = StreamingClauseCursor(
-                    functor=functor, arity=arity, it=clause_iterator
+        # Update debug counters and metrics
+        if self.debug:
+            self._candidates_considered += selection.candidates_considered
+            if self.metrics and selection.candidates_yielded > 0:
+                self.metrics.record_candidates(
+                    selection.candidates_considered, selection.candidates_yielded
                 )
-            else:
-                # Materialize list for debug/metrics compatibility
-                matches = list(self.program.select(pred_key, goal.term, self.store))
-                cursor = ClauseCursor(matches=matches, functor=functor, arity=arity)
 
-                # Track candidates in debug mode (only when materialized)
-                if self.debug:
-                    self._candidates_considered += len(matches)
-                    if self.metrics:
-                        # Count how many are actually yielded (have potential to match)
-                        yielded = len([m for m in matches if m is not None])
-                        self.metrics.record_candidates(len(matches), yielded)
-
-                    # Log detailed info if trace is enabled too
-                    if self.trace:
-                        # Optimize total clause count for IndexedProgram
-                        if isinstance(self.program, IndexedProgram):
-                            pred_idx = self.program._index.preds.get((functor, arity))
-                            total_clauses = len(pred_idx.order) if pred_idx else 0
-                        else:
-                            total_clauses = len(
-                                self.program.clauses_for(functor, arity)
-                            )
-
-                        if total_clauses > 0:
-                            self._trace_log.append(
-                                f"pred {functor}/{arity}: considered {len(matches)} of {total_clauses} clauses"
-                            )
-        else:
-            # Fall back to standard clause selection
-            matches = self.program.clauses_for(functor, arity)
-            cursor = ClauseCursor(matches=matches, functor=functor, arity=arity)
-
-            # Track all candidates in debug mode (no filtering)
-            if self.debug:
-                self._candidates_considered += len(matches)
-                if self.metrics:
-                    # All clauses are yielded (no filtering without indexing)
-                    self.metrics.record_candidates(len(matches), len(matches))
+        # Log trace information if available
+        if self.trace and selection.total_clauses > 0:
+            self._trace_log.append(
+                f"pred {pred_id}: considered {selection.candidates_considered} of {selection.total_clauses} clauses"
+            )
 
         if not cursor.has_more():
             # No matching clauses
