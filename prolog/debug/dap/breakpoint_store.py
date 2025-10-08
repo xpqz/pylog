@@ -35,6 +35,10 @@ class BreakpointStore:
         if bp_id in self._breakpoints:
             del self._breakpoints[bp_id]
 
+    def clear_all(self):
+        """Remove all breakpoints."""
+        self._breakpoints.clear()
+
     def has_breakpoint(self, functor, arity):
         """Check if a breakpoint exists for a predicate.
 

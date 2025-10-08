@@ -378,10 +378,7 @@ def handle_set_breakpoints(request: dict[str, Any]) -> dict[str, Any]:
 
     # Clear all existing breakpoints (setBreakpoints replaces, not adds)
     bp_store = session.breakpoint_store
-    # Get all existing breakpoint IDs and remove them
-    existing_ids = list(bp_store._breakpoints.keys())
-    for bp_id in existing_ids:
-        bp_store.remove_breakpoint(bp_id)
+    bp_store.clear_all()
 
     # Process each breakpoint
     verified_breakpoints = []

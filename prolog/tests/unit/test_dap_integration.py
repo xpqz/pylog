@@ -182,6 +182,18 @@ def test_breakpoint_match_any_port(bp_store):
     assert bp_store.matches(event={"functor": "test", "arity": 1, "port": "EXIT"})
 
 
+def test_breakpoint_clear_all(bp_store):
+    bp_store.add_breakpoint("member", 2)
+    bp_store.add_breakpoint("append", 3)
+    assert bp_store.has_breakpoint("member", 2)
+    assert bp_store.has_breakpoint("append", 3)
+
+    bp_store.clear_all()
+
+    assert not bp_store.has_breakpoint("member", 2)
+    assert not bp_store.has_breakpoint("append", 3)
+
+
 # --- Snapshot API Tests ---
 
 
