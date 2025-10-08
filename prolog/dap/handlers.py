@@ -212,3 +212,128 @@ def handle_disconnect(request: dict[str, Any]) -> dict[str, Any]:
     logger.info("DAP session disconnected and cleaned up")
 
     return {}
+
+
+def handle_continue(request: dict[str, Any]) -> dict[str, Any]:
+    """Handle the continue request.
+
+    Resumes execution in running mode (no pausing except at breakpoints).
+
+    Args:
+        request: Continue request from DAP client
+
+    Returns:
+        Empty dict on success
+
+    Raises:
+        RuntimeError: If no active engine session
+    """
+    session = get_session()
+
+    if not session.step_controller:
+        raise RuntimeError("No active engine - call launch first")
+
+    # Set mode to running and resume execution
+    session.step_controller.set_mode("running")
+    session.step_controller.resume()
+
+    logger.debug("Continue: set mode to running")
+
+    return {}
+
+
+def handle_next(request: dict[str, Any]) -> dict[str, Any]:
+    """Handle the next (step over) request.
+
+    Steps over the current statement, pausing at the next statement at
+    the same or shallower depth.
+
+    Args:
+        request: Next request from DAP client
+
+    Returns:
+        Empty dict on success
+
+    Raises:
+        RuntimeError: If no active engine session
+    """
+    session = get_session()
+
+    if not session.step_controller:
+        raise RuntimeError("No active engine - call launch first")
+
+    # Get current depth from engine's goal stack
+    # For now, use depth 0 as baseline (will be updated when query execution is implemented)
+    current_depth = 0
+    if session.engine and hasattr(session.engine, "goal_stack"):
+        current_depth = len(session.engine.goal_stack)
+
+    # Set mode to step_over with current depth and resume
+    session.step_controller.set_mode("step_over", depth=current_depth)
+    session.step_controller.resume()
+
+    logger.debug(f"Next: set mode to step_over at depth {current_depth}")
+
+    return {}
+
+
+def handle_step_in(request: dict[str, Any]) -> dict[str, Any]:
+    """Handle the stepIn request.
+
+    Steps into the next statement, including entering called predicates.
+
+    Args:
+        request: StepIn request from DAP client
+
+    Returns:
+        Empty dict on success
+
+    Raises:
+        RuntimeError: If no active engine session
+    """
+    session = get_session()
+
+    if not session.step_controller:
+        raise RuntimeError("No active engine - call launch first")
+
+    # Set mode to step_in and resume execution
+    session.step_controller.set_mode("step_in")
+    session.step_controller.resume()
+
+    logger.debug("StepIn: set mode to step_in")
+
+    return {}
+
+
+def handle_step_out(request: dict[str, Any]) -> dict[str, Any]:
+    """Handle the stepOut request.
+
+    Steps out of the current predicate, pausing when returning to the caller.
+
+    Args:
+        request: StepOut request from DAP client
+
+    Returns:
+        Empty dict on success
+
+    Raises:
+        RuntimeError: If no active engine session
+    """
+    session = get_session()
+
+    if not session.step_controller:
+        raise RuntimeError("No active engine - call launch first")
+
+    # Get current depth from engine's goal stack
+    # For now, use depth 0 as baseline (will be updated when query execution is implemented)
+    current_depth = 0
+    if session.engine and hasattr(session.engine, "goal_stack"):
+        current_depth = len(session.engine.goal_stack)
+
+    # Set mode to step_out with current depth and resume
+    session.step_controller.set_mode("step_out", depth=current_depth)
+    session.step_controller.resume()
+
+    logger.debug(f"StepOut: set mode to step_out at depth {current_depth}")
+
+    return {}
