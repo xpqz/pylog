@@ -350,3 +350,96 @@ def handle_step_out(request: dict[str, Any]) -> dict[str, Any]:
     logger.debug(f"StepOut: set mode to step_out at depth {current_depth}")
 
     return {}
+
+
+def handle_set_breakpoints(request: dict[str, Any]) -> dict[str, Any]:
+    """Handle the setBreakpoints request.
+
+    Sets or clears function breakpoints (predicate breakpoints in Prolog terms).
+    This replaces all existing breakpoints with the new set.
+
+    Args:
+        request: SetBreakpoints request from DAP client with breakpoints list
+
+    Returns:
+        Dict with "breakpoints" key containing list of verified breakpoints
+
+    Raises:
+        RuntimeError: If no active engine session
+    """
+    session = get_session()
+
+    if not session.breakpoint_store:
+        raise RuntimeError("No active debugging session - call launch first")
+
+    # Extract breakpoints from request
+    arguments = request.get("arguments", {})
+    breakpoints = arguments.get("breakpoints", [])
+
+    # Clear all existing breakpoints (setBreakpoints replaces, not adds)
+    bp_store = session.breakpoint_store
+    # Get all existing breakpoint IDs and remove them
+    existing_ids = list(bp_store._breakpoints.keys())
+    for bp_id in existing_ids:
+        bp_store.remove_breakpoint(bp_id)
+
+    # Process each breakpoint
+    verified_breakpoints = []
+
+    for idx, bp in enumerate(breakpoints):
+        name = bp.get("name", "")
+
+        # Parse functor/arity from name (format: "functor/arity")
+        if "/" not in name:
+            # Invalid format
+            verified_breakpoints.append(
+                {
+                    "id": idx,
+                    "verified": False,
+                    "message": f"Invalid breakpoint format: '{name}'. Expected 'functor/arity'",
+                }
+            )
+            continue
+
+        try:
+            functor, arity_str = name.rsplit("/", 1)
+            arity = int(arity_str)
+        except (ValueError, TypeError):
+            # Invalid arity
+            verified_breakpoints.append(
+                {
+                    "id": idx,
+                    "verified": False,
+                    "message": f"Invalid arity in breakpoint: '{name}'",
+                }
+            )
+            continue
+
+        # Parse port filter from condition if present
+        condition = bp.get("condition", "")
+        ports = None
+        if condition:
+            # Parse "port=CALL" or "port=CALL,EXIT" format
+            if condition.startswith("port="):
+                port_str = condition[5:]  # Remove "port=" prefix
+                ports = [p.strip().upper() for p in port_str.split(",")]
+
+        # Add breakpoint to store
+        bp_id = bp_store.add_breakpoint(functor, arity, ports=ports)
+
+        # Return verified breakpoint
+        verified_breakpoints.append(
+            {
+                "id": bp_id,
+                "verified": True,
+            }
+        )
+
+        logger.debug(
+            f"Set breakpoint: {functor}/{arity}"
+            + (f" with ports {ports}" if ports else "")
+        )
+
+    logger.info(f"Set {len(verified_breakpoints)} breakpoints")
+
+    return {"breakpoints": verified_breakpoints}
