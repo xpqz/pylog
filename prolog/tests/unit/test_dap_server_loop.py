@@ -213,5 +213,41 @@ class TestDAPServerThreadSafety:
         for t in threads:
             t.join()
 
-        # Should have sent 50 total messages without corruption
-        # Actual verification would parse all messages
+        # Verify messages were sent without corruption
+        # Parse all messages from the output buffer
+        output = mock_stdout.getvalue()
+        messages = []
+
+        # Split by Content-Length header
+        remaining = output
+        while remaining:
+            if not remaining.startswith(b"Content-Length: "):
+                break
+
+            # Find header end
+            header_end = remaining.find(b"\r\n\r\n")
+            if header_end == -1:
+                break
+
+            header = remaining[:header_end].decode("utf-8")
+            content_length = int(header.split(": ")[1])
+
+            # Extract body
+            body_start = header_end + 4
+            body_end = body_start + content_length
+            if body_end > len(remaining):
+                break
+
+            body = remaining[body_start:body_end]
+            messages.append(json.loads(body))
+
+            remaining = remaining[body_end:]
+
+        # Should have 50 total messages (5 threads * 10 messages each)
+        assert len(messages) == 50
+
+        # All messages should be valid events
+        for msg in messages:
+            assert msg["type"] == "event"
+            assert msg["event"] == "output"
+            assert "output" in msg["body"]

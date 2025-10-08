@@ -3,7 +3,12 @@
 import pytest
 import json
 from io import BytesIO
-from prolog.dap.protocol import DAPMessage, encode_message, decode_message
+from prolog.dap.protocol import (
+    DAPMessage,
+    encode_message,
+    decode_message,
+    MAX_MESSAGE_SIZE,
+)
 
 
 class TestDAPMessageFormat:
@@ -110,6 +115,43 @@ class TestDAPMessageFormat:
 
         stream = BytesIO(message)
         with pytest.raises(ValueError, match="Content-Length"):
+            decode_message(stream)
+
+    def test_decode_zero_length_body(self):
+        """Test decoding with zero-length body."""
+
+        message = b"Content-Length: 0\r\n\r\n"
+
+        stream = BytesIO(message)
+        with pytest.raises(json.JSONDecodeError):
+            # Empty body should fail JSON parsing
+            decode_message(stream)
+
+    def test_decode_negative_content_length(self):
+        """Test decoding with negative Content-Length raises error."""
+
+        message = b"Content-Length: -10\r\n\r\n"
+
+        stream = BytesIO(message)
+        with pytest.raises(ValueError, match="negative"):
+            decode_message(stream)
+
+    def test_decode_non_numeric_content_length(self):
+        """Test decoding with non-numeric Content-Length raises error."""
+
+        message = b"Content-Length: abc\r\n\r\n"
+
+        stream = BytesIO(message)
+        with pytest.raises(ValueError, match="Invalid Content-Length"):
+            decode_message(stream)
+
+    def test_decode_message_too_large(self):
+        """Test decoding with Content-Length exceeding MAX_MESSAGE_SIZE."""
+
+        message = f"Content-Length: {MAX_MESSAGE_SIZE + 1}\r\n\r\n".encode("utf-8")
+
+        stream = BytesIO(message)
+        with pytest.raises(ValueError, match="exceeds maximum"):
             decode_message(stream)
 
 

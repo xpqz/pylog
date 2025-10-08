@@ -14,6 +14,9 @@ import json
 from typing import Any, BinaryIO, Optional
 from dataclasses import dataclass
 
+# Maximum message size: 1MB (reasonable default for DAP messages)
+MAX_MESSAGE_SIZE = 1024 * 1024
+
 
 def encode_message(message: dict[str, Any]) -> bytes:
     """Encode a DAP message with Content-Length header.
@@ -64,7 +67,21 @@ def decode_message(stream: BinaryIO) -> dict[str, Any]:
     if "Content-Length" not in headers:
         raise ValueError("Missing Content-Length header in DAP message")
 
-    content_length = int(headers["Content-Length"])
+    try:
+        content_length = int(headers["Content-Length"])
+    except ValueError as e:
+        raise ValueError(
+            f"Invalid Content-Length value: {headers['Content-Length']}"
+        ) from e
+
+    # Validate content length
+    if content_length < 0:
+        raise ValueError(f"Content-Length cannot be negative: {content_length}")
+
+    if content_length > MAX_MESSAGE_SIZE:
+        raise ValueError(
+            f"Content-Length {content_length} exceeds maximum allowed size {MAX_MESSAGE_SIZE}"
+        )
 
     # Read body
     body = stream.read(content_length)

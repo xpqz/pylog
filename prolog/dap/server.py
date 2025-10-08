@@ -2,6 +2,18 @@
 
 The server accepts DAP protocol messages via stdio or socket, dispatches them
 to registered handlers, and sends responses/events back to the client.
+
+Logging Configuration:
+    The server uses Python's logging module. To see log output, configure logging
+    before creating the server:
+
+        import logging
+        logging.basicConfig(level=logging.INFO)
+
+    Or configure specifically for this module:
+
+        import logging
+        logging.getLogger('prolog.dap.server').setLevel(logging.DEBUG)
 """
 
 import sys
@@ -152,7 +164,7 @@ class DAPServer:
         request_seq = request.get("seq", 0)
 
         if command not in self._handlers:
-            logger.warning(f"Unknown command: {command}")
+            logger.warning(f"Unknown command: '{command}'")
             response = {
                 "success": False,
                 "message": f"Command '{command}' is not supported",
@@ -172,8 +184,8 @@ class DAPServer:
             return {"success": True, "body": result}
 
         except Exception as e:
-            logger.error(f"Error handling {command}: {e}", exc_info=True)
-            error_msg = f"Error executing {command}: {str(e)}"
+            logger.error(f"Error handling '{command}': {e}", exc_info=True)
+            error_msg = f"Error executing '{command}': {str(e)}"
             self.send_response(request_seq, command, False, message=error_msg)
             return {"success": False, "message": error_msg}
 
