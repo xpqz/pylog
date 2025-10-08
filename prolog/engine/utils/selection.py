@@ -5,12 +5,47 @@ extracted from the engine's _dispatch_predicate method to reduce complexity
 and improve maintainability.
 """
 
-from typing import Tuple, Optional, Union, Any
+from dataclasses import dataclass
+from typing import Tuple, Optional, Union, Iterator, Protocol
 from prolog.ast.terms import Term, Atom, Struct
 from prolog.ast.clauses import ClauseCursor
 from prolog.engine.cursors import StreamingClauseCursor
 from prolog.engine.indexed_program import IndexedProgram
 from prolog.unify.store import Store
+
+
+class MetricsCollector(Protocol):
+    """Protocol for metrics collectors."""
+
+    def record_candidates(self, considered: int, yielded: int) -> None:
+        """Record candidate clause statistics."""
+        ...
+
+
+class Tracer(Protocol):
+    """Protocol for trace systems."""
+
+    def emit_internal_event(self, event_type: str, data: dict) -> None:
+        """Emit an internal tracing event."""
+        ...
+
+
+class Program(Protocol):
+    """Protocol for Prolog programs."""
+
+    def clauses_for(self, functor: str, arity: int) -> list:
+        """Get clauses for a predicate."""
+        ...
+
+
+class IndexedProgramProtocol(Program, Protocol):
+    """Protocol for indexed Prolog programs."""
+
+    def select(
+        self, pred_key: Tuple[str, int], goal_term: Term, store: Store
+    ) -> Iterator:
+        """Select matching clauses using indexing."""
+        ...
 
 
 def extract_predicate_key(goal_term: Term) -> Optional[Tuple[str, int]]:
@@ -32,18 +67,24 @@ def extract_predicate_key(goal_term: Term) -> Optional[Tuple[str, int]]:
 
 
 def should_use_streaming(
-    use_streaming: bool, debug: bool, metrics: Any, tracer: Any
+    use_streaming: bool,
+    debug: bool,
+    metrics: Optional[MetricsCollector],
+    tracer: Optional[Tracer],
 ) -> bool:
     """Determine if streaming cursor should be used.
 
-    Streaming is disabled when debug or metrics are enabled to preserve
-    candidate counting and tracing behavior.
+    Streaming is disabled when debug or metrics are enabled because:
+    - Debug mode needs to count candidates_considered for instrumentation
+    - Metrics need to count candidates_yielded for performance tracking
+    - Tracer needs complete event sequences for debugging
+    All of these require materialized lists, not streaming iterators.
 
     Args:
         use_streaming: Whether streaming is enabled in general.
         debug: Whether debug mode is enabled.
-        metrics: Metrics collector instance (if any).
-        tracer: Tracer instance (if any).
+        metrics: Metrics collector instance (None if disabled).
+        tracer: Tracer instance (None if disabled).
 
     Returns:
         True if streaming should be used, False otherwise.
@@ -56,34 +97,38 @@ def should_use_streaming(
     )
 
 
+@dataclass
+class SelectionContext:
+    """Context parameters for clause selection.
+
+    Groups related selection parameters to reduce function parameter count
+    and improve maintainability.
+    """
+
+    use_indexing: bool
+    use_streaming: bool
+    debug: bool
+    metrics: Optional[MetricsCollector]
+    tracer: Optional[Tracer]
+    trace: bool
+
+
+@dataclass
 class ClauseSelection:
     """Clause selection result containing cursor and metadata."""
 
-    def __init__(
-        self,
-        cursor: Union[ClauseCursor, StreamingClauseCursor],
-        candidates_considered: int = 0,
-        candidates_yielded: int = 0,
-        total_clauses: int = 0,
-        used_streaming: bool = False,
-    ):
-        self.cursor = cursor
-        self.candidates_considered = candidates_considered
-        self.candidates_yielded = candidates_yielded
-        self.total_clauses = total_clauses
-        self.used_streaming = used_streaming
+    cursor: Union[ClauseCursor, StreamingClauseCursor]
+    candidates_considered: int = 0
+    candidates_yielded: int = 0
+    total_clauses: int = 0
+    used_streaming: bool = False
 
 
 def select_clauses(
-    program: Any,  # Program or IndexedProgram
+    program: Union[Program, IndexedProgramProtocol],
     goal_term: Term,
     store: Store,
-    use_indexing: bool,
-    use_streaming: bool,
-    debug: bool,
-    metrics: Any,
-    tracer: Any,
-    trace: bool,
+    context: SelectionContext,
 ) -> ClauseSelection:
     """Select clauses for a predicate goal and create appropriate cursor.
 
@@ -95,12 +140,7 @@ def select_clauses(
         program: The program to select clauses from.
         goal_term: The goal term to match clauses against.
         store: The unification store.
-        use_indexing: Whether to use indexing if available.
-        use_streaming: Whether streaming cursors are preferred.
-        debug: Whether debug mode is enabled.
-        metrics: Metrics collector instance (if any).
-        tracer: Tracer instance (if any).
-        trace: Whether trace logging is enabled.
+        context: Selection context containing configuration and debugging options.
 
     Returns:
         ClauseSelection containing cursor and metadata.
@@ -119,40 +159,28 @@ def select_clauses(
     functor, arity = pred_key
 
     # Get matching clauses - use indexing if available
-    if use_indexing and hasattr(program, "select"):
+    if context.use_indexing and hasattr(program, "select"):
         return _select_with_indexing(
-            program,
-            pred_key,
-            goal_term,
-            store,
-            functor,
-            arity,
-            use_streaming,
-            debug,
-            metrics,
-            tracer,
-            trace,
+            program, pred_key, goal_term, store, functor, arity, context
         )
     else:
-        return _select_without_indexing(program, functor, arity, debug, metrics)
+        return _select_without_indexing(program, functor, arity, context)
 
 
 def _select_with_indexing(
-    program: IndexedProgram,
+    program: IndexedProgramProtocol,
     pred_key: Tuple[str, int],
     goal_term: Term,
     store: Store,
     functor: str,
     arity: int,
-    use_streaming: bool,
-    debug: bool,
-    metrics: Any,
-    tracer: Any,
-    trace: bool,
+    context: SelectionContext,
 ) -> ClauseSelection:
     """Select clauses using indexed program."""
     # Determine if we should use streaming
-    stream = should_use_streaming(use_streaming, debug, metrics, tracer)
+    stream = should_use_streaming(
+        context.use_streaming, context.debug, context.metrics, context.tracer
+    )
 
     if stream:
         # Use streaming cursor for memory efficiency
@@ -175,13 +203,13 @@ def _select_with_indexing(
         total_clauses = 0
 
         # Track candidates in debug mode (only when materialized)
-        if debug:
-            if metrics:
+        if context.debug:
+            if context.metrics:
                 # Count how many are actually yielded (have potential to match)
                 candidates_yielded = len([m for m in matches if m is not None])
 
             # Log detailed info if trace is enabled too
-            if trace:
+            if context.trace:
                 # Optimize total clause count for IndexedProgram
                 if isinstance(program, IndexedProgram):
                     pred_idx = program._index.preds.get((functor, arity))
@@ -199,7 +227,7 @@ def _select_with_indexing(
 
 
 def _select_without_indexing(
-    program: Any, functor: str, arity: int, debug: bool, metrics: Any
+    program: Program, functor: str, arity: int, context: SelectionContext
 ) -> ClauseSelection:
     """Select clauses using standard program interface."""
     # Fall back to standard clause selection
@@ -210,9 +238,9 @@ def _select_without_indexing(
     candidates_yielded = 0
 
     # Track all candidates in debug mode (no filtering)
-    if debug:
+    if context.debug:
         candidates_considered = len(matches)
-        if metrics:
+        if context.metrics:
             # All clauses are yielded (no filtering without indexing)
             candidates_yielded = len(matches)
 

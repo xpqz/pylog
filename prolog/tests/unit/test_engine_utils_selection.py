@@ -10,6 +10,7 @@ from prolog.engine.utils.selection import (
     extract_predicate_key,
     should_use_streaming,
     ClauseSelection,
+    SelectionContext,
     select_clauses,
 )
 
@@ -115,6 +116,25 @@ class TestClauseSelection:
         assert selection.used_streaming is True
 
 
+def _make_context(
+    use_indexing=False,
+    use_streaming=False,
+    debug=False,
+    metrics=None,
+    tracer=None,
+    trace=False,
+):
+    """Helper to create SelectionContext for tests."""
+    return SelectionContext(
+        use_indexing=use_indexing,
+        use_streaming=use_streaming,
+        debug=debug,
+        metrics=metrics,
+        tracer=tracer,
+        trace=trace,
+    )
+
+
 class TestSelectClauses:
     """Test select_clauses function."""
 
@@ -124,16 +144,9 @@ class TestSelectClauses:
         goal = Var(1, "X")  # Invalid goal
         store = Store()
 
+        context = _make_context()
         result = select_clauses(
-            program=mock_program,
-            goal_term=goal,
-            store=store,
-            use_indexing=False,
-            use_streaming=False,
-            debug=False,
-            metrics=None,
-            tracer=None,
-            trace=False,
+            program=mock_program, goal_term=goal, store=store, context=context
         )
 
         assert isinstance(result.cursor, ClauseCursor)
@@ -153,16 +166,16 @@ class TestSelectClauses:
         goal = Atom("test")
         store = Store()
 
-        result = select_clauses(
-            program=mock_program,
-            goal_term=goal,
-            store=store,
+        context = _make_context(
             use_indexing=False,
             use_streaming=False,
             debug=False,
             metrics=None,
             tracer=None,
             trace=False,
+        )
+        result = select_clauses(
+            program=mock_program, goal_term=goal, store=store, context=context
         )
 
         # Verify program.clauses_for was called
@@ -188,16 +201,16 @@ class TestSelectClauses:
         goal = Atom("test")
         store = Store()
 
-        result = select_clauses(
-            program=mock_program,
-            goal_term=goal,
-            store=store,
+        context = _make_context(
             use_indexing=False,
             use_streaming=False,
             debug=True,
             metrics=mock_metrics,
             tracer=None,
             trace=False,
+        )
+        result = select_clauses(
+            program=mock_program, goal_term=goal, store=store, context=context
         )
 
         # Verify result has debug metrics
@@ -217,16 +230,16 @@ class TestSelectClauses:
         goal = Struct("foo", (Atom("a"),))
         store = Store()
 
-        result = select_clauses(
-            program=mock_program,
-            goal_term=goal,
-            store=store,
+        context = _make_context(
             use_indexing=True,
             use_streaming=False,  # Force no streaming
             debug=False,
             metrics=None,
             tracer=None,
             trace=False,
+        )
+        result = select_clauses(
+            program=mock_program, goal_term=goal, store=store, context=context
         )
 
         # Verify indexed select was called
@@ -251,16 +264,16 @@ class TestSelectClauses:
         goal = Struct("foo", (Atom("a"),))
         store = Store()
 
-        result = select_clauses(
-            program=mock_program,
-            goal_term=goal,
-            store=store,
+        context = _make_context(
             use_indexing=True,
             use_streaming=True,
             debug=False,
             metrics=None,
             tracer=None,
             trace=False,
+        )
+        result = select_clauses(
+            program=mock_program, goal_term=goal, store=store, context=context
         )
 
         # Verify indexed select was called
@@ -289,16 +302,16 @@ class TestSelectClauses:
         goal = Struct("foo", (Atom("a"),))
         store = Store()
 
-        result = select_clauses(
-            program=mock_program,
-            goal_term=goal,
-            store=store,
+        context = _make_context(
             use_indexing=True,
             use_streaming=False,  # Disabled due to debug/metrics
             debug=True,
             metrics=mock_metrics,
             tracer=None,
             trace=False,
+        )
+        result = select_clauses(
+            program=mock_program, goal_term=goal, store=store, context=context
         )
 
         # Verify result has debug metrics
@@ -325,16 +338,16 @@ class TestSelectClauses:
         goal = Struct("foo", (Atom("a"),))
         store = Store()
 
-        result = select_clauses(
-            program=mock_program,
-            goal_term=goal,
-            store=store,
+        context = _make_context(
             use_indexing=True,
             use_streaming=False,
             debug=True,
             metrics=None,
             tracer=None,
             trace=True,
+        )
+        result = select_clauses(
+            program=mock_program, goal_term=goal, store=store, context=context
         )
 
         # Verify result includes total clauses count
@@ -350,16 +363,16 @@ class TestSelectClauses:
         goal = Atom("test")
         store = Store()
 
-        result = select_clauses(
-            program=mock_program,
-            goal_term=goal,
-            store=store,
+        context = _make_context(
             use_indexing=True,
             use_streaming=True,  # Requested but should be disabled
             debug=True,  # This disables streaming
             metrics=None,
             tracer=None,
             trace=False,
+        )
+        result = select_clauses(
+            program=mock_program, goal_term=goal, store=store, context=context
         )
 
         # Should use ClauseCursor not StreamingClauseCursor
@@ -377,16 +390,16 @@ class TestSelectClauses:
         goal = Atom("test")
         store = Store()
 
-        result = select_clauses(
-            program=mock_program,
-            goal_term=goal,
-            store=store,
+        context = _make_context(
             use_indexing=True,
             use_streaming=True,  # Requested but should be disabled
             debug=False,
             metrics=mock_metrics,  # This disables streaming
             tracer=None,
             trace=False,
+        )
+        result = select_clauses(
+            program=mock_program, goal_term=goal, store=store, context=context
         )
 
         # Should use ClauseCursor not StreamingClauseCursor
@@ -404,16 +417,16 @@ class TestSelectClauses:
         goal = Atom("test")
         store = Store()
 
-        result = select_clauses(
-            program=mock_program,
-            goal_term=goal,
-            store=store,
+        context = _make_context(
             use_indexing=True,
             use_streaming=True,  # Requested but should be disabled
             debug=False,
             metrics=None,
             tracer=mock_tracer,  # This disables streaming
             trace=False,
+        )
+        result = select_clauses(
+            program=mock_program, goal_term=goal, store=store, context=context
         )
 
         # Should use ClauseCursor not StreamingClauseCursor

@@ -48,7 +48,11 @@ from prolog.engine.utils.copy import (
     build_prolog_list,
 )
 from prolog.engine.utils.arithmetic import eval_int
-from prolog.engine.utils.selection import select_clauses, extract_predicate_key
+from prolog.engine.utils.selection import (
+    select_clauses,
+    extract_predicate_key,
+    SelectionContext,
+)
 
 # Builtin registration system
 from prolog.engine.builtins import register_all
@@ -1013,16 +1017,16 @@ class Engine:
             self.metrics.record_call(pred_id)
 
         # Select clauses using utilities
-        selection = select_clauses(
-            program=self.program,
-            goal_term=goal.term,
-            store=self.store,
+        context = SelectionContext(
             use_indexing=self.use_indexing,
             use_streaming=self.use_streaming,
             debug=self.debug,
             metrics=self.metrics,
             tracer=self.tracer,
             trace=self.trace,
+        )
+        selection = select_clauses(
+            program=self.program, goal_term=goal.term, store=self.store, context=context
         )
         cursor = selection.cursor
 
