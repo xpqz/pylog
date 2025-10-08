@@ -1,0 +1,22 @@
+# Source files
+src/**
+tsconfig.json
+
+# Build artifacts
+**/*.map
+*.vsix
+
+# Dependencies
+node_modules/
+.vscode-test/
+
+# Development files
+.eslintrc.json
+.gitignore
+
+# Documentation (keep README and CHANGELOG)
+# README.md and CHANGELOG.md will be included
+
+# Editor files
+.vscode/
+**/.DS_Store

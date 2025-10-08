@@ -1,0 +1,182 @@
+{
+  "name": "pylog-vscode",
+  "displayName": "PyLog Debugger",
+  "description": "Debug Adapter for PyLog Prolog interpreter",
+  "version": "0.1.0",
+  "publisher": "pylog",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/xpqz/pylog.git",
+    "directory": "vscode-pylog"
+  },
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Debuggers"
+  ],
+  "keywords": [
+    "prolog",
+    "debugger",
+    "dap",
+    "pylog"
+  ],
+  "activationEvents": [
+    "onDebug:pylog"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "debuggers": [
+      {
+        "type": "pylog",
+        "label": "PyLog Debugger",
+        "languages": [
+          "prolog"
+        ],
+        "configurationAttributes": {
+          "launch": {
+            "required": [
+              "program"
+            ],
+            "properties": {
+              "program": {
+                "type": "string",
+                "description": "Path to the Prolog program file (.pl)",
+                "default": "${workspaceFolder}/main.pl"
+              },
+              "query": {
+                "type": "string",
+                "description": "Query to execute (default: ?- main.)",
+                "default": "?- main."
+              },
+              "stopOnEntry": {
+                "type": "boolean",
+                "description": "Automatically pause at the first port event",
+                "default": true
+              },
+              "ports": {
+                "type": "array",
+                "description": "Eligible port events for pausing",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "CALL",
+                    "EXIT",
+                    "FAIL",
+                    "REDO"
+                  ]
+                },
+                "default": [
+                  "CALL",
+                  "EXIT",
+                  "FAIL"
+                ]
+              },
+              "predicateBreakpoints": {
+                "type": "array",
+                "description": "Predicate breakpoints (functor/arity)",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "functor": {
+                      "type": "string",
+                      "description": "Predicate functor name"
+                    },
+                    "arity": {
+                      "type": "number",
+                      "description": "Predicate arity"
+                    },
+                    "ports": {
+                      "type": "array",
+                      "description": "Ports to break on (optional)",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "CALL",
+                          "EXIT",
+                          "FAIL",
+                          "REDO"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "functor",
+                    "arity"
+                  ]
+                },
+                "default": []
+              },
+              "occursCheck": {
+                "type": "boolean",
+                "description": "Enable occurs check during unification",
+                "default": false
+              },
+              "useIndexing": {
+                "type": "boolean",
+                "description": "Enable first-argument indexing",
+                "default": true
+              }
+            }
+          }
+        },
+        "configurationSnippets": [
+          {
+            "label": "PyLog: Launch",
+            "description": "Launch and debug a PyLog program",
+            "body": {
+              "type": "pylog",
+              "request": "launch",
+              "name": "Debug PyLog",
+              "program": "${workspaceFolder}/main.pl",
+              "stopOnEntry": true
+            }
+          },
+          {
+            "label": "PyLog: Launch with Breakpoints",
+            "description": "Launch PyLog with predicate breakpoints",
+            "body": {
+              "type": "pylog",
+              "request": "launch",
+              "name": "Debug PyLog with Breakpoints",
+              "program": "${workspaceFolder}/main.pl",
+              "query": "?- main.",
+              "ports": [
+                "CALL",
+                "EXIT",
+                "FAIL"
+              ],
+              "predicateBreakpoints": [
+                {
+                  "functor": "member",
+                  "arity": 2,
+                  "ports": [
+                    "CALL"
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^18.0.0",
+    "@types/vscode": "^1.75.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint": "^8.0.0",
+    "typescript": "^5.0.0",
+    "@vscode/vsce": "^2.22.0"
+  },
+  "dependencies": {}
+}
