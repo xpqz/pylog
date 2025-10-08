@@ -94,9 +94,12 @@ Each phase ends with a full test run. Order chosen to minimize coupling risk.
 - ✅ Acceptance: general engine tests (`test_performance.py`, `test_builtins.py` dispatch paths) green.
 - **Implementation:** PR #266 - Extracted 80+ lines of clause selection logic to dedicated utilities with comprehensive unit tests
 
-9) Optional: Dispatch Module
-- If `_dispatch_*` bodies remain large, move them to `prolog/engine/dispatch.py` as free functions (e.g., `dispatch_predicate(engine, goal, depth, call_emitted)`), keeping Engine methods as thin delegates.
-- Acceptance: no behavior change across all tests.
+9) Optional: Dispatch Module ✅ **COMPLETED**
+- ✅ Extracted `_dispatch_*` bodies to `prolog/engine/dispatch.py` as free functions with `EngineProtocol` interface
+- ✅ Engine methods now thin delegates calling dispatch functions
+- ✅ Created comprehensive test suite (24 tests) validating behavioral preservation
+- ✅ Acceptance: no behavior change across all tests (4,353 tests pass)
+- **Implementation:** Successfully reduced engine complexity while maintaining identical behavior using Protocol pattern to avoid circular imports
 
 ## API Compatibility
 - Preserve `Engine` public methods (`solve`, `run`, `unify`) and debug helpers (`debug_ports`, `debug_frame_pops`, `debug_trail_writes`).
