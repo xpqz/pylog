@@ -5,11 +5,12 @@ Manages the state of a single DAP debugging session, including:
 - Engine instance and thread
 - StepController and BreakpointStore
 - Session cleanup
+- Event emission to DAP client
 """
 
 import threading
 import logging
-from typing import Optional
+from typing import Optional, Any
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,7 @@ class SessionManager:
         self._engine_thread: Optional[threading.Thread] = None
         self._step_controller = None
         self._breakpoint_store = None
+        self._server = None  # DAPServer instance for event emission
 
     def is_initialized(self) -> bool:
         """Check if session has been initialized."""
@@ -56,6 +58,86 @@ class SessionManager:
         """
         self._engine_thread = thread
 
+    def set_server(self, server):
+        """Set the DAP server for event emission.
+
+        Args:
+            server: DAPServer instance
+        """
+        self._server = server
+
+    def send_event(self, event: str, body: Optional[dict[str, Any]] = None):
+        """Send an event to the DAP client.
+
+        Args:
+            event: Event name (e.g., "stopped", "output", "terminated")
+            body: Optional event data
+        """
+        if self._server:
+            self._server.send_event(event, body)
+        else:
+            logger.warning(f"Cannot send event '{event}' - no server set")
+
+    def send_stopped_event(
+        self,
+        reason: str,
+        thread_id: int = 1,
+        description: Optional[str] = None,
+        hit_breakpoint_ids: Optional[list[int]] = None,
+    ):
+        """Send a stopped event to the client.
+
+        Args:
+            reason: Stop reason (step, breakpoint, entry, pause, etc.)
+            thread_id: Thread that stopped (default 1, PyLog is single-threaded)
+            description: Optional human-readable description
+            hit_breakpoint_ids: Optional list of breakpoint IDs that were hit
+        """
+        body: dict[str, Any] = {
+            "reason": reason,
+            "threadId": thread_id,
+            "allThreadsStopped": True,  # PyLog is single-threaded
+        }
+
+        if description:
+            body["description"] = description
+
+        if hit_breakpoint_ids:
+            body["hitBreakpointIds"] = hit_breakpoint_ids
+
+        self.send_event("stopped", body)
+        logger.debug(f"Stopped event sent: reason={reason}")
+
+    def send_output_event(
+        self, output: str, category: str = "stdout", variables_reference: int = 0
+    ):
+        """Send an output event to the client.
+
+        Args:
+            output: Output text
+            category: Output category (stdout, stderr, console, etc.)
+            variables_reference: Optional variables reference for structured output
+        """
+        body: dict[str, Any] = {"output": output}
+
+        if category:
+            body["category"] = category
+
+        if variables_reference:
+            body["variablesReference"] = variables_reference
+
+        self.send_event("output", body)
+
+    def send_terminated_event(self, restart: Optional[Any] = None):
+        """Send a terminated event to the client.
+
+        Args:
+            restart: Optional restart data
+        """
+        body = {"restart": restart} if restart is not None else None
+        self.send_event("terminated", body)
+        logger.info("Terminated event sent")
+
     def cleanup(self):
         """Clean up session resources."""
         # Release step controller barrier
@@ -76,6 +158,7 @@ class SessionManager:
         self._engine_thread = None
         self._step_controller = None
         self._breakpoint_store = None
+        self._server = None
         self._initialized = False
 
     @property
