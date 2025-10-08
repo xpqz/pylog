@@ -8,8 +8,10 @@ Manages the state of a single DAP debugging session, including:
 """
 
 import threading
+import logging
 from typing import Optional
-from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 class SessionManager:
@@ -25,8 +27,6 @@ class SessionManager:
         self._engine_thread: Optional[threading.Thread] = None
         self._step_controller = None
         self._breakpoint_store = None
-        self._program_path: Optional[Path] = None
-        self._query: Optional[str] = None
 
     def is_initialized(self) -> bool:
         """Check if session has been initialized."""
@@ -66,6 +66,10 @@ class SessionManager:
         if self._engine_thread and self._engine_thread.is_alive():
             # Thread should stop on its own when barrier is released
             self._engine_thread.join(timeout=5.0)
+            if self._engine_thread.is_alive():
+                logger.warning(
+                    "Engine thread did not stop within 5s timeout - potential resource leak"
+                )
 
         # Clear state
         self._engine = None
@@ -92,15 +96,26 @@ class SessionManager:
 
 # Global session instance
 _session = SessionManager()
+_session_lock = threading.Lock()
 
 
 def get_session() -> SessionManager:
-    """Get the global session manager instance."""
+    """Get the global session manager instance.
+
+    Note: This returns a reference to the singleton instance. The instance itself
+    is not thread-safe for concurrent access to its methods. This design assumes
+    a single DAP connection at a time.
+    """
     return _session
 
 
 def reset_session():
-    """Reset the global session (useful for testing)."""
+    """Reset the global session (useful for testing).
+
+    This operation is thread-safe with respect to reassigning the global _session
+    variable, but callers should ensure no concurrent access to session methods.
+    """
     global _session
-    _session.cleanup()
-    _session = SessionManager()
+    with _session_lock:
+        _session.cleanup()
+        _session = SessionManager()

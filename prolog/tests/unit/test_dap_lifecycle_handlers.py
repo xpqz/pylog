@@ -5,7 +5,7 @@ These tests focus on actual behavior rather than mocking internal implementation
 
 import pytest
 from prolog.dap.handlers import handle_initialize, handle_launch, handle_disconnect
-from prolog.dap.session import reset_session
+from prolog.dap.session import reset_session, get_session
 
 
 @pytest.fixture(autouse=True)
@@ -180,6 +180,75 @@ class TestLaunchHandler:
         response = handle_launch(request)
 
         assert response == {}
+
+    def test_launch_creates_engine_and_components(self, tmp_path):
+        """Test that launch actually creates engine, step controller, and breakpoint store."""
+
+        # Initialize session first
+        handle_initialize({"seq": 1, "type": "request", "command": "initialize"})
+
+        program_file = tmp_path / "test.pl"
+        program_file.write_text("test :- true.\n")
+
+        request = {
+            "seq": 2,
+            "type": "request",
+            "command": "launch",
+            "arguments": {
+                "program": str(program_file),
+                "stopOnEntry": True,
+            },
+        }
+
+        response = handle_launch(request)
+        assert response == {}
+
+        # Verify actual state changes
+        session = get_session()
+        assert session.engine is not None, "Engine should be created"
+        assert session.step_controller is not None, "StepController should be created"
+        assert session.breakpoint_store is not None, "BreakpointStore should be created"
+
+        # Verify tracer integration
+        assert (
+            session.engine.tracer is not None
+        ), "Engine should have tracer when trace=True"
+        assert (
+            session.engine.tracer.step_controller is session.step_controller
+        ), "Tracer should be wired to step controller"
+        assert (
+            session.engine.tracer.breakpoint_store is session.breakpoint_store
+        ), "Tracer should be wired to breakpoint store"
+
+    def test_launch_with_ports_configures_step_controller(self, tmp_path):
+        """Test that ports argument is passed to StepController."""
+
+        # Initialize session first
+        handle_initialize({"seq": 1, "type": "request", "command": "initialize"})
+
+        program_file = tmp_path / "test.pl"
+        program_file.write_text("test :- true.\n")
+
+        ports = ["CALL", "EXIT"]
+        request = {
+            "seq": 2,
+            "type": "request",
+            "command": "launch",
+            "arguments": {
+                "program": str(program_file),
+                "ports": ports,
+            },
+        }
+
+        response = handle_launch(request)
+        assert response == {}
+
+        # Verify ports were passed to StepController
+        session = get_session()
+        assert session.step_controller.eligible_ports == {
+            "CALL",
+            "EXIT",
+        }, "StepController should have ports configured"
 
 
 class TestDisconnectHandler:

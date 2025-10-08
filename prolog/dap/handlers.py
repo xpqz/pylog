@@ -105,6 +105,7 @@ def handle_launch(request: dict[str, Any]) -> dict[str, Any]:
     stop_on_entry = arguments.get("stopOnEntry", True)
     occurs_check = arguments.get("occursCheck", False)
     use_indexing = arguments.get("useIndexing", True)
+    ports = arguments.get("ports")  # Optional port filter
 
     # Validate required arguments
     if not program_path_str:
@@ -117,16 +118,22 @@ def handle_launch(request: dict[str, Any]) -> dict[str, Any]:
 
     logger.info(f"Loading program: {program_path}")
 
-    # Load the program
-    with open(program_path, "r") as f:
-        program_text = f.read()
+    # Load and parse the program
+    try:
+        with open(program_path, "r") as f:
+            program_text = f.read()
+    except (OSError, IOError) as e:
+        raise IOError(f"Failed to read program file '{program_path}': {e}")
 
-    reader = Reader()
-    clauses = reader.read_program(program_text)
-    program = Program(clauses=tuple(clauses))
+    try:
+        reader = Reader()
+        clauses = reader.read_program(program_text)
+        program = Program(clauses=tuple(clauses))
+    except Exception as e:
+        raise ValueError(f"Failed to parse program '{program_path}': {e}")
 
     # Create engine with debugging support
-    step_controller = StepController()
+    step_controller = StepController(eligible_ports=ports)
     breakpoint_store = BreakpointStore()
 
     engine = Engine(
@@ -154,14 +161,27 @@ def handle_launch(request: dict[str, Any]) -> dict[str, Any]:
 
     # Start engine in a separate thread if query is provided
     if query:
-        logger.info(f"Starting engine with query: {query}")
+        logger.info(f"Query provided but execution not yet implemented: {query}")
+
+        # TODO(#271): Implement query execution in run_engine()
+        # Query execution requires:
+        # 1. Parse query string to goals (using parse_query)
+        # 2. Call engine.run(goals) or engine.query(query_text)
+        # 3. Coordinate with StepController for stepping/pausing
+        # 4. Send DAP events (stopped, continued, terminated)
+        # 5. Handle exceptions and send proper error responses
+        #
+        # This is intentionally not implemented in this PR (#270) which focuses
+        # on lifecycle handlers only. Query execution will be added in #271
+        # (Stepping Control Integration).
 
         def run_engine():
             try:
-                # Parse and run the query
-                # For now, we'll need to implement query execution
-                # This is a placeholder - actual implementation will come later
-                pass
+                # Placeholder: Query execution not yet implemented
+                # When implemented, this should call engine.query(query)
+                raise NotImplementedError(
+                    "Query execution not yet implemented (tracked in #271)"
+                )
             except Exception as e:
                 logger.error(f"Engine error: {e}", exc_info=True)
 
