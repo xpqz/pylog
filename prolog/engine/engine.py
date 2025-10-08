@@ -30,7 +30,7 @@ from prolog.engine.runtime import (
     Trail,
 )
 from prolog.engine.trail_adapter import TrailAdapter
-from prolog.engine.errors import PrologThrow, UndefinedPredicateError
+from prolog.engine.errors import PrologThrow
 
 # JSON support imports
 from prolog.engine.json_convert import (
@@ -48,11 +48,9 @@ from prolog.engine.utils.copy import (
     build_prolog_list,
 )
 from prolog.engine.utils.arithmetic import eval_int
-from prolog.engine.utils.selection import (
-    select_clauses,
-    extract_predicate_key,
-    SelectionContext,
-)
+
+# Import dispatch functions
+from prolog.engine import dispatch
 
 # Builtin registration system
 from prolog.engine.builtins import register_all
@@ -993,189 +991,13 @@ class Engine:
 
         Args:
             goal: The predicate goal to dispatch.
+            call_depth: Current call depth.
+            call_emitted: Whether CALL port was already emitted.
 
         Returns:
             True if successful, False if failed.
         """
-        # Extract predicate key and emit ports
-        pred_key = extract_predicate_key(goal.term)
-        if pred_key is None:
-            # Can't match a variable or other term
-            return False
-
-        functor, arity = pred_key
-        pred_id = f"{functor}/{arity}"
-
-        # Emit CALL port before processing (only once per logical call)
-        if not call_emitted:
-            self._port("CALL", pred_id)
-        # Also emit to tracer if enabled (always emit for tracer consumers)
-        self._trace_port("call", goal.term, depth_override=call_depth)
-
-        # Record metrics for CALL
-        if self.metrics:
-            self.metrics.record_call(pred_id)
-
-        # Select clauses using utilities
-        context = SelectionContext(
-            use_indexing=self.use_indexing,
-            use_streaming=self.use_streaming,
-            debug=self.debug,
-            metrics=self.metrics,
-            tracer=self.tracer,
-            trace=self.trace,
-        )
-        selection = select_clauses(
-            program=self.program, goal_term=goal.term, store=self.store, context=context
-        )
-        cursor = selection.cursor
-
-        # Update debug counters and metrics
-        if self.debug:
-            self._candidates_considered += selection.candidates_considered
-            if self.metrics and selection.candidates_yielded > 0:
-                self.metrics.record_candidates(
-                    selection.candidates_considered, selection.candidates_yielded
-                )
-
-        # Log trace information if available
-        if self.trace and selection.total_clauses > 0:
-            self._trace_log.append(
-                f"pred {pred_id}: considered {selection.candidates_considered} of {selection.total_clauses} clauses"
-            )
-
-        if not cursor.has_more():
-            # No matching clauses
-            if self.mode == "iso":
-                # In ISO mode, throw an error for undefined predicates
-                raise UndefinedPredicateError(predicate=functor, arity=arity)
-            else:
-                # In dev mode, just fail - emit FAIL port
-                self._port("FAIL", f"{functor}/{arity}")
-                if self.metrics:
-                    self.metrics.record_fail(pred_id)
-                return False
-
-        # Take first clause
-        clause_idx = cursor.take()
-        if clause_idx is None:
-            return False
-        clause = self.program.clauses[clause_idx]
-
-        # Capture cut barrier BEFORE creating the alternatives choicepoint
-        # This ensures cut will prune alternative clauses (ISO semantics)
-        cut_barrier = len(self.cp_stack)
-
-        # If there are more clauses, create a choicepoint
-        if cursor.has_more():
-            # Normal choicepoint with more alternatives
-            self.trail.next_stamp()
-
-            # Save the continuation (goals below the call) as an immutable snapshot
-            continuation = self.goal_stack.snapshot()
-            continuation_depths = tuple(
-                self._goal_call_depths.get(id(g), len(self.frame_stack))
-                for g in continuation
-            )
-            continuation_calls = tuple(
-                self._goal_call_flags.get(id(g), False) for g in continuation
-            )
-
-            # Save store size for allocation cleanup
-            store_top = self.store.size()
-
-            # Debug: log what we're saving
-            if self.trace:
-                self._trace_log.append(
-                    f"Creating PREDICATE CP for {functor}/{arity}, saving {len(continuation)} continuation goals"
-                )
-                for i, g in enumerate(continuation):
-                    self._trace_log.append(f"  Continuation[{i}]: {g}")
-
-            cp = Choicepoint(
-                kind=ChoicepointKind.PREDICATE,
-                trail_top=self.trail.position(),
-                goal_stack_height=len(
-                    continuation
-                ),  # Height = number of continuation goals
-                frame_stack_height=0,  # PREDICATE CPs don't manage frames (frame lifecycle is independent)
-                payload={
-                    "goal": goal,
-                    "cursor": cursor,
-                    "pred_ref": f"{functor}/{arity}",
-                    "continuation": continuation,  # Frozen snapshot of continuation goals
-                    "continuation_depths": continuation_depths,
-                    "continuation_calls": continuation_calls,
-                    "store_top": store_top,  # Store size for allocation cleanup
-                    "call_depth": call_depth,
-                    "has_succeeded": False,
-                },
-            )
-            self.cp_stack.append(cp)
-
-            # Emit internal event for CP push
-            if self.tracer:
-                # Compute alternatives count based on cursor type
-                alternatives = 0
-                if cursor:
-                    if hasattr(cursor, "matches") and hasattr(cursor, "pos"):
-                        alternatives = len(cursor.matches) - cursor.pos
-                    elif hasattr(cursor, "has_more"):
-                        alternatives = 1 if cursor.has_more() else 0
-                self.tracer.emit_internal_event(
-                    "cp_push",
-                    {
-                        "pred_id": f"{functor}/{arity}",
-                        "alternatives": alternatives,
-                        "trail_top": cp.trail_top,
-                    },
-                )
-
-        # Rename clause with fresh variables
-        renamed_clause = self._renamer.rename_clause(clause)
-
-        # Try to unify with clause head
-        if self._unify(renamed_clause.head, goal.term):
-            # Unification succeeded - now push frame for body execution
-            # Use the cut_barrier saved before creating choicepoint
-            frame_id = self._next_frame_id
-            self._next_frame_id += 1
-            frame = Frame(
-                frame_id=frame_id,
-                cut_barrier=cut_barrier,
-                goal_height=self.goal_stack.height(),
-                pred=f"{functor}/{arity}",
-                goal_term=goal.term,  # Store for EXIT port emission
-                call_depth=call_depth,
-            )
-            self.frame_stack.append(frame)
-
-            # Emit internal event for frame push
-            if self.tracer:
-                self.tracer.emit_internal_event(
-                    "frame_push",
-                    {"pred_id": f"{functor}/{arity}", "frame_id": frame_id},
-                )
-
-            # Don't call next_stamp() here - only when creating CPs
-
-            # Push POP_FRAME sentinel first, then body goals
-            self._push_goal(
-                Goal(
-                    GoalType.POP_FRAME,
-                    None,  # Internal goals don't need terms
-                    payload={"op": "POP_FRAME", "frame_id": frame_id},
-                )
-            )
-
-            # Push body goals in reverse order
-            for body_term in reversed(renamed_clause.body):
-                body_goal = Goal.from_term(body_term)
-                self._push_goal(body_goal)
-            return True
-        else:
-            # Unification failed - no frame was created
-            return False
+        return dispatch.dispatch_predicate(self, goal, call_depth, call_emitted)
 
     def _dispatch_builtin(
         self, goal: Goal, call_depth: int, call_emitted: bool
@@ -1184,258 +1006,73 @@ class Engine:
 
         Args:
             goal: The builtin goal to dispatch.
+            call_depth: Current call depth.
+            call_emitted: Whether CALL port was already emitted.
 
         Returns:
             True if successful, False if failed.
         """
-        if isinstance(goal.term, Atom):
-            key = (goal.term.name, 0)
-            args = ()
-            pred_id = f"{goal.term.name}/0"
-        elif isinstance(goal.term, Struct):
-            key = (goal.term.functor, len(goal.term.args))
-            args = goal.term.args
-            pred_id = f"{goal.term.functor}/{len(goal.term.args)}"
-        else:
-            return False
+        return dispatch.dispatch_builtin(self, goal, call_depth, call_emitted)
 
-        builtin_fn = self._builtins.get(key)
-        if builtin_fn is None:
-            # Not a recognized builtin
-            return False
-
-        # Emit CALL port before executing builtin (only once per logical call)
-        if not call_emitted:
-            self._port("CALL", pred_id)
-
-        # Also emit to tracer if enabled
-        term = goal.term if goal.term else None
-        self._trace_port("call", term, depth_override=call_depth)
-
-        # Execute the builtin with uniform signature
-        try:
-            result = builtin_fn(self, args)
-
-            # Emit EXIT or FAIL port based on result
-            if result:
-                self._port("EXIT", pred_id)
-                self._trace_port("exit", term, depth_override=call_depth)
-                return True
-
-            self._emit_fail_port(pred_id, term, depth_override=call_depth)
-            return False
-        except (ValueError, TypeError):
-            # Expected failures from arithmetic or type errors
-            self._emit_fail_port(pred_id, term, depth_override=call_depth)
-            return False
-
-    def _dispatch_conjunction(self, goal: Goal):
+    def _dispatch_conjunction(
+        self, goal: Goal, call_depth: int = 0, call_emitted: bool = False
+    ) -> bool:
         """Dispatch a conjunction goal.
 
         Args:
             goal: The conjunction goal to dispatch.
-        """
-        # (A, B) - push B then A for left-to-right execution
-        conj = goal.term
-        if isinstance(conj, Struct) and conj.functor == "," and len(conj.args) == 2:
-            left, right = conj.args
-            # Push in reverse order
-            right_goal = Goal.from_term(right)
-            left_goal = Goal.from_term(left)
-            self._push_goal(right_goal)
-            self._push_goal(left_goal)
+            call_depth: Current call depth.
+            call_emitted: Whether CALL port was already emitted.
 
-    def _dispatch_disjunction(self, goal: Goal):
+        Returns:
+            True (conjunction dispatch always succeeds in terms of goal pushing).
+        """
+        return dispatch.dispatch_conjunction(self, goal, call_depth, call_emitted)
+
+    def _dispatch_disjunction(
+        self, goal: Goal, call_depth: int = 0, call_emitted: bool = False
+    ) -> bool:
         """Dispatch a disjunction goal.
 
         Args:
             goal: The disjunction goal to dispatch.
+            call_depth: Current call depth.
+            call_emitted: Whether CALL port was already emitted.
+
+        Returns:
+            True (disjunction dispatch always succeeds in terms of goal pushing).
         """
-        # (A ; B) - try A first, create choicepoint for B
-        disj = goal.term
-        if isinstance(disj, Struct) and disj.functor == ";" and len(disj.args) == 2:
-            left, right = disj.args
+        return dispatch.dispatch_disjunction(self, goal, call_depth, call_emitted)
 
-            # Save the continuation (goals after disjunction) as an immutable snapshot
-            continuation = self.goal_stack.snapshot()
-            continuation_depths = tuple(
-                self._goal_call_depths.get(id(g), len(self.frame_stack))
-                for g in continuation
-            )
-            continuation_calls = tuple(
-                self._goal_call_flags.get(id(g), False) for g in continuation
-            )
-
-            # Create choicepoint for right alternative
-            stamp = self.trail.next_stamp()
-            cp = Choicepoint(
-                kind=ChoicepointKind.DISJUNCTION,
-                trail_top=self.trail.position(),
-                goal_stack_height=len(
-                    continuation
-                ),  # Height = number of continuation goals
-                frame_stack_height=len(self.frame_stack),
-                payload={
-                    "alternative": Goal.from_term(right),
-                    "alternative_depth": len(self.frame_stack),
-                    "continuation": continuation,  # Frozen snapshot of continuation goals
-                    "continuation_depths": continuation_depths,
-                    "continuation_calls": continuation_calls,
-                },
-                stamp=stamp,
-            )
-            self.cp_stack.append(cp)
-
-            # Emit internal event for CP push
-            if self.tracer:
-                self.tracer.emit_internal_event(
-                    "cp_push", {"pred_id": "disjunction", "trail_top": cp.trail_top}
-                )
-
-            # Try left first (continuation remains on stack)
-            left_goal = Goal.from_term(left)
-            self._push_goal(left_goal)
-
-    def _dispatch_if_then_else(self, goal: Goal) -> bool:
+    def _dispatch_if_then_else(
+        self, goal: Goal, call_depth: int = 0, call_emitted: bool = False
+    ) -> bool:
         """Dispatch an if-then-else goal with proper commit semantics.
 
         Args:
             goal: The if-then-else goal.
+            call_depth: Current call depth.
+            call_emitted: Whether CALL port was already emitted.
 
         Returns:
             True if dispatched successfully, False otherwise.
         """
-        # (A -> B) ; C - if A succeeds commit to B, else try C
-        ite = goal.term
-        if not (isinstance(ite, Struct) and ite.functor == ";" and len(ite.args) == 2):
-            return False
+        return dispatch.dispatch_if_then_else(self, goal, call_depth, call_emitted)
 
-        left, else_term = ite.args
-        if not (
-            isinstance(left, Struct) and left.functor == "->" and len(left.args) == 2
-        ):
-            return False
+    def _dispatch_cut(
+        self, goal: Goal = None, call_depth: int = 0, call_emitted: bool = False
+    ) -> bool:
+        """Execute cut (!) - remove choicepoints up to cut barrier.
 
-        cond, then_term = left.args
+        Args:
+            goal: The cut goal (optional, not used).
+            call_depth: Current call depth.
+            call_emitted: Whether CALL port was already emitted.
 
-        # Capture current choicepoint stack height
-        tmp_barrier = len(self.cp_stack)
-
-        # Create choicepoint that runs Else if Cond fails exhaustively
-        self.trail.next_stamp()
-        cp = Choicepoint(
-            kind=ChoicepointKind.IF_THEN_ELSE,
-            trail_top=self.trail.position(),
-            goal_stack_height=self.goal_stack.height(),
-            frame_stack_height=len(self.frame_stack),
-            payload={
-                "else_goal": Goal.from_term(else_term),
-                "else_goal_depth": len(self.frame_stack),
-                "tmp_barrier": tmp_barrier,
-            },
-        )
-        self.cp_stack.append(cp)
-
-        # Emit internal event for CP push
-        if self.tracer:
-            self.tracer.emit_internal_event(
-                "cp_push", {"pred_id": "if_then_else", "trail_top": cp.trail_top}
-            )
-
-        # Push control goal that will commit and run Then on first success
-        then_goal = Goal.from_term(then_term)
-        self._push_goal(
-            Goal(
-                GoalType.CONTROL,
-                None,  # Internal control goal
-                payload={
-                    "op": "ITE_THEN",
-                    "tmp_barrier": tmp_barrier,
-                    "then_goal": then_goal,
-                    "then_goal_depth": len(self.frame_stack),
-                },
-            )
-        )
-
-        # Push condition to evaluate
-        self._push_goal(Goal.from_term(cond))
-
-        return True
-
-    def _dispatch_cut(self):
-        """Execute cut (!) - remove choicepoints up to cut barrier."""
-        if self.frame_stack:
-            # Normal cut within a predicate
-            current_frame = self.frame_stack[-1]
-            cut_barrier = current_frame.cut_barrier
-
-            # Find the highest CATCH CP below our target to act as a barrier
-            catch_barrier = None
-            for i in range(len(self.cp_stack) - 1, cut_barrier - 1, -1):
-                if self.cp_stack[i].kind == ChoicepointKind.CATCH:
-                    catch_barrier = i + 1  # Don't prune the CATCH itself
-                    break
-
-            # Apply the more restrictive barrier
-            if catch_barrier is not None:
-                cut_barrier = max(cut_barrier, catch_barrier)
-
-            # Count alternatives being pruned
-            alternatives_pruned = 0
-
-            # Remove all choicepoints above the barrier
-            while len(self.cp_stack) > cut_barrier:
-                removed_cp = self.cp_stack.pop()
-
-                # Count actual alternatives pruned
-                if removed_cp.kind == ChoicepointKind.PREDICATE:
-                    # For predicate CPs, count remaining clauses
-                    cursor = removed_cp.payload.get("cursor")
-                    if cursor and hasattr(cursor, "matches") and hasattr(cursor, "pos"):
-                        # Count remaining alternatives in cursor (materialized)
-                        alternatives_pruned += len(cursor.matches) - cursor.pos
-                    elif cursor and hasattr(cursor, "has_more"):
-                        # For streaming cursors, just count as 1 (can't count ahead)
-                        alternatives_pruned += 1 if cursor.has_more() else 0
-                    else:
-                        alternatives_pruned += 1
-                else:
-                    # For other CP types, count as 1 alternative
-                    alternatives_pruned += 1
-
-                # Emit internal event for CP pop due to cut
-                if self.tracer:
-                    pred_id = (
-                        removed_cp.payload.get("pred_ref", removed_cp.kind.name.lower())
-                        if removed_cp.kind == ChoicepointKind.PREDICATE
-                        else removed_cp.kind.name.lower()
-                    )
-                    self.tracer.emit_internal_event("cp_pop", {"pred_id": pred_id})
-
-            # Emit cut_commit event after all CP pops (even if no alternatives pruned)
-            if self.tracer:
-                self.tracer.emit_internal_event(
-                    "cut_commit",
-                    {
-                        "alternatives_pruned": alternatives_pruned,
-                        "barrier": cut_barrier,
-                    },
-                )
-
-            # Record metrics
-            if self.metrics and alternatives_pruned > 0:
-                self.metrics.record_cut()
-                self.metrics.record_alternatives_pruned(alternatives_pruned)
-        else:
-            # Top-level cut: prune everything (commit to current solution path)
-            # This commits to the current solution and prevents backtracking.
-            # Some Prolog systems treat top-level cut as a no-op, but we choose
-            # to make it commit to prevent finding additional solutions.
-            # Test case: ?- (a ; b), !. should return only first success
-            self.cp_stack.clear()
-
-        # Cut always succeeds
-        return True
+        Returns:
+            True (cut always succeeds).
+        """
+        return dispatch.dispatch_cut(self, goal, call_depth, call_emitted)
 
     def _dispatch_pop_frame(self, goal: Goal):
         """Pop frame sentinel - executed when predicate completes.
