@@ -92,7 +92,7 @@ class TestContinueHandler:
             "arguments": {"threadId": 1},
         }
 
-        with pytest.raises(RuntimeError, match="No active engine"):
+        with pytest.raises(RuntimeError, match="Cannot continue"):
             handle_continue(request)
 
 
@@ -150,7 +150,7 @@ class TestNextHandler:
             "arguments": {"threadId": 1},
         }
 
-        with pytest.raises(RuntimeError, match="No active engine"):
+        with pytest.raises(RuntimeError, match="Cannot step over"):
             handle_next(request)
 
 
@@ -199,7 +199,7 @@ class TestStepInHandler:
             "arguments": {"threadId": 1},
         }
 
-        with pytest.raises(RuntimeError, match="No active engine"):
+        with pytest.raises(RuntimeError, match="Cannot step in"):
             handle_step_in(request)
 
 
@@ -253,7 +253,7 @@ class TestStepOutHandler:
             "arguments": {"threadId": 1},
         }
 
-        with pytest.raises(RuntimeError, match="No active engine"):
+        with pytest.raises(RuntimeError, match="Cannot step out"):
             handle_step_out(request)
 
 

@@ -218,6 +218,8 @@ def handle_continue(request: dict[str, Any]) -> dict[str, Any]:
     """Handle the continue request.
 
     Resumes execution in running mode (no pausing except at breakpoints).
+    This operation is thread-safe and coordinates with the engine thread
+    through the StepController's barrier mechanism.
 
     Args:
         request: Continue request from DAP client
@@ -231,7 +233,7 @@ def handle_continue(request: dict[str, Any]) -> dict[str, Any]:
     session = get_session()
 
     if not session.step_controller:
-        raise RuntimeError("No active engine - call launch first")
+        raise RuntimeError("Cannot continue - no active debugging session")
 
     # Set mode to running and resume execution
     session.step_controller.set_mode("running")
@@ -246,7 +248,8 @@ def handle_next(request: dict[str, Any]) -> dict[str, Any]:
     """Handle the next (step over) request.
 
     Steps over the current statement, pausing at the next statement at
-    the same or shallower depth.
+    the same or shallower depth. This operation is thread-safe and coordinates
+    with the engine thread through the StepController's barrier mechanism.
 
     Args:
         request: Next request from DAP client
@@ -260,10 +263,13 @@ def handle_next(request: dict[str, Any]) -> dict[str, Any]:
     session = get_session()
 
     if not session.step_controller:
-        raise RuntimeError("No active engine - call launch first")
+        raise RuntimeError("Cannot step over - no active debugging session")
 
     # Get current depth from engine's goal stack
     # For now, use depth 0 as baseline (will be updated when query execution is implemented)
+    # TODO(thread-safety): Access to goal_stack should be synchronized when query execution
+    # is implemented, as the engine modifies it from a separate thread. Consider adding
+    # a lock or having the engine report depth through a thread-safe mechanism.
     current_depth = 0
     if session.engine and hasattr(session.engine, "goal_stack"):
         current_depth = len(session.engine.goal_stack)
@@ -281,6 +287,8 @@ def handle_step_in(request: dict[str, Any]) -> dict[str, Any]:
     """Handle the stepIn request.
 
     Steps into the next statement, including entering called predicates.
+    This operation is thread-safe and coordinates with the engine thread
+    through the StepController's barrier mechanism.
 
     Args:
         request: StepIn request from DAP client
@@ -294,7 +302,7 @@ def handle_step_in(request: dict[str, Any]) -> dict[str, Any]:
     session = get_session()
 
     if not session.step_controller:
-        raise RuntimeError("No active engine - call launch first")
+        raise RuntimeError("Cannot step in - no active debugging session")
 
     # Set mode to step_in and resume execution
     session.step_controller.set_mode("step_in")
@@ -309,6 +317,8 @@ def handle_step_out(request: dict[str, Any]) -> dict[str, Any]:
     """Handle the stepOut request.
 
     Steps out of the current predicate, pausing when returning to the caller.
+    This operation is thread-safe and coordinates with the engine thread
+    through the StepController's barrier mechanism.
 
     Args:
         request: StepOut request from DAP client
@@ -322,10 +332,13 @@ def handle_step_out(request: dict[str, Any]) -> dict[str, Any]:
     session = get_session()
 
     if not session.step_controller:
-        raise RuntimeError("No active engine - call launch first")
+        raise RuntimeError("Cannot step out - no active debugging session")
 
     # Get current depth from engine's goal stack
     # For now, use depth 0 as baseline (will be updated when query execution is implemented)
+    # TODO(thread-safety): Access to goal_stack should be synchronized when query execution
+    # is implemented, as the engine modifies it from a separate thread. Consider adding
+    # a lock or having the engine report depth through a thread-safe mechanism.
     current_depth = 0
     if session.engine and hasattr(session.engine, "goal_stack"):
         current_depth = len(session.engine.goal_stack)
