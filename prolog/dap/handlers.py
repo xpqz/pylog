@@ -16,6 +16,7 @@ from prolog.debug.dap.step_controller import StepController
 from prolog.debug.dap.breakpoint_store import BreakpointStore
 from prolog.parser.reader import Reader
 from prolog.ast.clauses import Program
+from prolog.ast.terms import Struct, List as PrologList
 
 logger = logging.getLogger(__name__)
 
@@ -477,6 +478,19 @@ def _get_var_reference(obj):
         return ref
 
 
+def _clear_var_references():
+    """Clear all variable references.
+
+    Should be called when starting a new pause/stopped event to prevent
+    unbounded memory growth. Variable references are only valid within
+    a single pause scope.
+    """
+    global _var_references, _next_var_ref
+    with _var_ref_lock:
+        _var_references.clear()
+        _next_var_ref = 1
+
+
 def _is_expandable(obj):
     """Check if an object is expandable (compound term, list, etc.).
 
@@ -486,8 +500,8 @@ def _is_expandable(obj):
     Returns:
         bool: True if expandable, False otherwise
     """
-    # For now, return False - will be implemented with actual term types
-    return False
+    # Compound terms and lists are expandable
+    return isinstance(obj, (Struct, PrologList))
 
 
 def handle_stack_trace(request: dict[str, Any]) -> dict[str, Any]:
