@@ -16,6 +16,7 @@ from prolog.debug.dap.step_controller import StepController
 from prolog.debug.dap.breakpoint_store import BreakpointStore
 from prolog.parser.reader import Reader
 from prolog.ast.clauses import Program
+from prolog.ast.terms import Struct, List as PrologList
 
 logger = logging.getLogger(__name__)
 
@@ -440,3 +441,202 @@ def handle_set_breakpoints(request: dict[str, Any]) -> dict[str, Any]:
     logger.info(f"Set {len(verified_breakpoints)} breakpoints")
 
     return {"breakpoints": verified_breakpoints}
+
+
+# Variable reference tracking for data inspection
+_var_references = {}
+_next_var_ref = 1
+_var_ref_lock = threading.Lock()
+
+
+def _get_var_reference(obj):
+    """Get or create a variable reference for an object.
+
+    Args:
+        obj: Object to get reference for (term, list, etc.)
+
+    Returns:
+        int: Variable reference ID (0 for non-expandable, >0 for expandable)
+    """
+    global _next_var_ref
+
+    # Don't create references for simple atoms or unbound vars
+    if not _is_expandable(obj):
+        return 0
+
+    with _var_ref_lock:
+        # Check if we already have a reference
+        obj_id = id(obj)
+        if obj_id in _var_references:
+            return _var_references[obj_id]
+
+        # Create new reference
+        ref = _next_var_ref
+        _next_var_ref += 1
+        _var_references[obj_id] = ref
+        _var_references[ref] = obj  # Reverse mapping
+        return ref
+
+
+def _clear_var_references():
+    """Clear all variable references.
+
+    Should be called when starting a new pause/stopped event to prevent
+    unbounded memory growth. Variable references are only valid within
+    a single pause scope.
+    """
+    global _var_references, _next_var_ref
+    with _var_ref_lock:
+        _var_references.clear()
+        _next_var_ref = 1
+
+
+def _is_expandable(obj):
+    """Check if an object is expandable (compound term, list, etc.).
+
+    Args:
+        obj: Object to check
+
+    Returns:
+        bool: True if expandable, False otherwise
+    """
+    # Compound terms and lists are expandable
+    return isinstance(obj, (Struct, PrologList))
+
+
+def handle_stack_trace(request: dict[str, Any]) -> dict[str, Any]:
+    """Handle the stackTrace request.
+
+    Returns information about the call stack frames.
+
+    Args:
+        request: StackTrace request from DAP client
+
+    Returns:
+        Dict with "stackFrames" key containing list of frames
+
+    Raises:
+        RuntimeError: If no active engine session
+    """
+    session = get_session()
+
+    if not session.engine:
+        raise RuntimeError("No active debugging session - call launch first")
+
+    # Get stack frames from engine
+    # For now, return empty list (will be populated when query execution is implemented)
+    stack_frames = []
+
+    # TODO: When query execution is implemented, iterate over engine.goal_stack
+    # and create frame objects with id, name, line, column
+
+    logger.debug(f"StackTrace: returning {len(stack_frames)} frames")
+
+    return {"stackFrames": stack_frames}
+
+
+def handle_scopes(request: dict[str, Any]) -> dict[str, Any]:
+    """Handle the scopes request.
+
+    Returns the scopes for a stack frame (currently just "Locals").
+
+    Args:
+        request: Scopes request from DAP client with frameId
+
+    Returns:
+        Dict with "scopes" key containing list of scopes
+
+    Raises:
+        RuntimeError: If no active engine session
+    """
+    session = get_session()
+
+    if not session.engine:
+        raise RuntimeError("No active debugging session - call launch first")
+
+    # arguments = request.get("arguments", {})
+    # frame_id = arguments.get("frameId", 0)
+
+    # For MVP, we have a single "Locals" scope
+    # The variablesReference points to the query variables
+    scopes = [
+        {
+            "name": "Locals",
+            "variablesReference": 1,  # Fixed reference for query variables
+            "expensive": False,
+        }
+    ]
+
+    logger.debug("Scopes: returning Locals scope")
+
+    return {"scopes": scopes}
+
+
+def handle_variables(request: dict[str, Any]) -> dict[str, Any]:
+    """Handle the variables request.
+
+    Returns variables for a given variablesReference.
+
+    Args:
+        request: Variables request from DAP client with variablesReference
+
+    Returns:
+        Dict with "variables" key containing list of variables
+
+    Raises:
+        RuntimeError: If no active engine session
+    """
+    session = get_session()
+
+    if not session.engine:
+        raise RuntimeError("No active debugging session - call launch first")
+
+    arguments = request.get("arguments", {})
+    var_ref = arguments.get("variablesReference", 0)
+
+    # For now, return empty list (will be populated when query execution is implemented)
+    variables = []
+
+    # TODO: When query execution is implemented:
+    # - If var_ref == 1, return query variables
+    # - Otherwise, look up the term by reference and expand it
+
+    logger.debug(f"Variables: returning {len(variables)} variables for ref {var_ref}")
+
+    return {"variables": variables}
+
+
+def handle_evaluate(request: dict[str, Any]) -> dict[str, Any]:
+    """Handle the evaluate request.
+
+    Evaluates an expression (variable lookup by name).
+
+    Args:
+        request: Evaluate request from DAP client with expression
+
+    Returns:
+        Dict with "result" and "variablesReference" keys
+
+    Raises:
+        RuntimeError: If no active engine session
+    """
+    session = get_session()
+
+    if not session.engine:
+        raise RuntimeError("No active debugging session - call launch first")
+
+    arguments = request.get("arguments", {})
+    expression = arguments.get("expression", "")
+
+    # For now, return "Variable not found" (will be implemented with query execution)
+    result = "Variable not found"
+    var_ref = 0
+
+    # TODO: When query execution is implemented:
+    # - Look up the variable by name in the current frame
+    # - Return its pretty-printed value
+    # - If it's compound, create a variablesReference for expansion
+
+    logger.debug(f"Evaluate: '{expression}' -> {result}")
+
+    return {"result": result, "variablesReference": var_ref}
