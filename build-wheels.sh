@@ -26,22 +26,23 @@ WHEEL_BASENAME=$(basename "$STANDARD_WHEEL" .whl)
 VERSION=$(echo "$WHEEL_BASENAME" | sed 's/pylog-\(.*\)-py3-none-any/\1/')
 
 echo "Detected version: $VERSION"
-mv "$STANDARD_WHEEL" "dist/pylog-${VERSION}-standard-py3-none-any.whl"
+# Keep the standard wheel for local use
+cp "$STANDARD_WHEEL" "dist/pylog-${VERSION}-standard-py3-none-any.whl"
 
-# Build web wheel (minimal dependencies)
+# Build web wheel (minimal dependencies) - this will overwrite the main wheel
 echo "Building web wheel..."
 cp pyproject.toml pyproject-full.toml
 cp pyproject-web.toml pyproject.toml
 uv run --with build python -m build --wheel
 
-# Find and rename the web wheel (exclude the already renamed standard wheel)
-WEB_WHEEL=$(ls dist/pylog-*-py3-none-any.whl | grep -v standard)
+# The web wheel will have the correct standard filename
+WEB_WHEEL=$(ls dist/pylog-*-py3-none-any.whl | head -1)
 if [ -z "$WEB_WHEEL" ]; then
     echo "Error: No web wheel found in dist/"
     exit 1
 fi
 
-mv "$WEB_WHEEL" "dist/pylog-${VERSION}-web-py3-none-any.whl"
+# The web wheel already has the correct name, no need to rename
 cp pyproject-full.toml pyproject.toml
 
 echo "Built wheels:"
@@ -51,8 +52,8 @@ echo "Standard wheel dependencies:"
 STANDARD_WHEEL_FINAL="dist/pylog-${VERSION}-standard-py3-none-any.whl"
 unzip -q -c "$STANDARD_WHEEL_FINAL" "pylog-${VERSION}.dist-info/METADATA" | grep "Requires-Dist:" | head -3
 
-echo "Web wheel dependencies:"
-WEB_WHEEL_FINAL="dist/pylog-${VERSION}-web-py3-none-any.whl"
+echo "Web wheel dependencies (main wheel for deployment):"
+WEB_WHEEL_FINAL="dist/pylog-${VERSION}-py3-none-any.whl"
 unzip -q -c "$WEB_WHEEL_FINAL" "pylog-${VERSION}.dist-info/METADATA" | grep "Requires-Dist:"
 
 echo "Done!"

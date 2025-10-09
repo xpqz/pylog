@@ -98,8 +98,8 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
           TAG_NAME="v${VERSION}"
 
-          # Find wheel files
-          WEB_WHEEL=$(ls dist/pylog-*-web-py3-none-any.whl)
+          # Find wheel files (the main wheel is now the web wheel)
+          WEB_WHEEL=$(ls dist/pylog-*-py3-none-any.whl | grep -v standard)
           LARK_WHEEL=$(ls dist/lark-*.whl)
           CHECKSUMS_FILE="dist/checksums.txt"
 
