@@ -93,7 +93,7 @@ jobs:
           echo "Checksums:"
           cat checksums.txt
 
-      - name: Create GitHub Release
+      - name: Deploy wheels to repository
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           TAG_NAME="v${VERSION}"
@@ -103,23 +103,53 @@ jobs:
           LARK_WHEEL=$(ls dist/lark-*.whl)
           CHECKSUMS_FILE="dist/checksums.txt"
 
-          # Create release notes
+          # Create wheels directory for repository hosting
+          mkdir -p wheels
+          cp "$WEB_WHEEL" wheels/
+          cp "$LARK_WHEEL" wheels/
+          cp "$CHECKSUMS_FILE" wheels/
+
+          # Create manifest for Web REPL
+          cat > wheels/manifest.json << EOF
+          {
+            "version": "${VERSION}",
+            "tag": "${TAG_NAME}",
+            "pylog": {
+              "wheel": "$(basename "$WEB_WHEEL")",
+              "version": "${VERSION}",
+              "url": "https://cdn.jsdelivr.net/gh/xpqz/pylog@main/wheels/$(basename "$WEB_WHEEL")"
+            },
+            "lark": {
+              "wheel": "$(basename "$LARK_WHEEL")",
+              "url": "https://cdn.jsdelivr.net/gh/xpqz/pylog@main/wheels/$(basename "$LARK_WHEEL")"
+            },
+            "generated_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "checksums": "checksums.txt"
+          }
+          EOF
+
+          echo "Generated wheel manifest:"
+          cat wheels/manifest.json
+
+          # Also create GitHub release for versioning
           cat > release_notes.md << EOF
           # PyLog v${VERSION} - Web REPL Assets
 
           This release contains PyLog wheels compatible with Pyodide for use in the Web REPL.
 
-          ## Assets
+          ## CDN URLs (JsDelivr)
 
-          - **${WEB_WHEEL}**: PyLog web wheel (minimal dependencies for Pyodide)
-          - **${LARK_WHEEL}**: Lark parser dependency
-          - **checksums.txt**: SHA256 checksums for all wheels
+          - **PyLog**: https://cdn.jsdelivr.net/gh/xpqz/pylog@main/wheels/$(basename "$WEB_WHEEL")
+          - **Lark**: https://cdn.jsdelivr.net/gh/xpqz/pylog@main/wheels/$(basename "$LARK_WHEEL")
+          - **Manifest**: https://cdn.jsdelivr.net/gh/xpqz/pylog@main/wheels/manifest.json
 
           ## Installation in Pyodide
 
           \`\`\`javascript
-          await micropip.install('${WEB_WHEEL}');
-          await micropip.install('${LARK_WHEEL}');
+          // Via manifest
+          const manifest = await (await fetch('https://cdn.jsdelivr.net/gh/xpqz/pylog@main/wheels/manifest.json')).json();
+          await micropip.install(manifest.lark.url);
+          await micropip.install(manifest.pylog.url);
           \`\`\`
 
           ## Generated
@@ -129,7 +159,7 @@ jobs:
           - Workflow: ${{ github.workflow }}
           EOF
 
-          # Create the release
+          # Create the release for versioning
           gh release create "$TAG_NAME" \
             "$WEB_WHEEL" \
             "$LARK_WHEEL" \
@@ -139,6 +169,26 @@ jobs:
             --draft
 
           echo "Created draft release: $TAG_NAME"
-          echo "Release assets uploaded successfully"
+
+      - name: Commit wheels to repository
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+
+          git add wheels/
+
+          if git diff --staged --quiet; then
+            echo "No wheel changes to commit"
+          else
+            git commit -m "Deploy wheels for v${VERSION} to repository
+
+          - PyLog wheel: $(ls wheels/pylog-*.whl | xargs basename)
+          - Lark wheel: $(ls wheels/lark-*.whl | xargs basename)
+          - CDN accessible via JsDelivr at cdn.jsdelivr.net/gh/xpqz/pylog@main/wheels/"
+            git push origin HEAD:main
+            echo "Wheels committed and pushed to main branch"
+          fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

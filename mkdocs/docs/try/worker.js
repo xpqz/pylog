@@ -155,64 +155,52 @@ async function initializePyodide() {
         await pyodide.loadPackage('micropip');
         const micropip = pyodide.pyimport('micropip');
 
-        postMessage({ type: 'progress', step: 'loading-release', message: 'Loading PyLog release assets...' });
-        console.log('Worker: Loading PyLog release from GitHub API...');
+        postMessage({ type: 'progress', step: 'loading-manifest', message: 'Loading PyLog wheel manifest...' });
+        console.log('Worker: Loading wheel manifest from JsDelivr CDN...');
 
-        // Fetch latest release from GitHub API with timeout
-        const releaseApiUrl = 'https://api.github.com/repos/xpqz/pylog/releases/latest';
-        const releasePromise = fetch(releaseApiUrl);
-        const releaseTimeoutPromise = new Promise((_, reject) => {
-            setTimeout(() => reject(new Error('Release API timeout after 10 seconds')), 10000);
+        // Load manifest from JsDelivr CDN (CORS-friendly)
+        const manifestUrl = 'https://cdn.jsdelivr.net/gh/xpqz/pylog@main/wheels/manifest.json';
+        const manifestPromise = fetch(manifestUrl);
+        const manifestTimeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('Manifest loading timeout after 10 seconds')), 10000);
         });
 
-        const releaseResponse = await Promise.race([releasePromise, releaseTimeoutPromise]);
-        if (!releaseResponse.ok) {
-            throw new Error(`Failed to load release info: ${releaseResponse.status} - ${releaseResponse.statusText}`);
+        const manifestResponse = await Promise.race([manifestPromise, manifestTimeoutPromise]);
+        if (!manifestResponse.ok) {
+            throw new Error(`Failed to load wheel manifest: ${manifestResponse.status} - ${manifestResponse.statusText}`);
         }
 
-        const release = await releaseResponse.json();
-        postMessage({ type: 'progress', step: 'release-loaded', message: `Release ${release.tag_name} loaded` });
-        console.log('Worker: Release loaded:', release.tag_name, release.assets.length, 'assets');
+        const manifest = await manifestResponse.json();
+        postMessage({ type: 'progress', step: 'manifest-loaded', message: `Manifest v${manifest.version} loaded` });
+        console.log('Worker: Manifest loaded:', manifest.version, 'from', manifest.generated_at);
 
-        // Find PyLog and Lark wheels in release assets
-        const pylogAsset = release.assets.find(asset =>
-            asset.name.includes('pylog') &&
-            asset.name.includes('web') &&
-            asset.name.endsWith('.whl')
-        );
-        const larkAsset = release.assets.find(asset =>
-            asset.name.includes('lark') &&
-            asset.name.endsWith('.whl')
-        );
-
-        if (!pylogAsset) {
-            throw new Error('PyLog web wheel not found in release assets');
+        if (!manifest.pylog || !manifest.pylog.url) {
+            throw new Error('PyLog wheel URL not found in manifest');
         }
-        if (!larkAsset) {
-            throw new Error('Lark wheel not found in release assets');
+        if (!manifest.lark || !manifest.lark.url) {
+            throw new Error('Lark wheel URL not found in manifest');
         }
 
-        console.log(`Worker: Found PyLog wheel: ${pylogAsset.name}`);
-        console.log(`Worker: Found Lark wheel: ${larkAsset.name}`);
+        console.log(`Worker: Found PyLog wheel: ${manifest.pylog.wheel}`);
+        console.log(`Worker: Found Lark wheel: ${manifest.lark.wheel}`);
 
-        // Install Lark from GitHub release
-        postMessage({ type: 'progress', step: 'installing-lark', message: 'Installing Lark parser from GitHub release...' });
-        console.log(`Worker: Installing Lark wheel: ${larkAsset.browser_download_url}`);
+        // Install Lark from JsDelivr CDN (CORS-friendly)
+        postMessage({ type: 'progress', step: 'installing-lark', message: 'Installing Lark parser from CDN...' });
+        console.log(`Worker: Installing Lark wheel: ${manifest.lark.url}`);
 
-        const larkInstallPromise = micropip.install(larkAsset.browser_download_url);
+        const larkInstallPromise = micropip.install(manifest.lark.url);
         const larkTimeoutPromise = new Promise((_, reject) => {
             setTimeout(() => reject(new Error('Lark installation timeout after 30 seconds')), 30000);
         });
         await Promise.race([larkInstallPromise, larkTimeoutPromise]);
 
-        // Install PyLog from GitHub release
-        const pylogVersion = release.tag_name.replace(/^v/, ''); // Remove 'v' prefix
-        versions.pylog = pylogVersion;
+        // Install PyLog from JsDelivr CDN (CORS-friendly)
+        versions.pylog = manifest.pylog.version;
 
-        postMessage({ type: 'progress', step: 'installing-pylog', message: `Installing PyLog v${pylogVersion}...` });
-        console.log(`Worker: Installing PyLog wheel: ${pylogAsset.browser_download_url} (version: ${pylogVersion})`);
+        postMessage({ type: 'progress', step: 'installing-pylog', message: `Installing PyLog v${manifest.pylog.version} from CDN...` });
+        console.log(`Worker: Installing PyLog wheel: ${manifest.pylog.url}`);
 
-        const pylogInstallPromise = micropip.install(pylogAsset.browser_download_url);
+        const pylogInstallPromise = micropip.install(manifest.pylog.url);
         const pylogTimeoutPromise = new Promise((_, reject) => {
             setTimeout(() => reject(new Error('PyLog installation timeout after 30 seconds')), 30000);
         });
