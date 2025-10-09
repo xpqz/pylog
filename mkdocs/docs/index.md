@@ -2,6 +2,14 @@
 
 PyLog is a Prolog interpreter written in Python. It supports a practical subset of ISO Prolog and adds finite‑domain constraint solving (CLP(FD)).
 
+<div style="background: #e3f2fd; border: 1px solid #1976d2; border-radius: 8px; padding: 16px; margin: 16px 0;">
+  <h3 style="margin-top: 0; color: #1976d2;">🚀 Try PyLog in Your Browser</h3>
+  <p style="margin-bottom: 8px;">Experience PyLog directly in your browser without any installation! Our interactive REPL runs entirely client-side using WebAssembly.</p>
+  <p style="margin-bottom: 0;">
+    <a href="try/" style="background: #1976d2; color: white; padding: 8px 16px; border-radius: 4px; text-decoration: none; font-weight: bold;">Try PyLog Now →</a>
+  </p>
+</div>
+
 This guide helps you:
 
 - run goals in the REPL

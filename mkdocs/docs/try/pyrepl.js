@@ -87,30 +87,36 @@ function createREPLInterface() {
             </div>
         </div>
 
-        <div style="display: flex; gap: 10px;">
-            <input type="text" id="pylog-input" placeholder="?- " style="
+        <div style="display: flex; gap: 10px; align-items: flex-start;">
+            <textarea id="pylog-input" placeholder="?- " rows="2" style="
                 flex: 1;
                 padding: 8px;
                 border: 1px solid #ddd;
                 border-radius: 4px;
                 font-family: 'Courier New', monospace;
-            ">
-            <button id="pylog-run" style="
-                padding: 8px 16px;
-                background: #4caf50;
-                color: white;
-                border: none;
-                border-radius: 4px;
-                cursor: pointer;
-            ">Run</button>
-            <button id="pylog-stop" style="
-                padding: 8px 16px;
-                background: #f44336;
-                color: white;
-                border: none;
-                border-radius: 4px;
-                cursor: pointer;
-            " disabled>Stop</button>
+                resize: vertical;
+                min-height: 40px;
+            "></textarea>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+                <button id="pylog-run" style="
+                    padding: 8px 16px;
+                    background: #4caf50;
+                    color: white;
+                    border: none;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    min-width: 60px;
+                ">Run</button>
+                <button id="pylog-stop" style="
+                    padding: 8px 16px;
+                    background: #f44336;
+                    color: white;
+                    border: none;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    min-width: 60px;
+                " disabled>Stop</button>
+            </div>
         </div>
     `;
 
@@ -135,14 +141,15 @@ function setupEventListeners() {
     // Stop button click
     stopButton.onclick = stopQuery;
 
-    // Enter key in input
+    // Keyboard shortcuts in textarea
     inputEl.onkeydown = (e) => {
-        if (e.key === 'Enter') {
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+            e.preventDefault();
             runQuery();
-        } else if (e.key === 'ArrowUp') {
+        } else if (e.key === 'ArrowUp' && e.ctrlKey) {
             e.preventDefault();
             navigateHistory(-1);
-        } else if (e.key === 'ArrowDown') {
+        } else if (e.key === 'ArrowDown' && e.ctrlKey) {
             e.preventDefault();
             navigateHistory(1);
         }
@@ -354,6 +361,10 @@ Available commands:
 CLP(FD) examples:
   X in 1..10, label([X]) - Domain variable
   X #> 5, X #< 10, label([X]) - Constraints
+
+Keyboard shortcuts:
+  Ctrl+Enter  - Run query
+  Ctrl+↑/↓    - Navigate history
     `.trim();
 
     appendOutput(helpText, 'info');
