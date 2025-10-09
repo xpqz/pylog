@@ -123,32 +123,58 @@ function extractMessageFromString(errorString) {
  */
 async function initializePyodide() {
     try {
+        // Send progress updates to UI
+        postMessage({ type: 'progress', step: 'loading-pyodide', message: 'Loading Pyodide from CDN...' });
         console.log('Worker: Loading Pyodide...');
 
-        // Load Pyodide from CDN
-        importScripts('https://cdn.jsdelivr.net/pyodide/v0.24.1/full/pyodide.js');
-        pyodide = await loadPyodide({
-            indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.24.1/full/'
+        // Load Pyodide from CDN with timeout
+        const loadPromise = new Promise(async (resolve, reject) => {
+            try {
+                importScripts('https://cdn.jsdelivr.net/pyodide/v0.24.1/full/pyodide.js');
+                const pyodideInstance = await loadPyodide({
+                    indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.24.1/full/'
+                });
+                resolve(pyodideInstance);
+            } catch (error) {
+                reject(error);
+            }
         });
 
+        const timeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('Pyodide loading timeout after 60 seconds')), 60000);
+        });
+
+        pyodide = await Promise.race([loadPromise, timeoutPromise]);
+
+        postMessage({ type: 'progress', step: 'pyodide-loaded', message: 'Pyodide loaded successfully' });
         console.log('Worker: Pyodide loaded, version:', pyodide.version);
         versions.pyodide = pyodide.version;
 
         // Install micropip
+        postMessage({ type: 'progress', step: 'loading-micropip', message: 'Loading package manager...' });
         await pyodide.loadPackage('micropip');
         const micropip = pyodide.pyimport('micropip');
 
+        postMessage({ type: 'progress', step: 'installing-lark', message: 'Installing Lark parser (may take a moment)...' });
         console.log('Worker: Installing lark dependency...');
         await micropip.install('lark>=1.1.0');
 
+        postMessage({ type: 'progress', step: 'loading-manifest', message: 'Loading PyLog assets...' });
         console.log('Worker: Loading asset manifest...');
-        // Load manifest.json to get current asset URLs
-        const manifestResponse = await fetch('./assets/manifest.json');
+
+        // Load manifest.json to get current asset URLs with timeout
+        const manifestPromise = fetch('./assets/manifest.json');
+        const manifestTimeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('Asset manifest loading timeout after 10 seconds')), 10000);
+        });
+
+        const manifestResponse = await Promise.race([manifestPromise, manifestTimeoutPromise]);
         if (!manifestResponse.ok) {
-            throw new Error(`Failed to load asset manifest: ${manifestResponse.status}`);
+            throw new Error(`Failed to load asset manifest: ${manifestResponse.status} - ${manifestResponse.statusText}`);
         }
 
         const manifest = await manifestResponse.json();
+        postMessage({ type: 'progress', step: 'manifest-loaded', message: 'Asset manifest loaded' });
         console.log('Worker: Asset manifest loaded:', manifest);
 
         if (!manifest.pylog || !manifest.pylog.wheel) {
@@ -158,9 +184,11 @@ async function initializePyodide() {
         const pylogWheelUrl = `./assets/${manifest.pylog.wheel}`;
         versions.pylog = manifest.pylog.version;
 
+        postMessage({ type: 'progress', step: 'installing-pylog', message: `Installing PyLog v${versions.pylog}...` });
         console.log(`Worker: Installing PyLog wheel: ${pylogWheelUrl} (version: ${versions.pylog})`);
         await micropip.install(pylogWheelUrl);
 
+        postMessage({ type: 'progress', step: 'importing-pylog', message: 'Importing PyLog modules...' });
         console.log('Worker: Importing PyLog modules...');
         const prolog = pyodide.pyimport('prolog');
         pylogEngineClass = prolog.engine.Engine;  // Keep reference to Engine class
@@ -168,11 +196,13 @@ async function initializePyodide() {
         pylogPretty = prolog.ast.pretty.pretty;
         parseQuery = prolog.parser.parser.parse_query;  // Correct path: parser.parser.parse_query
 
+        postMessage({ type: 'progress', step: 'initializing-engine', message: 'Creating Prolog engine...' });
         console.log('Worker: PyLog successfully initialized');
 
         // Create initial engine with empty program
         await resetEngine();
 
+        postMessage({ type: 'progress', step: 'ready', message: 'PyLog REPL ready!' });
         postMessage({
             type: 'initialized',
             versions: versions
@@ -180,7 +210,15 @@ async function initializePyodide() {
 
     } catch (error) {
         console.error('Worker: Failed to initialize:', error);
-        postMessage({ type: 'error', message: error.message });
+        const errorMessage = error.message || 'Unknown initialization error';
+        const detailedMessage = error.stack ? `${errorMessage}\n\nDetails: ${error.stack}` : errorMessage;
+
+        postMessage({
+            type: 'error',
+            message: errorMessage,
+            details: detailedMessage,
+            step: 'initialization-failed'
+        });
     }
 }
 

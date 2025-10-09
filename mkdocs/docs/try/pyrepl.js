@@ -242,6 +242,11 @@ function handleWorkerMessage(event) {
     const { type, data } = event.data;
 
     switch (type) {
+        case 'progress':
+            console.log('PyLog REPL: Progress update:', event.data);
+            updateLoadingProgress(event.data.step, event.data.message);
+            break;
+
         case 'initialized':
             console.log('PyLog REPL: Worker initialized successfully');
             replState.initialized = true;
@@ -257,9 +262,15 @@ function handleWorkerMessage(event) {
             break;
 
         case 'error':
-            console.error('PyLog REPL: Worker error:', data);
+            console.error('PyLog REPL: Worker error:', event.data);
             clearQueryTimeout();
-            displayError(data);
+
+            // Handle initialization errors specially
+            if (event.data.step === 'initialization-failed') {
+                displayInitializationError(event.data);
+            } else {
+                displayError(event.data);
+            }
             setRunning(false);
             break;
 
@@ -381,6 +392,64 @@ function displayReaderError(message, position, token, query) {
 
         // Add helpful suggestions
         addParseErrorSuggestions(message, token, query);
+    }
+}
+
+/**
+ * Display initialization errors with helpful troubleshooting
+ */
+function displayInitializationError(errorData) {
+    const { message, details } = errorData;
+
+    // Update the loading screen to show error
+    if (loadingEl) {
+        const errorContainer = document.createElement('div');
+        errorContainer.style.cssText = `
+            margin-top: 20px;
+            padding: 15px;
+            background: #ffebee;
+            border: 1px solid #f44336;
+            border-radius: 4px;
+            color: #c62828;
+            text-align: left;
+            max-width: 500px;
+            margin-left: auto;
+            margin-right: auto;
+        `;
+
+        errorContainer.innerHTML = `
+            <h3 style="margin: 0 0 10px 0; color: #c62828;">❌ Initialization Failed</h3>
+            <p><strong>Error:</strong> ${message}</p>
+            <details style="margin-top: 10px;">
+                <summary style="cursor: pointer; color: #1976d2;">Show technical details</summary>
+                <pre style="margin: 10px 0; padding: 10px; background: #f5f5f5; border-radius: 3px; overflow-x: auto; font-size: 12px;">${details || 'No additional details available'}</pre>
+            </details>
+            <div style="margin-top: 15px; padding: 10px; background: #e3f2fd; border-radius: 3px;">
+                <h4 style="margin: 0 0 8px 0; color: #1976d2;">💡 Troubleshooting Tips:</h4>
+                <ul style="margin: 0; padding-left: 20px; font-size: 14px;">
+                    <li>Check your internet connection (Pyodide loads from CDN)</li>
+                    <li>Try refreshing the page</li>
+                    <li>Ensure your browser supports WebAssembly</li>
+                    <li>Check browser console for additional error details</li>
+                    <li>Try using a different browser (Chrome, Firefox, Safari)</li>
+                </ul>
+            </div>
+            <div style="margin-top: 10px; text-align: center;">
+                <button onclick="location.reload()" style="
+                    padding: 8px 16px;
+                    background: #1976d2;
+                    color: white;
+                    border: none;
+                    border-radius: 4px;
+                    cursor: pointer;
+                ">🔄 Retry</button>
+            </div>
+        `;
+
+        // Replace the loading content
+        loadingEl.innerHTML = '';
+        loadingEl.appendChild(errorContainer);
+        loadingEl.style.display = 'block';
     }
 }
 
@@ -673,11 +742,87 @@ function setRunning(running) {
 }
 
 /**
+ * Update loading progress with detailed steps
+ */
+function updateLoadingProgress(step, message) {
+    if (!loadingEl) return;
+
+    // Find or create progress container
+    let progressContainer = loadingEl.querySelector('.progress-container');
+    if (!progressContainer) {
+        progressContainer = document.createElement('div');
+        progressContainer.className = 'progress-container';
+        progressContainer.style.cssText = `
+            margin-top: 15px;
+            text-align: left;
+            max-width: 400px;
+            margin-left: auto;
+            margin-right: auto;
+        `;
+
+        // Add progress steps
+        const steps = [
+            { id: 'loading-pyodide', text: 'Loading Pyodide from CDN' },
+            { id: 'pyodide-loaded', text: 'Pyodide loaded successfully' },
+            { id: 'loading-micropip', text: 'Loading package manager' },
+            { id: 'installing-lark', text: 'Installing Lark parser' },
+            { id: 'loading-manifest', text: 'Loading PyLog assets' },
+            { id: 'manifest-loaded', text: 'Asset manifest loaded' },
+            { id: 'installing-pylog', text: 'Installing PyLog' },
+            { id: 'importing-pylog', text: 'Importing PyLog modules' },
+            { id: 'initializing-engine', text: 'Creating Prolog engine' },
+            { id: 'ready', text: 'PyLog REPL ready!' }
+        ];
+
+        steps.forEach(stepInfo => {
+            const stepEl = document.createElement('div');
+            stepEl.id = `step-${stepInfo.id}`;
+            stepEl.style.cssText = `
+                padding: 4px 8px;
+                margin: 2px 0;
+                border-radius: 3px;
+                font-size: 14px;
+                color: #666;
+                background: #f5f5f5;
+            `;
+            stepEl.textContent = `⏳ ${stepInfo.text}`;
+            progressContainer.appendChild(stepEl);
+        });
+
+        loadingEl.appendChild(progressContainer);
+    }
+
+    // Update current step
+    const currentStepEl = progressContainer.querySelector(`#step-${step}`);
+    if (currentStepEl) {
+        currentStepEl.style.cssText = `
+            padding: 4px 8px;
+            margin: 2px 0;
+            border-radius: 3px;
+            font-size: 14px;
+            color: #2e7d32;
+            background: #e8f5e8;
+            font-weight: bold;
+        `;
+        currentStepEl.textContent = `✅ ${message}`;
+    }
+
+    // Update main loading message
+    const mainMessage = loadingEl.querySelector('p');
+    if (mainMessage) {
+        mainMessage.textContent = message;
+    }
+}
+
+/**
  * Show loading screen
  */
 function showLoading(message = 'Loading...') {
     if (loadingEl) {
-        loadingEl.querySelector('p').textContent = message;
+        const mainMessage = loadingEl.querySelector('p');
+        if (mainMessage) {
+            mainMessage.textContent = message;
+        }
         loadingEl.style.display = 'block';
     }
     if (replEl) replEl.style.display = 'none';
