@@ -14,6 +14,7 @@ and write responses to stdout.
 import sys
 import logging
 from prolog.dap.server import DAPServer
+from prolog.dap.session import get_session
 from prolog.dap.handlers import (
     handle_initialize,
     handle_launch,
@@ -44,6 +45,10 @@ def main():
 
     # Create server instance
     server = DAPServer()
+
+    # Register server with session for event emission
+    session = get_session()
+    session.set_server(server)
 
     # Register all DAP request handlers
     server.register_handler("initialize", handle_initialize)
