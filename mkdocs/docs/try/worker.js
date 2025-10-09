@@ -7,7 +7,12 @@
 
 // Worker state
 let pyodide = null;
-let pylogInitialized = false;
+let pylogEngine = null;
+let pylogEngineClass = null;  // Keep reference to Python Engine class
+let pylogProgram = null;
+let pylogPretty = null;
+let parseQuery = null;
+let versions = {};
 
 /**
  * Initialize Pyodide and PyLog
@@ -16,24 +21,58 @@ async function initializePyodide() {
     try {
         console.log('Worker: Loading Pyodide...');
 
-        // Import Pyodide (placeholder - actual implementation will load from CDN)
-        // importScripts('https://cdn.jsdelivr.net/pyodide/v0.24.1/full/pyodide.js');
+        // Load Pyodide from CDN
+        importScripts('https://cdn.jsdelivr.net/pyodide/v0.24.1/full/pyodide.js');
+        pyodide = await loadPyodide({
+            indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.24.1/full/'
+        });
 
-        // Initialize Pyodide (placeholder)
-        console.log('Worker: Pyodide would be initialized here');
+        console.log('Worker: Pyodide loaded, version:', pyodide.version);
+        versions.pyodide = pyodide.version;
 
-        // Load PyLog wheel (placeholder)
-        console.log('Worker: PyLog wheel would be loaded here');
-        // await micropip.install('./assets/pylog-VERSION-web.whl');
+        // Install micropip
+        await pyodide.loadPackage('micropip');
+        const micropip = pyodide.pyimport('micropip');
 
-        // Import PyLog modules (placeholder)
-        console.log('Worker: PyLog modules would be imported here');
-        /*
-        const { parse_query, Engine, Program, pretty } = pyodide.pyimport('prolog');
-        */
+        console.log('Worker: Installing lark dependency...');
+        await micropip.install('lark>=1.1.0');
 
-        pylogInitialized = true;
-        postMessage({ type: 'initialized' });
+        console.log('Worker: Loading asset manifest...');
+        // Load manifest.json to get current asset URLs
+        const manifestResponse = await fetch('./assets/manifest.json');
+        if (!manifestResponse.ok) {
+            throw new Error(`Failed to load asset manifest: ${manifestResponse.status}`);
+        }
+
+        const manifest = await manifestResponse.json();
+        console.log('Worker: Asset manifest loaded:', manifest);
+
+        if (!manifest.pylog || !manifest.pylog.wheel) {
+            throw new Error('PyLog wheel not found in asset manifest');
+        }
+
+        const pylogWheelUrl = `./assets/${manifest.pylog.wheel}`;
+        versions.pylog = manifest.pylog.version;
+
+        console.log(`Worker: Installing PyLog wheel: ${pylogWheelUrl} (version: ${versions.pylog})`);
+        await micropip.install(pylogWheelUrl);
+
+        console.log('Worker: Importing PyLog modules...');
+        const prolog = pyodide.pyimport('prolog');
+        pylogEngineClass = prolog.engine.Engine;  // Keep reference to Engine class
+        pylogProgram = prolog.ast.clauses.Program;  // Correct path: ast.clauses.Program
+        pylogPretty = prolog.ast.pretty.pretty;
+        parseQuery = prolog.parser.parser.parse_query;  // Correct path: parser.parser.parse_query
+
+        console.log('Worker: PyLog successfully initialized');
+
+        // Create initial engine with empty program
+        await resetEngine();
+
+        postMessage({
+            type: 'initialized',
+            versions: versions
+        });
 
     } catch (error) {
         console.error('Worker: Failed to initialize:', error);
@@ -42,32 +81,89 @@ async function initializePyodide() {
 }
 
 /**
- * Execute a Prolog query
+ * Reset the engine to fresh state with optional max_steps limit
  */
-async function executeQuery(query) {
+async function resetEngine(maxSteps = null) {
     try {
-        if (!pylogInitialized) {
+        console.log('Worker: Resetting engine...');
+
+        // Create fresh engine with empty program using Python Engine class
+        const emptyProgram = pylogProgram([]);
+
+        // Set max_steps at engine creation if provided
+        if (maxSteps !== null) {
+            pylogEngine = pylogEngineClass(emptyProgram, null, maxSteps);
+        } else {
+            pylogEngine = pylogEngineClass(emptyProgram);
+        }
+
+        console.log('Worker: Engine reset complete');
+
+    } catch (error) {
+        console.error('Worker: Engine reset failed:', error);
+        throw error;
+    }
+}
+
+/**
+ * Execute a Prolog query with limits and batched results
+ */
+async function executeQuery(query, options = {}) {
+    try {
+        if (!pylogEngine || !parseQuery) {
             throw new Error('PyLog not initialized');
         }
 
-        console.log(`Worker: Executing query: ${query}`);
+        const maxSteps = options.maxSteps || 1000;
+        const maxSolutions = options.maxSolutions || 10;
 
-        // Parse and execute query (placeholder)
-        /*
-        const goals = parse_query(`?- ${query}.`);
-        const engine = Engine(Program([]));
-        const solutions = Array.from(engine.run(goals));
-        */
+        console.log(`Worker: Executing query: ${query} (max_steps: ${maxSteps}, max_solutions: ${maxSolutions})`);
 
-        // Simulate query execution
-        const solutions = [
-            { 'X': '42' }, // Example solution
-        ];
+        // Reset engine with maxSteps limit if different from current
+        await resetEngine(maxSteps);
 
+        // Parse the query
+        const goals = parseQuery(`?- ${query}.`);
+
+        // Execute with max_solutions enforced by engine
+        const results = [];
+
+        try {
+            const solutions = pylogEngine.run(goals, maxSolutions);
+
+            for (const solution of solutions) {
+                // Keep all solutions including empty ones (for "true" results)
+                if (solution !== null && solution !== undefined) {
+                    // Pretty print the solution with operators
+                    const prettySolution = {};
+                    for (const [key, value] of Object.entries(solution)) {
+                        prettySolution[key] = pylogPretty(value, true); // operator_mode=True
+                    }
+                    results.push(prettySolution);
+                }
+            }
+        } catch (pyError) {
+            // Handle Prolog execution errors
+            console.error('Worker: Prolog execution error:', pyError);
+            postMessage({
+                type: 'error',
+                query: query,
+                message: `Prolog error: ${String(pyError)}`  // Use String() for better error handling
+            });
+            return;
+        }
+
+        // Send batched results (using 'solutions' to match UI expectation)
         postMessage({
             type: 'solutions',
             query: query,
-            solutions: solutions
+            solutions: results,
+            stepCount: pylogEngine._steps_taken || 0,  // Actual steps from engine
+            solutionCount: results.length,
+            limits: {
+                maxSteps: maxSteps,
+                maxSolutions: maxSolutions
+            }
         });
 
     } catch (error) {
@@ -75,7 +171,7 @@ async function executeQuery(query) {
         postMessage({
             type: 'error',
             query: query,
-            message: error.message
+            message: String(error)  // Use String() for better error handling
         });
     }
 }
@@ -92,17 +188,44 @@ self.onmessage = async function(event) {
             break;
 
         case 'query':
-            await executeQuery(data.query);
+            if (!data || !data.query) {
+                postMessage({
+                    type: 'error',
+                    message: 'Query required for query command'
+                });
+                break;
+            }
+            await executeQuery(data.query, data.options || {});
+            break;
+
+        case 'reset':
+            try {
+                await resetEngine();
+                postMessage({
+                    type: 'reset',
+                    message: 'Engine reset successful'
+                });
+            } catch (error) {
+                postMessage({
+                    type: 'error',
+                    message: `Reset failed: ${error.message}`
+                });
+            }
             break;
 
         case 'stop':
             console.log('Worker: Stop requested');
-            // Placeholder - actual implementation would terminate query
+            // Note: Actual termination would need more sophisticated handling
+            // For now, we just acknowledge the stop request
             postMessage({ type: 'stopped' });
             break;
 
         default:
             console.warn('Worker: Unknown message type:', type);
+            postMessage({
+                type: 'error',
+                message: `Unknown message type: ${type}`
+            });
     }
 };
 
