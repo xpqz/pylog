@@ -212,6 +212,14 @@ async function initializePyodide() {
         postMessage({ type: 'progress', step: 'importing-pylog', message: 'Importing PyLog modules...' });
         console.log('Worker: Importing PyLog modules...');
         const prolog = pyodide.pyimport('prolog');
+
+        // Debug: log the structure of the prolog module
+        console.log('Worker: Prolog module structure:', Object.keys(prolog));
+        console.log('Worker: Prolog.engine:', prolog.engine);
+        if (prolog.engine) {
+            console.log('Worker: Prolog.engine keys:', Object.keys(prolog.engine));
+        }
+
         pylogEngineClass = prolog.engine.Engine;  // Keep reference to Engine class
         pylogProgram = prolog.ast.clauses.Program;  // Correct path: ast.clauses.Program
         pylogPretty = prolog.ast.pretty.pretty;
