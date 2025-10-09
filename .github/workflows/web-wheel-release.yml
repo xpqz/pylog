@@ -169,6 +169,8 @@ jobs:
             --draft
 
           echo "Created draft release: $TAG_NAME"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Commit wheels to repository
         run: |
