@@ -259,7 +259,7 @@ function handleWorkerMessage(event) {
         case 'error':
             console.error('PyLog REPL: Worker error:', data);
             clearQueryTimeout();
-            appendOutput(`Error: ${data.message}`, 'error');
+            displayError(data);
             setRunning(false);
             break;
 
@@ -323,6 +323,106 @@ function displaySolutions(response) {
         if (metadata.length > 0) {
             appendOutput(`% ${metadata.join(', ')}`, 'info');
         }
+    }
+}
+
+/**
+ * Display error with position highlighting for ReaderError
+ */
+function displayError(errorData) {
+    const { message, errorType, position, token, query } = errorData;
+
+    // Check if this is a ReaderError with position information
+    if (errorType === 'ReaderError' && position !== undefined && query) {
+        displayReaderError(message, position, token, query);
+    } else {
+        // Generic error display
+        appendOutput(`Error: ${message}`, 'error');
+    }
+}
+
+/**
+ * Display ReaderError with position highlighting and helpful context
+ */
+function displayReaderError(message, position, token, query) {
+    // Create error message with position indicator
+    const lines = query.split('\n');
+    let currentPos = 0;
+    let lineNumber = 0;
+    let columnNumber = 0;
+
+    // Find which line contains the error position
+    for (let i = 0; i < lines.length; i++) {
+        const lineLength = lines[i].length + 1; // +1 for newline
+        if (currentPos + lineLength > position) {
+            lineNumber = i;
+            columnNumber = position - currentPos;
+            break;
+        }
+        currentPos += lineLength;
+    }
+
+    // Display the error message
+    appendOutput(`Parse Error: ${message}`, 'error');
+
+    // Display the problematic line with position marker
+    if (lineNumber < lines.length) {
+        const errorLine = lines[lineNumber];
+        appendOutput(`  ${errorLine}`, 'error');
+
+        // Create position marker (spaces + caret)
+        const marker = ' '.repeat(columnNumber + 2) + '^';
+        appendOutput(marker, 'error');
+
+        // Show the problematic token if available
+        if (token) {
+            appendOutput(`  Unexpected token: "${token}"`, 'error');
+        }
+
+        // Add helpful suggestions
+        addParseErrorSuggestions(message, token, query);
+    }
+}
+
+/**
+ * Add helpful suggestions for common parse errors
+ */
+function addParseErrorSuggestions(message, token, query) {
+    const suggestions = [];
+    const lowerMessage = message.toLowerCase();
+
+    // Common error patterns and suggestions
+    if (lowerMessage.includes('expected opening bracket')) {
+        suggestions.push('Lists should start with [ and end with ]');
+        suggestions.push('Example: [1,2,3] or [Head|Tail]');
+    } else if (lowerMessage.includes('expected period')) {
+        suggestions.push('Queries should end with a period (.)');
+        suggestions.push('Example: member(X, [1,2,3]).');
+    } else if (lowerMessage.includes('unknown operator') || token) {
+        suggestions.push('Check operator spelling and spacing');
+        suggestions.push('See documentation for supported operators');
+    } else if (lowerMessage.includes('empty')) {
+        suggestions.push('Make sure your query is not empty');
+        suggestions.push('Try a simple example like: X = hello');
+    } else if (lowerMessage.includes('clause')) {
+        suggestions.push('Facts and rules should end with a period');
+        suggestions.push('Example: parent(tom, bob).');
+    }
+
+    // Add documentation links
+    if (suggestions.length > 0) {
+        appendOutput('', 'info'); // Empty line
+        appendOutput('Suggestions:', 'info');
+        suggestions.forEach(suggestion => {
+            appendOutput(`  • ${suggestion}`, 'info');
+        });
+
+        // Add links to documentation
+        appendOutput('', 'info');
+        appendOutput('📖 Documentation:', 'info');
+        appendOutput('  • Prolog Basics: ../basics/terms.md', 'info');
+        appendOutput('  • Operators: ../basics/operators.md', 'info');
+        appendOutput('  • Lists: ../basics/lists-and-structures.md', 'info');
     }
 }
 
