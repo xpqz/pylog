@@ -5,9 +5,8 @@
     "version": "0.1.0"
   },
   "lark": {
-    "wheel": "lark-1.2.2-py3-none-any.whl"
+    "wheel": "lark-1.3.0-py3-none-any.whl"
   },
-  "generated_at": "2025-10-09T19:45:00Z",
-  "checksums": "checksums.txt",
-  "note": "Temporary manifest for testing - will be replaced by CI"
+  "generated_at": "2025-10-09T20:02:52Z",
+  "checksums": "checksums.txt"
 }
