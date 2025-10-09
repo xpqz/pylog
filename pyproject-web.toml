@@ -1,0 +1,24 @@
+[project]
+name = "pylog"
+version = "0.1.0"
+description = "A tree-walking Prolog interpreter in Python with CLP(FD) - Web build"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "lark>=1.1.0",
+]
+
+# No scripts for web build - REPL not available
+# [project.scripts]
+# pylog = "prolog.repl:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["prolog"]
+# Exclude REPL module from web build
+exclude = [
+    "prolog/repl.py",
+]
