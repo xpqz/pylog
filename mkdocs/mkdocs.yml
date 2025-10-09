@@ -85,6 +85,7 @@ nav:
   - Guides:
       - REPL tips & shortcuts: guides/repl-tips.md
       - Tracing and debugging: guides/tracing-and-debugging.md
+      - VS Code debugger: guides/vscode-debugger.md
       - Embedding JSON I/O: guides/embedding-json-io.md
       - Fast CLP(FD) in REPL: guides/fast-clpfd-repl.md
       - Control gotchas: guides/control-gotchas.md
