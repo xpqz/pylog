@@ -7,9 +7,9 @@ set -euo pipefail
 echo "Running fast unit tests before push (skip with --no-verify)..."
 
 if command -v uv >/dev/null 2>&1; then
-  uv run pytest -m "not slow and not stress"
+  uv run pytest -m "not slow and not stress and not perf and not performance and not benchmark"
 else
-  pytest -m "not slow and not stress"
+  pytest -m "not slow and not stress and not perf and not performance and not benchmark"
 fi
 
 echo "Fast unit tests passed. Proceeding with push."
