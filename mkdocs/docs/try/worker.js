@@ -8,6 +8,7 @@
 // Worker state
 let pyodide = null;
 let pylogEngine = null;
+let pylogEngineClass = null;  // Keep reference to Python Engine class
 let pylogProgram = null;
 let pylogPretty = null;
 let parseQuery = null;
@@ -55,7 +56,7 @@ async function initializePyodide() {
 
         console.log('Worker: Importing PyLog modules...');
         const prolog = pyodide.pyimport('prolog');
-        pylogEngine = prolog.engine.Engine;
+        pylogEngineClass = prolog.engine.Engine;  // Keep reference to Engine class
         pylogProgram = prolog.engine.Program;
         pylogPretty = prolog.ast.pretty.pretty;
         parseQuery = prolog.parser.reader.parse_query;
@@ -83,9 +84,9 @@ async function resetEngine() {
     try {
         console.log('Worker: Resetting engine...');
 
-        // Create fresh engine with empty program
+        // Create fresh engine with empty program using Python Engine class
         const emptyProgram = pylogProgram([]);
-        pylogEngine = pylogEngine.constructor(emptyProgram);
+        pylogEngine = pylogEngineClass(emptyProgram);
 
         console.log('Worker: Engine reset complete');
 
