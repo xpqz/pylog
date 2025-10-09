@@ -79,72 +79,66 @@ jobs:
           cd ..
           rm -rf temp-lark
 
-      - name: Prepare web assets
+      - name: Prepare release assets
         run: |
           VERSION="${{ steps.version.outputs.version }}"
 
-          # Create assets directory
-          mkdir -p mkdocs/docs/try/assets
-
-          # Copy web wheel with versioned name
-          cp dist/pylog-*-web-py3-none-any.whl "mkdocs/docs/try/assets/pylog-${VERSION}-web.whl"
-
-          # Copy lark wheel
-          cp dist/lark-*.whl mkdocs/docs/try/assets/
-
-          # Generate checksums
-          cd mkdocs/docs/try/assets
+          # Generate checksums for all wheels
+          cd dist
           sha256sum *.whl > checksums.txt
 
-          # Log what was created
-          echo "Created web assets:"
+          # Log what will be released
+          echo "Assets for release v${VERSION}:"
           ls -la
+          echo "Checksums:"
           cat checksums.txt
 
-      - name: Create asset manifest
+      - name: Create GitHub Release
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          cat > mkdocs/docs/try/assets/manifest.json << EOF
-          {
-            "version": "${VERSION}",
-            "pylog": {
-              "wheel": "pylog-${VERSION}-web.whl",
-              "version": "${VERSION}"
-            },
-            "lark": {
-              "wheel": "$(basename dist/lark-*.whl)"
-            },
-            "generated_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-            "checksums": "checksums.txt"
-          }
+          TAG_NAME="v${VERSION}"
+
+          # Find wheel files
+          WEB_WHEEL=$(ls dist/pylog-*-web-py3-none-any.whl)
+          LARK_WHEEL=$(ls dist/lark-*.whl)
+          CHECKSUMS_FILE="dist/checksums.txt"
+
+          # Create release notes
+          cat > release_notes.md << EOF
+          # PyLog v${VERSION} - Web REPL Assets
+
+          This release contains PyLog wheels compatible with Pyodide for use in the Web REPL.
+
+          ## Assets
+
+          - **${WEB_WHEEL}**: PyLog web wheel (minimal dependencies for Pyodide)
+          - **${LARK_WHEEL}**: Lark parser dependency
+          - **checksums.txt**: SHA256 checksums for all wheels
+
+          ## Installation in Pyodide
+
+          \`\`\`javascript
+          await micropip.install('${WEB_WHEEL}');
+          await micropip.install('${LARK_WHEEL}');
+          \`\`\`
+
+          ## Generated
+
+          - Build time: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          - Commit: ${{ github.sha }}
+          - Workflow: ${{ github.workflow }}
           EOF
 
-          echo "Generated manifest:"
-          cat mkdocs/docs/try/assets/manifest.json
+          # Create the release
+          gh release create "$TAG_NAME" \
+            "$WEB_WHEEL" \
+            "$LARK_WHEEL" \
+            "$CHECKSUMS_FILE" \
+            --title "PyLog v${VERSION}" \
+            --notes-file release_notes.md \
+            --draft
 
-      - name: Commit and push assets
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-
-          git add mkdocs/docs/try/assets/
-
-          if git diff --staged --quiet; then
-            echo "No changes to commit"
-          else
-            git commit -m "Release: Add web wheels for version ${{ steps.version.outputs.version }}"
-            git push origin HEAD:main
-          fi
-
-      - name: Upload release artifacts
-        if: github.event_name == 'release'
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          WEB_WHEEL=$(ls dist/pylog-*-web-py3-none-any.whl)
-
-          # Upload web wheel to release
-          gh release upload "${{ github.event.release.tag_name }}" \
-            "$WEB_WHEEL#PyLog Web Wheel (Pyodide compatible)" \
-            --clobber
+          echo "Created draft release: $TAG_NAME"
+          echo "Release assets uploaded successfully"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,7 +1,6 @@
 site_name: PyLog User Guide
 site_description: User documentation for the PyLog Prolog interpreter with CLP(FD)
 site_dir: site
-docs_dir: docs
 repo_url: https://github.com/xpqz/pylog
 repo_name: xpqz/pylog
 theme:
