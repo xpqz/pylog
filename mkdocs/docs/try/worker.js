@@ -159,8 +159,8 @@ async function initializePyodide() {
         console.log('Worker: Loading wheel manifest from JsDelivr CDN...');
 
         // Load manifest from JsDelivr CDN (CORS-friendly)
-        // Add cache-busting parameter to ensure fresh manifest
-        const manifestUrl = `https://cdn.jsdelivr.net/gh/xpqz/pylog@main/wheels/manifest.json?_cb=${Date.now()}`;
+        // Fixed: Use correct assets path where manifest actually exists
+        const manifestUrl = `https://cdn.jsdelivr.net/gh/xpqz/pylog@main/mkdocs/docs/try/assets/manifest.json?_cb=${Date.now()}`;
         const manifestPromise = fetch(manifestUrl);
         const manifestTimeoutPromise = new Promise((_, reject) => {
             setTimeout(() => reject(new Error('Manifest loading timeout after 10 seconds')), 10000);
