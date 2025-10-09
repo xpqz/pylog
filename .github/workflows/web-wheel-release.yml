@@ -1,0 +1,145 @@
+name: Web Wheel Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version for manual run (e.g., 0.1.0)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  build-and-publish-web-wheels:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            **/pyproject.toml
+            **/uv.lock
+
+      - name: Set up Python 3.11
+        run: uv python install 3.11
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            VERSION="${{ github.event.release.tag_name }}"
+            # Remove 'v' prefix if present
+            VERSION=${VERSION#v}
+          elif [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            # Extract from pyproject.toml
+            VERSION=$(uv run python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Building wheels for version: $VERSION"
+
+      - name: Build web wheels
+        run: |
+          # Ensure build script is executable
+          chmod +x ./build-wheels.sh
+
+          # Build both standard and web wheels
+          ./build-wheels.sh
+
+          # List what was built
+          ls -la dist/
+
+      - name: Download lark wheel
+        run: |
+          # Create temp directory for downloading lark
+          mkdir -p temp-lark
+          cd temp-lark
+
+          # Download lark wheel (latest compatible version)
+          uv run python -m pip download --only-binary=:all: --no-deps lark
+
+          # Move lark wheel to dist directory
+          mv lark-*.whl ../dist/
+          cd ..
+          rm -rf temp-lark
+
+      - name: Prepare web assets
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+
+          # Create assets directory
+          mkdir -p mkdocs/docs/try/assets
+
+          # Copy web wheel with versioned name
+          cp dist/pylog-*-web-py3-none-any.whl "mkdocs/docs/try/assets/pylog-${VERSION}-web.whl"
+
+          # Copy lark wheel
+          cp dist/lark-*.whl mkdocs/docs/try/assets/
+
+          # Generate checksums
+          cd mkdocs/docs/try/assets
+          sha256sum *.whl > checksums.txt
+
+          # Log what was created
+          echo "Created web assets:"
+          ls -la
+          cat checksums.txt
+
+      - name: Create asset manifest
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          cat > mkdocs/docs/try/assets/manifest.json << EOF
+          {
+            "version": "${VERSION}",
+            "pylog_wheel": "pylog-${VERSION}-web.whl",
+            "lark_wheel": "$(basename dist/lark-*.whl)",
+            "generated_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "checksums": "checksums.txt"
+          }
+          EOF
+
+          echo "Generated manifest:"
+          cat mkdocs/docs/try/assets/manifest.json
+
+      - name: Commit and push assets
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+
+          git add mkdocs/docs/try/assets/
+
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Release: Add web wheels for version ${{ steps.version.outputs.version }}"
+            git push origin HEAD:main
+          fi
+
+      - name: Upload release artifacts
+        if: github.event_name == 'release'
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          WEB_WHEEL=$(ls dist/pylog-*-web-py3-none-any.whl)
+
+          # Upload web wheel to release
+          gh release upload "${{ github.event.release.tag_name }}" \
+            "$WEB_WHEEL#PyLog Web Wheel (Pyodide compatible)" \
+            --clobber
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
