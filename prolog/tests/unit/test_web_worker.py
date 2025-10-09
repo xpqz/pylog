@@ -24,10 +24,10 @@ class TestWebWorkerProtocol:
         assert parsed["type"] == "init"
         assert len(parsed) == 1  # Only type field expected
 
-    def test_run_message_format(self):
-        """Test that run messages follow the expected format."""
-        run_msg = {
-            "type": "run",
+    def test_query_message_format(self):
+        """Test that query messages follow the expected format."""
+        query_msg = {
+            "type": "query",
             "data": {
                 "query": "X = 1, Y is X + 1",
                 "options": {"maxSteps": 1000, "maxSolutions": 10},
@@ -35,10 +35,10 @@ class TestWebWorkerProtocol:
         }
 
         # Should be valid JSON
-        json_str = json.dumps(run_msg)
+        json_str = json.dumps(query_msg)
         parsed = json.loads(json_str)
 
-        assert parsed["type"] == "run"
+        assert parsed["type"] == "query"
         assert "data" in parsed
         assert "query" in parsed["data"]
         assert "options" in parsed["data"]
@@ -66,16 +66,16 @@ class TestWebWorkerProtocol:
         }
         json.dumps(init_response)  # Should serialize
 
-        # Results response
-        results_response = {
-            "type": "results",
+        # Solutions response
+        solutions_response = {
+            "type": "solutions",
             "query": "X = 42",
             "solutions": [{"X": "42"}],
             "stepCount": 1,
             "solutionCount": 1,
             "limits": {"maxSteps": 1000, "maxSolutions": 10},
         }
-        json.dumps(results_response)  # Should serialize
+        json.dumps(solutions_response)  # Should serialize
 
         # Error response
         error_response = {"type": "error", "message": "PyLog not initialized"}
@@ -163,7 +163,7 @@ class TestWorkerAPIContract:
     def test_solution_batching(self):
         """Test that solutions are returned in batches with metadata."""
         batch_response = {
-            "type": "results",
+            "type": "solutions",
             "query": "member(X, [1,2,3])",
             "solutions": [{"X": "1"}, {"X": "2"}, {"X": "3"}],
             "stepCount": 6,
