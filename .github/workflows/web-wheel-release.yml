@@ -71,8 +71,8 @@ jobs:
           mkdir -p temp-lark
           cd temp-lark
 
-          # Download lark wheel (latest compatible version)
-          uv run python -m pip download --only-binary=:all: --no-deps lark
+          # Download lark wheel (latest compatible version) using uv
+          uv pip download --only-binary=:all: --no-deps lark
 
           # Move lark wheel to dist directory
           mv lark-*.whl ../dist/
@@ -107,8 +107,13 @@ jobs:
           cat > mkdocs/docs/try/assets/manifest.json << EOF
           {
             "version": "${VERSION}",
-            "pylog_wheel": "pylog-${VERSION}-web.whl",
-            "lark_wheel": "$(basename dist/lark-*.whl)",
+            "pylog": {
+              "wheel": "pylog-${VERSION}-web.whl",
+              "version": "${VERSION}"
+            },
+            "lark": {
+              "wheel": "$(basename dist/lark-*.whl)"
+            },
             "generated_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
             "checksums": "checksums.txt"
           }
