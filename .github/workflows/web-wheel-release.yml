@@ -71,8 +71,8 @@ jobs:
           mkdir -p temp-lark
           cd temp-lark
 
-          # Download lark wheel (latest compatible version) using uv
-          uv pip download --only-binary=:all: --no-deps lark
+          # Download lark wheel (latest compatible version) using system pip
+          python3 -m pip download --only-binary=:all: --no-deps lark
 
           # Move lark wheel to dist directory
           mv lark-*.whl ../dist/
