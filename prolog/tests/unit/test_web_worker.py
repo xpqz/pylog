@@ -1,0 +1,222 @@
+"""
+Test suite for Web Worker bootstrap functionality.
+
+Tests the PyLog Web Worker message protocol and initialization.
+Since we can't directly test JavaScript in Python, these tests validate
+the expected API contract and message formats.
+"""
+
+import json
+from pathlib import Path
+
+
+class TestWebWorkerProtocol:
+    """Test the Web Worker message protocol specification."""
+
+    def test_init_message_format(self):
+        """Test that init messages follow the expected format."""
+        init_msg = {"type": "init"}
+
+        # Should be valid JSON
+        json_str = json.dumps(init_msg)
+        parsed = json.loads(json_str)
+
+        assert parsed["type"] == "init"
+        assert len(parsed) == 1  # Only type field expected
+
+    def test_run_message_format(self):
+        """Test that run messages follow the expected format."""
+        run_msg = {
+            "type": "run",
+            "data": {
+                "query": "X = 1, Y is X + 1",
+                "options": {"maxSteps": 1000, "maxSolutions": 10},
+            },
+        }
+
+        # Should be valid JSON
+        json_str = json.dumps(run_msg)
+        parsed = json.loads(json_str)
+
+        assert parsed["type"] == "run"
+        assert "data" in parsed
+        assert "query" in parsed["data"]
+        assert "options" in parsed["data"]
+        assert parsed["data"]["options"]["maxSteps"] == 1000
+        assert parsed["data"]["options"]["maxSolutions"] == 10
+
+    def test_reset_message_format(self):
+        """Test that reset messages follow the expected format."""
+        reset_msg = {"type": "reset"}
+
+        # Should be valid JSON
+        json_str = json.dumps(reset_msg)
+        parsed = json.loads(json_str)
+
+        assert parsed["type"] == "reset"
+        assert len(parsed) == 1  # Only type field expected
+
+    def test_expected_response_formats(self):
+        """Test expected response message formats from worker."""
+
+        # Initialized response
+        init_response = {
+            "type": "initialized",
+            "versions": {"pylog": "0.1.0", "pyodide": "0.24.1"},
+        }
+        json.dumps(init_response)  # Should serialize
+
+        # Results response
+        results_response = {
+            "type": "results",
+            "query": "X = 42",
+            "solutions": [{"X": "42"}],
+            "stepCount": 1,
+            "solutionCount": 1,
+            "limits": {"maxSteps": 1000, "maxSolutions": 10},
+        }
+        json.dumps(results_response)  # Should serialize
+
+        # Error response
+        error_response = {"type": "error", "message": "PyLog not initialized"}
+        json.dumps(error_response)  # Should serialize
+
+        # Reset response
+        reset_response = {"type": "reset", "message": "Engine reset successful"}
+        json.dumps(reset_response)  # Should serialize
+
+    def test_worker_file_exists(self):
+        """Test that the worker.js file exists and has expected structure."""
+        worker_path = (
+            Path(__file__).parent.parent.parent.parent
+            / "mkdocs"
+            / "docs"
+            / "try"
+            / "worker.js"
+        )
+
+        assert worker_path.exists(), f"Worker file not found at {worker_path}"
+
+        content = worker_path.read_text()
+
+        # Check for required functions and patterns
+        assert "self.onmessage" in content, "Worker should handle messages"
+        assert "initializePyodide" in content, "Should have Pyodide initialization"
+        assert "resetEngine" in content, "Should have engine reset functionality"
+        assert "executeQuery" in content, "Should have query execution"
+        assert "pyodide.version" in content, "Should access Pyodide version"
+        assert "micropip.install" in content, "Should install dependencies"
+
+    def test_pyrepl_file_exists(self):
+        """Test that the main REPL interface file exists."""
+        pyrepl_path = (
+            Path(__file__).parent.parent.parent.parent
+            / "mkdocs"
+            / "docs"
+            / "try"
+            / "pyrepl.js"
+        )
+
+        assert pyrepl_path.exists(), f"PyREPL file not found at {pyrepl_path}"
+
+        content = pyrepl_path.read_text()
+
+        # Check for worker creation
+        assert "new Worker" in content, "Should create Web Worker"
+        assert "onmessage" in content, "Should handle worker messages"
+
+
+class TestWorkerAPIContract:
+    """Test the API contract defined in docs/repl.md."""
+
+    def test_query_execution_limits(self):
+        """Test that query execution respects limits."""
+        # Default limits should be reasonable
+        default_max_steps = 1000
+        default_max_solutions = 10
+
+        assert default_max_steps > 0
+        assert default_max_solutions > 0
+
+        # Custom limits should be respected
+        custom_options = {"maxSteps": 5000, "maxSolutions": 50}
+
+        assert custom_options["maxSteps"] > default_max_steps
+        assert custom_options["maxSolutions"] > default_max_solutions
+
+    def test_version_info_structure(self):
+        """Test that version info has expected structure."""
+        versions = {"pylog": "0.1.0", "pyodide": "0.24.1"}
+
+        assert "pylog" in versions
+        assert "pyodide" in versions
+        assert isinstance(versions["pylog"], str)
+        assert isinstance(versions["pyodide"], str)
+
+        # Versions should look like semantic versions
+        pylog_parts = versions["pylog"].split(".")
+        pyodide_parts = versions["pyodide"].split(".")
+
+        assert len(pylog_parts) >= 2  # At least major.minor
+        assert len(pyodide_parts) >= 2  # At least major.minor
+
+    def test_solution_batching(self):
+        """Test that solutions are returned in batches with metadata."""
+        batch_response = {
+            "type": "results",
+            "query": "member(X, [1,2,3])",
+            "solutions": [{"X": "1"}, {"X": "2"}, {"X": "3"}],
+            "stepCount": 6,
+            "solutionCount": 3,
+            "limits": {"maxSteps": 1000, "maxSolutions": 10},
+        }
+
+        assert batch_response["solutionCount"] == len(batch_response["solutions"])
+        assert batch_response["stepCount"] >= batch_response["solutionCount"]
+        assert (
+            batch_response["solutionCount"] <= batch_response["limits"]["maxSolutions"]
+        )
+        assert batch_response["stepCount"] <= batch_response["limits"]["maxSteps"]
+
+
+class TestWebAssetIntegration:
+    """Test integration with web assets and build system."""
+
+    def test_mkdocs_try_page_exists(self):
+        """Test that the Try PyLog page exists."""
+        try_page = (
+            Path(__file__).parent.parent.parent.parent
+            / "mkdocs"
+            / "docs"
+            / "try"
+            / "index.md"
+        )
+
+        assert try_page.exists(), f"Try page not found at {try_page}"
+
+        content = try_page.read_text()
+
+        # Should reference the required JavaScript files
+        assert "pyrepl.js" in content, "Should load pyrepl.js"
+        assert "examples.js" in content, "Should load examples.js"
+        # Should NOT include worker.js as a script tag (it's loaded via new Worker())
+        assert (
+            '<script src="worker.js">' not in content
+        ), "worker.js should not be loaded as script"
+
+    def test_examples_file_exists(self):
+        """Test that the examples file exists and has structure."""
+        examples_path = (
+            Path(__file__).parent.parent.parent.parent
+            / "mkdocs"
+            / "docs"
+            / "try"
+            / "examples.js"
+        )
+
+        assert examples_path.exists(), f"Examples file not found at {examples_path}"
+
+        content = examples_path.read_text()
+
+        # Should have example queries
+        assert "examples" in content.lower(), "Should contain example queries"

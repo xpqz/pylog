@@ -7,7 +7,11 @@
 
 // Worker state
 let pyodide = null;
-let pylogInitialized = false;
+let pylogEngine = null;
+let pylogProgram = null;
+let pylogPretty = null;
+let parseQuery = null;
+let versions = {};
 
 /**
  * Initialize Pyodide and PyLog
@@ -16,24 +20,55 @@ async function initializePyodide() {
     try {
         console.log('Worker: Loading Pyodide...');
 
-        // Import Pyodide (placeholder - actual implementation will load from CDN)
-        // importScripts('https://cdn.jsdelivr.net/pyodide/v0.24.1/full/pyodide.js');
+        // Load Pyodide from CDN
+        importScripts('https://cdn.jsdelivr.net/pyodide/v0.24.1/full/pyodide.js');
+        pyodide = await loadPyodide({
+            indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.24.1/full/'
+        });
 
-        // Initialize Pyodide (placeholder)
-        console.log('Worker: Pyodide would be initialized here');
+        console.log('Worker: Pyodide loaded, version:', pyodide.version);
+        versions.pyodide = pyodide.version;
 
-        // Load PyLog wheel (placeholder)
-        console.log('Worker: PyLog wheel would be loaded here');
-        // await micropip.install('./assets/pylog-VERSION-web.whl');
+        // Install micropip
+        await pyodide.loadPackage('micropip');
+        const micropip = pyodide.pyimport('micropip');
 
-        // Import PyLog modules (placeholder)
-        console.log('Worker: PyLog modules would be imported here');
-        /*
-        const { parse_query, Engine, Program, pretty } = pyodide.pyimport('prolog');
-        */
+        console.log('Worker: Installing lark dependency...');
+        await micropip.install('lark>=1.1.0');
 
-        pylogInitialized = true;
-        postMessage({ type: 'initialized' });
+        console.log('Worker: Installing PyLog wheel...');
+        // Look for the web wheel in the assets directory
+        const wheelResponse = await fetch('./assets/');
+        const wheelText = await wheelResponse.text();
+        const wheelMatch = wheelText.match(/pylog-([^-]+)-py3-none-any\.whl/);
+
+        if (!wheelMatch) {
+            throw new Error('PyLog web wheel not found in assets directory');
+        }
+
+        const wheelName = wheelMatch[0];
+        const version = wheelMatch[1];
+        console.log(`Worker: Found PyLog wheel: ${wheelName}, version: ${version}`);
+        versions.pylog = version;
+
+        await micropip.install(`./assets/${wheelName}`);
+
+        console.log('Worker: Importing PyLog modules...');
+        const prolog = pyodide.pyimport('prolog');
+        pylogEngine = prolog.engine.Engine;
+        pylogProgram = prolog.engine.Program;
+        pylogPretty = prolog.ast.pretty.pretty;
+        parseQuery = prolog.parser.reader.parse_query;
+
+        console.log('Worker: PyLog successfully initialized');
+
+        // Create initial engine with empty program
+        await resetEngine();
+
+        postMessage({
+            type: 'initialized',
+            versions: versions
+        });
 
     } catch (error) {
         console.error('Worker: Failed to initialize:', error);
@@ -42,32 +77,92 @@ async function initializePyodide() {
 }
 
 /**
- * Execute a Prolog query
+ * Reset the engine to fresh state
  */
-async function executeQuery(query) {
+async function resetEngine() {
     try {
-        if (!pylogInitialized) {
+        console.log('Worker: Resetting engine...');
+
+        // Create fresh engine with empty program
+        const emptyProgram = pylogProgram([]);
+        pylogEngine = pylogEngine.constructor(emptyProgram);
+
+        console.log('Worker: Engine reset complete');
+
+    } catch (error) {
+        console.error('Worker: Engine reset failed:', error);
+        throw error;
+    }
+}
+
+/**
+ * Execute a Prolog query with limits and batched results
+ */
+async function executeQuery(query, options = {}) {
+    try {
+        if (!pylogEngine || !parseQuery) {
             throw new Error('PyLog not initialized');
         }
 
-        console.log(`Worker: Executing query: ${query}`);
+        const maxSteps = options.maxSteps || 1000;
+        const maxSolutions = options.maxSolutions || 10;
 
-        // Parse and execute query (placeholder)
-        /*
-        const goals = parse_query(`?- ${query}.`);
-        const engine = Engine(Program([]));
-        const solutions = Array.from(engine.run(goals));
-        */
+        console.log(`Worker: Executing query: ${query} (max_steps: ${maxSteps}, max_solutions: ${maxSolutions})`);
 
-        // Simulate query execution
-        const solutions = [
-            { 'X': '42' }, // Example solution
-        ];
+        // Parse the query
+        const goals = parseQuery(`?- ${query}.`);
 
+        // Execute with limits
+        const results = [];
+        let stepCount = 0;
+        let solutionCount = 0;
+
+        try {
+            for (const solution of pylogEngine.run(goals)) {
+                stepCount++;
+
+                if (stepCount > maxSteps) {
+                    console.log('Worker: Max steps exceeded');
+                    break;
+                }
+
+                if (solution && Object.keys(solution).length > 0) {
+                    // Pretty print the solution with operators
+                    const prettySolution = {};
+                    for (const [key, value] of Object.entries(solution)) {
+                        prettySolution[key] = pylogPretty(value, true); // operator_mode=True
+                    }
+                    results.push(prettySolution);
+                    solutionCount++;
+
+                    if (solutionCount >= maxSolutions) {
+                        console.log('Worker: Max solutions reached');
+                        break;
+                    }
+                }
+            }
+        } catch (pyError) {
+            // Handle Prolog execution errors
+            console.error('Worker: Prolog execution error:', pyError);
+            postMessage({
+                type: 'error',
+                query: query,
+                message: `Prolog error: ${pyError.message || pyError}`
+            });
+            return;
+        }
+
+        // Send batched results
         postMessage({
-            type: 'solutions',
+            type: 'results',
             query: query,
-            solutions: solutions
+            solutions: results,
+            stepCount: stepCount,
+            solutionCount: solutionCount,
+            limits: {
+                maxSteps: maxSteps,
+                maxSolutions: maxSolutions
+            }
         });
 
     } catch (error) {
@@ -91,18 +186,45 @@ self.onmessage = async function(event) {
             await initializePyodide();
             break;
 
-        case 'query':
-            await executeQuery(data.query);
+        case 'run':
+            if (!data || !data.query) {
+                postMessage({
+                    type: 'error',
+                    message: 'Query required for run command'
+                });
+                break;
+            }
+            await executeQuery(data.query, data.options || {});
+            break;
+
+        case 'reset':
+            try {
+                await resetEngine();
+                postMessage({
+                    type: 'reset',
+                    message: 'Engine reset successful'
+                });
+            } catch (error) {
+                postMessage({
+                    type: 'error',
+                    message: `Reset failed: ${error.message}`
+                });
+            }
             break;
 
         case 'stop':
             console.log('Worker: Stop requested');
-            // Placeholder - actual implementation would terminate query
+            // Note: Actual termination would need more sophisticated handling
+            // For now, we just acknowledge the stop request
             postMessage({ type: 'stopped' });
             break;
 
         default:
             console.warn('Worker: Unknown message type:', type);
+            postMessage({
+                type: 'error',
+                message: `Unknown message type: ${type}`
+            });
     }
 };
 
