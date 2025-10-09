@@ -196,6 +196,7 @@ async function initializePyodide() {
             setTimeout(() => reject(new Error('Lark installation timeout after 30 seconds')), 30000);
         });
         await Promise.race([larkInstallPromise, larkTimeoutPromise]);
+        console.log('Worker: ✅ Lark installation completed successfully');
 
         // Install PyLog from JsDelivr CDN (CORS-friendly)
         versions.pylog = manifest.pylog.version;
@@ -208,22 +209,50 @@ async function initializePyodide() {
             setTimeout(() => reject(new Error('PyLog installation timeout after 30 seconds')), 30000);
         });
         await Promise.race([pylogInstallPromise, pylogTimeoutPromise]);
+        console.log('Worker: ✅ PyLog installation completed successfully');
 
         postMessage({ type: 'progress', step: 'importing-pylog', message: 'Importing PyLog modules...' });
         console.log('Worker: Importing PyLog modules...');
-        const prolog = pyodide.pyimport('prolog');
 
-        // Debug: log the structure of the prolog module
-        console.log('Worker: Prolog module structure:', Object.keys(prolog));
-        console.log('Worker: Prolog.engine:', prolog.engine);
-        if (prolog.engine) {
-            console.log('Worker: Prolog.engine keys:', Object.keys(prolog.engine));
+        // Try importing modules directly since __init__.py files are empty
+        console.log('Worker: Attempting direct module imports...');
+
+        try {
+            const engineModule = pyodide.pyimport('prolog.engine.engine');
+            console.log('Worker: Engine module keys:', Object.keys(engineModule));
+            pylogEngineClass = engineModule.Engine;
+            console.log('Worker: ✅ Engine class imported successfully');
+        } catch (error) {
+            console.error('Worker: ❌ Failed to import engine:', error);
+            throw new Error(`Failed to import PyLog engine: ${error.message}`);
         }
 
-        pylogEngineClass = prolog.engine.Engine;  // Keep reference to Engine class
-        pylogProgram = prolog.ast.clauses.Program;  // Correct path: ast.clauses.Program
-        pylogPretty = prolog.ast.pretty.pretty;
-        parseQuery = prolog.parser.parser.parse_query;  // Correct path: parser.parser.parse_query
+        try {
+            const clausesModule = pyodide.pyimport('prolog.ast.clauses');
+            pylogProgram = clausesModule.Program;
+            console.log('Worker: ✅ Program class imported successfully');
+        } catch (error) {
+            console.error('Worker: ❌ Failed to import clauses:', error);
+            throw new Error(`Failed to import PyLog clauses: ${error.message}`);
+        }
+
+        try {
+            const prettyModule = pyodide.pyimport('prolog.ast.pretty');
+            pylogPretty = prettyModule.pretty;
+            console.log('Worker: ✅ Pretty printer imported successfully');
+        } catch (error) {
+            console.error('Worker: ❌ Failed to import pretty:', error);
+            throw new Error(`Failed to import PyLog pretty: ${error.message}`);
+        }
+
+        try {
+            const parserModule = pyodide.pyimport('prolog.parser.parser');
+            parseQuery = parserModule.parse_query;
+            console.log('Worker: ✅ Parser imported successfully');
+        } catch (error) {
+            console.error('Worker: ❌ Failed to import parser:', error);
+            throw new Error(`Failed to import PyLog parser: ${error.message}`);
+        }
 
         postMessage({ type: 'progress', step: 'initializing-engine', message: 'Creating Prolog engine...' });
         console.log('Worker: PyLog successfully initialized');
