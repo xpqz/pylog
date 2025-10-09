@@ -15,6 +15,110 @@ let parseQuery = null;
 let versions = {};
 
 /**
+ * Extract error information for enhanced error reporting
+ */
+function extractErrorInfo(error, query) {
+    try {
+        // Convert error to string to analyze
+        const errorString = String(error);
+
+        // Check if this is a ReaderError by examining the error message
+        if (errorString.includes('ReaderError')) {
+            // Try to extract ReaderError information from Python error
+            const readerErrorData = extractReaderErrorInfo(error, errorString, query);
+            if (readerErrorData) {
+                return readerErrorData;
+            }
+        }
+
+        // Default error format
+        return {
+            message: errorString,
+            errorType: 'GenericError'
+        };
+    } catch (extractError) {
+        console.warn('Worker: Error while extracting error info:', extractError);
+        return {
+            message: String(error),
+            errorType: 'GenericError'
+        };
+    }
+}
+
+/**
+ * Extract ReaderError specific information
+ */
+function extractReaderErrorInfo(pyError, errorString, query) {
+    try {
+        // If we have access to the Python error object, try to extract attributes
+        if (pyError && typeof pyError === 'object') {
+            // Try to access Python error attributes
+            let position = null;
+            let token = null;
+            let message = null;
+
+            try {
+                // Try to get attributes from Python error object
+                if (pyError.position !== undefined) {
+                    position = pyError.position;
+                }
+                if (pyError.token !== undefined) {
+                    token = pyError.token;
+                }
+                if (pyError.message !== undefined) {
+                    message = pyError.message;
+                }
+            } catch (attrError) {
+                // Python attribute access failed, try string parsing
+                console.log('Worker: Direct attribute access failed, trying string parsing');
+            }
+
+            // If we got position information, return structured error
+            if (position !== null || message || token) {
+                return {
+                    message: message || extractMessageFromString(errorString),
+                    errorType: 'ReaderError',
+                    position: position,
+                    token: token,
+                    query: query
+                };
+            }
+        }
+
+        // Fallback: try to parse position from error string
+        const positionMatch = errorString.match(/at position (\d+)/);
+        if (positionMatch) {
+            const position = parseInt(positionMatch[1]);
+            const message = extractMessageFromString(errorString);
+
+            return {
+                message: message,
+                errorType: 'ReaderError',
+                position: position,
+                token: null,
+                query: query
+            };
+        }
+
+        return null;
+    } catch (parseError) {
+        console.warn('Worker: Failed to parse ReaderError:', parseError);
+        return null;
+    }
+}
+
+/**
+ * Extract error message from error string
+ */
+function extractMessageFromString(errorString) {
+    // Remove "ReaderError at position X: " prefix if present
+    const cleanMessage = errorString.replace(/^.*?ReaderError(?:\s+at\s+position\s+\d+)?\s*:\s*/, '');
+
+    // Remove any remaining prefixes
+    return cleanMessage.replace(/^(Prolog error: )?/, '');
+}
+
+/**
  * Initialize Pyodide and PyLog
  */
 async function initializePyodide() {
@@ -145,10 +249,11 @@ async function executeQuery(query, options = {}) {
         } catch (pyError) {
             // Handle Prolog execution errors
             console.error('Worker: Prolog execution error:', pyError);
+            const errorData = extractErrorInfo(pyError, query);
             postMessage({
                 type: 'error',
                 query: query,
-                message: `Prolog error: ${String(pyError)}`  // Use String() for better error handling
+                ...errorData
             });
             return;
         }
@@ -168,10 +273,11 @@ async function executeQuery(query, options = {}) {
 
     } catch (error) {
         console.error('Worker: Query execution failed:', error);
+        const errorData = extractErrorInfo(error, query);
         postMessage({
             type: 'error',
             query: query,
-            message: String(error)  // Use String() for better error handling
+            ...errorData
         });
     }
 }

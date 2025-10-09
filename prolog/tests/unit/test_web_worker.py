@@ -311,3 +311,131 @@ class TestSafetyLimits:
         assert "Safety features" in content, "Should document safety features"
         assert "Step limit" in content, "Should explain step limits"
         assert "Worker termination" in content, "Should explain termination"
+
+
+class TestErrorFormatting:
+    """Test error formatting and ReaderError handling."""
+
+    def test_error_formatting_functions_exist(self):
+        """Test that error formatting functions are defined."""
+        pyrepl_path = (
+            Path(__file__).parent.parent.parent.parent
+            / "mkdocs"
+            / "docs"
+            / "try"
+            / "pyrepl.js"
+        )
+
+        content = pyrepl_path.read_text()
+
+        # Check for error formatting functions
+        assert "function displayError(" in content, "Should have displayError function"
+        assert (
+            "function displayReaderError(" in content
+        ), "Should have displayReaderError function"
+        assert (
+            "function addParseErrorSuggestions(" in content
+        ), "Should have suggestions function"
+
+    def test_worker_error_extraction_functions(self):
+        """Test that worker has error extraction functions."""
+        worker_path = (
+            Path(__file__).parent.parent.parent.parent
+            / "mkdocs"
+            / "docs"
+            / "try"
+            / "worker.js"
+        )
+
+        content = worker_path.read_text()
+
+        # Check for error extraction functions
+        assert (
+            "function extractErrorInfo(" in content
+        ), "Should have extractErrorInfo function"
+        assert (
+            "function extractReaderErrorInfo(" in content
+        ), "Should have ReaderError extraction"
+        assert "ReaderError" in content, "Should handle ReaderError type"
+
+    def test_error_display_features(self):
+        """Test that error display includes position highlighting."""
+        pyrepl_path = (
+            Path(__file__).parent.parent.parent.parent
+            / "mkdocs"
+            / "docs"
+            / "try"
+            / "pyrepl.js"
+        )
+
+        content = pyrepl_path.read_text()
+
+        # Check for position highlighting
+        assert "position" in content, "Should handle error positions"
+        assert "columnNumber" in content, "Should calculate column numbers"
+        assert "marker" in content, "Should create position markers"
+        assert "^" in content, "Should use caret for position indication"
+
+    def test_helpful_error_suggestions(self):
+        """Test that helpful suggestions are provided for common errors."""
+        pyrepl_path = (
+            Path(__file__).parent.parent.parent.parent
+            / "mkdocs"
+            / "docs"
+            / "try"
+            / "pyrepl.js"
+        )
+
+        content = pyrepl_path.read_text()
+
+        # Check for helpful suggestions
+        assert "expected opening bracket" in content, "Should suggest bracket fixes"
+        assert "expected period" in content, "Should suggest period fixes"
+        assert "unknown operator" in content, "Should suggest operator fixes"
+        assert "Documentation:" in content, "Should link to documentation"
+        assert "../basics/" in content, "Should link to basics documentation"
+
+    def test_examples_system_integration(self):
+        """Test that examples system is properly integrated."""
+        examples_path = (
+            Path(__file__).parent.parent.parent.parent
+            / "mkdocs"
+            / "docs"
+            / "try"
+            / "examples.js"
+        )
+
+        content = examples_path.read_text()
+
+        # Check for example categories as specified in issue
+        assert "basics" in content, "Should have basics category"
+        assert "lists" in content, "Should have lists category"
+        assert "arithmetic" in content, "Should have arithmetic category"
+        assert "clpfd" in content, "Should have CLP(FD) category"
+        assert "hanoi" in content, "Should have Hanoi category"
+        assert "sudoku" in content, "Should have Sudoku category"
+
+        # Check for dropdown functionality
+        assert (
+            "dropdown" in content or "select" in content
+        ), "Should have dropdown interface"
+        assert "loadSelectedExample" in content, "Should have example loading function"
+
+    def test_examples_content_quality(self):
+        """Test that examples include the required content."""
+        examples_path = (
+            Path(__file__).parent.parent.parent.parent
+            / "mkdocs"
+            / "docs"
+            / "try"
+            / "examples.js"
+        )
+
+        content = examples_path.read_text()
+
+        # Check for specific examples mentioned in issue
+        assert "member(X" in content, "Should have member examples"
+        assert "append(" in content, "Should have append examples"
+        assert "hanoi(" in content, "Should have Hanoi examples"
+        assert "all_different" in content, "Should have all_different examples"
+        assert "label([X" in content, "Should have labeling examples"

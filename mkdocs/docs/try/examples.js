@@ -1,191 +1,430 @@
 /**
- * PyLog REPL - Example Queries Library
+ * PyLog REPL Examples System
  *
- * Provides canned example queries for easy experimentation.
- * Examples are organized by category and complexity.
+ * Provides canned queries organized by category with a dropdown loader.
+ * Integrates with the main REPL interface for easy example loading.
  */
 
-// Example query categories
+// Example categories and queries
 const PYLOG_EXAMPLES = {
-    basic: {
-        title: "Basic Queries",
-        description: "Simple unification and built-ins",
+    'basics': {
+        name: 'Basics',
+        description: 'Simple unification and basic Prolog concepts',
         examples: [
             {
-                query: "X = hello",
-                description: "Simple unification with atom",
-                expected: "X = hello"
+                title: 'Variable Unification',
+                query: 'X = hello',
+                description: 'Unify variable X with atom hello'
             },
             {
-                query: "X = 42",
-                description: "Unification with integer",
-                expected: "X = 42"
+                title: 'Pattern Matching',
+                query: '[H|T] = [1,2,3]',
+                description: 'Match head and tail of a list'
             },
             {
-                query: "true",
-                description: "Always succeeds",
-                expected: "true"
+                title: 'Structure Unification',
+                query: 'point(X, Y) = point(3, 4)',
+                description: 'Unify compound terms'
             },
             {
-                query: "fail",
-                description: "Always fails",
-                expected: "false"
+                title: 'Multiple Variables',
+                query: 'X = Y, Y = 42',
+                description: 'Chain variable unifications'
             }
         ]
     },
-
-    lists: {
-        title: "Lists",
-        description: "List operations and membership",
+    'lists': {
+        name: 'Lists',
+        description: 'List processing, membership, and manipulation',
         examples: [
             {
-                query: "member(X, [1, 2, 3])",
-                description: "List membership - find elements",
-                expected: "X = 1; X = 2; X = 3"
+                title: 'List Membership',
+                query: 'member(X, [1,2,3])',
+                description: 'Find members of a list'
             },
             {
-                query: "member(2, [1, 2, 3])",
-                description: "Check if element is in list",
-                expected: "true"
+                title: 'List Append',
+                query: 'append([1,2], [3,4], X)',
+                description: 'Concatenate two lists'
             },
             {
-                query: "append([1, 2], [3, 4], X)",
-                description: "Concatenate two lists",
-                expected: "X = [1, 2, 3, 4]"
+                title: 'List Length',
+                query: 'length([a,b,c], N)',
+                description: 'Calculate list length'
             },
             {
-                query: "append(X, Y, [1, 2, 3])",
-                description: "Split list in all possible ways",
-                expected: "X = [], Y = [1, 2, 3]; X = [1], Y = [2, 3]; ..."
+                title: 'Reverse List',
+                query: 'reverse([1,2,3], X)',
+                description: 'Reverse a list'
+            },
+            {
+                title: 'List Pattern',
+                query: '[X,Y|Rest] = [a,b,c,d]',
+                description: 'Match multiple list elements'
             }
         ]
     },
-
-    clpfd: {
-        title: "CLP(FD) Constraints",
-        description: "Constraint Logic Programming over Finite Domains",
+    'arithmetic': {
+        name: 'Arithmetic',
+        description: 'Mathematical expressions and calculations',
         examples: [
             {
-                query: "X in 1..10, label([X])",
-                description: "Domain variable with labeling",
-                expected: "X = 1; X = 2; ...; X = 10"
+                title: 'Basic Arithmetic',
+                query: 'X is 2 + 3 * 4',
+                description: 'Evaluate arithmetic expression'
             },
             {
-                query: "X in 1..10, X #> 5, label([X])",
-                description: "Domain with greater-than constraint",
-                expected: "X = 6; X = 7; X = 8; X = 9; X = 10"
+                title: 'Arithmetic with Parentheses',
+                query: 'Y is (10 - 3) * 2',
+                description: 'Complex arithmetic with precedence'
             },
             {
-                query: "X + Y #= 10, X in 1..5, Y in 1..5, label([X, Y])",
-                description: "Linear equation with domains",
-                expected: "X = 5, Y = 5"
+                title: 'Division',
+                query: 'Z is 15 / 3',
+                description: 'Floating point division'
             },
             {
-                query: "all_different([X, Y, Z]), X in 1..3, Y in 1..3, Z in 1..3, label([X, Y, Z])",
-                description: "All different constraint",
-                expected: "X = 1, Y = 2, Z = 3; X = 1, Y = 3, Z = 2; ..."
+                title: 'Integer Division',
+                query: 'W is 17 // 5',
+                description: 'Integer (floor) division'
+            },
+            {
+                title: 'Modulo',
+                query: 'R is 17 mod 5',
+                description: 'Remainder operation'
             }
         ]
     },
-
-    advanced: {
-        title: "Advanced",
-        description: "Complex queries and patterns",
+    'clpfd': {
+        name: 'CLP(FD)',
+        description: 'Constraint Logic Programming over Finite Domains',
         examples: [
             {
-                query: "length(L, 3), member(X, L)",
-                description: "Generate lists of length 3 and their elements",
-                expected: "Multiple solutions with different lists"
+                title: 'Domain Variable',
+                query: 'X in 1..10, label([X])',
+                description: 'Create and label domain variable'
             },
             {
-                query: "findall(X, member(X, [1, 2, 3]), Xs)",
-                description: "Collect all solutions",
-                expected: "Xs = [1, 2, 3]"
+                title: 'Range Constraint',
+                query: 'X in 1..10, X #> 5, label([X])',
+                description: 'Variable with range constraint'
+            },
+            {
+                title: 'Sum Constraint',
+                query: 'X in 1..9, Y in 1..9, X + Y #= 10, label([X,Y])',
+                description: 'Two variables summing to 10'
+            },
+            {
+                title: 'All Different',
+                query: 'X in 1..3, Y in 1..3, all_different([X,Y]), label([X,Y])',
+                description: 'Distinct variable assignment'
+            },
+            {
+                title: 'Multiple Constraints',
+                query: 'X in 1..10, Y in 1..10, X #< Y, X + Y #= 12, label([X,Y])',
+                description: 'Multiple constraints on variables'
+            }
+        ]
+    },
+    'hanoi': {
+        name: 'Hanoi',
+        description: 'Towers of Hanoi puzzle solver',
+        examples: [
+            {
+                title: 'Hanoi 2 Disks',
+                query: 'hanoi(2, a, c, b, Moves)',
+                description: 'Solve 2-disk Towers of Hanoi'
+            },
+            {
+                title: 'Hanoi 3 Disks',
+                query: 'hanoi(3, left, right, middle, Moves)',
+                description: 'Solve 3-disk Towers of Hanoi'
+            },
+            {
+                title: 'Define Hanoi Rules',
+                query: `hanoi(0, _, _, _, []).
+hanoi(N, From, To, Aux, Moves) :-
+    N > 0,
+    N1 is N - 1,
+    hanoi(N1, From, Aux, To, M1),
+    hanoi(N1, Aux, To, From, M2),
+    append(M1, [move(From,To)|M2], Moves).`,
+                description: 'Define the hanoi/5 predicate'
+            }
+        ]
+    },
+    'sudoku': {
+        name: 'Sudoku',
+        description: 'Sudoku puzzle solver using CLP(FD)',
+        examples: [
+            {
+                title: 'Simple 4x4 Sudoku',
+                query: `sudoku_4x4([[1,_,_,4],[_,3,4,_],[_,4,1,_],[4,_,_,2]], Solution)`,
+                description: 'Solve a 4x4 Sudoku puzzle'
+            },
+            {
+                title: 'Sudoku Row Constraint',
+                query: 'X in 1..9, Y in 1..9, Z in 1..9, all_different([X,Y,Z]), label([X,Y,Z])',
+                description: 'Basic all_different constraint for Sudoku row'
+            },
+            {
+                title: 'Define Sudoku Helper',
+                query: `all_different_9([A,B,C,D,E,F,G,H,I]) :-
+    all_different([A,B,C,D,E,F,G,H,I]).`,
+                description: 'Helper predicate for 9-cell all_different'
             }
         ]
     }
 };
 
-/**
- * Get all example categories
- */
-function getExampleCategories() {
-    return Object.keys(PYLOG_EXAMPLES).map(key => ({
-        id: key,
-        ...PYLOG_EXAMPLES[key]
-    }));
-}
+// UI state
+let examplesDropdown = null;
+let examplesContainer = null;
 
 /**
- * Get examples for a specific category
+ * Initialize the examples system
  */
-function getExamples(categoryId) {
-    return PYLOG_EXAMPLES[categoryId]?.examples || [];
-}
+function initializeExamples() {
+    console.log('PyLog Examples: Initializing...');
 
-/**
- * Get a random example from any category
- */
-function getRandomExample() {
-    const categories = Object.keys(PYLOG_EXAMPLES);
-    const randomCategory = categories[Math.floor(Math.random() * categories.length)];
-    const examples = PYLOG_EXAMPLES[randomCategory].examples;
-    return examples[Math.floor(Math.random() * examples.length)];
-}
+    // Wait for REPL elements to be ready
+    const checkREPL = () => {
+        const replEl = document.getElementById('pylog-repl');
+        const inputEl = document.getElementById('pylog-input');
 
-/**
- * Search examples by query text or description
- */
-function searchExamples(searchTerm) {
-    const results = [];
-    const term = searchTerm.toLowerCase();
-
-    for (const [categoryId, category] of Object.entries(PYLOG_EXAMPLES)) {
-        for (const example of category.examples) {
-            if (example.query.toLowerCase().includes(term) ||
-                example.description.toLowerCase().includes(term)) {
-                results.push({
-                    ...example,
-                    category: categoryId,
-                    categoryTitle: category.title
-                });
-            }
+        if (replEl && inputEl) {
+            createExamplesUI();
+        } else {
+            // Check again in 100ms
+            setTimeout(checkREPL, 100);
         }
+    };
+
+    checkREPL();
+}
+
+/**
+ * Create the examples UI components
+ */
+function createExamplesUI() {
+    const replEl = document.getElementById('pylog-repl');
+    if (!replEl) return;
+
+    // Create examples container
+    examplesContainer = document.createElement('div');
+    examplesContainer.id = 'pylog-examples';
+    examplesContainer.style.cssText = `
+        margin-bottom: 10px;
+        padding: 10px;
+        background: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+    `;
+
+    // Create examples UI
+    examplesContainer.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+            <label for="examples-category" style="font-weight: bold; color: #495057;">Examples:</label>
+            <select id="examples-category" style="
+                padding: 4px 8px;
+                border: 1px solid #ced4da;
+                border-radius: 4px;
+                background: white;
+                min-width: 120px;
+            ">
+                <option value="">Choose category...</option>
+            </select>
+            <select id="examples-query" style="
+                padding: 4px 8px;
+                border: 1px solid #ced4da;
+                border-radius: 4px;
+                background: white;
+                flex: 1;
+                min-width: 200px;
+            " disabled>
+                <option value="">Select an example...</option>
+            </select>
+            <button id="examples-load" style="
+                padding: 4px 12px;
+                background: #007bff;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+            " disabled>Load</button>
+        </div>
+        <div id="examples-description" style="
+            font-size: 0.9em;
+            color: #6c757d;
+            font-style: italic;
+            min-height: 1.2em;
+        "></div>
+    `;
+
+    // Insert before the output area
+    const outputEl = document.getElementById('pylog-output');
+    if (outputEl) {
+        replEl.insertBefore(examplesContainer, outputEl);
     }
 
-    return results;
+    // Populate categories dropdown
+    populateCategories();
+
+    // Setup event listeners
+    setupExamplesEventListeners();
+
+    console.log('PyLog Examples: UI created successfully');
 }
 
 /**
- * Create example selector UI (placeholder for future implementation)
+ * Populate the categories dropdown
  */
-function createExampleSelector() {
-    // This would create a dropdown or modal with example categories
-    console.log('Example selector not yet implemented');
-    console.log('Available categories:', getExampleCategories());
+function populateCategories() {
+    const categorySelect = document.getElementById('examples-category');
+    if (!categorySelect) return;
+
+    // Clear existing options (except first)
+    while (categorySelect.children.length > 1) {
+        categorySelect.removeChild(categorySelect.lastChild);
+    }
+
+    // Add category options
+    for (const [key, category] of Object.entries(PYLOG_EXAMPLES)) {
+        const option = document.createElement('option');
+        option.value = key;
+        option.textContent = `${category.name} (${category.examples.length})`;
+        categorySelect.appendChild(option);
+    }
 }
 
 /**
- * Load example into REPL input (placeholder)
+ * Setup event listeners for examples UI
  */
-function loadExample(example) {
-    console.log('Loading example:', example.query);
-    // This would set the REPL input value
+function setupExamplesEventListeners() {
+    const categorySelect = document.getElementById('examples-category');
+    const querySelect = document.getElementById('examples-query');
+    const loadButton = document.getElementById('examples-load');
+    const descriptionDiv = document.getElementById('examples-description');
+
+    if (!categorySelect || !querySelect || !loadButton || !descriptionDiv) return;
+
+    // Category selection
+    categorySelect.onchange = () => {
+        const categoryKey = categorySelect.value;
+        populateQueries(categoryKey);
+        updateDescription('');
+        querySelect.disabled = !categoryKey;
+        loadButton.disabled = true;
+    };
+
+    // Query selection
+    querySelect.onchange = () => {
+        const categoryKey = categorySelect.value;
+        const queryIndex = parseInt(querySelect.value);
+
+        if (categoryKey && !isNaN(queryIndex)) {
+            const category = PYLOG_EXAMPLES[categoryKey];
+            const example = category.examples[queryIndex];
+            updateDescription(example.description);
+            loadButton.disabled = false;
+        } else {
+            updateDescription('');
+            loadButton.disabled = true;
+        }
+    };
+
+    // Load button
+    loadButton.onclick = () => {
+        loadSelectedExample();
+    };
+}
+
+/**
+ * Populate queries dropdown for selected category
+ */
+function populateQueries(categoryKey) {
+    const querySelect = document.getElementById('examples-query');
+    if (!querySelect) return;
+
+    // Clear existing options
+    querySelect.innerHTML = '<option value="">Select an example...</option>';
+
+    if (!categoryKey || !PYLOG_EXAMPLES[categoryKey]) return;
+
+    const category = PYLOG_EXAMPLES[categoryKey];
+    category.examples.forEach((example, index) => {
+        const option = document.createElement('option');
+        option.value = index.toString();
+        option.textContent = example.title;
+        querySelect.appendChild(option);
+    });
+}
+
+/**
+ * Update the description text
+ */
+function updateDescription(description) {
+    const descriptionDiv = document.getElementById('examples-description');
+    if (descriptionDiv) {
+        descriptionDiv.textContent = description || 'Select a category and example to see description.';
+    }
+}
+
+/**
+ * Load the selected example into the input area
+ */
+function loadSelectedExample() {
+    const categorySelect = document.getElementById('examples-category');
+    const querySelect = document.getElementById('examples-query');
     const inputEl = document.getElementById('pylog-input');
-    if (inputEl) {
+
+    if (!categorySelect || !querySelect || !inputEl) return;
+
+    const categoryKey = categorySelect.value;
+    const queryIndex = parseInt(querySelect.value);
+
+    if (!categoryKey || isNaN(queryIndex)) return;
+
+    const category = PYLOG_EXAMPLES[categoryKey];
+    const example = category.examples[queryIndex];
+
+    if (example) {
+        // Load query into input
         inputEl.value = example.query;
         inputEl.focus();
+
+        // Auto-resize textarea if it's multiline
+        inputEl.style.height = 'auto';
+        inputEl.style.height = Math.max(40, inputEl.scrollHeight) + 'px';
+
+        console.log(`Loaded example: ${example.title}`);
     }
 }
 
-// Export for global access
-window.PyLogExamples = {
-    getExampleCategories,
-    getExamples,
-    getRandomExample,
-    searchExamples,
-    createExampleSelector,
-    loadExample
-};
+/**
+ * Get example data for a specific category (for API access)
+ */
+function getExampleCategory(categoryKey) {
+    return PYLOG_EXAMPLES[categoryKey] || null;
+}
 
-console.log('PyLog Examples library loaded');
+/**
+ * Get all available category keys
+ */
+function getExampleCategories() {
+    return Object.keys(PYLOG_EXAMPLES);
+}
+
+// Initialize when DOM is ready and REPL is available
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initializeExamples);
+} else {
+    initializeExamples();
+}
+
+// Export functions for external access
+window.PyLogExamples = {
+    getExampleCategory,
+    getExampleCategories,
+    loadSelectedExample
+};
