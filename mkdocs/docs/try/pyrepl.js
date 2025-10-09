@@ -399,7 +399,11 @@ function runQuery() {
             type: 'query',
             data: {
                 query: query,
-                options: safetyLimits
+                options: {
+                    maxSteps: safetyLimits.maxSteps,
+                    maxSolutions: safetyLimits.maxSolutions
+                    // timeoutMs handled by UI, not worker
+                }
             }
         });
     } else {
