@@ -14,12 +14,90 @@ let replState = {
     historyIndex: -1
 };
 
+// Safety configuration
+let safetyConfig = {
+    maxSteps: 100000,      // ~100k steps for production
+    maxSolutions: 100,     // ~100 solutions max
+    timeoutMs: 10000,      // 10 seconds wall-clock timeout
+    configurable: true     // Allow runtime configuration
+};
+
+// Timeout tracking
+let queryTimeoutId = null;
+
 // DOM Elements
 let containerEl = null;
 let loadingEl = null;
 let replEl = null;
 let outputEl = null;
 let inputEl = null;
+
+/**
+ * Get current safety limits configuration
+ */
+function getSafetyLimits() {
+    return {
+        maxSteps: safetyConfig.maxSteps,
+        maxSolutions: safetyConfig.maxSolutions,
+        timeoutMs: safetyConfig.timeoutMs
+    };
+}
+
+/**
+ * Update safety configuration (if configurable)
+ */
+function updateSafetyConfig(newConfig) {
+    if (!safetyConfig.configurable) {
+        console.warn('Safety configuration is locked');
+        return false;
+    }
+
+    // Validate and apply safe limits
+    if (newConfig.maxSteps && newConfig.maxSteps > 0 && newConfig.maxSteps <= 1000000) {
+        safetyConfig.maxSteps = newConfig.maxSteps;
+    }
+    if (newConfig.maxSolutions && newConfig.maxSolutions > 0 && newConfig.maxSolutions <= 1000) {
+        safetyConfig.maxSolutions = newConfig.maxSolutions;
+    }
+    if (newConfig.timeoutMs && newConfig.timeoutMs > 0 && newConfig.timeoutMs <= 60000) {
+        safetyConfig.timeoutMs = newConfig.timeoutMs;
+    }
+
+    console.log('Safety configuration updated:', getSafetyLimits());
+    return true;
+}
+
+/**
+ * Clear active query timeout
+ */
+function clearQueryTimeout() {
+    if (queryTimeoutId) {
+        clearTimeout(queryTimeoutId);
+        queryTimeoutId = null;
+    }
+}
+
+/**
+ * Handle query timeout
+ */
+function handleQueryTimeout() {
+    console.warn('Query timeout reached, terminating worker...');
+    appendOutput(`Query timed out after ${safetyConfig.timeoutMs / 1000}s. Worker terminated.`, 'error');
+
+    // Terminate worker to stop the query
+    if (replWorker) {
+        replWorker.terminate();
+        replWorker = null;
+        replState.initialized = false;
+    }
+
+    // Reset UI state
+    setRunning(false);
+    queryTimeoutId = null;
+
+    // Show reinitialize message
+    showLoading('Query timed out. Click "Start REPL" to reinitialize.');
+}
 
 /**
  * Initialize the REPL interface
@@ -83,7 +161,8 @@ function createREPLInterface() {
         ">
             <div style="color: #666;">
                 PyLog REPL ready. Type queries and press Ctrl+Enter (Cmd+Enter on Mac).
-                <br>Examples: X = 42  |  member(X, [1,2,3])  |  help
+                <br>Examples: X = 42  |  member(X, [1,2,3])  |  help  |  limits
+                <br>Safety: 100k steps, 100 solutions, 10s timeout
             </div>
         </div>
 
@@ -172,18 +251,21 @@ function handleWorkerMessage(event) {
 
         case 'solutions':
             console.log('PyLog REPL: Received solutions:', event.data);
+            clearQueryTimeout();
             displaySolutions(event.data);
             setRunning(false);
             break;
 
         case 'error':
             console.error('PyLog REPL: Worker error:', data);
+            clearQueryTimeout();
             appendOutput(`Error: ${data.message}`, 'error');
             setRunning(false);
             break;
 
         case 'stopped':
             console.log('PyLog REPL: Query stopped');
+            clearQueryTimeout();
             appendOutput('Query stopped.', 'info');
             setRunning(false);
             break;
@@ -296,18 +378,28 @@ function runQuery() {
         showHelp();
         setRunning(false);
         return;
+    } else if (query === 'limits') {
+        showSafetyLimits();
+        setRunning(false);
+        return;
+    } else if (query.startsWith('set_limits(')) {
+        handleSetLimits(query);
+        setRunning(false);
+        return;
     }
 
-    // Send query to worker with execution limits
+    // Send query to worker with production safety limits
     if (replWorker && replState.initialized) {
+        const safetyLimits = getSafetyLimits();
+
+        // Start wall-clock timeout protection
+        queryTimeoutId = setTimeout(handleQueryTimeout, safetyLimits.timeoutMs);
+
         replWorker.postMessage({
             type: 'query',
             data: {
                 query: query,
-                options: {
-                    maxSteps: 1000,
-                    maxSolutions: 10
-                }
+                options: safetyLimits
             }
         });
     } else {
@@ -321,6 +413,9 @@ function runQuery() {
  */
 function stopQuery() {
     console.log('PyLog REPL: Stopping query...');
+
+    // Clear any active timeout
+    clearQueryTimeout();
 
     if (replWorker) {
         // Terminate the worker to stop any running query
@@ -389,6 +484,8 @@ function showHelp() {
     const helpText = `
 Available commands:
   help        - Show this help message
+  limits      - Show current safety limits
+  set_limits(steps, solutions, timeout) - Configure safety limits
   X = 42      - Simple unification
   member(X, [1,2,3]) - List membership
   append([1,2], [3,4], X) - List concatenation
@@ -400,9 +497,61 @@ CLP(FD) examples:
 Keyboard shortcuts:
   Ctrl+Enter  - Run query
   Ctrl+↑/↓    - Navigate history
+
+Safety features:
+  • Step limit: Prevents infinite loops
+  • Solution limit: Caps enumeration
+  • Timeout: Wall-clock protection (10s default)
+  • Worker termination: Stop button kills runaway queries
     `.trim();
 
     appendOutput(helpText, 'info');
+}
+
+/**
+ * Show current safety limits
+ */
+function showSafetyLimits() {
+    const limits = getSafetyLimits();
+    const limitsText = `
+Current safety limits:
+  Max steps: ${limits.maxSteps.toLocaleString()}
+  Max solutions: ${limits.maxSolutions}
+  Timeout: ${limits.timeoutMs / 1000}s
+  Configurable: ${safetyConfig.configurable ? 'Yes' : 'No'}
+
+Example: set_limits(50000, 50, 5000)
+  (50k steps, 50 solutions, 5s timeout)
+    `.trim();
+
+    appendOutput(limitsText, 'info');
+}
+
+/**
+ * Handle set_limits command
+ */
+function handleSetLimits(query) {
+    const match = query.match(/set_limits\((\d+),\s*(\d+),\s*(\d+)\)/);
+    if (!match) {
+        appendOutput('Usage: set_limits(maxSteps, maxSolutions, timeoutMs)', 'error');
+        appendOutput('Example: set_limits(50000, 50, 5000)', 'info');
+        return;
+    }
+
+    const [, steps, solutions, timeoutMs] = match;
+    const newConfig = {
+        maxSteps: parseInt(steps),
+        maxSolutions: parseInt(solutions),
+        timeoutMs: parseInt(timeoutMs)
+    };
+
+    const success = updateSafetyConfig(newConfig);
+    if (success) {
+        appendOutput('Safety limits updated successfully.', 'success');
+        showSafetyLimits();
+    } else {
+        appendOutput('Failed to update safety limits. Configuration may be locked.', 'error');
+    }
 }
 
 /**

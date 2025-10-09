@@ -220,3 +220,94 @@ class TestWebAssetIntegration:
 
         # Should have example queries
         assert "examples" in content.lower(), "Should contain example queries"
+
+
+class TestSafetyLimits:
+    """Test safety limits and timeout protection."""
+
+    def test_production_safety_limits(self):
+        """Test that production safety limits are reasonable."""
+        pyrepl_path = (
+            Path(__file__).parent.parent.parent.parent
+            / "mkdocs"
+            / "docs"
+            / "try"
+            / "pyrepl.js"
+        )
+
+        content = pyrepl_path.read_text()
+
+        # Check for production-level limits
+        assert "maxSteps: 100000" in content, "Should have 100k step limit"
+        assert "maxSolutions: 100" in content, "Should have 100 solution limit"
+        assert "timeoutMs: 10000" in content, "Should have 10s timeout"
+
+    def test_safety_commands_present(self):
+        """Test that safety commands are available."""
+        pyrepl_path = (
+            Path(__file__).parent.parent.parent.parent
+            / "mkdocs"
+            / "docs"
+            / "try"
+            / "pyrepl.js"
+        )
+
+        content = pyrepl_path.read_text()
+
+        # Check for safety commands
+        assert "limits" in content, "Should have limits command"
+        assert "set_limits" in content, "Should have set_limits command"
+        assert "getSafetyLimits" in content, "Should have safety limits function"
+        assert "handleQueryTimeout" in content, "Should have timeout handler"
+
+    def test_timeout_protection_structure(self):
+        """Test that timeout protection is properly structured."""
+        pyrepl_path = (
+            Path(__file__).parent.parent.parent.parent
+            / "mkdocs"
+            / "docs"
+            / "try"
+            / "pyrepl.js"
+        )
+
+        content = pyrepl_path.read_text()
+
+        # Check for timeout infrastructure
+        assert "setTimeout" in content, "Should start timeouts"
+        assert "clearTimeout" in content, "Should clear timeouts"
+        assert "queryTimeoutId" in content, "Should track timeout ID"
+        assert "terminate()" in content, "Should terminate worker on timeout"
+
+    def test_configurable_limits_validation(self):
+        """Test that configurable limits have proper validation."""
+        pyrepl_path = (
+            Path(__file__).parent.parent.parent.parent
+            / "mkdocs"
+            / "docs"
+            / "try"
+            / "pyrepl.js"
+        )
+
+        content = pyrepl_path.read_text()
+
+        # Check for validation ranges
+        assert "1000000" in content, "Should have max step limit validation"
+        assert "1000" in content, "Should have max solution limit validation"
+        assert "60000" in content, "Should have max timeout validation"
+
+    def test_help_includes_safety_info(self):
+        """Test that help includes safety information."""
+        pyrepl_path = (
+            Path(__file__).parent.parent.parent.parent
+            / "mkdocs"
+            / "docs"
+            / "try"
+            / "pyrepl.js"
+        )
+
+        content = pyrepl_path.read_text()
+
+        # Check for safety documentation
+        assert "Safety features" in content, "Should document safety features"
+        assert "Step limit" in content, "Should explain step limits"
+        assert "Worker termination" in content, "Should explain termination"
