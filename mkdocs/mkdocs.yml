@@ -6,6 +6,8 @@ repo_name: xpqz/pylog
 theme:
   name: material
   language: en
+  logo: assets/pylog-logo.svg 
+  favicon: assets/pylog-mark.svg
   features:
     - navigation.tabs
     - content.code.copy
@@ -22,6 +24,8 @@ markdown_extensions:
   - pymdownx.critic
 extra:
   generator: false
+extra_css:
+  - assets/extra.css
 nav:
   - Home: index.md
   - Getting Started:
