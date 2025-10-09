@@ -7,8 +7,13 @@ All notable changes to the "pylog-vscode" extension will be documented in this f
 ### Added
 - Initial extension scaffolding and package setup
 - TypeScript configuration for VS Code extension development
-- Debug adapter descriptor factory stub
+- Debug adapter descriptor factory implementation
+- Python environment auto-detection (workspace venv, system python)
+- PyLog DAP server verification and spawning
 - Launch configuration schema and snippets
+- Configuration support for custom Python path
+- Output channel for diagnostic logging
+- Error handling and user-friendly error messages
 - Documentation (README and CHANGELOG)
 
 ## [0.1.0] - TBD
