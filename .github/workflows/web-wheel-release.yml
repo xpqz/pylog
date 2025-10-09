@@ -179,7 +179,7 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
 
-          git add wheels/
+          git add -f wheels/
 
           if git diff --staged --quiet; then
             echo "No wheel changes to commit"
