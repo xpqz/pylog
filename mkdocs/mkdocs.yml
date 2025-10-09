@@ -28,6 +28,7 @@ extra_css:
   - assets/extra.css
 nav:
   - Home: index.md
+  - Try PyLog: try/index.md
   - Getting Started:
       - Installation: getting-started/install.md
       - REPL: getting-started/repl.md
