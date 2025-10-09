@@ -36,6 +36,7 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["prolog"]
 
+
 [tool.black]
 line-length = 88
 target-version = ["py311", "py312"]
@@ -92,3 +93,8 @@ title = "PyLog Coverage Report"
 
 [tool.coverage.xml]
 output = "coverage.xml"
+
+[dependency-groups]
+dev = [
+    "build>=1.3.0",
+]
