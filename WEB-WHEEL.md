@@ -36,7 +36,7 @@ cp pyproject.toml pyproject-full.toml
 cp pyproject-web.toml pyproject.toml
 
 # Build with minimal dependencies
-uv run python -m build --wheel
+uv run --with build python -m build --wheel
 
 # Restore full configuration
 cp pyproject-full.toml pyproject.toml

@@ -19,7 +19,7 @@ mv dist/pylog-0.1.0-py3-none-any.whl dist/pylog-0.1.0-standard-py3-none-any.whl
 echo "Building web wheel..."
 cp pyproject.toml pyproject-full.toml
 cp pyproject-web.toml pyproject.toml
-uv run python -m build --wheel
+uv run --with build python -m build --wheel
 mv dist/pylog-0.1.0-py3-none-any.whl dist/pylog-0.1.0-web-py3-none-any.whl
 cp pyproject-full.toml pyproject.toml
 
