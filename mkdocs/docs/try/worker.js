@@ -159,7 +159,8 @@ async function initializePyodide() {
         console.log('Worker: Loading wheel manifest from JsDelivr CDN...');
 
         // Load manifest from JsDelivr CDN (CORS-friendly)
-        const manifestUrl = 'https://cdn.jsdelivr.net/gh/xpqz/pylog@main/wheels/manifest.json';
+        // Add cache-busting parameter to ensure fresh manifest
+        const manifestUrl = `https://cdn.jsdelivr.net/gh/xpqz/pylog@main/wheels/manifest.json?_cb=${Date.now()}`;
         const manifestPromise = fetch(manifestUrl);
         const manifestTimeoutPromise = new Promise((_, reject) => {
             setTimeout(() => reject(new Error('Manifest loading timeout after 10 seconds')), 10000);
@@ -182,7 +183,9 @@ async function initializePyodide() {
         }
 
         console.log(`Worker: Found PyLog wheel: ${manifest.pylog.wheel}`);
+        console.log(`Worker: PyLog URL: ${manifest.pylog.url}`);
         console.log(`Worker: Found Lark wheel: ${manifest.lark.wheel}`);
+        console.log(`Worker: Lark URL: ${manifest.lark.url}`);
 
         // Install Lark from JsDelivr CDN (CORS-friendly)
         postMessage({ type: 'progress', step: 'installing-lark', message: 'Installing Lark parser from CDN...' });
