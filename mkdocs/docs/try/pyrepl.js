@@ -150,20 +150,95 @@ function setupEventListeners() {
 }
 
 /**
+ * Handle messages from the Web Worker
+ */
+function handleWorkerMessage(event) {
+    const { type, data } = event.data;
+
+    switch (type) {
+        case 'initialized':
+            console.log('PyLog REPL: Worker initialized successfully');
+            replState.initialized = true;
+            showREPL();
+            appendOutput('PyLog REPL initialized successfully!', 'success');
+            break;
+
+        case 'solutions':
+            console.log('PyLog REPL: Received solutions:', data);
+            displaySolutions(data.query, data.solutions);
+            setRunning(false);
+            break;
+
+        case 'error':
+            console.error('PyLog REPL: Worker error:', data);
+            appendOutput(`Error: ${data.message}`, 'error');
+            setRunning(false);
+            break;
+
+        case 'stopped':
+            console.log('PyLog REPL: Query stopped');
+            appendOutput('Query stopped.', 'info');
+            setRunning(false);
+            break;
+
+        default:
+            console.warn('PyLog REPL: Unknown worker message type:', type);
+    }
+}
+
+/**
+ * Handle Web Worker errors
+ */
+function handleWorkerError(error) {
+    console.error('PyLog REPL: Worker error:', error);
+    appendOutput(`Worker error: ${error.message}`, 'error');
+    setRunning(false);
+}
+
+/**
+ * Display query solutions
+ */
+function displaySolutions(query, solutions) {
+    if (solutions.length === 0) {
+        appendOutput('false.', 'output');
+    } else {
+        for (let i = 0; i < solutions.length; i++) {
+            const solution = solutions[i];
+            const bindings = Object.entries(solution)
+                .map(([var_, val]) => `${var_} = ${val}`)
+                .join(', ');
+
+            appendOutput(bindings || 'true', 'output');
+
+            if (i < solutions.length - 1) {
+                appendOutput(';', 'output');
+            } else {
+                appendOutput('.', 'output');
+            }
+        }
+    }
+}
+
+/**
  * Start the REPL by initializing the Web Worker
  */
 async function startREPL() {
     try {
         showLoading('Initializing Pyodide...');
 
-        // Initialize worker (placeholder - actual worker creation in worker.js)
-        console.log('PyLog REPL: Starting Web Worker...');
+        // Create Web Worker
+        console.log('PyLog REPL: Creating Web Worker...');
+        replWorker = new Worker('worker.js');
 
-        // Simulate initialization delay
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        // Set up worker message handling
+        replWorker.onmessage = handleWorkerMessage;
+        replWorker.onerror = handleWorkerError;
 
-        showREPL();
-        appendOutput('PyLog REPL initialized successfully!', 'success');
+        // Initialize the worker
+        replWorker.postMessage({ type: 'init' });
+
+        // Wait for initialization (will be updated by worker response)
+        console.log('PyLog REPL: Worker created, waiting for initialization...');
 
     } catch (error) {
         console.error('Failed to start REPL:', error);
@@ -191,15 +266,23 @@ function runQuery() {
     // Set running state
     setRunning(true);
 
-    // Simulate query execution (placeholder)
-    setTimeout(() => {
-        if (query === 'help') {
-            showHelp();
-        } else {
-            appendOutput('Query execution not yet implemented.', 'info');
-        }
+    // Handle special commands
+    if (query === 'help') {
+        showHelp();
         setRunning(false);
-    }, 500);
+        return;
+    }
+
+    // Send query to worker
+    if (replWorker && replState.initialized) {
+        replWorker.postMessage({
+            type: 'query',
+            data: { query: query }
+        });
+    } else {
+        appendOutput('REPL not initialized. Please click "Start REPL" first.', 'error');
+        setRunning(false);
+    }
 }
 
 /**
@@ -207,9 +290,13 @@ function runQuery() {
  */
 function stopQuery() {
     console.log('PyLog REPL: Stopping query...');
-    // Placeholder - actual implementation will terminate worker
-    setRunning(false);
-    appendOutput('Query stopped.', 'info');
+
+    if (replWorker) {
+        replWorker.postMessage({ type: 'stop' });
+    } else {
+        setRunning(false);
+        appendOutput('Query stopped.', 'info');
+    }
 }
 
 /**

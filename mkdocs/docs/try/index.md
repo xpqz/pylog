@@ -37,5 +37,4 @@ Try these queries to get started:
 - [Cookbook](../cookbook/list-processing.md) - Examples and recipes
 
 <script src="pyrepl.js"></script>
-<script src="worker.js"></script>
 <script src="examples.js"></script>
