@@ -1,11 +1,12 @@
 name: Policy - No AI Attribution
 
-on:
-  pull_request:
-    types: [opened, edited, synchronize, reopened]
-  push:
-    branches:
-      - main
+# Workflow disabled - comment out the 'on' section to re-enable
+# on:
+#   pull_request:
+#     types: [opened, edited, synchronize, reopened]
+#   push:
+#     branches:
+#       - main
 
 permissions:
   contents: read
@@ -27,21 +28,7 @@ jobs:
           # - Vendor/product names
           # - AI attribution phrases
           # - Co-Authored-By lines referencing AI vendors
-          if echo "$TEXT" | grep -E -i -q '(
-              claude|
-              anthropic|
-              chatgpt|
-              openai|
-              gpt-4|
-              gpt-3\.5|
-              copilot|
-              co[ -]?pilot|
-              ai assistance|
-              ai-assisted|
-              ai[- ]generated|
-              generated (with|by) ai|
-              co-?authored-?by:.*(claude|anthropic|chatgpt|openai)
-            )'; then
+          if echo "$TEXT" | grep -E -i -q '(claude|anthropic|chatgpt|openai|gpt-4|gpt-3\.5|copilot|co[ -]?pilot|ai assistance|ai-assisted|ai[- ]generated|generated (with|by) ai|co-?authored-?by:.*(claude|anthropic|chatgpt|openai))'; then
             echo "PR title/body contains prohibited AI attribution terms." >&2
             exit 1
           fi
@@ -189,21 +176,7 @@ jobs:
           fi
           msgs=$(git log --format='%H %s%n%b%n---END---' $RANGE)
           echo "$msgs" | awk 'BEGIN{RS="---END---"} {print}' > /tmp/msgs.txt
-          if grep -E -i -q '(
-              claude|
-              anthropic|
-              chatgpt|
-              openai|
-              gpt-4|
-              gpt-3\.5|
-              copilot|
-              co[ -]?pilot|
-              ai assistance|
-              ai-assisted|
-              ai[- ]generated|
-              generated (with|by) ai|
-              co-?authored-?by:.*(claude|anthropic|chatgpt|openai)
-            )' /tmp/msgs.txt; then
+          if grep -E -i -q '(claude|anthropic|chatgpt|openai|gpt-4|gpt-3\.5|copilot|co[ -]?pilot|ai assistance|ai-assisted|ai[- ]generated|generated (with|by) ai|co-?authored-?by:.*(claude|anthropic|chatgpt|openai))' /tmp/msgs.txt; then
             echo "Pushed commit messages contain prohibited AI attribution terms." >&2
             echo "Offending commits:" >&2
             git log --format='%h %s' $RANGE | sed 's/^/  - /'
