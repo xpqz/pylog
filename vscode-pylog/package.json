@@ -160,7 +160,17 @@
           }
         ]
       }
-    ]
+    ],
+    "configuration": {
+      "title": "PyLog",
+      "properties": {
+        "pylog.pythonPath": {
+          "type": "string",
+          "default": "",
+          "description": "Custom path to Python interpreter (leave empty for auto-detection)"
+        }
+      }
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
