@@ -82,35 +82,41 @@ function createREPLInterface() {
             margin-bottom: 10px;
         ">
             <div style="color: #666;">
-                PyLog REPL ready. Type queries and press Enter.
+                PyLog REPL ready. Type queries and press Ctrl+Enter (Cmd+Enter on Mac).
                 <br>Examples: X = 42  |  member(X, [1,2,3])  |  help
             </div>
         </div>
 
-        <div style="display: flex; gap: 10px;">
-            <input type="text" id="pylog-input" placeholder="?- " style="
+        <div style="display: flex; gap: 10px; align-items: flex-start;">
+            <textarea id="pylog-input" placeholder="?- " rows="2" style="
                 flex: 1;
                 padding: 8px;
                 border: 1px solid #ddd;
                 border-radius: 4px;
                 font-family: 'Courier New', monospace;
-            ">
-            <button id="pylog-run" style="
-                padding: 8px 16px;
-                background: #4caf50;
-                color: white;
-                border: none;
-                border-radius: 4px;
-                cursor: pointer;
-            ">Run</button>
-            <button id="pylog-stop" style="
-                padding: 8px 16px;
-                background: #f44336;
-                color: white;
-                border: none;
-                border-radius: 4px;
-                cursor: pointer;
-            " disabled>Stop</button>
+                resize: vertical;
+                min-height: 40px;
+            "></textarea>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+                <button id="pylog-run" style="
+                    padding: 8px 16px;
+                    background: #4caf50;
+                    color: white;
+                    border: none;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    min-width: 60px;
+                ">Run</button>
+                <button id="pylog-stop" style="
+                    padding: 8px 16px;
+                    background: #f44336;
+                    color: white;
+                    border: none;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    min-width: 60px;
+                " disabled>Stop</button>
+            </div>
         </div>
     `;
 
@@ -135,14 +141,15 @@ function setupEventListeners() {
     // Stop button click
     stopButton.onclick = stopQuery;
 
-    // Enter key in input
+    // Keyboard shortcuts in textarea
     inputEl.onkeydown = (e) => {
-        if (e.key === 'Enter') {
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+            e.preventDefault();
             runQuery();
-        } else if (e.key === 'ArrowUp') {
+        } else if (e.key === 'ArrowUp' && e.ctrlKey) {
             e.preventDefault();
             navigateHistory(-1);
-        } else if (e.key === 'ArrowDown') {
+        } else if (e.key === 'ArrowDown' && e.ctrlKey) {
             e.preventDefault();
             navigateHistory(1);
         }
@@ -164,8 +171,8 @@ function handleWorkerMessage(event) {
             break;
 
         case 'solutions':
-            console.log('PyLog REPL: Received solutions:', data);
-            displaySolutions(data.query, data.solutions);
+            console.log('PyLog REPL: Received solutions:', event.data);
+            displaySolutions(event.data);
             setRunning(false);
             break;
 
@@ -196,9 +203,11 @@ function handleWorkerError(error) {
 }
 
 /**
- * Display query solutions
+ * Display query solutions with metadata
  */
-function displaySolutions(query, solutions) {
+function displaySolutions(response) {
+    const { query, solutions, stepCount, solutionCount, limits } = response;
+
     if (solutions.length === 0) {
         appendOutput('false.', 'output');
     } else {
@@ -215,6 +224,22 @@ function displaySolutions(query, solutions) {
             } else {
                 appendOutput('.', 'output');
             }
+        }
+    }
+
+    // Show execution metadata
+    if (stepCount !== undefined || solutionCount !== undefined) {
+        const metadata = [];
+        if (solutionCount !== undefined) metadata.push(`${solutionCount} solution(s)`);
+        if (stepCount !== undefined) metadata.push(`${stepCount} step(s)`);
+        if (limits) {
+            const limitInfo = [];
+            if (limits.maxSolutions) limitInfo.push(`max ${limits.maxSolutions} solutions`);
+            if (limits.maxSteps) limitInfo.push(`max ${limits.maxSteps} steps`);
+            if (limitInfo.length > 0) metadata.push(`limits: ${limitInfo.join(', ')}`);
+        }
+        if (metadata.length > 0) {
+            appendOutput(`% ${metadata.join(', ')}`, 'info');
         }
     }
 }
@@ -273,11 +298,17 @@ function runQuery() {
         return;
     }
 
-    // Send query to worker
+    // Send query to worker with execution limits
     if (replWorker && replState.initialized) {
         replWorker.postMessage({
             type: 'query',
-            data: { query: query }
+            data: {
+                query: query,
+                options: {
+                    maxSteps: 1000,
+                    maxSolutions: 10
+                }
+            }
         });
     } else {
         appendOutput('REPL not initialized. Please click "Start REPL" first.', 'error');
@@ -286,16 +317,27 @@ function runQuery() {
 }
 
 /**
- * Stop running query
+ * Stop running query by terminating the worker
  */
 function stopQuery() {
     console.log('PyLog REPL: Stopping query...');
 
     if (replWorker) {
-        replWorker.postMessage({ type: 'stop' });
+        // Terminate the worker to stop any running query
+        replWorker.terminate();
+        replWorker = null;
+        replState.initialized = false;
+
+        // Update UI state
+        setRunning(false);
+        appendOutput('Query stopped. Worker terminated.', 'info');
+        appendOutput('Click "Start REPL" to reinitialize.', 'info');
+
+        // Show loading screen again for reinitialization
+        showLoading('REPL stopped. Click "Start REPL" to reinitialize.');
     } else {
         setRunning(false);
-        appendOutput('Query stopped.', 'info');
+        appendOutput('No running query to stop.', 'info');
     }
 }
 
@@ -354,6 +396,10 @@ Available commands:
 CLP(FD) examples:
   X in 1..10, label([X]) - Domain variable
   X #> 5, X #< 10, label([X]) - Constraints
+
+Keyboard shortcuts:
+  Ctrl+Enter  - Run query
+  Ctrl+↑/↓    - Navigate history
     `.trim();
 
     appendOutput(helpText, 'info');
