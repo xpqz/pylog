@@ -155,10 +155,6 @@ async function initializePyodide() {
         await pyodide.loadPackage('micropip');
         const micropip = pyodide.pyimport('micropip');
 
-        postMessage({ type: 'progress', step: 'installing-lark', message: 'Installing Lark parser (may take a moment)...' });
-        console.log('Worker: Installing lark dependency...');
-        await micropip.install('lark>=1.1.0');
-
         postMessage({ type: 'progress', step: 'loading-manifest', message: 'Loading PyLog assets...' });
         console.log('Worker: Loading asset manifest...');
 
@@ -180,13 +176,33 @@ async function initializePyodide() {
         if (!manifest.pylog || !manifest.pylog.wheel) {
             throw new Error('PyLog wheel not found in asset manifest');
         }
+        if (!manifest.lark || !manifest.lark.wheel) {
+            throw new Error('Lark wheel not found in asset manifest');
+        }
 
+        // Install Lark from local wheel (no network dependency)
+        const larkWheelUrl = `./assets/${manifest.lark.wheel}`;
+        postMessage({ type: 'progress', step: 'installing-lark', message: 'Installing Lark parser from local wheel...' });
+        console.log(`Worker: Installing Lark wheel: ${larkWheelUrl}`);
+
+        const larkInstallPromise = micropip.install(larkWheelUrl);
+        const larkTimeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('Lark installation timeout after 30 seconds')), 30000);
+        });
+        await Promise.race([larkInstallPromise, larkTimeoutPromise]);
+
+        // Install PyLog from local wheel
         const pylogWheelUrl = `./assets/${manifest.pylog.wheel}`;
         versions.pylog = manifest.pylog.version;
 
         postMessage({ type: 'progress', step: 'installing-pylog', message: `Installing PyLog v${versions.pylog}...` });
         console.log(`Worker: Installing PyLog wheel: ${pylogWheelUrl} (version: ${versions.pylog})`);
-        await micropip.install(pylogWheelUrl);
+
+        const pylogInstallPromise = micropip.install(pylogWheelUrl);
+        const pylogTimeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('PyLog installation timeout after 30 seconds')), 30000);
+        });
+        await Promise.race([pylogInstallPromise, pylogTimeoutPromise]);
 
         postMessage({ type: 'progress', step: 'importing-pylog', message: 'Importing PyLog modules...' });
         console.log('Worker: Importing PyLog modules...');

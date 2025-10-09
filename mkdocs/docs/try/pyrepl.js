@@ -476,6 +476,18 @@ function addParseErrorSuggestions(message, token, query) {
     } else if (lowerMessage.includes('clause')) {
         suggestions.push('Facts and rules should end with a period');
         suggestions.push('Example: parent(tom, bob).');
+    } else if (lowerMessage.includes('timeout')) {
+        suggestions.push('Installation timed out - try again');
+        suggestions.push('Check your internet connection');
+        suggestions.push('The CDN or assets may be temporarily unavailable');
+    } else if (lowerMessage.includes('pyodide')) {
+        suggestions.push('Pyodide failed to load from CDN');
+        suggestions.push('Check your internet connection');
+        suggestions.push('Try a different browser or clear browser cache');
+    } else if (lowerMessage.includes('manifest')) {
+        suggestions.push('PyLog assets could not be loaded');
+        suggestions.push('Assets may still be building - try again in a few minutes');
+        suggestions.push('Check if you can access other parts of the documentation');
     }
 
     // Add documentation links
@@ -760,14 +772,14 @@ function updateLoadingProgress(step, message) {
             margin-right: auto;
         `;
 
-        // Add progress steps
+        // Add progress steps (order matches worker.js initialization sequence)
         const steps = [
             { id: 'loading-pyodide', text: 'Loading Pyodide from CDN' },
             { id: 'pyodide-loaded', text: 'Pyodide loaded successfully' },
             { id: 'loading-micropip', text: 'Loading package manager' },
-            { id: 'installing-lark', text: 'Installing Lark parser' },
             { id: 'loading-manifest', text: 'Loading PyLog assets' },
             { id: 'manifest-loaded', text: 'Asset manifest loaded' },
+            { id: 'installing-lark', text: 'Installing Lark parser (local wheel)' },
             { id: 'installing-pylog', text: 'Installing PyLog' },
             { id: 'importing-pylog', text: 'Importing PyLog modules' },
             { id: 'initializing-engine', text: 'Creating Prolog engine' },
