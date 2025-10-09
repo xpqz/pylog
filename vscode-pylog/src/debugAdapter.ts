@@ -105,10 +105,15 @@ export class PyLogDebugAdapterDescriptorFactory
         // Fall back to system python
         try {
             const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
-            const systemPython = execSync(`which ${pythonCmd}`, { encoding: 'utf-8' }).trim();
-            if (systemPython && fs.existsSync(systemPython)) {
-                this.outputChannel.appendLine(`Using system Python: ${systemPython}`);
-                return systemPython;
+            const locateCmd = process.platform === 'win32' ? 'where' : 'which';
+            const systemPython = execSync(`${locateCmd} ${pythonCmd}`, { encoding: 'utf-8' }).trim();
+
+            // On Windows, 'where' can return multiple paths (one per line); take the first
+            const pythonPath = systemPython.split('\n')[0].trim();
+
+            if (pythonPath && fs.existsSync(pythonPath)) {
+                this.outputChannel.appendLine(`Using system Python: ${pythonPath}`);
+                return pythonPath;
             }
         } catch (error) {
             this.outputChannel.appendLine(`Failed to find system Python: ${error}`);
