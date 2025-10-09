@@ -15,6 +15,7 @@ PyLog is a Prolog interpreter implemented in Python with CLP(FD) support. It foc
 - 4‑port tracer (CALL, EXIT, REDO, FAIL), spypoints, and JSONL/pretty sinks
 - Interactive REPL with history, completion, and tracing controls
 - Command‑line runner to consult files and execute goals
+- **VS Code debugger** with step control, predicate breakpoints, and variable inspection
 
 ## Installation
 
@@ -88,6 +89,102 @@ pylog -g "append([1],[2],X)" --once --trace --noninteractive
 
 `-g/--goal` takes the query without the `?-` prefix and without the trailing period. Use `--once` (default) or `--all`. `--noninteractive` prevents the REPL from starting after the run.
 
+### VS Code Debugging
+
+PyLog includes a Debug Adapter Protocol (DAP) implementation for debugging Prolog programs directly in VS Code.
+
+#### Installation
+
+1. **Build the extension** (from repository root):
+   ```bash
+   cd vscode-pylog
+   npm install
+   npm run compile
+   npm run package
+   ```
+
+2. **Install the VSIX**:
+   ```bash
+   code --install-extension pylog-vscode-0.1.0.vsix
+   ```
+
+#### Setup
+
+Create a `.vscode/launch.json` file in your project:
+
+```json
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "pylog",
+      "request": "launch",
+      "name": "Debug PyLog",
+      "program": "${workspaceFolder}/main.pl",
+      "stopOnEntry": true
+    }
+  ]
+}
+```
+
+#### Usage
+
+**Basic debugging:**
+
+1. Open a `.pl` file in VS Code
+2. Press **F5** to start debugging
+3. Use the Debug toolbar to control execution:
+   - **Continue** (F5): Resume execution
+   - **Step Over** (F10): Step to next goal at same depth
+   - **Step Into** (F11): Step into called predicates
+   - **Step Out** (Shift+F11): Step out to caller
+
+**Predicate breakpoints:**
+
+Configure breakpoints in `launch.json`:
+
+```json
+{
+  "type": "pylog",
+  "request": "launch",
+  "name": "Debug with Breakpoints",
+  "program": "${workspaceFolder}/main.pl",
+  "query": "?- solve(Result).",
+  "predicateBreakpoints": [
+    {
+      "functor": "member",
+      "arity": 2,
+      "ports": ["CALL"]
+    },
+    {
+      "functor": "append",
+      "arity": 3
+    }
+  ]
+}
+```
+
+**Configuration options:**
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `program` | string | *required* | Path to `.pl` file |
+| `query` | string | `"?- main."` | Query to execute |
+| `stopOnEntry` | boolean | `true` | Pause at first port |
+| `ports` | string[] | `["CALL","EXIT","FAIL"]` | Port events to observe |
+| `predicateBreakpoints` | array | `[]` | Breakpoints by functor/arity |
+| `occursCheck` | boolean | `false` | Enable occurs check |
+| `useIndexing` | boolean | `true` | Enable clause indexing |
+
+**Inspecting variables:**
+
+During debugging, use the VS Code **Variables** pane to inspect:
+- Query variable bindings
+- Current goal
+- Depth in the call stack
+
+See [vscode-pylog/README.md](vscode-pylog/README.md) for detailed documentation and troubleshooting.
+
 ### Python API
 
 ```python
@@ -125,7 +222,12 @@ User documentation lives under `mkdocs/docs/`:
 - Guides → Tracing and Debugging: `mkdocs/docs/guides/tracing-and-debugging.md`
 - CLP(FD) → Labeling and Reification: `mkdocs/docs/clpfd/`
 - Cookbook examples (Sudoku, SEND+MORE, N‑queens): `mkdocs/docs/cookbook/`
- - Reference → CLI: `mkdocs/docs/reference/cli.md`
+- Reference → CLI: `mkdocs/docs/reference/cli.md`
+
+**VS Code Debugging:**
+- VS Code Extension: [vscode-pylog/README.md](vscode-pylog/README.md)
+- DAP Architecture: [docs/dap.md](docs/dap.md)
+- DAP Test Coverage: [docs/dap-test-coverage.md](docs/dap-test-coverage.md)
 
 ## Contributing
 
