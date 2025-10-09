@@ -195,8 +195,9 @@ async function resetEngine(maxSteps = null) {
         const emptyProgram = pylogProgram([]);
 
         // Set max_steps at engine creation if provided
+        // Engine(program, occurs_check=False, max_solutions=None, trace=False, max_steps=None, ...)
         if (maxSteps !== null) {
-            pylogEngine = pylogEngineClass(emptyProgram, null, maxSteps);
+            pylogEngine = pylogEngineClass(emptyProgram, false, null, false, maxSteps);
         } else {
             pylogEngine = pylogEngineClass(emptyProgram);
         }
