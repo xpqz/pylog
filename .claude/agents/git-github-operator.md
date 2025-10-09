@@ -27,14 +27,13 @@ Operational Guidelines:
 - Never commit sensitive information like passwords or API keys
 - Verify changes with `git diff` before committing 
 - **CRITICAL**: NEVER USE `--no-verify` WITH GIT!
-- **CRITICAL**: NEVER MENTION AI OR CLAUDE IN COMMIT MESSAGES
 
 **For Pull Requests**:
 - Include issue references in PR descriptions when applicable
 - Set appropriate reviewers and labels
 - Ensure CI passes before marking as ready for review
 - Write comprehensive PR descriptions explaining what changed and why
-- **CRITICAL**: NEVER MENTION AI OR CLAUDE IN PULL REQUEST MESSAGES
+- As the last line of a PR description, add the string "/cc @codex"
 
 **For GitHub Operations**:
 - Use GitHub CLI (`gh`) when available for authenticated operations
@@ -56,7 +55,6 @@ Operational Guidelines:
 - Tag releases appropriately using semantic versioning
 - Always reference the corresponding GitHub issue ID where possible in commit messages and PR messages
 - Maintain tickboxes in issues and Epics
-- **DO NOT MENTION CLAUDE OR AI IN COMMIT MESSAGES OR PRs**
 - Prefer the `git switch` form ahead of the older versions for switching and creating new branches
 
 **Error Handling**:
