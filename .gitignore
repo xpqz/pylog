@@ -63,4 +63,4 @@ traces/
 .claude/settings.local.json
 
 # MkDocs generated site
-mkdocs/site/
+mkdocs/site/node_modules/
