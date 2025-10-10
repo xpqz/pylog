@@ -397,36 +397,61 @@ async function initializePyodide() {
         postMessage({ type: 'progress', step: 'loading-stdlib', message: 'Loading standard library...' });
         console.log('Worker: Loading standard library...');
 
-        // Load standard library using importlib.resources
+        // Load all standard library .pl files using importlib.resources
         standardLibraryClauses = [];  // Reset global variable
         try {
-            // Use Python's importlib.resources to read the stdlib file from the package
+            // Use Python's importlib.resources to read all .pl files from the package
             const pythonCode = `
 import importlib.resources as resources
 
-# Read lists.pl from the package
+# Read all .pl files from prolog.lib
+stdlib_contents = []
+file_count = 0
+
 try:
     # Python 3.9+ way
-    files = resources.files('prolog.lib')
-    lists_file = files / 'lists.pl'
-    stdlib_content = lists_file.read_text()
+    lib_files = resources.files('prolog.lib')
+    for item in lib_files.iterdir():
+        if item.name.endswith('.pl'):
+            content = item.read_text()
+            stdlib_contents.append(f"% From {item.name}\\n{content}")
+            file_count += 1
+            print(f"Worker: Loaded {item.name} ({len(content)} chars)")
 except AttributeError:
-    # Fallback for older Python
-    with resources.open_text('prolog.lib', 'lists.pl') as f:
-        stdlib_content = f.read()
+    # Fallback for older Python - load known files
+    import importlib.resources as res
+    known_files = ['lists.pl']  # Add more as needed
+    for filename in known_files:
+        try:
+            with res.open_text('prolog.lib', filename) as f:
+                content = f.read()
+                stdlib_contents.append(f"% From {filename}\\n{content}")
+                file_count += 1
+                print(f"Worker: Loaded {filename} ({len(content)} chars)")
+        except:
+            pass
 
-stdlib_content
+combined_content = "\\n\\n".join(stdlib_contents)
+(combined_content, file_count)
             `;
 
-            const libContent = pyodide.runPython(pythonCode);
-            console.log(`Worker: Standard library content length: ${libContent.length} characters`);
+            const [libContent, fileCount] = pyodide.runPython(pythonCode);
+            console.log(`Worker: Loaded ${fileCount} stdlib file(s), total ${libContent.length} characters`);
 
             // Import the parser to parse the standard library
             const parserPackage = pyodide.pyimport('prolog.parser.parser');
 
             // Parse the standard library
             standardLibraryClauses = parserPackage.parse_program(libContent);
-            console.log(`Worker: ✅ Standard library loaded: ${standardLibraryClauses.length} clauses`);
+            const clauseCount = standardLibraryClauses.length;
+            console.log(`Worker: ✅ Standard library loaded: ${clauseCount} clauses from ${fileCount} file(s)`);
+
+            // Send clause count to UI for confirmation
+            postMessage({
+                type: 'stdlib-loaded',
+                clauseCount: clauseCount,
+                fileCount: fileCount
+            });
 
         } catch (error) {
             console.error('Worker: ⚠️ Failed to load standard library:', error);

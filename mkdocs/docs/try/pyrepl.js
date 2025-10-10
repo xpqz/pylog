@@ -254,6 +254,10 @@ function handleWorkerMessage(event) {
             appendOutput('PyLog REPL initialized successfully!', 'success');
             break;
 
+        case 'stdlib-loaded':
+            console.log(`PyLog REPL: Standard library loaded - ${event.data.clauseCount} clauses from ${event.data.fileCount} file(s)`);
+            break;
+
         case 'solutions':
             console.log('PyLog REPL: Received solutions:', event.data);
             clearQueryTimeout();
