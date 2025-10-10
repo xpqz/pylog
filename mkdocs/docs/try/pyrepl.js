@@ -11,7 +11,10 @@ let replState = {
     initialized: false,
     running: false,
     history: [],
-    historyIndex: -1
+    historyIndex: -1,
+    currentInput: '',  // Store current input when navigating history
+    waitingForMore: false,  // Waiting for ; or . in interactive mode
+    solutionGenerator: null  // For interactive solution browsing
 };
 
 // Safety configuration
@@ -164,9 +167,9 @@ function createREPLInterface() {
             margin-bottom: 10px;
         ">
             <div style="color: #666;">
-                PyLog REPL ready. Type queries and press Ctrl+Enter (Cmd+Enter on Mac).
+                PyLog REPL ready. Press Enter to run queries, Shift+Enter for multi-line.
                 <br>Examples: X = 42  |  member(X, [1,2,3])  |  help  |  limits
-                <br>Safety: 100k steps, 100 solutions, 10s timeout
+                <br>Use ↑/↓ for history, Ctrl+C to interrupt, Tab for completion
             </div>
         </div>
 
@@ -224,19 +227,9 @@ function setupEventListeners() {
     // Stop button click
     stopButton.onclick = stopQuery;
 
-    // Keyboard shortcuts in textarea
-    inputEl.onkeydown = (e) => {
-        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-            e.preventDefault();
-            runQuery();
-        } else if (e.key === 'ArrowUp' && e.ctrlKey) {
-            e.preventDefault();
-            navigateHistory(-1);
-        } else if (e.key === 'ArrowDown' && e.ctrlKey) {
-            e.preventDefault();
-            navigateHistory(1);
-        }
-    };
+    // Advanced keyboard handling
+    inputEl.onkeydown = handleKeyboardInput;
+    inputEl.oninput = adjustInputHeight;
 }
 
 /**
@@ -613,21 +606,65 @@ async function startREPL() {
 }
 
 /**
+ * Request next solution in browsing mode
+ */
+function requestNextSolution() {
+    // This would need to be implemented with worker support
+    // For now, just show a message
+    appendOutput('% Solution browsing not yet implemented', 'info');
+    stopSolutionBrowsing();
+}
+
+/**
+ * Stop solution browsing mode
+ */
+function stopSolutionBrowsing() {
+    replState.waitingForMore = false;
+    appendOutput('.', 'output');
+    setRunning(false);
+}
+
+/**
  * Run a Prolog query
  */
 function runQuery() {
     const query = inputEl.value.trim();
     if (!query) return;
 
-    // Add to history
-    replState.history.push(query);
+    // Add to history (avoid duplicates)
+    if (replState.history.length === 0 || replState.history[replState.history.length - 1] !== query) {
+        replState.history.push(query);
+
+        // Limit history size
+        if (replState.history.length > 100) {
+            replState.history.shift();
+        }
+
+        // Save to localStorage
+        try {
+            localStorage.setItem('pylog_repl_history', JSON.stringify(replState.history));
+        } catch (e) {
+            // Ignore localStorage errors
+        }
+    }
     replState.historyIndex = replState.history.length;
+    replState.currentInput = '';
 
-    // Display query
-    appendOutput(`?- ${query}`, 'query');
+    // Display query (handle multi-line)
+    const queryLines = query.split('\n');
+    if (queryLines.length === 1) {
+        appendOutput(`?- ${query}`, 'query');
+    } else {
+        // Multi-line query with continuation prompt
+        appendOutput(`?- ${queryLines[0]}`, 'query');
+        for (let i = 1; i < queryLines.length; i++) {
+            appendOutput(`|    ${queryLines[i]}`, 'query');
+        }
+    }
 
-    // Clear input
+    // Clear input and reset height
     inputEl.value = '';
+    adjustInputHeight();
 
     // Set running state
     setRunning(true);
@@ -705,22 +742,215 @@ function stopQuery() {
 }
 
 /**
+ * Handle advanced keyboard input
+ */
+function handleKeyboardInput(event) {
+    const input = inputEl.value;
+    const cursorPos = inputEl.selectionStart;
+
+    // Handle solution browsing mode
+    if (replState.waitingForMore) {
+        handleSolutionBrowsingInput(event);
+        return;
+    }
+
+    switch(event.key) {
+        case 'Enter':
+            if (event.shiftKey) {
+                // Shift+Enter: insert newline for multi-line input
+                // Let default behavior handle it
+                setTimeout(adjustInputHeight, 0);
+            } else {
+                // Enter: run query
+                event.preventDefault();
+                runQuery();
+            }
+            break;
+
+        case 'ArrowUp':
+            // Only navigate history if cursor is at start of first line
+            if (!event.shiftKey && cursorPos === 0) {
+                event.preventDefault();
+                navigateHistory(-1);
+            }
+            break;
+
+        case 'ArrowDown':
+            // Only navigate history if cursor is at end of last line
+            if (!event.shiftKey && cursorPos === input.length) {
+                event.preventDefault();
+                navigateHistory(1);
+            }
+            break;
+
+        case 'c':
+            if (event.ctrlKey || event.metaKey) {
+                // Ctrl+C: interrupt
+                event.preventDefault();
+                handleInterrupt();
+            }
+            break;
+
+        case 'd':
+            if (event.ctrlKey || event.metaKey) {
+                // Ctrl+D: EOF signal
+                event.preventDefault();
+                if (input.trim() === '') {
+                    appendOutput('% EOF (Ctrl+D)', 'info');
+                    inputEl.value = '';
+                    adjustInputHeight();
+                }
+            }
+            break;
+
+        case 'l':
+            if (event.ctrlKey || event.metaKey) {
+                // Ctrl+L: clear screen
+                event.preventDefault();
+                clearOutput();
+            }
+            break;
+
+        case 'Tab':
+            // Tab: auto-completion
+            event.preventDefault();
+            handleTabCompletion();
+            break;
+    }
+}
+
+/**
+ * Handle input during solution browsing (after first solution shown)
+ */
+function handleSolutionBrowsingInput(event) {
+    if (event.key === ';' || event.key === '.') {
+        event.preventDefault();
+
+        if (event.key === ';') {
+            // Show next solution
+            requestNextSolution();
+        } else {
+            // Stop browsing
+            stopSolutionBrowsing();
+        }
+    } else if (event.key === 'c' && (event.ctrlKey || event.metaKey)) {
+        // Ctrl+C during browsing
+        event.preventDefault();
+        stopSolutionBrowsing();
+        appendOutput('^C', 'info');
+    }
+}
+
+/**
  * Navigate command history
  */
 function navigateHistory(direction) {
     if (replState.history.length === 0) return;
 
+    // Save current input if starting navigation
+    if (replState.historyIndex === replState.history.length) {
+        replState.currentInput = inputEl.value;
+    }
+
     replState.historyIndex += direction;
 
     if (replState.historyIndex < 0) {
         replState.historyIndex = 0;
-    } else if (replState.historyIndex >= replState.history.length) {
+    } else if (replState.historyIndex > replState.history.length) {
         replState.historyIndex = replState.history.length;
-        inputEl.value = '';
-        return;
     }
 
-    inputEl.value = replState.history[replState.historyIndex] || '';
+    if (replState.historyIndex === replState.history.length) {
+        // Back to current input
+        inputEl.value = replState.currentInput;
+    } else {
+        inputEl.value = replState.history[replState.historyIndex] || '';
+    }
+
+    adjustInputHeight();
+    // Move cursor to end
+    inputEl.selectionStart = inputEl.selectionEnd = inputEl.value.length;
+}
+
+/**
+ * Handle interrupt (Ctrl+C)
+ */
+function handleInterrupt() {
+    if (replState.waitingForMore) {
+        stopSolutionBrowsing();
+        appendOutput('^C', 'info');
+    } else if (replState.running) {
+        stopQuery();
+        appendOutput('^C', 'error');
+    } else {
+        // Clear current input
+        inputEl.value = '';
+        adjustInputHeight();
+        appendOutput('^C', 'info');
+    }
+}
+
+/**
+ * Adjust input height based on content
+ */
+function adjustInputHeight() {
+    inputEl.style.height = 'auto';
+    const newHeight = Math.max(40, Math.min(200, inputEl.scrollHeight));
+    inputEl.style.height = newHeight + 'px';
+}
+
+/**
+ * Clear output area
+ */
+function clearOutput() {
+    outputEl.innerHTML = '';
+    appendOutput('% Screen cleared', 'info');
+}
+
+/**
+ * Handle tab completion
+ */
+function handleTabCompletion() {
+    const input = inputEl.value;
+    const cursorPos = inputEl.selectionStart;
+
+    // Find word before cursor
+    const beforeCursor = input.substring(0, cursorPos);
+    const match = beforeCursor.match(/\b([a-z][a-zA-Z0-9_]*)$/);
+
+    if (match) {
+        const prefix = match[1];
+        const completions = getCompletions(prefix);
+
+        if (completions.length === 1) {
+            // Single completion - insert it
+            const completion = completions[0];
+            const newValue = input.substring(0, cursorPos - prefix.length) +
+                            completion +
+                            input.substring(cursorPos);
+            inputEl.value = newValue;
+            inputEl.selectionStart = inputEl.selectionEnd = cursorPos - prefix.length + completion.length;
+        } else if (completions.length > 1) {
+            // Multiple completions - show them
+            appendOutput(`Completions for '${prefix}': ${completions.join(', ')}`, 'info');
+        }
+    }
+}
+
+/**
+ * Get completions for a prefix
+ */
+function getCompletions(prefix) {
+    const builtins = [
+        'append', 'member', 'reverse', 'length', 'between',
+        'atom', 'integer', 'var', 'nonvar', 'is',
+        'true', 'fail', 'repeat', 'call',
+        'findall', 'bagof', 'setof',
+        'assertz', 'retract', 'abolish',
+        'consult', 'listing', 'help', 'trace'
+    ];
+
+    return builtins.filter(b => b.startsWith(prefix)).sort();
 }
 
 /**
@@ -764,8 +994,15 @@ CLP(FD) examples:
   X #> 5, X #< 10, label([X]) - Constraints
 
 Keyboard shortcuts:
-  Ctrl+Enter  - Run query
-  Ctrl+↑/↓    - Navigate history
+  Enter       - Run query
+  Shift+Enter - New line (multi-line input)
+  ↑/↓         - Navigate history
+  Tab         - Auto-complete
+  Ctrl+C      - Interrupt/clear
+  Ctrl+D      - EOF (clear input)
+  Ctrl+L      - Clear screen
+  ;           - Next solution (during query)
+  .           - Stop searching (during query)
 
 Safety features:
   • Step limit: Prevents infinite loops
@@ -947,9 +1184,32 @@ function showREPL() {
     replState.initialized = true;
 }
 
+/**
+ * Load command history from localStorage
+ */
+function loadHistory() {
+    try {
+        const saved = localStorage.getItem('pylog_repl_history');
+        if (saved) {
+            replState.history = JSON.parse(saved);
+            replState.historyIndex = replState.history.length;
+        }
+    } catch (e) {
+        // Ignore localStorage errors
+    }
+}
+
+/**
+ * Initialize UI and load saved state
+ */
+function initializeUI() {
+    initializeREPL();
+    loadHistory();
+}
+
 // Initialize when DOM is ready
 if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initializeREPL);
+    document.addEventListener('DOMContentLoaded', initializeUI);
 } else {
-    initializeREPL();
+    initializeUI();
 }
