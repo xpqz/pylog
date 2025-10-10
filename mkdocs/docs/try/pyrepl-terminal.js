@@ -54,6 +54,9 @@ function initializeTerminal() {
     // Load history
     loadHistory();
 
+    // Auto-start the REPL
+    startREPL();
+
     // Focus terminal
     if (terminalEl) {
         terminalEl.focus();
@@ -82,19 +85,10 @@ function createTerminalInterface(container) {
         " tabindex="0">
             <div style="color: #6a9955;">
                 % PyLog REPL - Terminal Mode
-                % Press Enter to run, Shift+Enter for multi-line, Tab for completion
-                % Type 'help' for commands, ↑/↓ for history
+                % Initializing Pyodide...
             </div>
         </div>
         <div style="margin-top: 10px; display: flex; gap: 10px;">
-            <button id="pylog-start" style="
-                padding: 8px 16px;
-                background: #007acc;
-                color: white;
-                border: none;
-                border-radius: 4px;
-                cursor: pointer;
-            ">Start REPL</button>
             <button id="pylog-clear" style="
                 padding: 8px 16px;
                 background: #555;
@@ -142,8 +136,16 @@ function setupTerminalEvents() {
         updateCursor();
     });
 
+    // Prevent backspace from navigating back
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Backspace' &&
+            !['input', 'textarea'].includes(event.target.tagName.toLowerCase()) &&
+            !event.target.isContentEditable) {
+            event.preventDefault();
+        }
+    });
+
     // Button handlers
-    document.getElementById('pylog-start').onclick = startREPL;
     document.getElementById('pylog-clear').onclick = clearTerminal;
     document.getElementById('pylog-stop').onclick = stopQuery;
 }
@@ -192,6 +194,11 @@ function addPrompt(continuation = false) {
  * Handle keydown events in terminal
  */
 function handleTerminalKeydown(event) {
+    // Ensure terminal keeps focus
+    if (document.activeElement !== terminalEl) {
+        terminalEl.focus();
+    }
+
     if (!terminalState.inputEnabled) return;
 
     switch(event.key) {
@@ -581,7 +588,7 @@ function processQuery(query) {
             }
         });
     } else {
-        appendOutput('% REPL not initialized. Click "Start REPL" first.', 'error');
+        appendOutput('% REPL still initializing. Please wait...', 'comment');
         terminalState.inputEnabled = true;
         terminalState.running = false;
         addPrompt();
