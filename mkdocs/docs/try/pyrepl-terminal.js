@@ -131,6 +131,11 @@ function setupTerminalEvents() {
     terminalEl.addEventListener('keydown', handleTerminalKeydown);
     terminalEl.addEventListener('keypress', handleTerminalKeypress);
 
+    // Clipboard support
+    terminalEl.addEventListener('paste', handlePaste);
+    terminalEl.addEventListener('copy', handleCopy);
+    terminalEl.addEventListener('cut', handleCut);
+
     // Click to focus
     terminalEl.addEventListener('click', () => {
         terminalEl.focus();
@@ -283,6 +288,68 @@ function handleTerminalKeypress(event) {
 
     event.preventDefault();
     insertCharacter(event.key);
+}
+
+/**
+ * Handle paste event
+ */
+function handlePaste(event) {
+    if (!terminalState.inputEnabled) return;
+
+    event.preventDefault();
+
+    // Get pasted text
+    const pastedText = (event.clipboardData || window.clipboardData).getData('text');
+
+    if (pastedText) {
+        // Insert the pasted text at cursor position
+        const before = terminalState.currentLine.substring(0, terminalState.cursorPosition);
+        const after = terminalState.currentLine.substring(terminalState.cursorPosition);
+        terminalState.currentLine = before + pastedText + after;
+        terminalState.cursorPosition += pastedText.length;
+        updateInputDisplay();
+    }
+}
+
+/**
+ * Handle copy event
+ */
+function handleCopy(event) {
+    // Get selected text
+    const selection = window.getSelection();
+    if (selection.toString()) {
+        // Let the browser handle the copy for selected text
+        return;
+    }
+
+    // If no selection, copy the current line
+    if (terminalState.currentLine) {
+        event.preventDefault();
+        event.clipboardData.setData('text/plain', terminalState.currentLine);
+    }
+}
+
+/**
+ * Handle cut event
+ */
+function handleCut(event) {
+    if (!terminalState.inputEnabled) return;
+
+    // Get selected text
+    const selection = window.getSelection();
+    if (selection.toString()) {
+        // Let browser handle cut for selected text
+        return;
+    }
+
+    // If no selection, cut the whole line
+    if (terminalState.currentLine) {
+        event.preventDefault();
+        event.clipboardData.setData('text/plain', terminalState.currentLine);
+        terminalState.currentLine = '';
+        terminalState.cursorPosition = 0;
+        updateInputDisplay();
+    }
 }
 
 /**
