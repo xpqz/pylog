@@ -255,7 +255,9 @@ function handleWorkerMessage(event) {
             break;
 
         case 'stdlib-loaded':
-            console.log(`PyLog REPL: Standard library loaded - ${event.data.clauseCount} clauses from ${event.data.fileCount} file(s)`);
+            const stdlibMsg = `Loaded ${event.data.clauseCount} stdlib clauses from ${event.data.fileCount} file(s)`;
+            console.log(`PyLog REPL: Standard library loaded - ${stdlibMsg}`);
+            appendOutput(stdlibMsg, 'info');
             break;
 
         case 'solutions':

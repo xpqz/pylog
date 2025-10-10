@@ -411,16 +411,18 @@ file_count = 0
 try:
     # Python 3.9+ way
     lib_files = resources.files('prolog.lib')
-    for item in lib_files.iterdir():
-        if item.name.endswith('.pl'):
-            content = item.read_text()
-            stdlib_contents.append(f"% From {item.name}\\n{content}")
-            file_count += 1
-            print(f"Worker: Loaded {item.name} ({len(content)} chars)")
+    # Sort files for deterministic loading order
+    pl_files = sorted([f for f in lib_files.iterdir() if f.name.endswith('.pl')],
+                      key=lambda x: x.name)
+    for item in pl_files:
+        content = item.read_text()
+        stdlib_contents.append(f"% From {item.name}\\n{content}")
+        file_count += 1
+        print(f"Worker: Loaded {item.name} ({len(content)} chars)")
 except AttributeError:
-    # Fallback for older Python - load known files
+    # Fallback for older Python - load known files in sorted order
     import importlib.resources as res
-    known_files = ['lists.pl']  # Add more as needed
+    known_files = sorted(['lists.pl'])  # Add more as needed
     for filename in known_files:
         try:
             with res.open_text('prolog.lib', filename) as f:
