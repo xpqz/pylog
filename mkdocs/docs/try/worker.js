@@ -539,8 +539,9 @@ async function executeQuery(query, options = {}) {
         try {
             const pythonSolutions = pylogEngine.run(goals, maxSolutions);
 
-            // Convert Python list to JavaScript array
-            const solutions = pythonSolutions.toJs ? pythonSolutions.toJs() : pythonSolutions;
+            // Convert Python list to JavaScript array but keep dict elements as proxies
+            // This preserves the Python dict methods like items() for proper iteration
+            const solutions = pythonSolutions.toJs ? pythonSolutions.toJs({create_pyproxies: true}) : pythonSolutions;
 
             for (let i = 0; i < solutions.length; i++) {
                 const solution = solutions[i];
