@@ -92,6 +92,47 @@ print(solutions)  # [{'X': Int(value=42)}]
 - `build-wheels.sh`: Automated build script for both wheels
 - `WEB-WHEEL.md`: This documentation file
 
+## Deployment and CDN Access
+
+### Commit SHA-Based URLs (Cache Busting)
+
+PyLog uses commit SHA-based URLs for Web REPL assets to eliminate JsDelivr cache issues:
+
+- **Wheel URLs**: `https://cdn.jsdelivr.net/gh/xpqz/pylog@{COMMIT_SHA}/mkdocs/docs/try/assets/`
+- **Manifest**: `https://cdn.jsdelivr.net/gh/xpqz/pylog@{COMMIT_SHA}/mkdocs/docs/try/assets/manifest.json`
+- **Worker**: Dynamically fetches current commit SHA from GitHub API for latest assets
+
+### Automated Deployment
+
+1. **Release Workflow** (`.github/workflows/web-wheel-release.yml`):
+   - Builds web wheels and creates manifest with current commit SHA URLs
+   - Copies assets to both `/wheels/` and `/mkdocs/docs/try/assets/` directories
+   - Updates URLs to use `@{COMMIT_SHA}` instead of `@main`
+
+2. **Manifest Update Workflow** (`.github/workflows/update-manifest.yml`):
+   - Automatically updates manifest URLs on relevant file changes
+   - Prevents infinite loops and maintains cache busting
+
+### Web REPL Cache Busting
+
+The Web REPL worker (`mkdocs/docs/try/worker.js`) implements dynamic commit detection:
+
+```javascript
+// Fetch current commit SHA from GitHub API
+currentCommitSha = await getCurrentCommitSha();
+const commitRef = currentCommitSha || 'main';  // Fallback to main if API fails
+
+// Load manifest with commit SHA for cache busting
+const manifestUrl = `https://cdn.jsdelivr.net/gh/xpqz/pylog@${commitRef}/mkdocs/docs/try/assets/manifest.json`;
+```
+
+### Benefits
+
+- **No manual cache purging** required for deployments
+- **Reliable asset loading** with guaranteed fresh content
+- **Console logging** shows exact commit being loaded for debugging
+- **Automatic updates** when new commits are deployed
+
 ## Acceptance Criteria Met
 
 ✅ **Minimal web wheel**: Only `lark>=1.1.0` dependency, suitable for Pyodide
@@ -99,3 +140,5 @@ print(solutions)  # [{'X': Int(value=42)}]
 ✅ **Desktop REPL functional**: Full install with `prompt-toolkit`/`pygments` works correctly
 ✅ **Dependency split**: Clean separation between core and terminal dependencies
 ✅ **Fail fast**: Missing dependencies cause immediate import errors, no graceful degradation
+✅ **Cache-busted URLs**: Commit SHA-based URLs eliminate JsDelivr cache issues
+✅ **Automated deployment**: Workflows auto-update URLs on new releases and commits
