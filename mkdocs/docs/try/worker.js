@@ -537,15 +537,30 @@ async function executeQuery(query, options = {}) {
         const results = [];
 
         try {
-            const solutions = pylogEngine.run(goals, maxSolutions);
+            const pythonSolutions = pylogEngine.run(goals, maxSolutions);
 
-            for (const solution of solutions) {
+            // Convert Python list to JavaScript array
+            const solutions = pythonSolutions.toJs ? pythonSolutions.toJs() : pythonSolutions;
+
+            for (let i = 0; i < solutions.length; i++) {
+                const solution = solutions[i];
+
                 // Keep all solutions including empty ones (for "true" results)
                 if (solution !== null && solution !== undefined) {
-                    // Pretty print the solution with operators
+                    // Pretty print BEFORE converting to JS
+                    // solution is still a Python dict proxy here
                     const prettySolution = {};
-                    for (const [key, value] of Object.entries(solution)) {
-                        prettySolution[key] = pylogPretty(value, true); // operator_mode=True
+
+                    // Get Python dict items iterator
+                    const items = solution.items ? solution.items() : [];
+                    for (const item of items) {
+                        // item is a Python tuple (key, value)
+                        const key = item[0];  // Variable name (string)
+                        const value = item[1];  // Python Term object
+
+                        // Pretty print the Python value then convert to JS string
+                        const prettyStr = pylogPretty(value, true); // operator_mode=True
+                        prettySolution[key] = String(prettyStr);
                     }
                     results.push(prettySolution);
                 }
