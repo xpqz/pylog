@@ -1,15 +1,16 @@
 {
   "version": "0.1.0",
   "tag": "v0.1.0",
+  "commit_sha": "da2460d2d5f424449998474cd5da82285a3c0d4c",
   "pylog": {
     "wheel": "pylog-0.1.0-py3-none-any.whl",
     "version": "0.1.0",
-    "url": "https://cdn.jsdelivr.net/gh/xpqz/pylog@main/wheels/pylog-0.1.0-py3-none-any.whl"
+    "url": "https://cdn.jsdelivr.net/gh/xpqz/pylog@da2460d2d5f424449998474cd5da82285a3c0d4c/wheels/pylog-0.1.0-py3-none-any.whl"
   },
   "lark": {
     "wheel": "lark-1.3.0-py3-none-any.whl",
-    "url": "https://cdn.jsdelivr.net/gh/xpqz/pylog@main/wheels/lark-1.3.0-py3-none-any.whl"
+    "url": "https://cdn.jsdelivr.net/gh/xpqz/pylog@da2460d2d5f424449998474cd5da82285a3c0d4c/wheels/lark-1.3.0-py3-none-any.whl"
   },
-  "generated_at": "2025-10-09T21:25:03Z",
+  "generated_at": "2025-10-10T09:00:00Z",
   "checksums": "checksums.txt"
 }
