@@ -248,7 +248,7 @@ class TestVariableBindingDisplay:
         content = worker_path.read_text()
 
         # Check that solutions are properly extracted and formatted
-        assert "for (const solution of pythonSolutions)" in content
+        assert "for (let i = 0; i < solutionsLength; i++)" in content
         assert "pylogPretty" in content  # Should pretty-print values
         assert "prettySolution[key]" in content  # Should preserve all keys
         assert "solution.items" in content  # Should iterate Python dict items

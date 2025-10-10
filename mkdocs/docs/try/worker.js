@@ -577,9 +577,13 @@ async function executeQuery(query, options = {}) {
         try {
             const pythonSolutions = pylogEngine.run(goals, maxSolutions);
 
-            // Do NOT convert to JS - iterate the Python list directly
+            // Use indexed iteration to avoid automatic conversion
             // This preserves the Python dict objects with their items() method
-            for (const solution of pythonSolutions) {
+            const solutionsLength = pythonSolutions.length;
+            for (let i = 0; i < solutionsLength; i++) {
+                // Access by index preserves the Python proxy
+                const solution = pythonSolutions[i];
+
                 // Keep all solutions including empty ones (for "true" results)
                 if (solution !== null && solution !== undefined) {
                     // solution is a Python dict proxy with items() method available
