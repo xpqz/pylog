@@ -147,16 +147,18 @@ function setupTerminalEvents() {
  * Add a prompt line to the terminal
  */
 function addPrompt(continuation = false) {
+    // Clear any existing references
+    currentInputLine = null;
+    cursorEl = null;
+
     const promptSpan = document.createElement('span');
     promptSpan.style.color = '#569cd6';
     promptSpan.textContent = continuation ? '|    ' : '?- ';
 
     const inputSpan = document.createElement('span');
-    inputSpan.id = 'current-input';
     inputSpan.style.color = '#d4d4d4';
 
     const cursorSpan = document.createElement('span');
-    cursorSpan.id = 'cursor';
     cursorSpan.style.cssText = `
         background: #d4d4d4;
         color: #1e1e1e;
@@ -340,6 +342,12 @@ function updateInputDisplay() {
         currentInputLine.textContent = before;
         cursorEl.textContent = at;
 
+        // Remove any existing tail spans
+        while (cursorEl.nextSibling) {
+            cursorEl.nextSibling.remove();
+        }
+
+        // Add new tail span if there's text after cursor
         if (after) {
             const afterSpan = document.createElement('span');
             afterSpan.textContent = after;
@@ -361,10 +369,13 @@ function updateCursor() {
 function executeCurrentInput() {
     const input = terminalState.currentLine.trim();
 
-    // Finalize the current line (remove cursor)
+    // Finalize the current line (remove cursor and input-line class)
     if (currentInputLine) {
         currentInputLine.textContent = terminalState.currentLine;
         if (cursorEl) cursorEl.remove();
+        // Remove input-line class so output appears after the latest prompt
+        const lineDiv = currentInputLine.parentElement;
+        if (lineDiv) lineDiv.classList.remove('input-line');
     }
 
     // Handle empty input
@@ -394,10 +405,13 @@ function executeCurrentInput() {
 function addToMultilineBuffer() {
     terminalState.multilineBuffer.push(terminalState.currentLine);
 
-    // Finalize current line
+    // Finalize current line (remove cursor and input-line class)
     if (currentInputLine) {
         currentInputLine.textContent = terminalState.currentLine;
         if (cursorEl) cursorEl.remove();
+        // Remove input-line class so output appears after the latest prompt
+        const lineDiv = currentInputLine.parentElement;
+        if (lineDiv) lineDiv.classList.remove('input-line');
     }
 
     // Add continuation prompt
@@ -523,7 +537,15 @@ function appendOutput(text, type = 'output') {
     };
 
     div.style.color = colors[type] || colors.output;
-    terminalEl.insertBefore(div, document.querySelector('.input-line'));
+
+    // Insert before the current input line (if it exists) or at the end
+    const inputLine = document.querySelector('.input-line');
+    if (inputLine) {
+        terminalEl.insertBefore(div, inputLine);
+    } else {
+        terminalEl.appendChild(div);
+    }
+
     terminalEl.scrollTop = terminalEl.scrollHeight;
 }
 
