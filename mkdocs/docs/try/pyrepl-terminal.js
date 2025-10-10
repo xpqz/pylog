@@ -849,6 +849,10 @@ function displayError(errorData) {
         appendOutput('% Hint: Prolog statements must end with a period (.)', 'comment');
     }
 
+    if (message.includes('unknown operator')) {
+        appendOutput('% Hint: Check operator spelling and precedence', 'comment');
+    }
+
     if (message.includes('timeout')) {
         appendOutput('% Hint: Query took too long. Try simplifying or use "set_limits timeoutMs <value>" to increase timeout', 'comment');
     }
