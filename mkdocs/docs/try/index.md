@@ -1,6 +1,6 @@
 # Try PyLog
 
-Experience PyLog directly in your browser! This interactive REPL runs entirely client-side using WebAssembly via Pyodide.
+Experience PyLog directly in your browser! This interactive terminal REPL runs entirely client-side using WebAssembly via Pyodide.
 
 <div id="pylog-repl-container">
   <div id="pylog-loading" style="text-align: center; padding: 20px;">
@@ -36,5 +36,5 @@ Try these queries to get started:
 - [CLP(FD) Introduction](../clpfd/intro.md) - Constraint programming
 - [Cookbook](../cookbook/list-processing.md) - Examples and recipes
 
-<script src="pyrepl.js"></script>
-<script src="examples.js"></script>
+<script src="pyrepl-terminal.js"></script>
+<!-- <script src="examples.js"></script> Not needed for terminal UI -->
