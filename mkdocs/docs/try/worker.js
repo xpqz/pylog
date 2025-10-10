@@ -577,6 +577,7 @@ async function executeQuery(query, options = {}) {
 
         // Execute with max_solutions enforced by engine
         const results = [];
+        let solutionCount = 0;
 
         try {
             const pythonSolutions = pylogEngine.run(goals, maxSolutions);
@@ -608,8 +609,8 @@ async function executeQuery(query, options = {}) {
                         // Also create structured bindings for streaming mode
                         if (streaming) {
                             structuredBindings[key] = {
-                                kind: value.__class__.__name__ || 'Term',
-                                value: prettyStr
+                                kind: String(value.__class__.__name__ || 'Term'),
+                                value: String(prettyStr)
                             };
                         }
                     }
@@ -626,9 +627,12 @@ async function executeQuery(query, options = {}) {
                             bindings: structuredBindings,
                             pretty: prettyText
                         });
-                    }
 
-                    results.push(prettySolution);
+                        solutionCount++;
+                    } else {
+                        // Only store full results in batched mode
+                        results.push(prettySolution);
+                    }
                 }
             }
         } catch (pyError) {
@@ -650,8 +654,9 @@ async function executeQuery(query, options = {}) {
             // Send done event for streaming mode
             postMessage({
                 type: 'done',
-                solutions: results.length,
-                elapsedMs: elapsedMs
+                solutions: solutionCount,
+                elapsedMs: elapsedMs,
+                stepCount: pylogEngine._steps_taken || 0  // Include steps for consistency
             });
         } else {
             // Send batched results (using 'solutions' to match UI expectation)

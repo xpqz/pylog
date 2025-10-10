@@ -26,6 +26,9 @@ let safetyConfig = {
 // Timeout tracking
 let queryTimeoutId = null;
 
+// Streaming UI state
+let lastStreamingSepEl = null;
+
 // DOM Elements
 let containerEl = null;
 let loadingEl = null;
@@ -326,7 +329,15 @@ function displayStreamingSolution(data) {
     appendOutput(pretty || 'true', 'output');
 
     // Add separator (semicolon) to indicate more solutions may follow
-    appendOutput(';', 'output');
+    const sepDiv = document.createElement('div');
+    sepDiv.textContent = ';';
+    sepDiv.style.color = '#333';
+    sepDiv.style.marginBottom = '4px';
+    outputEl.appendChild(sepDiv);
+    outputEl.scrollTop = outputEl.scrollHeight;
+
+    // Track last separator for replacement
+    lastStreamingSepEl = sepDiv;
 }
 
 /**
@@ -335,17 +346,24 @@ function displayStreamingSolution(data) {
 function displayStreamingDone(data) {
     const { solutions, elapsedMs } = data;
 
-    // Add final period
+    // Handle final punctuation
     if (solutions === 0) {
         appendOutput('false.', 'output');
+    } else if (lastStreamingSepEl) {
+        // Replace last semicolon with period
+        lastStreamingSepEl.textContent = '.';
+        lastStreamingSepEl = null;
     } else {
-        // Replace last semicolon with period (visual only)
+        // Fallback if no separator was tracked
         appendOutput('.', 'output');
     }
 
-    // Show metadata
+    // Show metadata (include stepCount if available for consistency)
     const metadata = [];
     metadata.push(`${solutions} solution(s)`);
+    if (data.stepCount !== undefined) {
+        metadata.push(`${data.stepCount} step(s)`);
+    }
     if (elapsedMs !== undefined) {
         metadata.push(`${elapsedMs}ms elapsed`);
     }
