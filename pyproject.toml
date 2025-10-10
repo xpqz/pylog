@@ -35,6 +35,15 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["prolog"]
+include = [
+    "prolog/lib/*.pl",
+]
+
+[tool.hatch.build]
+include = [
+    "prolog/**/*.py",
+    "prolog/lib/*.pl",
+]
 
 
 [tool.black]

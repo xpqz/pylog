@@ -48,6 +48,8 @@
 - **NEVER EVER CHANGE THE DEFAULT BRANCH ON GIT OR GITHUB!**
 - When creating PRs or commits, **DO NOT** mention Claude, Anthropic, or AI assistance in the message
 
+**Note**: Don't bulk-add changes to git! Add modifications, additions and deletions individually, based on the knowledge of what you have actually done. That makes it easier for the human to follow, too. Doing it this way reduces the chance that unintended changes makes it into git.
+
 Follow this process for each GitHub issue:
 
 1. **Pick an issue** - Note its ID number
@@ -57,9 +59,16 @@ Follow this process for each GitHub issue:
 4. **Commit approved tests** - Only after review approval
 5. **Implement until tests pass** - Make the tests green
 6. **Run complete test suite** - No regressions tolerated!
-7. **Create PR** - Make an orderly PR, squashing commits if necessary. DON'T mention Claude or AI in the PR message
+7. **Create PR** - Make an orderly PR, squashing commits if necessary.
 8. **Verify CI** - Ensure all CI tests pass fully
 9. **Await PR review** - Wait for human review
 10. **Merge** - After approval, merge PR and verify that tests complete in CI
 11. **Maintain issues** Maintain issues by checking boxes where relevant after every commit. If all boxes are ticked, close the issues.
-**Maintain epics** Update the Epic issue where relevant by ticking any boxes as issues are closed. If all sub-issues are closed, also close the epic.
+12. **Maintain epics** Update the Epic issue where relevant by ticking any boxes as issues are closed. If all sub-issues are closed, also close the epic.
+
+In any git and GitHub messaging (commit messages, PR messages, issues, comments etc), we maintain a terse, professional tone:
+
+1. **Never make unproven claims**: don't make claims about the validity, effectiveness or awesomeness of your changes in a commit or message. By definition, that is determined by the CI results, which you can't see yet. Explain what was done, and why.
+2. **Never use emoji symbols**: we're not 14-year-olds on Instagram here. No green ticks, no red crosses, no smileys, no symbols.
+3. **Brevity**: issues and commit messages are written for co-workers. Respect their time. Obviously, be complete, but express yourself in a professional, concise tone.
+4. **UK English**: we use UK English spelling throughout.

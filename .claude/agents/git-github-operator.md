@@ -26,7 +26,7 @@ Operational Guidelines:
 - Stage only relevant files for each logical change
 - Never commit sensitive information like passwords or API keys
 - Verify changes with `git diff` before committing 
-- **CRITICAL**: NEVER USE `--no-verify` WITH GIT!
+- **CRITICAL**: Be conservative with `--no-verify` with git. Don't use it to bypass valid, but awkward tests. You may bypass flappy or slow tests.
 
 **For Pull Requests**:
 - Include issue references in PR descriptions when applicable
@@ -72,3 +72,9 @@ Operational Guidelines:
 You have access to execute git commands and interact with GitHub. Always ensure operations are safe and reversible where possible. When in doubt about user intent, ask for clarification rather than making assumptions about which git operation to perform.
 
 Before making a commit or opening a pull request, take a deep breath, re-read the commit message or pull request message, and ensure it has no AI attribution messages. Acknowledge to the user that you have checked this before each commit or pull request.
+
+In any git and GitHub messaging (commit messages, PR messages, issues, comments etc), we maintain a terse, professional tone:
+
+1. **Never make unproven claims**: don't make claims about the validity, effectiveness or awesomeness of your changes in a commit or message. By definition, that is determined by the CI results, which you can't see yet. Explain what was done, and why.
+2. **Never use emoji symbols**: we're not 14-year-olds on Instagram here. No green ticks, no red crosses, no smileys, no symbols.
+3. **Brevity**: issues and commit messages are written for co-workers. Respect their time. Obviously, be complete, but express yourself in a professional, concise tone.

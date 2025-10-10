@@ -397,24 +397,63 @@ async function initializePyodide() {
         postMessage({ type: 'progress', step: 'loading-stdlib', message: 'Loading standard library...' });
         console.log('Worker: Loading standard library...');
 
-        // Load standard library (lists.pl)
+        // Load all standard library .pl files using importlib.resources
         standardLibraryClauses = [];  // Reset global variable
         try {
+            // Use Python's importlib.resources to read all .pl files from the package
+            const pythonCode = `
+import importlib.resources as resources
+
+# Read all .pl files from prolog.lib
+stdlib_contents = []
+file_count = 0
+
+try:
+    # Python 3.9+ way
+    lib_files = resources.files('prolog.lib')
+    # Sort files for deterministic loading order
+    pl_files = sorted([f for f in lib_files.iterdir() if f.name.endswith('.pl')],
+                      key=lambda x: x.name)
+    for item in pl_files:
+        content = item.read_text()
+        stdlib_contents.append(f"% From {item.name}\\n{content}")
+        file_count += 1
+        print(f"Worker: Loaded {item.name} ({len(content)} chars)")
+except AttributeError:
+    # Fallback for older Python - load known files in sorted order
+    import importlib.resources as res
+    known_files = sorted(['lists.pl'])  # Add more as needed
+    for filename in known_files:
+        try:
+            with res.open_text('prolog.lib', filename) as f:
+                content = f.read()
+                stdlib_contents.append(f"% From {filename}\\n{content}")
+                file_count += 1
+                print(f"Worker: Loaded {filename} ({len(content)} chars)")
+        except:
+            pass
+
+combined_content = "\\n\\n".join(stdlib_contents)
+(combined_content, file_count)
+            `;
+
+            const [libContent, fileCount] = pyodide.runPython(pythonCode);
+            console.log(`Worker: Loaded ${fileCount} stdlib file(s), total ${libContent.length} characters`);
+
             // Import the parser to parse the standard library
             const parserPackage = pyodide.pyimport('prolog.parser.parser');
 
-            // Read the standard library file
-            const pathlib = pyodide.pyimport('pathlib');
-            const prologPath = pathlib.Path('prolog');
-            const libPath = prologPath.joinpath('lib', 'lists.pl');
-
-            console.log(`Worker: Reading standard library from: ${libPath}`);
-            const libContent = libPath.read_text();
-            console.log(`Worker: Standard library content length: ${libContent.length} characters`);
-
             // Parse the standard library
             standardLibraryClauses = parserPackage.parse_program(libContent);
-            console.log(`Worker: ✅ Standard library loaded: ${standardLibraryClauses.length} clauses`);
+            const clauseCount = standardLibraryClauses.length;
+            console.log(`Worker: ✅ Standard library loaded: ${clauseCount} clauses from ${fileCount} file(s)`);
+
+            // Send clause count to UI for confirmation
+            postMessage({
+                type: 'stdlib-loaded',
+                clauseCount: clauseCount,
+                fileCount: fileCount
+            });
 
         } catch (error) {
             console.error('Worker: ⚠️ Failed to load standard library:', error);
