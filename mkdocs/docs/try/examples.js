@@ -125,55 +125,6 @@ const PYLOG_EXAMPLES = {
                 description: 'Multiple constraints on variables'
             }
         ]
-    },
-    'hanoi': {
-        name: 'Hanoi',
-        description: 'Towers of Hanoi puzzle solver',
-        examples: [
-            {
-                title: 'Hanoi 2 Disks',
-                query: 'hanoi(2, a, c, b, Moves)',
-                description: 'Solve 2-disk Towers of Hanoi'
-            },
-            {
-                title: 'Hanoi 3 Disks',
-                query: 'hanoi(3, left, right, middle, Moves)',
-                description: 'Solve 3-disk Towers of Hanoi'
-            },
-            {
-                title: 'Define Hanoi Rules',
-                query: `hanoi(0, _, _, _, []).
-hanoi(N, From, To, Aux, Moves) :-
-    N > 0,
-    N1 is N - 1,
-    hanoi(N1, From, Aux, To, M1),
-    hanoi(N1, Aux, To, From, M2),
-    append(M1, [move(From,To)|M2], Moves).`,
-                description: 'Define the hanoi/5 predicate'
-            }
-        ]
-    },
-    'sudoku': {
-        name: 'Sudoku',
-        description: 'Sudoku puzzle solver using CLP(FD)',
-        examples: [
-            {
-                title: 'Simple 4x4 Sudoku',
-                query: `sudoku_4x4([[1,_,_,4],[_,3,4,_],[_,4,1,_],[4,_,_,2]], Solution)`,
-                description: 'Solve a 4x4 Sudoku puzzle'
-            },
-            {
-                title: 'Sudoku Row Constraint',
-                query: 'X in 1..9, Y in 1..9, Z in 1..9, all_different([X,Y,Z]), label([X,Y,Z])',
-                description: 'Basic all_different constraint for Sudoku row'
-            },
-            {
-                title: 'Define Sudoku Helper',
-                query: `all_different_9([A,B,C,D,E,F,G,H,I]) :-
-    all_different([A,B,C,D,E,F,G,H,I]).`,
-                description: 'Helper predicate for 9-cell all_different'
-            }
-        ]
     }
 };
 

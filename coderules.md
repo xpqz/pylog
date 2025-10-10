@@ -68,7 +68,8 @@ Follow this process for each GitHub issue:
 
 In any git and GitHub messaging (commit messages, PR messages, issues, comments etc), we maintain a terse, professional tone:
 
-1. **Never make unproven claims**: don't make claims about the validity, effectiveness or awesomeness of your changes in a commit or message. By definition, that is determined by the CI results, which you can't see yet. Explain what was done, and why.
+1. **Never make unproven claims**: don't make claims about the validity, effectiveness or awesomeness of your changes in a commit or other message. By definition, that is determined by the CI results, which you can't see yet. Explain what was done, and why. Be modest and factual.
 2. **Never use emoji symbols**: we're not 14-year-olds on Instagram here. No green ticks, no red crosses, no smileys, no symbols.
-3. **Brevity**: issues and commit messages are written for co-workers. Respect their time. Obviously, be complete, but express yourself in a professional, concise tone.
-4. **UK English**: we use UK English spelling throughout.
+3. **Don't use bold text**: don't embellish or add emphasis with bold or italic text.
+4. **Brevity**: issues and commit messages are written for co-workers. Respect their time. Obviously, be complete, but express yourself in a professional, concise tone.
+5. **UK English**: we use UK English spelling throughout.
