@@ -607,11 +607,12 @@ async function startREPL() {
 
 /**
  * Request next solution in browsing mode
+ * NOTE: Not yet implemented - requires worker support for incremental solutions
  */
 function requestNextSolution() {
     // This would need to be implemented with worker support
     // For now, just show a message
-    appendOutput('% Solution browsing not yet implemented', 'info');
+    appendOutput('% Interactive solution browsing coming soon', 'info');
     stopSolutionBrowsing();
 }
 
@@ -760,8 +761,8 @@ function handleKeyboardInput(event) {
                 // Shift+Enter: insert newline for multi-line input
                 // Let default behavior handle it
                 setTimeout(adjustInputHeight, 0);
-            } else {
-                // Enter: run query
+            } else if (!replState.running) {
+                // Enter: run query (only if not already running)
                 event.preventDefault();
                 runQuery();
             }
@@ -821,13 +822,14 @@ function handleKeyboardInput(event) {
 
 /**
  * Handle input during solution browsing (after first solution shown)
+ * NOTE: Solution browsing is not yet implemented - placeholder for future work
  */
 function handleSolutionBrowsingInput(event) {
     if (event.key === ';' || event.key === '.') {
         event.preventDefault();
 
         if (event.key === ';') {
-            // Show next solution
+            // Show next solution (not yet implemented)
             requestNextSolution();
         } else {
             // Stop browsing
@@ -1001,8 +1003,6 @@ Keyboard shortcuts:
   Ctrl+C      - Interrupt/clear
   Ctrl+D      - EOF (clear input)
   Ctrl+L      - Clear screen
-  ;           - Next solution (during query)
-  .           - Stop searching (during query)
 
 Safety features:
   • Step limit: Prevents infinite loops
@@ -1083,7 +1083,8 @@ function setRunning(running) {
 
     if (runButton) runButton.disabled = running;
     if (stopButton) stopButton.disabled = !running;
-    if (inputEl) inputEl.disabled = running;
+    // Don't disable input - we need keyboard shortcuts to work during queries
+    // if (inputEl) inputEl.disabled = running;
 }
 
 /**
