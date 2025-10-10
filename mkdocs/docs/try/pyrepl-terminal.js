@@ -426,6 +426,65 @@ function processQuery(query) {
         return;
     }
 
+    if (query === 'limits') {
+        appendOutput(`% Current limits:
+%   maxSteps: ${safetyConfig.maxSteps}
+%   maxSolutions: ${safetyConfig.maxSolutions}
+%   timeoutMs: ${safetyConfig.timeoutMs}ms
+%   streaming: ${safetyConfig.streaming ? 'on' : 'off'}`, 'comment');
+        terminalState.inputEnabled = true;
+        terminalState.running = false;
+        addPrompt();
+        return;
+    }
+
+    if (query.startsWith('set_limits ')) {
+        const parts = query.split(' ');
+        if (parts.length === 3) {
+            const [_, param, value] = parts;
+            const numValue = parseInt(value);
+            if (!isNaN(numValue) && numValue > 0) {
+                if (param === 'maxSteps') {
+                    safetyConfig.maxSteps = numValue;
+                    appendOutput(`% maxSteps set to ${numValue}`, 'success');
+                } else if (param === 'maxSolutions') {
+                    safetyConfig.maxSolutions = numValue;
+                    appendOutput(`% maxSolutions set to ${numValue}`, 'success');
+                } else if (param === 'timeoutMs') {
+                    safetyConfig.timeoutMs = numValue;
+                    appendOutput(`% timeoutMs set to ${numValue}`, 'success');
+                } else {
+                    appendOutput('% Unknown parameter. Use: maxSteps, maxSolutions, or timeoutMs', 'error');
+                }
+            } else {
+                appendOutput('% Value must be a positive integer', 'error');
+            }
+        } else {
+            appendOutput('% Usage: set_limits <param> <value>', 'error');
+        }
+        terminalState.inputEnabled = true;
+        terminalState.running = false;
+        addPrompt();
+        return;
+    }
+
+    if (query.startsWith('streaming ')) {
+        const mode = query.substring(10).trim();
+        if (mode === 'on') {
+            safetyConfig.streaming = true;
+            appendOutput('% Streaming mode enabled', 'success');
+        } else if (mode === 'off') {
+            safetyConfig.streaming = false;
+            appendOutput('% Streaming mode disabled', 'success');
+        } else {
+            appendOutput('% Usage: streaming on/off', 'error');
+        }
+        terminalState.inputEnabled = true;
+        terminalState.running = false;
+        addPrompt();
+        return;
+    }
+
     // Send to worker if initialized
     if (replWorker && terminalState.initialized) {
         replWorker.postMessage({
@@ -435,6 +494,7 @@ function processQuery(query) {
                 options: {
                     maxSteps: safetyConfig.maxSteps,
                     maxSolutions: safetyConfig.maxSolutions,
+                    timeoutMs: safetyConfig.timeoutMs,
                     streaming: safetyConfig.streaming
                 }
             }
@@ -564,8 +624,14 @@ function showHelp() {
     const help = `
 % Available commands:
 %   help        - Show this help
-%   limits      - Show safety limits
+%   limits      - Show current safety limits
+%   set_limits <param> <value> - Set safety limits
 %   streaming on/off - Toggle streaming mode
+%
+% Safety limits (configurable):
+%   maxSteps    - Maximum execution steps (default: 100000)
+%   maxSolutions - Maximum solutions to find (default: 100)
+%   timeoutMs   - Query timeout in milliseconds (default: 10000)
 %
 % Keyboard shortcuts:
 %   Enter       - Run query
@@ -665,7 +731,7 @@ function handleWorkerMessage(event) {
             break;
 
         case 'error':
-            appendOutput(`% Error: ${event.data.message}`, 'error');
+            displayError(event.data);
             terminalState.inputEnabled = true;
             terminalState.running = false;
             addPrompt();
@@ -674,6 +740,44 @@ function handleWorkerMessage(event) {
         default:
             console.log('Unknown message:', event.data);
     }
+}
+
+/**
+ * Format and display error messages with helpful suggestions
+ */
+function displayError(errorData) {
+    const { message, query } = errorData;
+
+    // Display the base error
+    appendOutput(`% Error: ${message}`, 'error');
+
+    // Provide helpful suggestions based on error patterns
+    if (message.includes('expected opening bracket')) {
+        appendOutput('% Hint: Check for missing parentheses or brackets', 'comment');
+    }
+
+    if (message.includes('timeout')) {
+        appendOutput('% Hint: Query took too long. Try simplifying or use "set_limits timeoutMs <value>" to increase timeout', 'comment');
+    }
+
+    if (message.includes('step limit')) {
+        appendOutput('% Hint: Too many steps. Try "set_limits maxSteps <value>" to increase limit', 'comment');
+    }
+}
+
+/**
+ * Format error messages for display
+ */
+function formatError(error) {
+    if (typeof error === 'string') {
+        return error;
+    }
+
+    if (error.message) {
+        return error.message;
+    }
+
+    return JSON.stringify(error);
 }
 
 /**
@@ -714,6 +818,43 @@ function stopQuery() {
     terminalState.inputEnabled = true;
     terminalState.running = false;
     addPrompt();
+}
+
+/**
+ * Get current safety limits
+ */
+function getSafetyLimits() {
+    return {
+        maxSteps: safetyConfig.maxSteps,
+        maxSolutions: safetyConfig.maxSolutions,
+        timeoutMs: safetyConfig.timeoutMs,
+        configurable: safetyConfig.configurable,
+        streaming: safetyConfig.streaming
+    };
+}
+
+/**
+ * Validate safety limits
+ */
+function validateSafetyLimits(limits) {
+    if (!limits) return false;
+
+    const { maxSteps, maxSolutions, timeoutMs } = limits;
+
+    // Check that all values are positive integers
+    if (maxSteps && (!Number.isInteger(maxSteps) || maxSteps <= 0)) {
+        return false;
+    }
+
+    if (maxSolutions && (!Number.isInteger(maxSolutions) || maxSolutions <= 0)) {
+        return false;
+    }
+
+    if (timeoutMs && (!Number.isInteger(timeoutMs) || timeoutMs <= 0)) {
+        return false;
+    }
+
+    return true;
 }
 
 // Add cursor blink animation
