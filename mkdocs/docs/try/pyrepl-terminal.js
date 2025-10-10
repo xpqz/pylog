@@ -778,6 +778,10 @@ function displayError(errorData) {
         appendOutput('% Hint: Check for missing parentheses or brackets', 'comment');
     }
 
+    if (message.includes('expected period')) {
+        appendOutput('% Hint: Prolog statements must end with a period (.)', 'comment');
+    }
+
     if (message.includes('timeout')) {
         appendOutput('% Hint: Query took too long. Try simplifying or use "set_limits timeoutMs <value>" to increase timeout', 'comment');
     }
