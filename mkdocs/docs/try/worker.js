@@ -397,20 +397,32 @@ async function initializePyodide() {
         postMessage({ type: 'progress', step: 'loading-stdlib', message: 'Loading standard library...' });
         console.log('Worker: Loading standard library...');
 
-        // Load standard library (lists.pl)
+        // Load standard library using importlib.resources
         standardLibraryClauses = [];  // Reset global variable
         try {
+            // Use Python's importlib.resources to read the stdlib file from the package
+            const pythonCode = `
+import importlib.resources as resources
+
+# Read lists.pl from the package
+try:
+    # Python 3.9+ way
+    files = resources.files('prolog.lib')
+    lists_file = files / 'lists.pl'
+    stdlib_content = lists_file.read_text()
+except AttributeError:
+    # Fallback for older Python
+    with resources.open_text('prolog.lib', 'lists.pl') as f:
+        stdlib_content = f.read()
+
+stdlib_content
+            `;
+
+            const libContent = pyodide.runPython(pythonCode);
+            console.log(`Worker: Standard library content length: ${libContent.length} characters`);
+
             // Import the parser to parse the standard library
             const parserPackage = pyodide.pyimport('prolog.parser.parser');
-
-            // Read the standard library file
-            const pathlib = pyodide.pyimport('pathlib');
-            const prologPath = pathlib.Path('prolog');
-            const libPath = prologPath.joinpath('lib', 'lists.pl');
-
-            console.log(`Worker: Reading standard library from: ${libPath}`);
-            const libContent = libPath.read_text();
-            console.log(`Worker: Standard library content length: ${libContent.length} characters`);
 
             // Parse the standard library
             standardLibraryClauses = parserPackage.parse_program(libContent);
