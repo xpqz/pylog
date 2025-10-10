@@ -261,6 +261,13 @@ This is useful for verifying that PyLog's backtracking and unification behavior 
 - NEVER use --no-verify when committing! Always let pre-commit hooks run and fix any issues they find
 
 ### GitHub Issue Workflow
+
+In any git and GitHub messaging (commit messages, PR messages, issues, comments etc), we maintain a terse, professional tone:
+
+1. **Never make unproven claims**: don't make claims about the validity, effectiveness or awesomeness of your changes in a commit or message. By definition, that is determined by the CI results, which you can't see yet. Explain what was done, and why.
+2. **Never use emoji symbols**: we're not 14-year-olds on Instagram here. No green ticks, no red crosses, no smileys, no symbols.
+3. **Brevity**: issues and commit messages are written for co-workers. Respect their time. Obviously, be complete, but express yourself in a professional, concise tone.
+
 Follow this process for each GitHub issue:
 
 1. **Pick an issue** - Note its ID number
