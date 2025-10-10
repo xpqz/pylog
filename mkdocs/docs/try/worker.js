@@ -12,6 +12,7 @@ let pylogEngineClass = null;  // Keep reference to Python Engine class
 let pylogProgram = null;
 let pylogPretty = null;
 let parseQuery = null;
+let standardLibraryClauses = [];  // Keep reference to standard library clauses
 let versions = {};
 
 /**
@@ -254,11 +255,38 @@ async function initializePyodide() {
             throw new Error(`Failed to import PyLog parser: ${error.message}`);
         }
 
-        postMessage({ type: 'progress', step: 'initializing-engine', message: 'Creating Prolog engine...' });
-        console.log('Worker: PyLog successfully initialized');
+        postMessage({ type: 'progress', step: 'loading-stdlib', message: 'Loading standard library...' });
+        console.log('Worker: Loading standard library...');
 
-        // Create initial engine with empty program
-        await resetEngine();
+        // Load standard library (lists.pl)
+        standardLibraryClauses = [];  // Reset global variable
+        try {
+            // Import the parser to parse the standard library
+            const parserPackage = pyodide.pyimport('prolog.parser.parser');
+
+            // Read the standard library file
+            const pathlib = pyodide.pyimport('pathlib');
+            const prologPath = pathlib.Path('prolog');
+            const libPath = prologPath.joinpath('lib', 'lists.pl');
+
+            console.log(`Worker: Reading standard library from: ${libPath}`);
+            const libContent = libPath.read_text();
+            console.log(`Worker: Standard library content length: ${libContent.length} characters`);
+
+            // Parse the standard library
+            standardLibraryClauses = parserPackage.parse_program(libContent);
+            console.log(`Worker: ✅ Standard library loaded: ${standardLibraryClauses.length} clauses`);
+
+        } catch (error) {
+            console.error('Worker: ⚠️ Failed to load standard library:', error);
+            console.error('Worker: Continuing with empty program...');
+        }
+
+        postMessage({ type: 'progress', step: 'initializing-engine', message: 'Creating Prolog engine...' });
+        console.log('Worker: Creating engine with standard library...');
+
+        // Create initial engine with standard library
+        await resetEngine(null, standardLibraryClauses);
 
         postMessage({ type: 'progress', step: 'ready', message: 'PyLog REPL ready!' });
         postMessage({
@@ -281,21 +309,22 @@ async function initializePyodide() {
 }
 
 /**
- * Reset the engine to fresh state with optional max_steps limit
+ * Reset the engine to fresh state with optional max_steps limit and standard library
  */
-async function resetEngine(maxSteps = null) {
+async function resetEngine(maxSteps = null, standardLibraryClauses = []) {
     try {
         console.log('Worker: Resetting engine...');
 
-        // Create fresh engine with empty program using Python Engine class
-        const emptyProgram = pylogProgram([]);
+        // Create program with standard library clauses
+        const program = pylogProgram(standardLibraryClauses);
+        console.log(`Worker: Created program with ${standardLibraryClauses.length} clauses`);
 
         // Set max_steps at engine creation if provided
         // Engine(program, occurs_check=False, max_solutions=None, trace=False, max_steps=None, ...)
         if (maxSteps !== null) {
-            pylogEngine = pylogEngineClass(emptyProgram, false, null, false, maxSteps);
+            pylogEngine = pylogEngineClass(program, false, null, false, maxSteps);
         } else {
-            pylogEngine = pylogEngineClass(emptyProgram);
+            pylogEngine = pylogEngineClass(program);
         }
 
         console.log('Worker: Engine reset complete');
@@ -321,7 +350,7 @@ async function executeQuery(query, options = {}) {
         console.log(`Worker: Executing query: ${query} (max_steps: ${maxSteps}, max_solutions: ${maxSolutions})`);
 
         // Reset engine with maxSteps limit if different from current
-        await resetEngine(maxSteps);
+        await resetEngine(maxSteps, standardLibraryClauses);
 
         // Parse the query
         const goals = parseQuery(`?- ${query}.`);
@@ -403,7 +432,7 @@ self.onmessage = async function(event) {
 
         case 'reset':
             try {
-                await resetEngine();
+                await resetEngine(null, standardLibraryClauses);
                 postMessage({
                     type: 'reset',
                     message: 'Engine reset successful'
