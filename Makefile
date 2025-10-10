@@ -68,3 +68,13 @@ install-git-hooks: ## Install project git hooks (pre-commit, commit-msg, pre-pus
 	ln -sf "$(PWD)/.githooks/commit-msg" .git/hooks/commit-msg
 	ln -sf "$(PWD)/.githooks/pre-push" .git/hooks/pre-push
 	@echo "Installed hooks: pre-commit (black, ruff, conditional imports), commit-msg (no AI mentions), pre-push (fast tests)."
+
+wheel: ## Build PyLog wheel for Web REPL
+	uv build --wheel
+	cp dist/pylog-*.whl wheels/
+
+manifest: ## Generate manifest.json for Web REPL
+	python scripts/generate_manifest.py
+
+web-repl-deploy: wheel manifest ## Build and prepare Web REPL for deployment
+	@echo "Web REPL assets prepared. Wheel built and manifest updated."
