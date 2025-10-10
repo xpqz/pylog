@@ -275,9 +275,11 @@ class TestWebAssetIntegration:
 
         content = try_page.read_text()
 
-        # Should reference the required JavaScript files
-        assert "pyrepl.js" in content, "Should load pyrepl.js"
-        assert "examples.js" in content, "Should load examples.js"
+        # Should reference the required JavaScript files (now using terminal UI)
+        assert (
+            "pyrepl-terminal.js" in content or "pyrepl.js" in content
+        ), "Should load either pyrepl-terminal.js or pyrepl.js"
+        # examples.js is optional with terminal UI
         # Should NOT include worker.js as a script tag (it's loaded via new Worker())
         assert (
             '<script src="worker.js">' not in content
