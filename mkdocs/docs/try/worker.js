@@ -26,13 +26,34 @@ async function getCurrentCommitSha(existingManifest = null) {
         return existingManifest.commit_sha;
     }
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+
     try {
         console.log('Worker: Fetching current commit SHA from GitHub API...');
 
         const apiUrl = 'https://api.github.com/repos/xpqz/pylog/commits/main';
-        const response = await fetch(apiUrl);
+        const response = await fetch(apiUrl, {
+            signal: controller.signal,
+            headers: {
+                'Accept': 'application/vnd.github+json'
+            }
+        });
+
+        clearTimeout(timeoutId);
 
         if (!response.ok) {
+            // Check for rate limiting
+            if (response.status === 403) {
+                const rateLimitRemaining = response.headers.get('x-ratelimit-remaining');
+                if (rateLimitRemaining === '0') {
+                    const resetTime = response.headers.get('x-ratelimit-reset');
+                    const resetDate = resetTime ? new Date(parseInt(resetTime) * 1000) : null;
+                    console.warn('Worker: GitHub API rate limit exceeded' +
+                               (resetDate ? `. Resets at ${resetDate.toLocaleTimeString()}` : ''));
+                    return null;
+                }
+            }
             throw new Error(`GitHub API request failed: ${response.status} - ${response.statusText}`);
         }
 
@@ -43,7 +64,12 @@ async function getCurrentCommitSha(existingManifest = null) {
         return sha;
 
     } catch (error) {
-        console.warn('Worker: Failed to fetch commit SHA from GitHub API:', error);
+        clearTimeout(timeoutId);
+        if (error.name === 'AbortError') {
+            console.warn('Worker: GitHub API request timed out after 5 seconds');
+        } else {
+            console.warn('Worker: Failed to fetch commit SHA from GitHub API:', error);
+        }
         console.warn('Worker: This may be due to rate limiting, ad blockers, or network issues');
         return null;
     }
@@ -53,24 +79,29 @@ async function getCurrentCommitSha(existingManifest = null) {
  * Fetch manifest with fallback to raw.githubusercontent.com
  */
 async function fetchManifestWithFallback(commitRef) {
+    // Only use cache buster for 'main' branch, not for specific commit SHAs
+    const cacheBuster = (commitRef === 'main') ? `?_cb=${Date.now()}` : '';
+
     const manifestUrls = [
-        `https://cdn.jsdelivr.net/gh/xpqz/pylog@${commitRef}/mkdocs/docs/try/assets/manifest.json?_cb=${Date.now()}`,
-        `https://raw.githubusercontent.com/xpqz/pylog/${commitRef}/mkdocs/docs/try/assets/manifest.json?_cb=${Date.now()}`
+        `https://cdn.jsdelivr.net/gh/xpqz/pylog@${commitRef}/mkdocs/docs/try/assets/manifest.json${cacheBuster}`,
+        `https://raw.githubusercontent.com/xpqz/pylog/${commitRef}/mkdocs/docs/try/assets/manifest.json${cacheBuster}`
     ];
 
     for (let i = 0; i < manifestUrls.length; i++) {
         const url = manifestUrls[i];
         const source = i === 0 ? 'JsDelivr CDN' : 'GitHub Raw';
 
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+
         try {
             console.log(`Worker: Trying manifest from ${source}: ${url}`);
 
-            const response = await Promise.race([
-                fetch(url),
-                new Promise((_, reject) =>
-                    setTimeout(() => reject(new Error('Manifest fetch timeout after 10 seconds')), 10000)
-                )
-            ]);
+            const response = await fetch(url, {
+                signal: controller.signal
+            });
+
+            clearTimeout(timeoutId);
 
             if (!response.ok) {
                 throw new Error(`${source} request failed: ${response.status} - ${response.statusText}`);
@@ -81,7 +112,14 @@ async function fetchManifestWithFallback(commitRef) {
             return manifest;
 
         } catch (error) {
-            console.warn(`Worker: ⚠️ Failed to load manifest from ${source}:`, error);
+            clearTimeout(timeoutId);
+
+            if (error.name === 'AbortError') {
+                console.warn(`Worker: ⚠️ Manifest fetch from ${source} timed out after 10 seconds`);
+            } else {
+                console.warn(`Worker: ⚠️ Failed to load manifest from ${source}:`, error);
+            }
+
             if (i === manifestUrls.length - 1) {
                 throw new Error(`Failed to load manifest from all sources. Last error: ${error.message}`);
             }
