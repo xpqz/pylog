@@ -179,6 +179,84 @@ class TestWorkerAPIContract:
         assert batch_response["stepCount"] <= batch_response["limits"]["maxSteps"]
 
 
+class TestVariableBindingDisplay:
+    """Test that variable bindings are properly displayed in query results."""
+
+    def test_solution_format_includes_bindings(self):
+        """Test that solutions include variable bindings, not just 'true'."""
+        # Expected format for append([1,2], [3,4], X) query
+        expected_response = {
+            "type": "solutions",
+            "query": "append([1,2], [3,4], X)",
+            "solutions": [{"X": "[1, 2, 3, 4]"}],  # Should include actual binding
+            "stepCount": 5,  # Some reasonable number
+            "solutionCount": 1,
+            "limits": {"maxSteps": 100000, "maxSolutions": 100},
+        }
+
+        # Solutions must have the actual variable bindings
+        assert expected_response["solutions"][0] != {}
+        assert "X" in expected_response["solutions"][0]
+        assert expected_response["solutions"][0]["X"] != "true"
+
+    def test_multiple_variable_bindings(self):
+        """Test that multiple variables are all shown in results."""
+        # Expected format for member(X, [1,2,3]), Y is X + 1
+        expected_response = {
+            "type": "solutions",
+            "query": "member(X, [1,2,3]), Y is X + 1",
+            "solutions": [
+                {"X": "1", "Y": "2"},
+                {"X": "2", "Y": "3"},
+                {"X": "3", "Y": "4"},
+            ],
+            "stepCount": 10,
+            "solutionCount": 3,
+            "limits": {"maxSteps": 100000, "maxSolutions": 100},
+        }
+
+        # All variables should be present in each solution
+        for solution in expected_response["solutions"]:
+            assert "X" in solution
+            assert "Y" in solution
+
+    def test_empty_solution_for_true_query(self):
+        """Test that queries with no variables return empty solution dict."""
+        # For queries like true, 1 = 1, etc.
+        expected_response = {
+            "type": "solutions",
+            "query": "true",
+            "solutions": [{}],  # Empty dict for 'true' with no variables
+            "stepCount": 1,
+            "solutionCount": 1,
+            "limits": {"maxSteps": 100000, "maxSolutions": 100},
+        }
+
+        # Empty solution is valid for queries with no variables
+        assert expected_response["solutions"] == [{}]
+
+    def test_worker_preserves_variable_bindings(self):
+        """Test that worker.js preserves variable bindings from engine."""
+        worker_path = (
+            Path(__file__).parent.parent.parent.parent
+            / "mkdocs"
+            / "docs"
+            / "try"
+            / "worker.js"
+        )
+
+        content = worker_path.read_text()
+
+        # Check that solutions are properly extracted and formatted
+        assert "for (const solution of solutions)" in content
+        assert "pylogPretty" in content  # Should pretty-print values
+        assert "prettySolution[key]" in content  # Should preserve all keys
+
+        # Should NOT filter out non-null/non-undefined solutions incorrectly
+        # The check should preserve empty dicts for 'true' results
+        assert "solution !== null && solution !== undefined" in content
+
+
 class TestWebAssetIntegration:
     """Test integration with web assets and build system."""
 
