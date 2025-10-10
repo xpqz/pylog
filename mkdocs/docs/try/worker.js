@@ -17,9 +17,15 @@ let versions = {};
 let currentCommitSha = null;
 
 /**
- * Get the current commit SHA from GitHub API
+ * Get the current commit SHA, preferring manifest over GitHub API to reduce dependencies
  */
-async function getCurrentCommitSha() {
+async function getCurrentCommitSha(existingManifest = null) {
+    // If we already have a manifest with commit_sha, use that first
+    if (existingManifest && existingManifest.commit_sha) {
+        console.log(`Worker: Using commit SHA from existing manifest: ${existingManifest.commit_sha}`);
+        return existingManifest.commit_sha;
+    }
+
     try {
         console.log('Worker: Fetching current commit SHA from GitHub API...');
 
@@ -33,12 +39,53 @@ async function getCurrentCommitSha() {
         const data = await response.json();
         const sha = data.sha;
 
-        console.log(`Worker: Current commit SHA: ${sha}`);
+        console.log(`Worker: Current commit SHA from API: ${sha}`);
         return sha;
 
     } catch (error) {
         console.warn('Worker: Failed to fetch commit SHA from GitHub API:', error);
+        console.warn('Worker: This may be due to rate limiting, ad blockers, or network issues');
         return null;
+    }
+}
+
+/**
+ * Fetch manifest with fallback to raw.githubusercontent.com
+ */
+async function fetchManifestWithFallback(commitRef) {
+    const manifestUrls = [
+        `https://cdn.jsdelivr.net/gh/xpqz/pylog@${commitRef}/mkdocs/docs/try/assets/manifest.json?_cb=${Date.now()}`,
+        `https://raw.githubusercontent.com/xpqz/pylog/${commitRef}/mkdocs/docs/try/assets/manifest.json?_cb=${Date.now()}`
+    ];
+
+    for (let i = 0; i < manifestUrls.length; i++) {
+        const url = manifestUrls[i];
+        const source = i === 0 ? 'JsDelivr CDN' : 'GitHub Raw';
+
+        try {
+            console.log(`Worker: Trying manifest from ${source}: ${url}`);
+
+            const response = await Promise.race([
+                fetch(url),
+                new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error('Manifest fetch timeout after 10 seconds')), 10000)
+                )
+            ]);
+
+            if (!response.ok) {
+                throw new Error(`${source} request failed: ${response.status} - ${response.statusText}`);
+            }
+
+            const manifest = await response.json();
+            console.log(`Worker: ✅ Manifest loaded successfully from ${source}`);
+            return manifest;
+
+        } catch (error) {
+            console.warn(`Worker: ⚠️ Failed to load manifest from ${source}:`, error);
+            if (i === manifestUrls.length - 1) {
+                throw new Error(`Failed to load manifest from all sources. Last error: ${error.message}`);
+            }
+        }
     }
 }
 
@@ -184,28 +231,43 @@ async function initializePyodide() {
         const micropip = pyodide.pyimport('micropip');
 
         postMessage({ type: 'progress', step: 'loading-manifest', message: 'Loading PyLog wheel manifest...' });
-        console.log('Worker: Loading wheel manifest from JsDelivr CDN...');
+        console.log('Worker: Loading wheel manifest with fallback strategy...');
 
-        // Get current commit SHA for cache-busting URLs
-        currentCommitSha = await getCurrentCommitSha();
-        const commitRef = currentCommitSha || 'main';  // Fallback to main if API fails
+        // Strategy: Try @main first to get current manifest, then use its commit_sha for subsequent loads
+        let manifest;
+        let commitRef = 'main';
 
-        console.log(`Worker: Using commit reference: ${commitRef}`);
+        try {
+            // First, try to load manifest from @main to get the latest commit_sha
+            console.log('Worker: Attempting initial manifest load from @main to get current commit SHA');
+            manifest = await fetchManifestWithFallback('main');
 
-        // Load manifest from JsDelivr CDN with commit SHA (CORS-friendly)
-        const manifestUrl = `https://cdn.jsdelivr.net/gh/xpqz/pylog@${commitRef}/mkdocs/docs/try/assets/manifest.json?_cb=${Date.now()}`;
-        console.log(`Worker: Manifest URL: ${manifestUrl}`);
-        const manifestPromise = fetch(manifestUrl);
-        const manifestTimeoutPromise = new Promise((_, reject) => {
-            setTimeout(() => reject(new Error('Manifest loading timeout after 10 seconds')), 10000);
-        });
+            // If manifest has commit_sha, use that for better cache busting
+            if (manifest.commit_sha && manifest.commit_sha !== 'main') {
+                console.log(`Worker: Found commit SHA in manifest: ${manifest.commit_sha}`);
+                commitRef = manifest.commit_sha;
+                currentCommitSha = manifest.commit_sha;
 
-        const manifestResponse = await Promise.race([manifestPromise, manifestTimeoutPromise]);
-        if (!manifestResponse.ok) {
-            throw new Error(`Failed to load wheel manifest: ${manifestResponse.status} - ${manifestResponse.statusText}`);
+                // Reload manifest using the commit SHA for guaranteed freshness
+                console.log(`Worker: Reloading manifest with commit SHA: ${commitRef}`);
+                manifest = await fetchManifestWithFallback(commitRef);
+            } else {
+                // Fallback: Try to get commit SHA from GitHub API
+                console.log('Worker: Manifest missing commit_sha, falling back to GitHub API');
+                currentCommitSha = await getCurrentCommitSha();
+                commitRef = currentCommitSha || 'main';
+
+                if (currentCommitSha && currentCommitSha !== 'main') {
+                    console.log(`Worker: Reloading manifest with API-provided commit SHA: ${commitRef}`);
+                    manifest = await fetchManifestWithFallback(commitRef);
+                }
+            }
+        } catch (error) {
+            console.error('Worker: All manifest loading strategies failed:', error);
+            throw new Error(`Failed to load wheel manifest: ${error.message}`);
         }
 
-        const manifest = await manifestResponse.json();
+        console.log(`Worker: Using final commit reference: ${commitRef}`);
         postMessage({ type: 'progress', step: 'manifest-loaded', message: `Manifest v${manifest.version} loaded` });
         console.log('Worker: Manifest loaded:', manifest.version, 'from', manifest.generated_at);
 
@@ -231,29 +293,63 @@ async function initializePyodide() {
         console.log(`Worker: Found Lark wheel: ${manifest.lark.wheel}`);
         console.log(`Worker: Lark URL: ${manifest.lark.url}`);
 
-        // Install Lark from JsDelivr CDN (CORS-friendly)
+        // Install Lark with fallback strategy
         postMessage({ type: 'progress', step: 'installing-lark', message: 'Installing Lark parser from CDN...' });
         console.log(`Worker: Installing Lark wheel: ${manifest.lark.url}`);
 
-        const larkInstallPromise = micropip.install(manifest.lark.url);
-        const larkTimeoutPromise = new Promise((_, reject) => {
-            setTimeout(() => reject(new Error('Lark installation timeout after 30 seconds')), 30000);
-        });
-        await Promise.race([larkInstallPromise, larkTimeoutPromise]);
-        console.log('Worker: ✅ Lark installation completed successfully');
+        try {
+            const larkInstallPromise = micropip.install(manifest.lark.url);
+            const larkTimeoutPromise = new Promise((_, reject) => {
+                setTimeout(() => reject(new Error('Lark installation timeout after 30 seconds')), 30000);
+            });
+            await Promise.race([larkInstallPromise, larkTimeoutPromise]);
+            console.log('Worker: ✅ Lark installation completed successfully');
+        } catch (error) {
+            console.warn('Worker: ⚠️ Primary Lark install failed, trying fallback URL:', error);
+            // Create fallback URL using raw.githubusercontent.com
+            const fallbackLarkUrl = manifest.lark.url.replace(
+                'cdn.jsdelivr.net/gh/xpqz/pylog@',
+                'raw.githubusercontent.com/xpqz/pylog/'
+            );
+            console.log(`Worker: Trying Lark fallback: ${fallbackLarkUrl}`);
 
-        // Install PyLog from JsDelivr CDN (CORS-friendly)
+            const fallbackInstallPromise = micropip.install(fallbackLarkUrl);
+            const fallbackTimeoutPromise = new Promise((_, reject) => {
+                setTimeout(() => reject(new Error('Lark fallback installation timeout after 30 seconds')), 30000);
+            });
+            await Promise.race([fallbackInstallPromise, fallbackTimeoutPromise]);
+            console.log('Worker: ✅ Lark installation completed successfully via fallback');
+        }
+
+        // Install PyLog with fallback strategy
         versions.pylog = manifest.pylog.version;
 
         postMessage({ type: 'progress', step: 'installing-pylog', message: `Installing PyLog v${manifest.pylog.version} from CDN...` });
         console.log(`Worker: Installing PyLog wheel: ${manifest.pylog.url}`);
 
-        const pylogInstallPromise = micropip.install(manifest.pylog.url);
-        const pylogTimeoutPromise = new Promise((_, reject) => {
-            setTimeout(() => reject(new Error('PyLog installation timeout after 30 seconds')), 30000);
-        });
-        await Promise.race([pylogInstallPromise, pylogTimeoutPromise]);
-        console.log('Worker: ✅ PyLog installation completed successfully');
+        try {
+            const pylogInstallPromise = micropip.install(manifest.pylog.url);
+            const pylogTimeoutPromise = new Promise((_, reject) => {
+                setTimeout(() => reject(new Error('PyLog installation timeout after 30 seconds')), 30000);
+            });
+            await Promise.race([pylogInstallPromise, pylogTimeoutPromise]);
+            console.log('Worker: ✅ PyLog installation completed successfully');
+        } catch (error) {
+            console.warn('Worker: ⚠️ Primary PyLog install failed, trying fallback URL:', error);
+            // Create fallback URL using raw.githubusercontent.com
+            const fallbackPylogUrl = manifest.pylog.url.replace(
+                'cdn.jsdelivr.net/gh/xpqz/pylog@',
+                'raw.githubusercontent.com/xpqz/pylog/'
+            );
+            console.log(`Worker: Trying PyLog fallback: ${fallbackPylogUrl}`);
+
+            const fallbackInstallPromise = micropip.install(fallbackPylogUrl);
+            const fallbackTimeoutPromise = new Promise((_, reject) => {
+                setTimeout(() => reject(new Error('PyLog fallback installation timeout after 30 seconds')), 30000);
+            });
+            await Promise.race([fallbackInstallPromise, fallbackTimeoutPromise]);
+            console.log('Worker: ✅ PyLog installation completed successfully via fallback');
+        }
 
         postMessage({ type: 'progress', step: 'importing-pylog', message: 'Importing PyLog modules...' });
         console.log('Worker: Importing PyLog modules...');
