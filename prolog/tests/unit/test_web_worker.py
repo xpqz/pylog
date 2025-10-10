@@ -107,19 +107,21 @@ class TestWebWorkerProtocol:
         assert "pyodide.version" in content, "Should access Pyodide version"
         assert "micropip.install" in content, "Should install dependencies"
 
-    def test_pyrepl_file_exists(self):
-        """Test that the main REPL interface file exists."""
-        pyrepl_path = (
+    def test_pyrepl_terminal_file_exists(self):
+        """Test that the terminal REPL interface file exists."""
+        pyrepl_terminal_path = (
             Path(__file__).parent.parent.parent.parent
             / "mkdocs"
             / "docs"
             / "try"
-            / "pyrepl.js"
+            / "pyrepl-terminal.js"
         )
 
-        assert pyrepl_path.exists(), f"PyREPL file not found at {pyrepl_path}"
+        assert (
+            pyrepl_terminal_path.exists()
+        ), f"PyREPL Terminal file not found at {pyrepl_terminal_path}"
 
-        content = pyrepl_path.read_text()
+        content = pyrepl_terminal_path.read_text()
 
         # Check for worker creation
         assert "new Worker" in content, "Should create Web Worker"
@@ -308,15 +310,15 @@ class TestSafetyLimits:
 
     def test_production_safety_limits(self):
         """Test that production safety limits are reasonable."""
-        pyrepl_path = (
+        pyrepl_terminal_path = (
             Path(__file__).parent.parent.parent.parent
             / "mkdocs"
             / "docs"
             / "try"
-            / "pyrepl.js"
+            / "pyrepl-terminal.js"
         )
 
-        content = pyrepl_path.read_text()
+        content = pyrepl_terminal_path.read_text()
 
         # Check for production-level limits
         assert "maxSteps: 100000" in content, "Should have 100k step limit"
@@ -325,15 +327,15 @@ class TestSafetyLimits:
 
     def test_safety_commands_present(self):
         """Test that safety commands are available."""
-        pyrepl_path = (
+        pyrepl_terminal_path = (
             Path(__file__).parent.parent.parent.parent
             / "mkdocs"
             / "docs"
             / "try"
-            / "pyrepl.js"
+            / "pyrepl-terminal.js"
         )
 
-        content = pyrepl_path.read_text()
+        content = pyrepl_terminal_path.read_text()
 
         # Check for safety commands
         assert "limits" in content, "Should have limits command"
@@ -343,15 +345,15 @@ class TestSafetyLimits:
 
     def test_timeout_protection_structure(self):
         """Test that timeout protection is properly structured."""
-        pyrepl_path = (
+        pyrepl_terminal_path = (
             Path(__file__).parent.parent.parent.parent
             / "mkdocs"
             / "docs"
             / "try"
-            / "pyrepl.js"
+            / "pyrepl-terminal.js"
         )
 
-        content = pyrepl_path.read_text()
+        content = pyrepl_terminal_path.read_text()
 
         # Check for timeout infrastructure
         assert "setTimeout" in content, "Should start timeouts"
@@ -361,15 +363,15 @@ class TestSafetyLimits:
 
     def test_configurable_limits_validation(self):
         """Test that configurable limits have proper validation."""
-        pyrepl_path = (
+        pyrepl_terminal_path = (
             Path(__file__).parent.parent.parent.parent
             / "mkdocs"
             / "docs"
             / "try"
-            / "pyrepl.js"
+            / "pyrepl-terminal.js"
         )
 
-        content = pyrepl_path.read_text()
+        content = pyrepl_terminal_path.read_text()
 
         # Check for validation ranges
         assert "1000000" in content, "Should have max step limit validation"
@@ -378,15 +380,15 @@ class TestSafetyLimits:
 
     def test_help_includes_safety_info(self):
         """Test that help includes safety information."""
-        pyrepl_path = (
+        pyrepl_terminal_path = (
             Path(__file__).parent.parent.parent.parent
             / "mkdocs"
             / "docs"
             / "try"
-            / "pyrepl.js"
+            / "pyrepl-terminal.js"
         )
 
-        content = pyrepl_path.read_text()
+        content = pyrepl_terminal_path.read_text()
 
         # Check for safety documentation
         assert "Safety features" in content, "Should document safety features"
@@ -399,15 +401,15 @@ class TestErrorFormatting:
 
     def test_error_formatting_functions_exist(self):
         """Test that error formatting functions are defined."""
-        pyrepl_path = (
+        pyrepl_terminal_path = (
             Path(__file__).parent.parent.parent.parent
             / "mkdocs"
             / "docs"
             / "try"
-            / "pyrepl.js"
+            / "pyrepl-terminal.js"
         )
 
-        content = pyrepl_path.read_text()
+        content = pyrepl_terminal_path.read_text()
 
         # Check for error formatting functions
         assert "function displayError(" in content, "Should have displayError function"
@@ -441,15 +443,15 @@ class TestErrorFormatting:
 
     def test_error_display_features(self):
         """Test that error display includes position highlighting."""
-        pyrepl_path = (
+        pyrepl_terminal_path = (
             Path(__file__).parent.parent.parent.parent
             / "mkdocs"
             / "docs"
             / "try"
-            / "pyrepl.js"
+            / "pyrepl-terminal.js"
         )
 
-        content = pyrepl_path.read_text()
+        content = pyrepl_terminal_path.read_text()
 
         # Check for position highlighting
         assert "position" in content, "Should handle error positions"
@@ -459,15 +461,15 @@ class TestErrorFormatting:
 
     def test_helpful_error_suggestions(self):
         """Test that helpful suggestions are provided for common errors."""
-        pyrepl_path = (
+        pyrepl_terminal_path = (
             Path(__file__).parent.parent.parent.parent
             / "mkdocs"
             / "docs"
             / "try"
-            / "pyrepl.js"
+            / "pyrepl-terminal.js"
         )
 
-        content = pyrepl_path.read_text()
+        content = pyrepl_terminal_path.read_text()
 
         # Check for helpful suggestions
         assert "expected opening bracket" in content, "Should suggest bracket fixes"
