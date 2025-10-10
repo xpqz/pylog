@@ -3,14 +3,7 @@
 Experience PyLog directly in your browser! This interactive terminal REPL runs entirely client-side using WebAssembly via Pyodide.
 
 <div id="pylog-repl-container">
-  <div id="pylog-loading" style="text-align: center; padding: 20px;">
-    <p>Loading PyLog REPL...</p>
-    <p><small>Click "Start REPL" to initialize Pyodide (this may take a few seconds on first load)</small></p>
-  </div>
-
-  <div id="pylog-repl" style="display: none;">
-    <!-- REPL UI will be injected here -->
-  </div>
+  <!-- Terminal will be initialized here automatically -->
 </div>
 
 ## Quick Examples
@@ -36,5 +29,13 @@ Try these queries to get started:
 - [CLP(FD) Introduction](../clpfd/intro.md) - Constraint programming
 - [Cookbook](../cookbook/list-processing.md) - Examples and recipes
 
-<script src="pyrepl-terminal.js"></script>
-<!-- <script src="examples.js"></script> Not needed for terminal UI -->
+<!-- xterm.js dependencies -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
+<script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/local-echo@0.3.0/dist/local-echo.js"></script>
+
+<!-- Pyodide for Python in browser -->
+<script src="https://cdn.jsdelivr.net/pyodide/v0.24.1/full/pyodide.js"></script>
+
+<!-- PyLog REPL implementation -->
+<script src="pyrepl-xterm.js"></script>
