@@ -1,0 +1,85 @@
+name: Update Web REPL Manifest
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'mkdocs/docs/try/worker.js'
+      - 'mkdocs/docs/try/assets/*.whl'
+      - '.github/workflows/update-manifest.yml'
+      - '.github/workflows/web-wheel-release.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  update-manifest:
+    runs-on: ubuntu-latest
+    # Skip if this is an automatic manifest update to prevent loops
+    if: "!contains(github.event.head_commit.message, 'Update Web REPL manifest URLs')"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Update manifest with current commit SHA
+        run: |
+          COMMIT_SHA="${{ github.sha }}"
+          MANIFEST_PATH="mkdocs/docs/try/assets/manifest.json"
+
+          if [ ! -f "$MANIFEST_PATH" ]; then
+            echo "Manifest file not found at $MANIFEST_PATH, skipping update"
+            exit 0
+          fi
+
+          echo "Updating manifest with commit SHA: $COMMIT_SHA"
+
+          # Read current manifest and update URLs to use commit SHA
+          # Use jq to update the URLs while preserving all other fields
+          if command -v jq >/dev/null 2>&1; then
+            # Update URLs to use current commit SHA instead of @main
+            jq --arg sha "$COMMIT_SHA" '
+              .commit_sha = $sha |
+              .pylog.url = (.pylog.url | gsub("@[^/]+"; "@" + $sha)) |
+              .lark.url = (.lark.url | gsub("@[^/]+"; "@" + $sha)) |
+              .generated_at = now | strftime("%Y-%m-%dT%H:%M:%SZ")
+            ' "$MANIFEST_PATH" > "${MANIFEST_PATH}.tmp" && mv "${MANIFEST_PATH}.tmp" "$MANIFEST_PATH"
+          else
+            # Fallback: use sed for simple string replacement
+            sed -i.bak "s/@[a-f0-9]\{40\}/@$COMMIT_SHA/g; s/@main/@$COMMIT_SHA/g" "$MANIFEST_PATH"
+            rm -f "${MANIFEST_PATH}.bak"
+
+            # Add commit_sha field if it doesn't exist (basic approach)
+            if ! grep -q '"commit_sha"' "$MANIFEST_PATH"; then
+              sed -i.bak '/"version":/ a\
+              "commit_sha": "'$COMMIT_SHA'",' "$MANIFEST_PATH"
+              rm -f "${MANIFEST_PATH}.bak"
+            fi
+          fi
+
+          echo "Updated manifest:"
+          cat "$MANIFEST_PATH"
+
+      - name: Commit updated manifest
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+
+          if git diff --quiet mkdocs/docs/try/assets/manifest.json; then
+            echo "No manifest changes to commit"
+          else
+            git add mkdocs/docs/try/assets/manifest.json
+            git commit -m "Update Web REPL manifest URLs to use commit SHA ${{ github.sha }}
+
+            - Automatic update for cache busting
+            - URLs now use @${{ github.sha }} instead of @main
+            - Ensures reliable deployments without manual cache purging"
+            git push origin HEAD:main
+            echo "Manifest updated and pushed"
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

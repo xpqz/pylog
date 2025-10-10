@@ -109,19 +109,21 @@ jobs:
           cp "$LARK_WHEEL" wheels/
           cp "$CHECKSUMS_FILE" wheels/
 
-          # Create manifest for Web REPL
+          # Create manifest for Web REPL with commit SHA for cache busting
+          COMMIT_SHA="${{ github.sha }}"
           cat > wheels/manifest.json << EOF
           {
             "version": "${VERSION}",
             "tag": "${TAG_NAME}",
+            "commit_sha": "${COMMIT_SHA}",
             "pylog": {
               "wheel": "$(basename "$WEB_WHEEL")",
               "version": "${VERSION}",
-              "url": "https://cdn.jsdelivr.net/gh/xpqz/pylog@main/wheels/$(basename "$WEB_WHEEL")"
+              "url": "https://cdn.jsdelivr.net/gh/xpqz/pylog@${COMMIT_SHA}/mkdocs/docs/try/assets/$(basename "$WEB_WHEEL")"
             },
             "lark": {
               "wheel": "$(basename "$LARK_WHEEL")",
-              "url": "https://cdn.jsdelivr.net/gh/xpqz/pylog@main/wheels/$(basename "$LARK_WHEEL")"
+              "url": "https://cdn.jsdelivr.net/gh/xpqz/pylog@${COMMIT_SHA}/mkdocs/docs/try/assets/$(basename "$LARK_WHEEL")"
             },
             "generated_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
             "checksums": "checksums.txt"
@@ -131,6 +133,16 @@ jobs:
           echo "Generated wheel manifest:"
           cat wheels/manifest.json
 
+          # Copy wheels and manifest to docs assets directory for CDN access
+          mkdir -p mkdocs/docs/try/assets
+          cp "$WEB_WHEEL" mkdocs/docs/try/assets/
+          cp "$LARK_WHEEL" mkdocs/docs/try/assets/
+          cp "$CHECKSUMS_FILE" mkdocs/docs/try/assets/
+          cp wheels/manifest.json mkdocs/docs/try/assets/
+
+          echo "Copied assets to mkdocs/docs/try/assets/ for CDN access"
+          ls -la mkdocs/docs/try/assets/
+
           # Also create GitHub release for versioning
           cat > release_notes.md << EOF
           # PyLog v${VERSION} - Web REPL Assets
@@ -139,15 +151,15 @@ jobs:
 
           ## CDN URLs (JsDelivr)
 
-          - **PyLog**: https://cdn.jsdelivr.net/gh/xpqz/pylog@main/wheels/$(basename "$WEB_WHEEL")
-          - **Lark**: https://cdn.jsdelivr.net/gh/xpqz/pylog@main/wheels/$(basename "$LARK_WHEEL")
-          - **Manifest**: https://cdn.jsdelivr.net/gh/xpqz/pylog@main/wheels/manifest.json
+          - **PyLog**: https://cdn.jsdelivr.net/gh/xpqz/pylog@${COMMIT_SHA}/mkdocs/docs/try/assets/$(basename "$WEB_WHEEL")
+          - **Lark**: https://cdn.jsdelivr.net/gh/xpqz/pylog@${COMMIT_SHA}/mkdocs/docs/try/assets/$(basename "$LARK_WHEEL")
+          - **Manifest**: https://cdn.jsdelivr.net/gh/xpqz/pylog@${COMMIT_SHA}/mkdocs/docs/try/assets/manifest.json
 
           ## Installation in Pyodide
 
           \`\`\`javascript
           // Via manifest
-          const manifest = await (await fetch('https://cdn.jsdelivr.net/gh/xpqz/pylog@main/wheels/manifest.json')).json();
+          const manifest = await (await fetch('https://cdn.jsdelivr.net/gh/xpqz/pylog@${COMMIT_SHA}/mkdocs/docs/try/assets/manifest.json')).json();
           await micropip.install(manifest.lark.url);
           await micropip.install(manifest.pylog.url);
           \`\`\`
@@ -180,15 +192,17 @@ jobs:
           git config --local user.name "GitHub Action"
 
           git add -f wheels/
+          git add -f mkdocs/docs/try/assets/
 
           if git diff --staged --quiet; then
             echo "No wheel changes to commit"
           else
-            git commit -m "Deploy wheels for v${VERSION} to repository
+            git commit -m "Deploy wheels for v${VERSION} with commit SHA URLs
 
           - PyLog wheel: $(ls wheels/pylog-*.whl | xargs basename)
           - Lark wheel: $(ls wheels/lark-*.whl | xargs basename)
-          - CDN accessible via JsDelivr at cdn.jsdelivr.net/gh/xpqz/pylog@main/wheels/"
+          - Commit SHA: ${{ github.sha }}
+          - CDN accessible via JsDelivr at cdn.jsdelivr.net/gh/xpqz/pylog@${{ github.sha }}/mkdocs/docs/try/assets/"
             git push origin HEAD:main
             echo "Wheels committed and pushed to main branch"
           fi

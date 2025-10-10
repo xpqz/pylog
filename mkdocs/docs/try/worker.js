@@ -14,6 +14,33 @@ let pylogPretty = null;
 let parseQuery = null;
 let standardLibraryClauses = [];  // Keep reference to standard library clauses
 let versions = {};
+let currentCommitSha = null;
+
+/**
+ * Get the current commit SHA from GitHub API
+ */
+async function getCurrentCommitSha() {
+    try {
+        console.log('Worker: Fetching current commit SHA from GitHub API...');
+
+        const apiUrl = 'https://api.github.com/repos/xpqz/pylog/commits/main';
+        const response = await fetch(apiUrl);
+
+        if (!response.ok) {
+            throw new Error(`GitHub API request failed: ${response.status} - ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        const sha = data.sha;
+
+        console.log(`Worker: Current commit SHA: ${sha}`);
+        return sha;
+
+    } catch (error) {
+        console.warn('Worker: Failed to fetch commit SHA from GitHub API:', error);
+        return null;
+    }
+}
 
 /**
  * Extract error information for enhanced error reporting
@@ -159,9 +186,15 @@ async function initializePyodide() {
         postMessage({ type: 'progress', step: 'loading-manifest', message: 'Loading PyLog wheel manifest...' });
         console.log('Worker: Loading wheel manifest from JsDelivr CDN...');
 
-        // Load manifest from JsDelivr CDN (CORS-friendly)
-        // Fixed: Use correct assets path where manifest actually exists
-        const manifestUrl = `https://cdn.jsdelivr.net/gh/xpqz/pylog@main/mkdocs/docs/try/assets/manifest.json?_cb=${Date.now()}`;
+        // Get current commit SHA for cache-busting URLs
+        currentCommitSha = await getCurrentCommitSha();
+        const commitRef = currentCommitSha || 'main';  // Fallback to main if API fails
+
+        console.log(`Worker: Using commit reference: ${commitRef}`);
+
+        // Load manifest from JsDelivr CDN with commit SHA (CORS-friendly)
+        const manifestUrl = `https://cdn.jsdelivr.net/gh/xpqz/pylog@${commitRef}/mkdocs/docs/try/assets/manifest.json?_cb=${Date.now()}`;
+        console.log(`Worker: Manifest URL: ${manifestUrl}`);
         const manifestPromise = fetch(manifestUrl);
         const manifestTimeoutPromise = new Promise((_, reject) => {
             setTimeout(() => reject(new Error('Manifest loading timeout after 10 seconds')), 10000);
@@ -175,6 +208,16 @@ async function initializePyodide() {
         const manifest = await manifestResponse.json();
         postMessage({ type: 'progress', step: 'manifest-loaded', message: `Manifest v${manifest.version} loaded` });
         console.log('Worker: Manifest loaded:', manifest.version, 'from', manifest.generated_at);
+
+        // Log commit information for debugging
+        if (manifest.commit_sha) {
+            console.log(`Worker: Manifest commit SHA: ${manifest.commit_sha}`);
+            versions.commit_sha = manifest.commit_sha;
+        }
+        if (currentCommitSha) {
+            console.log(`Worker: Current branch commit SHA: ${currentCommitSha}`);
+            versions.current_commit_sha = currentCommitSha;
+        }
 
         if (!manifest.pylog || !manifest.pylog.url) {
             throw new Error('PyLog wheel URL not found in manifest');
