@@ -552,7 +552,7 @@ async function resetEngine(maxSteps = null, standardLibraryClauses = []) {
 }
 
 /**
- * Execute a Prolog query with limits and batched results
+ * Execute a Prolog query with limits and batched or streaming results
  */
 async function executeQuery(query, options = {}) {
     try {
@@ -562,14 +562,18 @@ async function executeQuery(query, options = {}) {
 
         const maxSteps = options.maxSteps || 1000;
         const maxSolutions = options.maxSolutions || 10;
+        const streaming = options.streaming || false;
 
-        console.log(`Worker: Executing query: ${query} (max_steps: ${maxSteps}, max_solutions: ${maxSolutions})`);
+        console.log(`Worker: Executing query: ${query} (max_steps: ${maxSteps}, max_solutions: ${maxSolutions}, streaming: ${streaming})`);
 
         // Reset engine with maxSteps limit if different from current
         await resetEngine(maxSteps, standardLibraryClauses);
 
         // Parse the query
         const goals = parseQuery(`?- ${query}.`);
+
+        // Track timing for done event
+        const startTime = Date.now();
 
         // Execute with max_solutions enforced by engine
         const results = [];
@@ -588,6 +592,7 @@ async function executeQuery(query, options = {}) {
                 if (solution !== null && solution !== undefined) {
                     // solution is a Python dict proxy with items() method available
                     const prettySolution = {};
+                    const structuredBindings = {};
 
                     // Get Python dict items iterator
                     const items = solution.items ? solution.items() : [];
@@ -599,7 +604,30 @@ async function executeQuery(query, options = {}) {
                         // Pretty print the Python value then convert to JS string
                         const prettyStr = pylogPretty(value, true); // operator_mode=True
                         prettySolution[key] = String(prettyStr);
+
+                        // Also create structured bindings for streaming mode
+                        if (streaming) {
+                            structuredBindings[key] = {
+                                kind: value.__class__.__name__ || 'Term',
+                                value: prettyStr
+                            };
+                        }
                     }
+
+                    if (streaming) {
+                        // Emit individual solution event
+                        const prettyText = Object.entries(prettySolution)
+                            .map(([var_, val]) => `${var_} = ${val}`)
+                            .join(', ') || 'true';
+
+                        postMessage({
+                            type: 'solution',
+                            index: i,
+                            bindings: structuredBindings,
+                            pretty: prettyText
+                        });
+                    }
+
                     results.push(prettySolution);
                 }
             }
@@ -615,18 +643,30 @@ async function executeQuery(query, options = {}) {
             return;
         }
 
-        // Send batched results (using 'solutions' to match UI expectation)
-        postMessage({
-            type: 'solutions',
-            query: query,
-            solutions: results,
-            stepCount: pylogEngine._steps_taken || 0,  // Actual steps from engine
-            solutionCount: results.length,
-            limits: {
-                maxSteps: maxSteps,
-                maxSolutions: maxSolutions
-            }
-        });
+        // Calculate elapsed time
+        const elapsedMs = Date.now() - startTime;
+
+        if (streaming) {
+            // Send done event for streaming mode
+            postMessage({
+                type: 'done',
+                solutions: results.length,
+                elapsedMs: elapsedMs
+            });
+        } else {
+            // Send batched results (using 'solutions' to match UI expectation)
+            postMessage({
+                type: 'solutions',
+                query: query,
+                solutions: results,
+                stepCount: pylogEngine._steps_taken || 0,  // Actual steps from engine
+                solutionCount: results.length,
+                limits: {
+                    maxSteps: maxSteps,
+                    maxSolutions: maxSolutions
+                }
+            });
+        }
 
     } catch (error) {
         console.error('Worker: Query execution failed:', error);

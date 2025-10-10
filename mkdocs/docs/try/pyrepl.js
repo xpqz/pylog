@@ -19,7 +19,8 @@ let safetyConfig = {
     maxSteps: 100000,      // ~100k steps for production
     maxSolutions: 100,     // ~100 solutions max
     timeoutMs: 10000,      // 10 seconds wall-clock timeout
-    configurable: true     // Allow runtime configuration
+    configurable: true,    // Allow runtime configuration
+    streaming: false       // Default to batched mode
 };
 
 // Timeout tracking
@@ -260,6 +261,20 @@ function handleWorkerMessage(event) {
             appendOutput(stdlibMsg, 'info');
             break;
 
+        case 'solution':
+            // Individual solution in streaming mode
+            console.log('PyLog REPL: Received streaming solution:', event.data);
+            displayStreamingSolution(event.data);
+            break;
+
+        case 'done':
+            // End of streaming solutions
+            console.log('PyLog REPL: Streaming complete:', event.data);
+            clearQueryTimeout();
+            displayStreamingDone(event.data);
+            setRunning(false);
+            break;
+
         case 'solutions':
             console.log('PyLog REPL: Received solutions:', event.data);
             clearQueryTimeout();
@@ -299,6 +314,45 @@ function handleWorkerError(error) {
     console.error('PyLog REPL: Worker error:', error);
     appendOutput(`Worker error: ${error.message}`, 'error');
     setRunning(false);
+}
+
+/**
+ * Display individual streaming solution
+ */
+function displayStreamingSolution(data) {
+    const { index, bindings, pretty } = data;
+
+    // Display the solution
+    appendOutput(pretty || 'true', 'output');
+
+    // Add separator (semicolon) to indicate more solutions may follow
+    appendOutput(';', 'output');
+}
+
+/**
+ * Display streaming done event with metadata
+ */
+function displayStreamingDone(data) {
+    const { solutions, elapsedMs } = data;
+
+    // Add final period
+    if (solutions === 0) {
+        appendOutput('false.', 'output');
+    } else {
+        // Replace last semicolon with period (visual only)
+        appendOutput('.', 'output');
+    }
+
+    // Show metadata
+    const metadata = [];
+    metadata.push(`${solutions} solution(s)`);
+    if (elapsedMs !== undefined) {
+        metadata.push(`${elapsedMs}ms elapsed`);
+    }
+
+    if (metadata.length > 0) {
+        appendOutput(`% ${metadata.join(', ')}`, 'info');
+    }
 }
 
 /**
@@ -573,6 +627,10 @@ function runQuery() {
         handleSetLimits(query);
         setRunning(false);
         return;
+    } else if (query === 'streaming on' || query === 'streaming off') {
+        handleStreamingToggle(query);
+        setRunning(false);
+        return;
     }
 
     // Send query to worker with production safety limits
@@ -588,7 +646,8 @@ function runQuery() {
                 query: query,
                 options: {
                     maxSteps: safetyLimits.maxSteps,
-                    maxSolutions: safetyLimits.maxSolutions
+                    maxSolutions: safetyLimits.maxSolutions,
+                    streaming: safetyConfig.streaming
                     // timeoutMs handled by UI, not worker
                 }
             }
@@ -677,6 +736,7 @@ Available commands:
   help        - Show this help message
   limits      - Show current safety limits
   set_limits(steps, solutions, timeout) - Configure safety limits
+  streaming on/off - Enable/disable streaming mode
   X = 42      - Simple unification
   member(X, [1,2,3]) - List membership
   append([1,2], [3,4], X) - List concatenation
@@ -710,12 +770,24 @@ Current safety limits:
   Max solutions: ${limits.maxSolutions}
   Timeout: ${limits.timeoutMs / 1000}s
   Configurable: ${safetyConfig.configurable ? 'Yes' : 'No'}
+  Streaming: ${safetyConfig.streaming ? 'Enabled' : 'Disabled'}
 
 Example: set_limits(50000, 50, 5000)
   (50k steps, 50 solutions, 5s timeout)
     `.trim();
 
     appendOutput(limitsText, 'info');
+}
+
+/**
+ * Handle streaming mode toggle
+ */
+function handleStreamingToggle(query) {
+    const enable = query === 'streaming on';
+    safetyConfig.streaming = enable;
+
+    appendOutput(`Streaming mode ${enable ? 'enabled' : 'disabled'}.`, 'success');
+    appendOutput(`Solutions will be displayed ${enable ? 'as they are found' : 'all at once'}.`, 'info');
 }
 
 /**
