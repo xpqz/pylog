@@ -740,7 +740,9 @@ function showHelp() {
 %
 % During queries:
 %   ;           - Next solution
-%   .           - Stop searching`.trim();
+%   .           - Stop searching
+%
+% Documentation: https://github.com/xpqz/pylog`.trim();
 
     help.split('\n').forEach(line => {
         appendOutput(line, 'comment');
