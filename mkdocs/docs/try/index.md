@@ -30,8 +30,8 @@ Try these queries to get started:
 - [Cookbook](../cookbook/list-processing.md) - Examples and recipes
 
 <!-- xterm.js dependencies -->
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
-<script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@4.19.0/css/xterm.css" />
+<script src="https://cdn.jsdelivr.net/npm/xterm@4.19.0/lib/xterm.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/local-echo@0.2.0/dist/local-echo.js"></script>
 
 <!-- Pyodide for Python in browser -->
