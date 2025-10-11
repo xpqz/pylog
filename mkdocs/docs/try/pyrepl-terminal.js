@@ -12,11 +12,17 @@ let terminalState = {
     history: [],
     historyIndex: -1,
     currentInput: '',
-    waitingForMore: false,
     currentLine: '',
     multilineBuffer: [],
     inputEnabled: true,
-    cursorPosition: 0
+    cursorPosition: 0,
+    solutionQueue: [],
+    pendingDone: null,
+    solutionsDisplayed: 0,
+    shownSolutionHint: false,
+    awaitingUser: false,
+    queryFinished: false,
+    currentQuery: ''
 };
 
 // Worker reference
@@ -26,6 +32,9 @@ let replWorker = null;
 let terminalEl = null;
 let currentInputLine = null;
 let cursorEl = null;
+
+// Cached controls
+let stopButton = null;
 
 // Safety configuration (same as before)
 let safetyConfig = {
@@ -147,7 +156,61 @@ function setupTerminalEvents() {
 
     // Button handlers
     document.getElementById('pylog-clear').onclick = clearTerminal;
-    document.getElementById('pylog-stop').onclick = stopQuery;
+    stopButton = document.getElementById('pylog-stop');
+    if (stopButton) {
+        stopButton.onclick = stopQuery;
+        stopButton.disabled = true;
+    }
+
+    // Reset interactive state for a fresh session
+    resetInteractiveState();
+}
+
+/**
+ * Reset per-query interactive state
+ */
+function resetInteractiveState() {
+    terminalState.solutionQueue = [];
+    terminalState.pendingDone = null;
+    terminalState.solutionsDisplayed = 0;
+    terminalState.shownSolutionHint = false;
+    terminalState.awaitingUser = false;
+    terminalState.queryFinished = false;
+    terminalState.currentQuery = '';
+}
+
+/**
+ * Enable or disable the stop button safely
+ */
+function setStopButtonEnabled(enabled) {
+    if (stopButton) {
+        stopButton.disabled = !enabled;
+    }
+}
+
+/**
+ * Format metadata summary for display
+ */
+function formatRunMetadata(metadata) {
+    if (!metadata) {
+        return null;
+    }
+
+    const parts = [];
+    const { solutions, stepCount, elapsedMs } = metadata;
+
+    if (typeof solutions === 'number') {
+        parts.push(`${solutions} solution(s)`);
+    }
+    if (typeof stepCount === 'number') {
+        parts.push(`${stepCount} step(s)`);
+    }
+    if (typeof elapsedMs === 'number') {
+        const ms = Math.max(0, Math.round(elapsedMs));
+        parts.push(`${ms}ms elapsed`);
+    }
+
+    return parts.length ? `% ${parts.join(', ')}` : null;
 }
 
 /**
@@ -185,6 +248,8 @@ function addPrompt(continuation = false) {
     cursorEl = cursorSpan;
     terminalState.currentLine = '';
     terminalState.cursorPosition = 0;
+    terminalState.inputEnabled = true;
+    terminalState.awaitingUser = false;
 
     // Scroll to bottom
     terminalEl.scrollTop = terminalEl.scrollHeight;
@@ -197,6 +262,28 @@ function handleTerminalKeydown(event) {
     // Ensure terminal keeps focus
     if (document.activeElement !== terminalEl) {
         terminalEl.focus();
+    }
+
+    if (terminalState.awaitingUser) {
+        if (event.key === ';') {
+            event.preventDefault();
+            requestNextSolution();
+            return;
+        }
+        if (event.key === '.') {
+            event.preventDefault();
+            stopSolutionBrowsing();
+            return;
+        }
+        if ((event.key === 'c' || event.key === 'C') && (event.ctrlKey || event.metaKey)) {
+            event.preventDefault();
+            abortSolutionBrowsing();
+            return;
+        }
+
+        // Ignore any other keys while awaiting user decision
+        event.preventDefault();
+        return;
     }
 
     if (!terminalState.inputEnabled) return;
@@ -290,6 +377,11 @@ function handleTerminalKeydown(event) {
  * Handle character input
  */
 function handleTerminalKeypress(event) {
+    if (terminalState.awaitingUser) {
+        event.preventDefault();
+        return;
+    }
+
     if (!terminalState.inputEnabled) return;
     if (event.ctrlKey || event.metaKey) return;
 
@@ -502,14 +594,18 @@ function processQuery(query) {
     }
 
     // Disable input during execution
+    resetInteractiveState();
     terminalState.inputEnabled = false;
     terminalState.running = true;
+    terminalState.currentQuery = query;
+    setStopButtonEnabled(true);
 
     // Handle special commands
     if (query === 'help') {
         showHelp();
         terminalState.inputEnabled = true;
         terminalState.running = false;
+        setStopButtonEnabled(false);
         addPrompt();
         return;
     }
@@ -522,6 +618,7 @@ function processQuery(query) {
 %   streaming: ${safetyConfig.streaming ? 'on' : 'off'}`, 'comment');
         terminalState.inputEnabled = true;
         terminalState.running = false;
+        setStopButtonEnabled(false);
         addPrompt();
         return;
     }
@@ -552,6 +649,7 @@ function processQuery(query) {
         }
         terminalState.inputEnabled = true;
         terminalState.running = false;
+        setStopButtonEnabled(false);
         addPrompt();
         return;
     }
@@ -569,6 +667,7 @@ function processQuery(query) {
         }
         terminalState.inputEnabled = true;
         terminalState.running = false;
+        setStopButtonEnabled(false);
         addPrompt();
         return;
     }
@@ -683,6 +782,193 @@ function getCompletions(prefix) {
     ];
 
     return builtins.filter(b => b.startsWith(prefix)).sort();
+}
+
+/**
+ * Handle streaming solution event
+ */
+function handleStreamingSolution(message) {
+    if (terminalState.queryFinished) {
+        return;
+    }
+
+    const solutionText = message.pretty || formatBindingsFromStructured(message.bindings);
+    queueSolution(solutionText || 'true');
+}
+
+/**
+ * Handle streaming done event
+ */
+function handleStreamingDone(message) {
+    terminalState.pendingDone = {
+        solutions: message.solutions,
+        elapsedMs: message.elapsedMs,
+        stepCount: message.stepCount
+    };
+
+    if (terminalState.queryFinished) {
+        return;
+    }
+
+    if (terminalState.solutionsDisplayed === 0) {
+        appendOutput('false.', 'output');
+        finalizeQuery();
+        return;
+    }
+
+    if (!terminalState.awaitingUser && terminalState.solutionQueue.length === 0) {
+        // No user decision pending (e.g., all solutions delivered automatically)
+        appendOutput('.', 'output');
+        finalizeQuery();
+        return;
+    }
+
+    if (terminalState.awaitingUser && terminalState.solutionQueue.length === 0) {
+        // User already saw final solution; automatically conclude
+        appendOutput('.', 'output');
+        finalizeQuery();
+    }
+}
+
+/**
+ * Queue solution text for user-controlled browsing
+ */
+function queueSolution(solutionText) {
+    if (terminalState.solutionsDisplayed === 0 && !terminalState.awaitingUser) {
+        showSolution(solutionText);
+        enterSolutionBrowsing();
+    } else {
+        terminalState.solutionQueue.push(solutionText);
+    }
+}
+
+/**
+ * Display a solution line
+ */
+function showSolution(solutionText) {
+    appendOutput(solutionText, 'output');
+    terminalState.solutionsDisplayed += 1;
+
+    if (!terminalState.shownSolutionHint) {
+        appendOutput("% Press ';' for next solution or '.' to stop", 'comment');
+        terminalState.shownSolutionHint = true;
+    }
+}
+
+/**
+ * Enter solution browsing state allowing ; / . input
+ */
+function enterSolutionBrowsing() {
+    terminalState.awaitingUser = true;
+    terminalState.inputEnabled = true;
+}
+
+/**
+ * Request the next solution (triggered by ';')
+ */
+function requestNextSolution() {
+    if (!terminalState.awaitingUser) {
+        return;
+    }
+
+    if (terminalState.solutionQueue.length > 0) {
+        const nextSolution = terminalState.solutionQueue.shift();
+        showSolution(nextSolution);
+
+        if (terminalState.solutionQueue.length === 0 && terminalState.pendingDone &&
+            terminalState.pendingDone.solutions <= terminalState.solutionsDisplayed) {
+            appendOutput('.', 'output');
+            finalizeQuery();
+        }
+        return;
+    }
+
+    if (terminalState.pendingDone) {
+        appendOutput('false.', 'output');
+        finalizeQuery();
+    } else {
+        appendOutput('% Waiting for additional solutions...', 'comment');
+    }
+}
+
+/**
+ * Stop browsing solutions (triggered by '.')
+ */
+function stopSolutionBrowsing() {
+    if (!terminalState.awaitingUser) {
+        return;
+    }
+
+    appendOutput('.', 'output');
+    const metadata = terminalState.pendingDone || {
+        solutions: terminalState.solutionsDisplayed
+    };
+    finalizeQuery(metadata);
+}
+
+/**
+ * Abort browsing via Ctrl+C
+ */
+function abortSolutionBrowsing() {
+    if (!terminalState.awaitingUser) {
+        return;
+    }
+
+    appendOutput('^C', 'comment');
+    const metadata = terminalState.pendingDone || {
+        solutions: terminalState.solutionsDisplayed
+    };
+    finalizeQuery(metadata);
+}
+
+/**
+ * Finalize current query, emitting metadata and restoring prompt
+ */
+function finalizeQuery(metadata = null) {
+    if (terminalState.queryFinished) {
+        return;
+    }
+
+    const summary = formatRunMetadata(metadata || terminalState.pendingDone);
+
+    terminalState.pendingDone = null;
+    terminalState.solutionQueue = [];
+    terminalState.awaitingUser = false;
+    terminalState.running = false;
+    terminalState.inputEnabled = true;
+    terminalState.queryFinished = true;
+    terminalState.currentLine = '';
+    terminalState.cursorPosition = 0;
+    terminalState.solutionsDisplayed = 0;
+    terminalState.shownSolutionHint = false;
+    terminalState.currentQuery = '';
+
+    if (summary) {
+        appendOutput(summary, 'comment');
+    }
+
+    setStopButtonEnabled(false);
+    addPrompt();
+}
+
+/**
+ * Fallback formatter when structured bindings are provided without pretty text
+ */
+function formatBindingsFromStructured(bindings) {
+    if (!bindings || typeof bindings !== 'object') {
+        return '';
+    }
+
+    const parts = [];
+    for (const [key, value] of Object.entries(bindings)) {
+        if (value && typeof value === 'object' && 'value' in value) {
+            parts.push(`${key} = ${value.value}`);
+        } else {
+            parts.push(`${key} = ${String(value)}`);
+        }
+    }
+
+    return parts.join(', ');
 }
 
 /**
@@ -810,29 +1096,42 @@ async function startREPL() {
  * Handle worker messages
  */
 function handleWorkerMessage(event) {
-    const { type, data } = event.data;
+    const { type } = event.data;
 
     switch (type) {
         case 'initialized':
             terminalState.initialized = true;
             appendOutput('% PyLog REPL ready!', 'success');
             terminalState.inputEnabled = true;
-            terminalState.running = false;
+            setStopButtonEnabled(false);
             addPrompt();
             break;
 
         case 'solutions':
             displaySolutions(event.data);
-            terminalState.inputEnabled = true;
-            terminalState.running = false;
-            addPrompt();
             break;
 
         case 'error':
             displayError(event.data);
-            terminalState.inputEnabled = true;
-            terminalState.running = false;
-            addPrompt();
+            finalizeQuery();
+            break;
+
+        case 'solution':
+            handleStreamingSolution(event.data);
+            break;
+
+        case 'done':
+            handleStreamingDone(event.data);
+            break;
+
+        case 'progress':
+            if (event.data.message) {
+                appendOutput(`% ${event.data.message}`, 'comment');
+            }
+            break;
+
+        case 'stdlib-loaded':
+            appendOutput(`% Loaded ${event.data.clauseCount} stdlib clauses from ${event.data.fileCount} file(s)`, 'comment');
             break;
 
         default:
@@ -890,24 +1189,33 @@ function formatError(error) {
  * Display query solutions
  */
 function displaySolutions(response) {
-    const { solutions } = response;
+    const solutions = response?.solutions || [];
+    const metadata = {
+        solutions: response?.solutionCount ?? solutions.length,
+        stepCount: response?.stepCount,
+        elapsedMs: response?.elapsedMs
+    };
 
     if (solutions.length === 0) {
         appendOutput('false.', 'output');
-    } else {
-        solutions.forEach((solution, i) => {
-            const bindings = Object.entries(solution)
-                .map(([k, v]) => `${k} = ${v}`)
-                .join(', ');
-            appendOutput(bindings || 'true', 'output');
-
-            if (i < solutions.length - 1) {
-                appendOutput(';', 'output');
-            } else {
-                appendOutput('.', 'output');
-            }
-        });
+        finalizeQuery(metadata);
+        return;
     }
+
+    solutions.forEach((solution, index) => {
+        const bindings = Object.entries(solution)
+            .map(([k, v]) => `${k} = ${v}`)
+            .join(', ');
+        appendOutput(bindings || 'true', 'output');
+
+        if (index < solutions.length - 1) {
+            appendOutput(';', 'output');
+        } else {
+            appendOutput('.', 'output');
+        }
+    });
+
+    finalizeQuery(metadata);
 }
 
 /**
@@ -921,9 +1229,12 @@ function stopQuery() {
     }
 
     appendOutput('% Query stopped', 'comment');
-    terminalState.inputEnabled = true;
-    terminalState.running = false;
-    addPrompt();
+    finalizeQuery({
+        solutions: terminalState.solutionsDisplayed
+    });
+
+    // Restart worker for subsequent queries
+    startREPL();
 }
 
 /**

@@ -19,6 +19,14 @@ const config = {
     streaming: false
 };
 
+const LIMIT_VALIDATION = {
+    maxSteps: 1000000,
+    maxSolutions: 1000,
+    timeoutMs: 60000
+};
+
+let queryTimeoutId = null;
+
 /**
  * Initialize the terminal
  */
@@ -346,11 +354,17 @@ function showHelp() {
     term.writeln('%   Tab          - Autocomplete');
     term.writeln('%   ↑/↓          - History navigation');
     term.writeln('%   Ctrl+C       - Cancel input');
-    term.writeln('%   Ctrl+L       - Clear screen');
-    term.writeln('%   Ctrl+A/E     - Jump to start/end of line');
-    term.writeln('%   Alt+←/→      - Jump by word');
+   term.writeln('%   Ctrl+L       - Clear screen');
+   term.writeln('%   Ctrl+A/E     - Jump to start/end of line');
+   term.writeln('%   Alt+←/→      - Jump by word');
+   term.writeln('');
+    term.writeln('\x1b[36m% Safety features:\x1b[0m');
+    term.writeln('%   Step limit          - Prevents infinite loops');
+    term.writeln('%   Solution limit      - Caps enumeration');
+    term.writeln('%   Timeout protection  - Aborts long-running queries');
+    term.writeln('%   Worker termination  - Stops runaway queries safely');
     term.writeln('');
-    term.writeln('\x1b[90m% Documentation: https://github.com/xpqz/pylog\x1b[0m');
+    term.writeln('\x1b[90m% Documentation: https://github.com/xpqz/pylog (see ../basics/terms.md)\x1b[0m');
 }
 
 /**
@@ -402,6 +416,150 @@ function handleStreaming(query) {
     } else {
         term.writeln('\x1b[31m% Usage: streaming on/off\x1b[0m');
     }
+}
+
+/**
+ * Expose current safety limits for testing/documentation
+ */
+function getSafetyLimits() {
+    return {
+        maxSteps: config.maxSteps,
+        maxSolutions: config.maxSolutions,
+        timeoutMs: config.timeoutMs,
+        streaming: config.streaming
+    };
+}
+
+/**
+ * Validate user-provided safety limits against upper bounds
+ */
+function validateSafetyLimits(limits) {
+    if (!limits) {
+        return false;
+    }
+
+    if ('maxSteps' in limits && (!Number.isInteger(limits.maxSteps) || limits.maxSteps <= 0 || limits.maxSteps > LIMIT_VALIDATION.maxSteps)) {
+        return false;
+    }
+    if ('maxSolutions' in limits && (!Number.isInteger(limits.maxSolutions) || limits.maxSolutions <= 0 || limits.maxSolutions > LIMIT_VALIDATION.maxSolutions)) {
+        return false;
+    }
+    if ('timeoutMs' in limits && (!Number.isInteger(limits.timeoutMs) || limits.timeoutMs <= 0 || limits.timeoutMs > LIMIT_VALIDATION.timeoutMs)) {
+        return false;
+    }
+
+    return true;
+}
+
+/**
+ * Schedule a timeout for the active query
+ */
+function scheduleQueryTimeout(onTimeout) {
+    clearQueryTimeout();
+    queryTimeoutId = setTimeout(() => {
+        handleQueryTimeout();
+        if (typeof onTimeout === 'function') {
+            onTimeout();
+        }
+    }, config.timeoutMs);
+}
+
+/**
+ * Clear any active query timeout
+ */
+function clearQueryTimeout() {
+    if (queryTimeoutId) {
+        clearTimeout(queryTimeoutId);
+        queryTimeoutId = null;
+    }
+}
+
+/**
+ * Handle query timeout by terminating the worker and restarting
+ */
+function handleQueryTimeout() {
+    clearQueryTimeout();
+    term.writeln('\x1b[33m% Query timed out. Worker terminated.\x1b[0m');
+    if (replWorker) {
+        try {
+            replWorker.terminate();
+        } finally {
+            replWorker = null;
+            terminalInitialized = false;
+        }
+    }
+    startREPL();
+}
+
+/**
+ * Display formatted error information
+ */
+function displayError(errorData) {
+    if (!errorData) {
+        return;
+    }
+
+    const message = errorData.message || 'Unknown error';
+    term.writeln(`\x1b[31m% Error: ${message}\x1b[0m`);
+
+    if (errorData.errorType === 'ReaderError' && typeof errorData.position === 'number') {
+        displayReaderError(message, errorData.position, errorData.token, errorData.query);
+    } else {
+        addParseErrorSuggestions(message, errorData.token, errorData.query);
+    }
+}
+
+/**
+ * Display ReaderError with caret marker highlighting
+ */
+function displayReaderError(message, position, token, query) {
+    const source = query || '';
+    const lines = source.split('\n');
+    let currentPos = 0;
+    let lineNumber = 0;
+    let columnNumber = 0;
+
+    for (let i = 0; i < lines.length; i++) {
+        const lineLength = lines[i].length + 1; // account for newline
+        if (currentPos + lineLength > position) {
+            lineNumber = i;
+            columnNumber = position - currentPos;
+            break;
+        }
+        currentPos += lineLength;
+    }
+
+    const errorLine = lines[lineNumber] ?? '';
+    const marker = ' '.repeat(columnNumber) + '^';
+
+    term.writeln(`% At position ${position} (line ${lineNumber + 1}, column ${columnNumber + 1})`);
+    term.writeln(`% ${errorLine}`);
+    term.writeln(`% ${marker}`);
+
+    if (token) {
+        term.writeln(`% Unexpected token: ${token}`);
+    }
+
+    addParseErrorSuggestions(message, token, query);
+}
+
+/**
+ * Provide contextual suggestions for parse errors
+ */
+function addParseErrorSuggestions(message, token, query) {
+    const lowerMessage = (message || '').toLowerCase();
+
+    if (lowerMessage.includes('expected opening bracket')) {
+        term.writeln('% Hint: expected opening bracket - check parentheses or list syntax');
+    }
+    if (lowerMessage.includes('expected period')) {
+        term.writeln('% Hint: expected period - remember to end clauses with a period.');
+    }
+    if (lowerMessage.includes('unknown operator')) {
+        term.writeln('% Hint: unknown operator - verify operator spelling or precedence.');
+    }
+
+    term.writeln('% Documentation: ../basics/terms.md for syntax reference');
 }
 
 // Initialize when DOM is ready
