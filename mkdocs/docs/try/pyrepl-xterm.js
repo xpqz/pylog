@@ -122,9 +122,18 @@ async function initializeTerminal() {
 
     // Open terminal in the container
     term.open(document.getElementById('terminal'));
+    term.focus();
+    window.term = term;
 
     // Initialize local-echo for REPL functionality
-    localEcho = new LocalEchoController(term);
+    try {
+        localEcho = new LocalEchoController(term);
+    } catch (err) {
+        console.error('PyLog xterm.js: Failed to initialize local-echo', err);
+        term.writeln('\x1b[31m% Failed to initialize terminal input: ' + err.message + '\x1b[0m');
+        term.writeln('% Ensure local-echo.js is reachable.');
+        return;
+    }
 
     // Set up autocompletion
     localEcho.addAutocompleteHandler((index, tokens) => {
@@ -234,6 +243,12 @@ async function startREPL() {
                     stopAfterDone.disabled = true;
                 }
                 runREPLLoop();
+                break;
+
+            case 'progress':
+                if (event.data.message) {
+                    term.writeln(`% ${event.data.message}`);
+                }
                 break;
         }
     };
