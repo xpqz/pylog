@@ -27,6 +27,28 @@ const LIMIT_VALIDATION = {
 
 let queryTimeoutId = null;
 
+function formatRunMetadata(metadata) {
+    if (!metadata) {
+        return null;
+    }
+
+    const { solutions, stepCount, elapsedMs } = metadata;
+    const parts = [];
+
+    if (typeof solutions === 'number') {
+        parts.push(`${solutions} solution(s)`);
+    }
+    if (typeof stepCount === 'number') {
+        parts.push(`${stepCount} step(s)`);
+    }
+    if (typeof elapsedMs === 'number') {
+        const ms = Math.max(0, Math.round(elapsedMs));
+        parts.push(`${ms}ms elapsed`);
+    }
+
+    return parts.length ? `% ${parts.join(', ')}` : null;
+}
+
 /**
  * Initialize the terminal
  */
@@ -171,11 +193,17 @@ async function startREPL() {
                 break;
 
             case 'solutions':
+                clearQueryTimeout();
                 displaySolutions(event.data);
                 break;
 
             case 'error':
+                clearQueryTimeout();
                 term.writeln(`\x1b[31m% Error: ${event.data.message}\x1b[0m`);
+                const stopAfterError = document.getElementById('pylog-stop');
+                if (stopAfterError) {
+                    stopAfterError.disabled = true;
+                }
                 runREPLLoop();
                 break;
 
@@ -186,10 +214,24 @@ async function startREPL() {
 
             case 'done':
                 // Streaming mode complete
-                if (event.data.solutionCount === 0) {
+                clearQueryTimeout();
+                const total = event.data.solutions ?? event.data.solutionCount ?? 0;
+                if (total === 0) {
                     term.writeln('false.');
                 } else {
                     term.writeln('.');
+                }
+                const summary = formatRunMetadata({
+                    solutions: total,
+                    stepCount: event.data.stepCount,
+                    elapsedMs: event.data.elapsedMs
+                });
+                if (summary) {
+                    term.writeln(summary);
+                }
+                const stopAfterDone = document.getElementById('pylog-stop');
+                if (stopAfterDone) {
+                    stopAfterDone.disabled = true;
                 }
                 runREPLLoop();
                 break;
@@ -255,7 +297,10 @@ async function runREPLLoop() {
 
             // Execute Prolog query
             if (terminalInitialized && replWorker) {
-                document.getElementById('pylog-stop').disabled = false;
+                const stopButton = document.getElementById('pylog-stop');
+                if (stopButton) {
+                    stopButton.disabled = false;
+                }
 
                 replWorker.postMessage({
                     type: 'query',
@@ -268,6 +313,14 @@ async function runREPLLoop() {
                             streaming: config.streaming
                         }
                     }
+                });
+
+                scheduleQueryTimeout(() => {
+                    const stopBtn = document.getElementById('pylog-stop');
+                    if (stopBtn) {
+                        stopBtn.disabled = true;
+                    }
+                    runREPLLoop();
                 });
 
                 // Wait for response (will be handled in onmessage)
@@ -291,31 +344,36 @@ async function runREPLLoop() {
  * Display solutions
  */
 function displaySolutions(response) {
-    const { solutions } = response;
+    clearQueryTimeout();
+
+    const solutions = response?.solutions ?? [];
+    const metadata = formatRunMetadata({
+        solutions: response?.solutionCount ?? solutions.length,
+        stepCount: response?.stepCount,
+        elapsedMs: response?.elapsedMs
+    });
 
     if (solutions.length === 0) {
         term.writeln('false.');
     } else {
-        solutions.forEach((solution, i) => {
+        solutions.forEach((solution, index) => {
             const bindings = Object.entries(solution)
                 .map(([k, v]) => `${k} = ${v}`)
                 .join(', ');
 
-            if (bindings) {
-                term.write(bindings);
-            } else {
-                term.write('true');
-            }
-
-            if (i < solutions.length - 1) {
-                term.writeln(' ;');
-            } else {
-                term.writeln('.');
-            }
+            term.write(bindings || 'true');
+            term.writeln(index < solutions.length - 1 ? ' ;' : '.');
         });
     }
 
-    document.getElementById('pylog-stop').disabled = true;
+    if (metadata) {
+        term.writeln(metadata);
+    }
+
+    const stopButton = document.getElementById('pylog-stop');
+    if (stopButton) {
+        stopButton.disabled = true;
+    }
     runREPLLoop();
 }
 
@@ -323,6 +381,15 @@ function displaySolutions(response) {
  * Display single solution (streaming mode)
  */
 function displaySolution(data) {
+    clearQueryTimeout();
+    scheduleQueryTimeout(() => {
+        const stopBtn = document.getElementById('pylog-stop');
+        if (stopBtn) {
+            stopBtn.disabled = true;
+        }
+        runREPLLoop();
+    });
+
     const { bindings, index } = data;
 
     const bindingStr = Object.entries(bindings)
@@ -487,6 +554,10 @@ function handleQueryTimeout() {
             replWorker = null;
             terminalInitialized = false;
         }
+    }
+    const stopButton = document.getElementById('pylog-stop');
+    if (stopButton) {
+        stopButton.disabled = true;
     }
     startREPL();
 }

@@ -36,6 +36,14 @@ let cursorEl = null;
 // Cached controls
 let stopButton = null;
 
+const LIMIT_VALIDATION = {
+    maxSteps: 1000000,
+    maxSolutions: 1000,
+    timeoutMs: 60000
+};
+
+let queryTimeoutId = null;
+
 // Safety configuration (same as before)
 let safetyConfig = {
     maxSteps: 100000,
@@ -170,6 +178,7 @@ function setupTerminalEvents() {
  * Reset per-query interactive state
  */
 function resetInteractiveState() {
+    clearQueryTimeout();
     terminalState.solutionQueue = [];
     terminalState.pendingDone = null;
     terminalState.solutionsDisplayed = 0;
@@ -211,6 +220,83 @@ function formatRunMetadata(metadata) {
     }
 
     return parts.length ? `% ${parts.join(', ')}` : null;
+}
+
+/**
+ * Validate requested safety limits against configured bounds
+ */
+function validateSafetyLimits(limits) {
+    if (!limits) {
+        return false;
+    }
+
+    const { maxSteps, maxSolutions, timeoutMs } = limits;
+
+    if (maxSteps !== undefined) {
+        if (!Number.isInteger(maxSteps) || maxSteps <= 0 || maxSteps > LIMIT_VALIDATION.maxSteps) {
+            return false;
+        }
+    }
+
+    if (maxSolutions !== undefined) {
+        if (!Number.isInteger(maxSolutions) || maxSolutions <= 0 || maxSolutions > LIMIT_VALIDATION.maxSolutions) {
+            return false;
+        }
+    }
+
+    if (timeoutMs !== undefined) {
+        if (!Number.isInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > LIMIT_VALIDATION.timeoutMs) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+/**
+ * Cancel any active timeout
+ */
+function clearQueryTimeout() {
+    if (queryTimeoutId) {
+        clearTimeout(queryTimeoutId);
+        queryTimeoutId = null;
+    }
+}
+
+/**
+ * Schedule timeout for the active query
+ */
+function scheduleQueryTimeout() {
+    clearQueryTimeout();
+    queryTimeoutId = setTimeout(() => {
+        handleQueryTimeout();
+    }, safetyConfig.timeoutMs);
+}
+
+/**
+ * Handle timeout firing by terminating the worker safely
+ */
+function handleQueryTimeout() {
+    clearQueryTimeout();
+    appendOutput('% Query timed out. Worker terminated.', 'comment');
+
+    if (replWorker) {
+        try {
+            replWorker.terminate();
+        } catch (e) {
+            console.error('PyLog Terminal: Failed to terminate worker on timeout', e);
+        } finally {
+            replWorker = null;
+            terminalState.initialized = false;
+        }
+    }
+
+    finalizeQuery({
+        solutions: terminalState.solutionsDisplayed
+    });
+
+    // Attempt to restart the REPL so user can continue
+    startREPL();
 }
 
 /**
@@ -686,6 +772,8 @@ function processQuery(query) {
                 }
             }
         });
+
+        scheduleQueryTimeout();
     } else {
         appendOutput('% REPL still initializing. Please wait...', 'comment');
         terminalState.inputEnabled = true;
@@ -929,6 +1017,8 @@ function finalizeQuery(metadata = null) {
         return;
     }
 
+    clearQueryTimeout();
+
     const summary = formatRunMetadata(metadata || terminalState.pendingDone);
 
     terminalState.pendingDone = null;
@@ -1010,10 +1100,11 @@ function showHelp() {
 %   set_limits <param> <value> - Set safety limits
 %   streaming on/off - Toggle streaming mode
 %
-% Safety limits (configurable):
-%   maxSteps    - Maximum execution steps (default: 100000)
-%   maxSolutions - Maximum solutions to find (default: 100)
-%   timeoutMs   - Query timeout in milliseconds (default: 10000)
+% Safety features:
+%   Step limit        - Prevents infinite loops (default: 100000)
+%   Solution limit    - Caps enumeration (default: 100)
+%   Timeout protection- Aborts runaway queries (default: 10000ms)
+%   Worker termination- Stops queries safely on timeout
 %
 % Keyboard shortcuts:
 %   Enter       - Run query
@@ -1028,7 +1119,7 @@ function showHelp() {
 %   ;           - Next solution
 %   .           - Stop searching
 %
-% Documentation: https://github.com/xpqz/pylog`.trim();
+% Documentation: https://github.com/xpqz/pylog (see ../basics/terms.md)`.trim();
 
     help.split('\n').forEach(line => {
         appendOutput(line, 'comment');
@@ -1143,31 +1234,82 @@ function handleWorkerMessage(event) {
  * Format and display error messages with helpful suggestions
  */
 function displayError(errorData) {
-    const { message, query } = errorData;
+    if (!errorData) {
+        return;
+    }
 
-    // Display the base error
+    const message = errorData.message || 'Unknown error';
+
     appendOutput(`% Error: ${message}`, 'error');
 
-    // Provide helpful suggestions based on error patterns
-    if (message.includes('expected opening bracket')) {
-        appendOutput('% Hint: Check for missing parentheses or brackets', 'comment');
-    }
-
-    if (message.includes('expected period')) {
-        appendOutput('% Hint: Prolog statements must end with a period (.)', 'comment');
-    }
-
-    if (message.includes('unknown operator')) {
-        appendOutput('% Hint: Check operator spelling and precedence', 'comment');
+    if (errorData.errorType === 'ReaderError' && typeof errorData.position === 'number') {
+        displayReaderError(message, errorData.position, errorData.token, errorData.query);
+    } else {
+        addParseErrorSuggestions(message, errorData.token, errorData.query);
     }
 
     if (message.includes('timeout')) {
-        appendOutput('% Hint: Query took too long. Try simplifying or use "set_limits timeoutMs <value>" to increase timeout', 'comment');
+        appendOutput('% Hint: Query took too long. Use "set_limits timeoutMs <value>" to increase timeout.', 'comment');
     }
 
     if (message.includes('step limit')) {
-        appendOutput('% Hint: Too many steps. Try "set_limits maxSteps <value>" to increase limit', 'comment');
+        appendOutput('% Hint: Too many steps. Use "set_limits maxSteps <value>" to increase the limit.', 'comment');
     }
+}
+
+/**
+ * Display ReaderError details with caret marker
+ */
+function displayReaderError(message, position, token, query) {
+    const source = query || '';
+    const lines = source.split('\n');
+    let currentPos = 0;
+    let lineNumber = 0;
+    let columnNumber = 0;
+
+    for (let i = 0; i < lines.length; i++) {
+        const lineLength = lines[i].length + 1;
+        if (currentPos + lineLength > position) {
+            lineNumber = i;
+            columnNumber = position - currentPos;
+            break;
+        }
+        currentPos += lineLength;
+    }
+
+    const errorLine = lines[lineNumber] ?? '';
+    const marker = ' '.repeat(columnNumber) + '^';
+
+    appendOutput(`% At position ${position} (line ${lineNumber + 1}, column ${columnNumber + 1})`, 'comment');
+    appendOutput(`% ${errorLine}`, 'comment');
+    appendOutput(`% ${marker}`, 'comment');
+
+    if (token) {
+        appendOutput(`% Unexpected token: ${token}`, 'comment');
+    }
+
+    addParseErrorSuggestions(message, token, query);
+}
+
+/**
+ * Provide contextual hints for parse errors
+ */
+function addParseErrorSuggestions(message, token, query) {
+    const lowerMessage = (message || '').toLowerCase();
+
+    if (lowerMessage.includes('expected opening bracket')) {
+        appendOutput('% Hint: expected opening bracket - check parentheses or list syntax.', 'comment');
+    }
+
+    if (lowerMessage.includes('expected period')) {
+        appendOutput('% Hint: expected period - remember to terminate clauses with a period.', 'comment');
+    }
+
+    if (lowerMessage.includes('unknown operator')) {
+        appendOutput('% Hint: unknown operator - verify operator spelling or precedence.', 'comment');
+    }
+
+    appendOutput('% Documentation: ../basics/terms.md for syntax reference', 'comment');
 }
 
 /**
@@ -1253,27 +1395,6 @@ function getSafetyLimits() {
 /**
  * Validate safety limits
  */
-function validateSafetyLimits(limits) {
-    if (!limits) return false;
-
-    const { maxSteps, maxSolutions, timeoutMs } = limits;
-
-    // Check that all values are positive integers
-    if (maxSteps && (!Number.isInteger(maxSteps) || maxSteps <= 0)) {
-        return false;
-    }
-
-    if (maxSolutions && (!Number.isInteger(maxSolutions) || maxSolutions <= 0)) {
-        return false;
-    }
-
-    if (timeoutMs && (!Number.isInteger(timeoutMs) || timeoutMs <= 0)) {
-        return false;
-    }
-
-    return true;
-}
-
 // Add cursor blink animation
 const style = document.createElement('style');
 style.textContent = `

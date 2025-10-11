@@ -107,23 +107,25 @@ class TestWebWorkerProtocol:
         assert "pyodide.version" in content, "Should access Pyodide version"
         assert "micropip.install" in content, "Should install dependencies"
 
-    def test_pyrepl_terminal_file_exists(self):
-        """Test that the terminal REPL interface file exists."""
-        pyrepl_terminal_path = (
+    def test_pyrepl_xterm_file_exists(self):
+        """Test that the xterm REPL interface file exists."""
+        pyrepl_xterm_path = (
             Path(__file__).parent.parent.parent.parent
             / "mkdocs"
             / "docs"
             / "try"
-            / "pyrepl-terminal.js"
+            / "pyrepl-xterm.js"
         )
 
         assert (
-            pyrepl_terminal_path.exists()
-        ), f"PyREPL Terminal file not found at {pyrepl_terminal_path}"
+            pyrepl_xterm_path.exists()
+        ), f"PyREPL xterm file not found at {pyrepl_xterm_path}"
 
-        content = pyrepl_terminal_path.read_text()
+        content = pyrepl_xterm_path.read_text()
 
-        # Check for worker creation
+        # Check for worker creation and xterm usage
+        assert "new Terminal" in content, "Should initialize xterm.js terminal"
+        assert "LocalEchoController" in content, "Should use local-echo for REPL"
         assert "new Worker" in content, "Should create Web Worker"
         assert "onmessage" in content, "Should handle worker messages"
 
@@ -277,11 +279,11 @@ class TestWebAssetIntegration:
 
         content = try_page.read_text()
 
-        # Should reference the required JavaScript files (now using terminal UI)
-        assert (
-            "pyrepl-terminal.js" in content or "pyrepl.js" in content
-        ), "Should load either pyrepl-terminal.js or pyrepl.js"
-        # examples.js is optional with terminal UI
+        # Should reference the required JavaScript files
+        assert "pyrepl-xterm.js" in content, "Should load pyrepl-xterm.js"
+        assert "xterm.js" in content, "Should load xterm.js library"
+        assert "local-echo" in content, "Should load local-echo addon"
+        # examples.js optional
         # Should NOT include worker.js as a script tag (it's loaded via new Worker())
         assert (
             '<script src="worker.js">' not in content
@@ -315,7 +317,7 @@ class TestSafetyLimits:
             / "mkdocs"
             / "docs"
             / "try"
-            / "pyrepl-terminal.js"
+            / "pyrepl-xterm.js"
         )
 
         content = pyrepl_terminal_path.read_text()
@@ -332,7 +334,7 @@ class TestSafetyLimits:
             / "mkdocs"
             / "docs"
             / "try"
-            / "pyrepl-terminal.js"
+            / "pyrepl-xterm.js"
         )
 
         content = pyrepl_terminal_path.read_text()
@@ -350,7 +352,7 @@ class TestSafetyLimits:
             / "mkdocs"
             / "docs"
             / "try"
-            / "pyrepl-terminal.js"
+            / "pyrepl-xterm.js"
         )
 
         content = pyrepl_terminal_path.read_text()
@@ -368,7 +370,7 @@ class TestSafetyLimits:
             / "mkdocs"
             / "docs"
             / "try"
-            / "pyrepl-terminal.js"
+            / "pyrepl-xterm.js"
         )
 
         content = pyrepl_terminal_path.read_text()
@@ -385,7 +387,7 @@ class TestSafetyLimits:
             / "mkdocs"
             / "docs"
             / "try"
-            / "pyrepl-terminal.js"
+            / "pyrepl-xterm.js"
         )
 
         content = pyrepl_terminal_path.read_text()
