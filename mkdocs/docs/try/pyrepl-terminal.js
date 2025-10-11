@@ -44,6 +44,23 @@ const LIMIT_VALIDATION = {
 
 let queryTimeoutId = null;
 
+function normalizeQueryInput(input) {
+    if (!input) {
+        return input;
+    }
+
+    const trimmed = input.trim();
+
+    if (trimmed.length > 1 && trimmed.endsWith('.')) {
+        const withoutDot = trimmed.slice(0, -1).trimEnd();
+        if (withoutDot.length > 0) {
+            return withoutDot;
+        }
+    }
+
+    return trimmed;
+}
+
 // Safety configuration (same as before)
 let safetyConfig = {
     maxSteps: 100000,
@@ -637,7 +654,8 @@ function executeCurrentInput() {
     }
 
     // Build full query from multiline buffer
-    let fullQuery = [...terminalState.multilineBuffer, input].join('\n').trim();
+    let fullQuery = [...terminalState.multilineBuffer, input].join('\n');
+    fullQuery = normalizeQueryInput(fullQuery);
 
     // Clear multiline buffer
     terminalState.multilineBuffer = [];

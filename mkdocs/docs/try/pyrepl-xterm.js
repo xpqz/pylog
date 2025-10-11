@@ -10,6 +10,7 @@ let term = null;
 let localEcho = null;
 let replWorker = null;
 let terminalInitialized = false;
+let currentTheme = 'light';
 
 // Configuration
 const config = {
@@ -19,6 +20,53 @@ const config = {
     streaming: false
 };
 
+const THEMES = {
+    light: {
+        background: '#ffffff',
+        foreground: '#1f1f1f',
+        cursor: '#1f1f1f',
+        selection: '#c0d6ff',
+        black: '#000000',
+        red: '#d81b60',
+        green: '#00897b',
+        yellow: '#f9a825',
+        blue: '#1e88e5',
+        magenta: '#8e24aa',
+        cyan: '#00acc1',
+        white: '#fafafa',
+        brightBlack: '#424242',
+        brightRed: '#e91e63',
+        brightGreen: '#26a69a',
+        brightYellow: '#ffb300',
+        brightBlue: '#42a5f5',
+        brightMagenta: '#ab47bc',
+        brightCyan: '#26c6da',
+        brightWhite: '#ffffff'
+    },
+    dark: {
+        background: '#1e1e1e',
+        foreground: '#d4d4d4',
+        cursor: '#d4d4d4',
+        selection: '#264f78',
+        black: '#1e1e1e',
+        red: '#f48771',
+        green: '#4ec9b0',
+        yellow: '#ce9178',
+        blue: '#569cd6',
+        magenta: '#c586c0',
+        cyan: '#9cdcfe',
+        white: '#d4d4d4',
+        brightBlack: '#545454',
+        brightRed: '#f48771',
+        brightGreen: '#4ec9b0',
+        brightYellow: '#ce9178',
+        brightBlue: '#569cd6',
+        brightMagenta: '#c586c0',
+        brightCyan: '#9cdcfe',
+        brightWhite: '#d4d4d4'
+    }
+};
+
 const LIMIT_VALIDATION = {
     maxSteps: 1000000,
     maxSolutions: 1000,
@@ -26,6 +74,23 @@ const LIMIT_VALIDATION = {
 };
 
 let queryTimeoutId = null;
+
+function normalizeQueryInput(input) {
+    if (!input) {
+        return input;
+    }
+
+    const trimmed = input.trim();
+
+    if (trimmed.length > 1 && trimmed.endsWith('.')) {
+        const withoutDot = trimmed.slice(0, -1).trimEnd();
+        if (withoutDot.length > 0) {
+            return withoutDot;
+        }
+    }
+
+    return trimmed;
+}
 
 function formatRunMetadata(metadata) {
     if (!metadata) {
@@ -63,12 +128,23 @@ async function initializeTerminal() {
 
     // Create terminal container
     container.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+            <button id="pylog-theme-toggle" style="
+                padding: 6px 14px;
+                background: #1976d2;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+            ">Switch to Dark Mode</button>
+        </div>
         <div id="terminal" style="
             width: 100%;
             height: 500px;
-            background: #1e1e1e;
+            background: #ffffff;
+            color: #1f1f1f;
             padding: 10px;
-            border: 1px solid #444;
+            border: 1px solid #ddd;
             border-radius: 4px;
         "></div>
         <div style="margin-top: 10px; display: flex; gap: 10px;">
@@ -96,28 +172,7 @@ async function initializeTerminal() {
         cursorBlink: true,
         fontSize: 14,
         fontFamily: "'Courier New', Consolas, monospace",
-        theme: {
-            background: '#1e1e1e',
-            foreground: '#d4d4d4',
-            cursor: '#d4d4d4',
-            selection: '#264f78',
-            black: '#1e1e1e',
-            red: '#f48771',
-            green: '#4ec9b0',
-            yellow: '#ce9178',
-            blue: '#569cd6',
-            magenta: '#c586c0',
-            cyan: '#9cdcfe',
-            white: '#d4d4d4',
-            brightBlack: '#545454',
-            brightRed: '#f48771',
-            brightGreen: '#4ec9b0',
-            brightYellow: '#ce9178',
-            brightBlue: '#569cd6',
-            brightMagenta: '#c586c0',
-            brightCyan: '#9cdcfe',
-            brightWhite: '#d4d4d4'
-        }
+        theme: THEMES.light
     });
 
     // Open terminal in the container
@@ -164,6 +219,8 @@ async function initializeTerminal() {
         term.clear();
     };
 
+    document.getElementById('pylog-theme-toggle').onclick = toggleTheme;
+
     document.getElementById('pylog-stop').onclick = () => {
         if (replWorker) {
             replWorker.terminate();
@@ -180,8 +237,41 @@ async function initializeTerminal() {
     term.writeln('\x1b[90m% Initializing Pyodide...\x1b[0m');
     term.writeln('');
 
+    // Apply persisted theme preference
+    const storedTheme = localStorage.getItem('pylog_terminal_theme');
+    if (storedTheme === 'dark' || storedTheme === 'light') {
+        currentTheme = storedTheme;
+    }
+    applyTheme(currentTheme);
+
     // Start the REPL worker
     startREPL();
+}
+
+function applyTheme(themeName) {
+    const theme = THEMES[themeName] || THEMES.light;
+    currentTheme = themeName;
+    term.setOption('theme', theme);
+
+    const terminalElement = document.getElementById('terminal');
+    if (terminalElement) {
+        terminalElement.style.background = theme.background;
+        terminalElement.style.color = theme.foreground;
+        terminalElement.style.borderColor = themeName === 'dark' ? '#444' : '#ddd';
+    }
+
+    const toggleButton = document.getElementById('pylog-theme-toggle');
+    if (toggleButton) {
+        toggleButton.textContent = themeName === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode';
+        toggleButton.style.background = themeName === 'dark' ? '#4a8cd9' : '#1976d2';
+    }
+
+    localStorage.setItem('pylog_terminal_theme', themeName);
+}
+
+function toggleTheme() {
+    const nextTheme = currentTheme === 'dark' ? 'light' : 'dark';
+    applyTheme(nextTheme);
 }
 
 /**
@@ -274,7 +364,7 @@ async function runREPLLoop() {
                 continue;
             }
 
-            const query = input.trim();
+            const query = normalizeQueryInput(input);
 
             // Handle special commands
             if (query === 'help') {
