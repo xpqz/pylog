@@ -32,7 +32,7 @@ Try these queries to get started:
 <!-- xterm.js dependencies -->
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
 <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/local-echo@0.3.0/dist/local-echo.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/local-echo@0.2.0/dist/local-echo.js"></script>
 
 <!-- Pyodide for Python in browser -->
 <script src="https://cdn.jsdelivr.net/pyodide/v0.24.1/full/pyodide.js"></script>
