@@ -10,7 +10,7 @@ This document outlines a pragmatic, incremental path to evolve PyLog from the cu
 
 ## Guiding Principles
 - Increment first; optimize later. Prioritize a clear, correct emulator and compiler before micro‑tuning.
-- Dual‑engine strategy. Allow switching per‑query (or per module) between tree‑walking and WAM while we ramp up.
+- **Independence strategy**. WAM is a replacement, not a complement. Minimize dependencies on tree-walker; use it for differential testing only.
 - Make state explicit. Keep heap/stack/trail/registers observable (debug dumps, tracer hooks) to simplify debugging.
 - Ship in thin, verifiable slices. Add small instruction clusters with targeted tests and golden examples.
 
@@ -104,19 +104,21 @@ Success criteria:
 - Existing exception unit tests (`throw/1`, `catch/3`, error terms) pass under WAM mode.
 - Occurs‑check tests run with and without the flag to verify behavior parity.
 
-## Phase 4 — Full control features + builtins bridge
+## Phase 4 — Full control features + core builtins
 Deliverables:
 - Compiler handles disjunction `(;)/2`, if‑then‑else, and cut placement.
-- WAM can call back into existing Python builtins (bridge) until we port them.
+- Essential builtins reimplemented natively for WAM (no bridge to tree-walker).
 
 Tasks:
 - Compile disjunction via choicepoint blocks; `if-then-else` via commit pattern.
-- Implement `call/N` bridging: unknown predicates go through existing tree‑walker builtins.
-- Error propagation consistent with current engine (wrap in Prolog error terms).
- - Ensure exception handling interacts correctly with disjunction, cut, and the builtins bridge; define unwind rules across bridge boundaries.
+- Implement core builtins natively operating on WAM heap: arithmetic (`is/2`, `=:=/2`, `</2`, etc.), type checks (`var/1`, `atom/1`, etc.), meta-call (`call/1`).
+- Error propagation with proper Prolog error terms (instantiation_error, type_error, evaluation_error).
+- Ensure exception handling interacts correctly with disjunction and cut; define unwind rules.
 
 Success criteria:
-- Existing unit tests for control and builtins (subset) pass under WAM mode.
+- Disjunction and if-then-else compile correctly with proper backtracking.
+- Core builtins work natively on WAM heap without marshalling overhead.
+- No dependency on tree-walker builtins.
 
 ---
 
@@ -165,18 +167,21 @@ Success criteria:
 
 ---
 
-## Phase 7 — Attributed variables + CLP(FD) interop
+## Phase 7 — Attributed variables + CLP(FD) integration
 Deliverables:
 - Attributed variables on WAM refs with hook points for CLP(FD) propagation.
+- Independent CLP(FD) implementation operating directly on WAM heap structures.
 
 Tasks:
-- Mirror current attribute store on heap refs; trigger hooks on bind/deref.
-- Bridge `labeling/2` and domain operations: either call into existing CLP(FD) or port critical parts.
- - Note dependency on GC readiness; consider lightweight ref‑counting for attribute payloads if full GC is not yet available.
- - Ensure unification instructions expose the same hook points used by the current engine so propagation cost is contained.
+- Implement attribute storage on heap refs; trigger hooks on bind/deref in unification.
+- Reimplement CLP(FD) domain operations and propagators for WAM heap representation.
+- Implement `labeling/2` and constraint posting predicates natively for WAM.
+- Note dependency on GC readiness; consider lightweight attribute cleanup if full GC not yet available.
 
 Success criteria:
-- Existing CLP(FD) tests can run under WAM mode (even if slower initially).
+- Core CLP(FD) constraints work natively on WAM heap.
+- No dependency on tree-walker CLP(FD) implementation.
+- Propagation hooks integrate cleanly with WAM unification.
 
 ---
 
@@ -246,8 +251,8 @@ def test_append_deterministic(engine):
 
 ## Integration & Rollout
 - Feature flag: `PYLOG_ENGINE=wam|tree` (env var + programmatic option).
-- Per‑query engine selection; fall back to tree‑walker on unimplemented features.
-- CI lanes: WAM‑only tests, dual‑engine diff tests, web (Pyodide) smoke tests.
+- **Tree-walker role**: Differential testing baseline only. Not for fallback on missing features.
+- CI lanes: WAM‑only tests, differential tests (compare WAM vs tree-walker outputs), web (Pyodide) smoke tests.
 
 ### High‑level API compatibility
 - Maintain the existing entry points used by the REPL and web plans:
@@ -259,60 +264,189 @@ def test_append_deterministic(engine):
 - Default module is `user`. Unqualified calls and clauses compile to and resolve within the current module.
 - Qualified calls `M:Goal` resolve using module `M` at compile and runtime; symbol keys use `module:name/arity`.
 - Imports/exports are respected during linking; qualified calls bypass imports by using explicit `M:`.
-- Built‑ins live under the `system` module and can be qualified explicitly if needed (internal bridge may route them).
+- Built‑ins live under the `system` module and are implemented natively for WAM.
 - Error messages include module context when resolving undefined predicates: `undefined predicate m:p/2`.
 
-## Git Strategy (keeping tree‑walker live while evolving WAM)
+## Git Strategy (Keep `main` Deployable at All Times)
 
-### Branching model
-- Trunk‑based with short‑lived feature branches.
-  - Feature branches: `feature/wam-phaseN-topic`
-  - Docs/infra: `chore/docs-*`, `chore/ci-*`
-- Avoid a long‑lived `wam` fork; favor small, frequent merges behind a flag.
+### Core Principle
+**`main` must remain production-ready and deployable at every commit.** WAM development happens in isolation; only stable, tested code merges to `main`.
 
-### Isolation via engine flag
-- Default engine remains tree‑walker; WAM is opt‑in (env var and programmatic switch).
-- Keep WAM under `prolog/wam/…` initially to minimize coupling; migrate shared utils deliberately.
+### Branching Model
 
-### CI matrix
-- Required: unit + scenarios with tree‑walker.
-- Non‑blocking (early): a WAM core subset on key tests; promote to required as parity grows.
-- Add a differential lane that runs selected tests under both engines and compares solutions.
-- Web smoke tests stay tree‑walker until a WAM web path exists.
+#### Development Branch: `wam-dev`
+- Long-lived development branch for WAM implementation
+- All WAM work happens here or in feature branches off `wam-dev`
+- **NOT merged to `main` until production-ready** (Phase 8 completion)
+- Can be "messy" during development; frequent force-pushes acceptable
+- CI runs full test suite here (tree-walker + WAM tests)
 
-### Test strategy
-- Differential tests per module where feasible (same query under both engines, compare bindings/order).
-- Golden tests for the compiler output (assembler/bytecode) independent of engine.
-- Microbenchmarks trend reporting (no PR failures; use to spot regressions).
+#### Feature Branches
+- Pattern: `feature/wam-phaseN-topic` (branched from `wam-dev`)
+- Pattern: `chore/docs-*`, `chore/ci-*` (may branch from `main` or `wam-dev` depending on scope)
+- Short-lived; merged to `wam-dev` via PR after review
+- Must pass CI (both engines where applicable)
 
-### Merge discipline
-- Keep WAM changes small and behind the flag; avoid touching tree‑walker hot paths without reason.
-- Land shared‑utility refactors first (no behavior change), then use them from WAM.
-- Require green tree‑walker CI; WAM core lane green where applicable.
+#### Documentation-Only Changes
+- WAM planning docs can merge to `main` independently
+- Pattern: `docs/wam-*` changes that don't affect runtime code
+- Keeps plans visible without coupling to implementation timeline
 
-### Releases
-- Tree‑walker releases continue normally.
-- Document WAM status as “experimental”; expose a hidden CLI/env toggle for early users.
-- When near parity: promote WAM tests to required; consider an RC with WAM as default before flipping.
+### Isolation Strategy
 
-### Hotfixes
-- Maintain `release/x.y` branches for hotfixes; cherry‑pick from `main`.
-- Keep hotfixes isolated from WAM internals.
+#### Tree-Walker on `main`
+- `main` contains only tree-walker implementation
+- All existing functionality works; no experimental code
+- Releases cut from `main` tags
+- No `prolog/wam/` directory exists on `main` until merge
 
-### Developer ergonomics
-- Test fixtures/markers to select engine easily (e.g., `@pytest.mark.engine('wam')`).
-- Pre‑commit hooks for formatting/lint; keep diffs focused and readable.
-- Optional codeowners for `prolog/wam/*` to ensure focused review.
+#### WAM on `wam-dev`
+- `wam-dev` contains: tree-walker (unchanged) + `prolog/wam/` (new)
+- Parser/AST changes that benefit both engines can merge to `main` first, then pulled into `wam-dev`
+- No feature flags in runtime code on `main`; flags only exist on `wam-dev`
+
+#### Shared Components
+- Parser/AST improvements: land on `main` first (with tests), merge to `wam-dev`
+- Operator table changes: same approach
+- Test infrastructure: land on `main`, merge to `wam-dev`
+
+### Sync Strategy
+
+#### Regular `main` → `wam-dev` Merges
+- **Weekly** (or more frequently): merge `main` into `wam-dev`
+- Keeps WAM branch up-to-date with tree-walker fixes/features
+- Resolve conflicts in favor of `main` behavior where applicable
+- CI must pass after merge
+
+#### One-Way Until Ready
+- **No merges** from `wam-dev` to `main` until Phase 8 complete
+- Exception: documentation-only changes can cherry-pick to `main`
+
+### CI Matrix
+
+#### On `main` (Required)
+- Tree-walker tests only (unit + scenarios + web smoke tests)
+- All tests must pass; no experimental/skipped tests
+- Web deployment tests (Pyodide)
+- No WAM code exists; no WAM tests
+
+#### On `wam-dev` (Required)
+- **Both engines**: Tree-walker tests (ensure no regressions)
+- **WAM only**: Phase-specific unit tests
+- **Differential**: Selected tests run on both engines, compare outputs
+- **Benchmarks**: Track performance trends (non-blocking)
+- Web smoke tests (tree-walker only until Phase 9)
+
+#### On Feature Branches (from `wam-dev`)
+- Same as `wam-dev` CI matrix
+- Must pass before merge to `wam-dev`
+
+### Release Strategy
+
+#### Production Releases (from `main`)
+- `main` tagged as `vX.Y.Z` for releases
+- Only tree-walker; no WAM code
+- Fully tested and production-ready
+- Pyodide builds from these tags
+
+#### Experimental Releases (from `wam-dev`)
+- Optional: tag `wam-dev` as `vX.Y.Z-wam-alpha.N`
+- For early adopters and testing
+- Documented as "experimental, not for production"
+- Not deployed to main distribution channels
+
+#### The Big Merge (Phase 8 → Phase 9)
+When WAM reaches parity (end of Phase 8):
+1. **Final sync**: Merge `main` into `wam-dev` one last time
+2. **Integration PR**: Create PR from `wam-dev` to `main`
+3. **Extensive testing**: Run full test suite, performance benchmarks, manual testing
+4. **Feature flag**: Initially keep `PYLOG_ENGINE=tree|wam` (default `wam`)
+5. **Merge to `main`**: After approval and testing
+6. **Release candidate**: Tag as `vX.Y.Z-rc.1`, test in production-like environments
+7. **Production release**: Tag stable release when ready
+8. **Phase 9 cleanup**: Remove tree-walker code, keep only WAM
+
+### Hotfix Strategy
+
+#### Hotfixes on `main`
+- Branch from affected release tag: `hotfix/issue-description`
+- Fix, test, merge to `main`
+- Tag new patch release: `vX.Y.Z+1`
+- Cherry-pick fix into `wam-dev` if still relevant
+
+#### Hotfixes on `wam-dev`
+- Not applicable during development (not in production)
+- After Phase 9 merge, all hotfixes on `main` only
+
+### Merge Discipline
+
+#### Merging to `wam-dev`
+- All feature branches must pass CI
+- Code review required
+- Squash commits to keep history clean
+- Conventional commit messages
+
+#### Merging to `main` (documentation only during Phases 0-8)
+- Only documentation/planning changes
+- No runtime code changes related to WAM
+- Parser/AST improvements are allowed (benefit both engines)
+
+#### The Phase 9 Mega-Merge
+- Squash or keep detailed history (TBD based on git log quality)
+- Comprehensive commit message documenting the transition
+- Reference all phase completion criteria in PR description
+
+### Developer Ergonomics
+
+#### Local Development
+- Clone repo, work on `wam-dev` branch for WAM features
+- Work on `main` for tree-walker fixes or documentation
+- Test isolation: `PYLOG_ENGINE=wam` vs `PYLOG_ENGINE=tree` on `wam-dev`
+
+#### Pre-commit Hooks
+- Formatting/lint on all branches
+- No engine-specific restrictions
+
+#### Code Owners (Optional)
+- `prolog/wam/*` on `wam-dev`: focused review
+- `docs/plans/wam/*` on `main`: documentation review
+
+### Benefits of This Strategy
+
+1. **`main` always deployable**: No experimental code, no broken states
+2. **Parallel development**: Tree-walker and WAM progress independently
+3. **Safe experimentation**: `wam-dev` can be messy during development
+4. **Clear merge point**: Phase 8 completion = integration time
+5. **Hotfix isolation**: Production fixes don't conflict with WAM work
+6. **Release clarity**: Production releases (from `main`) vs experimental (from `wam-dev`)
 
 ## Risks & Mitigations
-- Instruction dispatch overhead in Python: prefer small, predictable dispatch; benchmark dict vs enum/list; consider grouping opcodes.
-- Python recursion limits: keep emulator loop iterative; avoid deep Python call stacks inside handlers.
-- Opcode granularity trade‑offs: too fine increases dispatch cost; too coarse risks code bloat—profile and tune in P5.5.
-- GC complexity: start simple (mark & sweep), add compaction when safe; provide an interim guard in P2.
-- Unification performance: Python objects are heavy—measure early; consider packed representations or array‑backed heaps in future work if justified.
-- CLP(FD) propagation hooks: ensure WAM unification exposes the same hook points as the current engine; watch propagation overhead.
-- Scope creep: keep compiler subset tight early; defer meta‑complexities (modules, tabling) to post‑MVP.
- - Malformed bytecode: add strict loader validation (opcode ranges, arities, label resolution, register bounds) and fail with structured diagnostics; keep dual‑engine fallback.
+
+### Technical Risks
+- **Instruction dispatch overhead in Python**: prefer small, predictable dispatch; benchmark dict vs enum/list; consider grouping opcodes.
+- **Python recursion limits**: keep emulator loop iterative; avoid deep Python call stacks inside handlers.
+- **Opcode granularity trade‑offs**: too fine increases dispatch cost; too coarse risks code bloat—profile and tune in P5.5.
+- **GC complexity**: start simple (mark & sweep), add compaction when safe; provide an interim guard in P2.
+- **Unification performance**: Python objects are heavy—measure early; consider packed representations or array‑backed heaps in future work if justified.
+- **CLP(FD) propagation hooks**: ensure WAM unification exposes the same hook points as the current engine; watch propagation overhead.
+- **Scope creep**: keep compiler subset tight early; defer meta‑complexities (modules, tabling) to post‑MVP.
+- **Malformed bytecode**: add strict loader validation (opcode ranges, arities, label resolution, register bounds) and fail with structured diagnostics.
+
+### Git/Process Risks
+- **Merge conflicts from long-lived `wam-dev` branch**:
+  - **Mitigation**: Regular weekly `main` → `wam-dev` merges to keep branches close
+  - **Mitigation**: Keep parser/AST changes small and land on `main` first
+  - **Mitigation**: WAM code lives in isolated `prolog/wam/` directory with no overlapping files
+- **Divergent behavior between branches**:
+  - **Mitigation**: Differential tests on `wam-dev` ensure tree-walker behavior unchanged
+  - **Mitigation**: Parser/AST test suite runs on both `main` and `wam-dev`
+- **Losing `main` momentum**:
+  - **Mitigation**: Tree-walker development continues normally on `main`
+  - **Mitigation**: Bug fixes and features land on `main` first, pulled into `wam-dev`
+- **The Big Merge complexity**:
+  - **Mitigation**: Start merge planning in Phase 7; dry-run merges quarterly
+  - **Mitigation**: Comprehensive integration test suite developed throughout Phases 0-8
+  - **Mitigation**: Feature flag allows gradual rollout post-merge
 
 ---
 

@@ -47,35 +47,51 @@ This is a **reference** document, not an implementation guide. Implementers shou
 
 ### 1.2 Relationship to PyLog Ecosystem
 
-PyLog is a tree-walking Prolog interpreter in Python designed for learning and debuggability. The WAM adds a compiled execution layer while preserving all existing functionality:
+PyLog currently has a tree-walking Prolog interpreter. The WAM is a **replacement** that will eventually become the only engine. During development, both engines coexist for differential testing, but they are **independent implementations** with minimal code sharing.
 
 ```
 ┌─────────────────────────────────────────────┐
 │              PyLog System                    │
 │                                              │
 │  ┌────────────┐         ┌────────────┐     │
-│  │ Tree-Walker│◄───────►│    WAM     │     │
+│  │ Tree-Walker│         │    WAM     │     │
 │  │   Engine   │         │   Engine   │     │
+│  │ (baseline) │         │  (target)  │     │
 │  └────────────┘         └────────────┘     │
+│         │                      │            │
 │         │                      │            │
 │         └──────────┬───────────┘            │
 │                    │                        │
 │         ┌──────────▼──────────┐            │
-│         │  Common Services     │            │
-│         │  - Parser/AST        │            │
-│         │  - Unify/Store       │            │
-│         │  - CLP(FD)           │            │
-│         │  - Tracer            │            │
-│         │  - DAP               │            │
+│         │  Shared Services     │            │
+│         │  - Parser/AST only   │            │
+│         │  - Reader/Operators  │            │
 │         └─────────────────────┘            │
 └─────────────────────────────────────────────┘
 ```
 
-**Dual-Engine Strategy**: Both engines coexist during development. Users can select per-query via `PYLOG_ENGINE=wam|tree` or programmatically via `Engine(program, backend="wam")`. This allows:
-- Continuous value delivery (tree-walker remains functional)
-- Incremental WAM development and testing
-- Differential testing (same query, both engines, compare results)
-- Graceful migration path
+**Independence Strategy**: WAM implements its own runtime completely:
+- **Own heap** with tagged cells (not shared Store)
+- **Own unification** via instructions (not shared unify())
+- **Own trail** and backtracking
+- **Own builtins** (reimplemented, not bridged)
+- **Own CLP(FD) integration** (direct propagation hooks)
+- **Own tracer** (emits same events, different implementation)
+
+**Shared components** (minimal):
+- Parser/AST (input only; WAM compiles to bytecode immediately)
+- Operator table (both need same precedence/associativity)
+
+**Tree-walker role**:
+- Differential testing baseline (verify WAM correctness)
+- Fallback during early phases (if feature not yet implemented)
+- **Will be removed** when WAM reaches full parity
+
+**Migration path**:
+1. Phase 0-2: WAM-only unit tests, no integration
+2. Phase 3-5: Differential tests on subset, tree-walker default
+3. Phase 6-8: WAM default, tree-walker for regression testing only
+4. Phase 9: Remove tree-walker, WAM is sole engine
 
 ### 1.3 Design Principles
 
@@ -1742,99 +1758,84 @@ Or a minimal stub that tracks roots but doesn't sweep (for testing root enumerat
 
 ## 12. Integration Architecture
 
-### 12.1 Builtins Bridge
+### 12.1 Builtin Implementation Strategy
 
-**Purpose**: Call tree-walker built-ins from WAM until WAM-native versions are available.
+**Goal**: WAM implements all builtins natively. No bridge to tree-walker.
 
-**Instruction**: `call_builtin "system:is/2"`
+**Rationale**:
+- Bridging adds marshalling overhead on every builtin call
+- Dependency on tree-walker Store/Trail complicates lifecycle
+- Performance gains negated by constant format conversion
+- Cleaner to reimplement once than maintain bridge forever
 
-**Marshalling Protocol** (WAM → Python):
+**Implementation Approach**:
 
-```python
-def marshall_term(addr, heap):
-    """Convert WAM heap cell to Python AST."""
-    addr = deref(addr)
-    cell = heap[addr]
+**Phase 1-3**: Core builtins only
+- `true/0`, `fail/0`, `!/0`
+- `=/2` (unification, native to WAM)
+- `is/2`, `=:=/2`, `</2`, `>/2`, etc. (arithmetic)
+- `var/1`, `nonvar/1`, `atom/1`, `integer/1` (type checks)
 
-    if cell[0] == TAG_CON:
-        value = cell[1]
-        if isinstance(value, str):
-            return Atom(value)
-        else:
-            return Int(value)
+**Phase 4**: Control & meta
+- `call/1`, `call/N`
+- `,/2` (conjunction), `;/2` (disjunction), `->/2` (if-then)
+- `catch/3`, `throw/1`
 
-    elif cell[0] == TAG_REF:
-        return Var(addr, hint=f"_{addr}")
+**Phase 5**: List & structure
+- `functor/3`, `arg/3`, `=../2`
+- `copy_term/2`
 
-    elif cell[0] == TAG_STR:
-        functor_addr = cell[1]
-        _, (name, arity) = heap[functor_addr]
-        args = [marshall_term(functor_addr + 1 + i, heap) for i in range(arity)]
-        return Struct(name, tuple(args))
+**Phase 6**: All-solutions
+- `findall/3`, `bagof/3`, `setof/3`
 
-    elif cell[0] == TAG_LIST:
-        items = []
-        tail_addr = addr
-        while heap[tail_addr][0] == TAG_LIST:
-            head_addr = heap[tail_addr][1]
-            items.append(marshall_term(head_addr, heap))
-            tail_addr = deref(heap[tail_addr][2])
-        tail = marshall_term(tail_addr, heap)
-        return List(tuple(items), tail)
-```
+**Phase 7**: I/O (stubbed for web)
+- `write/1`, `nl/0`, `read/1` (string-based only)
 
-**Import Protocol** (Python → WAM):
+**Builtin Registration**:
 
 ```python
-def import_term(term, machine):
-    """Convert Python AST to WAM heap cell; returns addr."""
-    if isinstance(term, Atom):
-        return machine.allocate_con(term.name)
-    elif isinstance(term, Int):
-        return machine.allocate_con(term.value)
-    elif isinstance(term, Var):
-        # Map Var.id to existing WAM addr or allocate new
-        return machine.get_or_allocate_var(term.id)
-    elif isinstance(term, Struct):
-        functor_addr = machine.allocate_con((term.functor, len(term.args)))
-        str_addr = machine.allocate_str_cell(functor_addr)
-        for arg in term.args:
-            arg_addr = import_term(arg, machine)
-            machine.heap[machine.H] = arg_addr
-            machine.H += 1
-        return str_addr
-    elif isinstance(term, List):
-        # Recursive list building...
-        return import_list(term, machine)
+# wam/builtins/registry.py
+WAM_BUILTINS = {
+    ("true", 0): builtin_true,
+    ("fail", 0): builtin_fail,
+    ("!", 0): builtin_cut,
+    ("=", 2): builtin_unify,
+    ("is", 2): builtin_is,
+    ("var", 1): builtin_var,
+    # ... etc
+}
+
+def call_builtin(machine, name, arity):
+    """Dispatch to WAM-native builtin."""
+    key = (name, arity)
+    if key not in WAM_BUILTINS:
+        raise PrologError(f"Undefined predicate: {name}/{arity}")
+
+    return WAM_BUILTINS[key](machine)
 ```
 
-**call_builtin Execution**:
+**Builtin Signature**:
 
 ```python
-def handle_call_builtin(machine, builtin_name):
-    """Call tree-walker builtin; bridge."""
-    # Marshall args from X registers
-    args = [marshall_term(machine.X[i], machine.heap) for i in range(arity)]
+def builtin_is(machine) -> bool:
+    """X is Expr: Evaluate arithmetic expression.
 
-    # Invoke builtin (returns iterator of solutions)
-    builtin_fn = builtin_registry[builtin_name]
-    solutions = builtin_fn(*args, store=bridge_store)
+    Args: X in A1 (X[0]), Expr in A2 (X[1])
+    Returns: True if success (unifies), False if fails
+    Side effects: May modify heap, trail
+    """
+    lhs_addr = deref(machine.X[0])
+    rhs_addr = deref(machine.X[1])
 
-    try:
-        solution = next(solutions)  # Get first solution
+    # Evaluate RHS
+    value = eval_arithmetic(rhs_addr, machine)
 
-        # Import bindings back
-        for var_id, value in solution.items():
-            wam_addr = machine.var_map[var_id]
-            imported_addr = import_term(value, machine)
-            unify(wam_addr, imported_addr)
-
-        machine.P += 1  # Success
-    except StopIteration:
-        backtrack(machine)  # Failure
+    # Unify with LHS
+    result_addr = machine.allocate_con(value)
+    return unify(lhs_addr, result_addr, machine)
 ```
 
-**Allowlist**: Limit which built-ins are accessible via bridge (security, correctness).
+**No marshalling**, no tree-walker dependency, pure WAM heap operations.
 
 ### 12.2 Attributed Variables
 
@@ -1911,9 +1912,42 @@ def clpfd_attr_hook(module, event, var_addr, term_addr):
     return True  # Allow binding
 ```
 
-**Domain Operations**: Bridge to existing `prolog/clpfd/` Python implementation initially; port to WAM later if justified.
+**Domain Operations**: WAM implements domains natively on heap cells.
+
+```python
+# wam/clpfd/domain.py (independent from tree-walker version)
+class Domain:
+    """FD domain stored as heap-based intervals."""
+    def __init__(self, intervals):
+        self.intervals = intervals  # [(low, high), ...]
+
+    def prune(self, value):
+        """Remove value from domain."""
+        # Returns new Domain or None if empty
+
+# Store domains in attribute map
+machine.attrs[var_addr] = {"clpfd": domain}
+```
+
+**Propagators**: Reimplemented for WAM heap:
+
+```python
+# wam/clpfd/propagators.py
+def propagate_less_than(x_addr, y_addr, machine):
+    """X #< Y propagation."""
+    x_dom = get_domain(x_addr, machine)
+    y_dom = get_domain(y_addr, machine)
+
+    # Prune x_dom: remove values >= y_dom.min
+    # Prune y_dom: remove values <= x_dom.max
+
+    if x_dom.changed or y_dom.changed:
+        queue_dependent_propagators(x_addr, y_addr, machine)
+```
 
 **Labeling**: Create choicepoints via WAM control instructions (`try_me_else` for each value in domain).
+
+**No dependency** on tree-walker CLP(FD); algorithms reimplemented for WAM data structures.
 
 ### 12.4 Debugging and Tracing
 

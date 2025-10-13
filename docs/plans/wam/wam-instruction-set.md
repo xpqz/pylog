@@ -220,16 +220,6 @@ This document defines the complete instruction set for the PyLog WAM implementat
 
 ---
 
-## Builtins Bridge (Phase 4)
-
-### `call_builtin Name/Arity`
-- **Syntax**: `call_builtin system:name/arity`
-- **Semantics**: Marshal arguments from `X` registers or heap; invoke Python builtin from tree-walker registry; import results back into heap; fail if builtin fails
-- **Registers**: `X`, heap (via marshal/import)
-- **Notes**: Temporary bridge until builtins ported to WAM; error mapping to Prolog terms
-
----
-
 ## Utility & Debug (Phase 0)
 
 ### `noop`
@@ -340,7 +330,6 @@ Quick lookup for instruction validation (Phase 3 loader):
 | `throw`            | 0     | (ball in A1)                      |
 | `catch_setup`      | 1     | handler_label:int/str             |
 | `catch_cleanup`    | 0     | none                              |
-| `call_builtin`     | 1     | builtin_id:str                    |
 | `dbg_snap`         | 0     | none                              |
 
 ---
@@ -367,7 +356,7 @@ Raise `BytecodeLoadError` with structured diagnostics (see Phase 3 documentation
 - **Phase 2**: Control flow complete
 - **Phase 3**: Compiler emits full baseline set
 - **Phase 3.5**: Exception instructions added
-- **Phase 4**: Builtin bridge added
+- **Phase 4**: Disjunction and if-then-else compilation complete; builtins implemented natively
 - **Phase 5**: Indexing instructions operational
 - **Phase 5.5**: Optional trim/fusion instructions may be added
 - **Future**: Tabling, advanced indexing, optimisations

@@ -1,6 +1,109 @@
-# WAM Roadmap Updates - 2025-10-13
+# WAM Roadmap Updates
 
-This document summarises improvements made to the WAM roadmap and phase documentation based on a comprehensive review.
+This document summarises improvements made to the WAM roadmap and phase documentation based on comprehensive reviews.
+
+## Update 2: Independence Strategy (2025-10-13)
+
+### Overview
+Major architectural revision to minimize tree-walker dependencies and clarify that WAM is a replacement, not a complement. The tree-walker will serve solely as a differential testing baseline during development and will be removed in Phase 9.
+
+### Key Changes
+
+#### Architecture Philosophy
+- **Before**: Dual-engine strategy with potential long-term coexistence
+- **After**: WAM is independent replacement; tree-walker for testing only
+
+#### Shared Components
+- **Before**: Parser/AST, Unify/Store, CLP(FD), Tracer (shared implementations)
+- **After**: Parser/AST only; all runtime components independent
+
+#### Builtin Implementation (Phase 4)
+- **Before**: Bridge to tree-walker builtins with marshalling layer
+- **After**: Native WAM builtins operating directly on heap cells
+- **Rationale**: Marshalling overhead defeats WAM performance gains; cleaner to port once than maintain bridge forever
+
+#### CLP(FD) Integration (Phase 7)
+- **Before**: Bridge to tree-walker CLP(FD) initially, port later
+- **After**: Independent WAM CLP(FD) implementation from start
+- **Rationale**: Heap structure incompatibility makes bridging complex; native implementation cleaner
+
+### Files Modified
+
+#### docs/plans/wam/WAM-ARCH.md
+- **Section 1.2**: Rewrote ecosystem relationship to emphasize independence
+- **Section 12.1**: Completely replaced builtin bridge with native implementation strategy
+- **Section 12.3**: Updated CLP(FD) integration to be independent
+- Updated architecture diagram to show minimal sharing (parser/AST only)
+
+#### docs/plans/wam/phase-4-control-builtins.md (NEW)
+- Replaced `phase-4-control-builtins-bridge.md` entirely
+- Added comprehensive native builtin implementations:
+  - Arithmetic evaluation engine with full operator support
+  - Type check builtins (var/1, atom/1, integer/1, etc.)
+  - Meta-call implementation (call/1)
+- Removed all bridge-related content
+- Clear scope: disjunction, if-then-else, core builtins only
+
+#### docs/plans/wam/wam-roadmap.md
+- Updated guiding principles: "dual-engine strategy" → "independence strategy"
+- Phase 4 title: "builtins bridge" → "core builtins"
+- Phase 7: removed bridge references, emphasized native CLP(FD)
+- Integration section: clarified tree-walker role as testing baseline only
+- Git strategy: added explicit migration path (Phase 6-8 WAM default, Phase 9 remove tree-walker)
+- Module resolution: removed bridge references
+
+#### docs/plans/wam/wam-instruction-set.md
+- Removed entire "Builtins Bridge" section
+- Removed `call_builtin` instruction from arity table
+- Updated Phase 4 description in Evolution section
+
+#### docs/plans/wam/README.md
+- Updated phase-4 link to new filename
+
+### Files Removed
+- `phase-4-control-builtins-bridge.md` (obsolete)
+
+### Git Strategy
+Complete revision to ensure `main` remains deployable at all times:
+
+- **Before**: Small frequent merges to `main` behind feature flag; dual-engine on `main`
+- **After**: Long-lived `wam-dev` branch; `main` stays tree-walker only until Phase 9
+
+**Key decisions**:
+- `main` contains only tree-walker code (production-ready)
+- `wam-dev` contains both engines during development
+- Weekly `main` → `wam-dev` syncs to prevent divergence
+- No `wam-dev` → `main` merge until Phase 8 complete
+- Documentation can merge to `main` independently
+- Parser/AST improvements land on `main` first, pulled into `wam-dev`
+- "Big Merge" happens between Phase 8 and Phase 9
+
+**Benefits**:
+1. `main` always deployable (critical requirement)
+2. Parallel development without interference
+3. Clear integration point (end of Phase 8)
+4. Hotfixes isolated to `main` only
+5. Production releases unaffected by experimental code
+
+### Migration Path
+- **Phase 0-8**: Development on `wam-dev` branch (tree-walker + WAM coexist)
+- **Phase 8 → 9**: "Big Merge" from `wam-dev` to `main`
+- **Phase 9**: Feature flag initially (`PYLOG_ENGINE=wam` default), then remove tree-walker
+
+### Benefits
+1. **Performance**: No marshalling overhead on every builtin call
+2. **Simplicity**: No format conversion, no lifecycle coupling
+3. **Correctness**: Single source of truth for each feature
+4. **Maintainability**: No bridge code to maintain long-term
+
+### Risks Addressed
+- **Reimplementation effort**: Core builtins are small and well-specified (10-15 in Phase 4)
+- **Testing overhead**: Differential tests validate parity with tree-walker
+- **Feature coverage**: Incremental rollout per phase ensures nothing missed
+
+---
+
+## Update 1: Initial Documentation (2025-10-13)
 
 ## Overview
 
