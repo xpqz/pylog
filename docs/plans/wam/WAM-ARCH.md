@@ -441,7 +441,7 @@ Some implementations also save argument registers X[0..N-1]; we document the min
 3. **trust_me**:
    - Restore state (same as retry)
    - Pop choicepoint: `B = cp_stack[B+0]` (PrevB)
-   - `HB = (B != null) ? cp_stack[B+6] : 0`
+   - `HB = cp_stack[B+6] if B is not None else 0`
 
 **Invariants**:
 1. Choicepoints form a linked list via PrevB
@@ -985,13 +985,13 @@ def unify_terms(addr_a: int, addr_b: int) -> bool:
 
 **Unify Family** (read mode, matching existing heap):
 
-- `unify_variable Xi`: `Xi = deref(heap[arg_ptr++])`
-- `unify_value Xi`: `unify(Xi, deref(heap[arg_ptr++]))`
+- `unify_variable Xi`: `Xi = deref(heap[S]); S += 1`
+- `unify_value Xi`: `unify(Xi, deref(heap[S])); S += 1`
 
 **Set Family** (write mode, building new heap structure):
 
-- `set_variable Xi`: `Xi = allocate_ref(); heap[H++] = Xi`
-- `set_value Xi`: `heap[H++] = deref(Xi)`
+- `set_variable Xi`: `Xi = allocate_ref(); heap.append(Xi); H += 1`
+- `set_value Xi`: `heap.append(deref(Xi)); H += 1`
 
 ---
 
@@ -1097,7 +1097,7 @@ def handle_trust_me(machine):
 
     # Pop choicepoint
     machine.B = cp_stack[B + 0]  # PrevB
-    machine.HB = (machine.B != None) ? cp_stack[machine.B + 6] : 0
+    machine.HB = cp_stack[machine.B + 6] if machine.B is not None else 0
 
     machine.P += 1
 ```
@@ -1130,7 +1130,7 @@ def handle_cut(machine, yn):
     """Discard choicepoints above saved level."""
     saved_B = frames[machine.E + 2 + yn]
     machine.B = saved_B
-    machine.HB = (machine.B != None) ? cp_stack[machine.B + 6] : 0
+    machine.HB = cp_stack[machine.B + 6] if machine.B is not None else 0
     machine.P += 1
 ```
 
@@ -1144,7 +1144,7 @@ def handle_neck_cut(machine):
     # Assumes B at entry was saved somewhere accessible
     # (Implementation detail: may reuse a scratch register)
     machine.B = entry_B
-    machine.HB = (machine.B != None) ? cp_stack[machine.B + 6] : 0
+    machine.HB = cp_stack[machine.B + 6] if machine.B is not None else 0
     machine.P += 1
 ```
 

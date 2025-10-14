@@ -116,10 +116,13 @@ Phase 9 (Web/Pyodide) ← needs stable runtime
 - **Testable**: Strong unit and differential testing throughout
 - **Observable**: Debug hooks and tracing at every stage
 - **Correct first**: Performance comes after correctness
-- **Dual-engine**: Tree-walker remains functional during WAM development
+- **Independence strategy**: WAM implementation proceeds independently; tree-walker coexists during development and will be replaced when WAM is complete
 
 ## Status
 
-**Current Status**: Planning phase complete, implementation not yet started.
+**Current Status**: Phase 0 (Foundations) in progress.
 
-All documentation reviewed and updated as of 2025-10-13. Ready for Phase 0 implementation.
+- Phase 0 scaffold complete: Machine state, dispatch loop, instruction handlers, debug snapshots
+- Comprehensive unit test suite covering machine initialization, execution, and invariants
+- All core data structures and execution framework operational
+- Documentation updated as of 2025-10-14
