@@ -10,13 +10,21 @@ In Phase 1, HB is always 0, so trailing criterion (addr < HB) never fires.
 However, the API and TR increments must be correct for reuse in Phase 2.
 """
 
-from prolog.wam.heap import TAG_REF, make_ref
+from prolog.wam.heap import (
+    TAG_REF,
+    is_con,
+    is_list,
+    is_ref,
+    is_str,
+    make_ref,
+)
 
 __all__ = [
     "deref",
     "bind",
     "trail_if_needed",
     "untrail",
+    "unify",
 ]
 
 
@@ -168,3 +176,122 @@ def untrail(machine, target_TR: int) -> None:
 
         # Restore to self-referential REF (unbound)
         machine.heap[addr] = make_ref(addr)
+
+
+def unify(machine, addr_a: int, addr_b: int) -> bool:
+    """Unify two heap addresses with explicit stack.
+
+    Implements the classic WAM unification algorithm using an explicit
+    work stack to avoid Python recursion. Handles all cell type combinations:
+    REF, CON, STR, and LIST.
+
+    Algorithm:
+    1. Deref both addresses and push to stack
+    2. While stack is not empty:
+       - Pop (u, v) pair
+       - If same address: skip (already unified)
+       - If either is REF: bind them
+       - If both CON: compare values
+       - If both STR: check functor, push argument pairs
+       - If both LIST: push head and tail pairs
+       - Type mismatch: fail
+
+    Args:
+        machine: Machine instance with heap
+        addr_a: First heap address
+        addr_b: Second heap address
+
+    Returns:
+        True if unification succeeds, False otherwise
+
+    Examples:
+        # Unify variable with constant
+        var = new_ref(m)
+        const = new_con(m, 42)
+        unify(m, var, const)  # True, var now bound to const
+
+        # Unify structures f(a, X) with f(a, b)
+        str1 = new_str(m, "f", 2)
+        new_con(m, "a")
+        new_ref(m)
+        str2 = new_str(m, "f", 2)
+        new_con(m, "a")
+        new_con(m, "b")
+        unify(m, str1, str2)  # True, X bound to b
+
+        # Fail on type mismatch
+        atom = new_con(m, "foo")
+        num = new_con(m, 42)
+        unify(m, atom, num)  # False
+    """
+    # Deref both addresses
+    a = deref(machine, addr_a)
+    b = deref(machine, addr_b)
+
+    # Work stack for iterative unification
+    stack = [(a, b)]
+
+    while stack:
+        u, v = stack.pop()
+
+        # Same cell: already unified
+        if u == v:
+            continue
+
+        # Deref in case bindings occurred during processing
+        u = deref(machine, u)
+        v = deref(machine, v)
+
+        if u == v:
+            continue
+
+        cell_u = machine.heap[u]
+        cell_v = machine.heap[v]
+
+        # At least one is REF: bind them
+        if is_ref(cell_u) or is_ref(cell_v):
+            bind(machine, u, v)
+            continue
+
+        # Both CON: must be equal
+        if is_con(cell_u) and is_con(cell_v):
+            if cell_u[1] != cell_v[1]:  # Compare values
+                return False
+            continue
+
+        # Both STR: functors must match, unify args
+        if is_str(cell_u) and is_str(cell_v):
+            functor_addr_u = cell_u[1]
+            functor_addr_v = cell_v[1]
+            functor_u = machine.heap[functor_addr_u]
+            functor_v = machine.heap[functor_addr_v]
+
+            # Functors must be identical (name and arity)
+            if functor_u != functor_v:
+                return False
+
+            # Push argument pairs to stack
+            # Arguments are at functor_addr + 1 through functor_addr + arity
+            arity = functor_u[1][1]
+            for i in range(arity):
+                arg_addr_u = functor_addr_u + 1 + i
+                arg_addr_v = functor_addr_v + 1 + i
+                stack.append((arg_addr_u, arg_addr_v))
+            continue
+
+        # Both LIST: unify head and tail
+        if is_list(cell_u) and is_list(cell_v):
+            head_addr_u = cell_u[1]
+            tail_addr_u = cell_u[2]
+            head_addr_v = cell_v[1]
+            tail_addr_v = cell_v[2]
+
+            # Push head and tail pairs
+            stack.append((head_addr_u, head_addr_v))
+            stack.append((tail_addr_u, tail_addr_v))
+            continue
+
+        # Type mismatch
+        return False
+
+    return True
