@@ -39,6 +39,12 @@ def deref(machine, addr: int) -> int:
         # heap[1] = (REF, 2)
         # heap[2] = (CON, 42)
         deref(m, 0) -> 2  # Follows chain to constant
+
+    Note:
+        Future optimization: Path compression during deref could materially
+        improve performance for unify-heavy workloads with long-lived chains.
+        However, compression requires trailing each shortened REF, so defer
+        until profiling shows deref dominates execution time.
     """
     while True:
         cell = machine.heap[addr]
@@ -119,7 +125,11 @@ def bind(machine, ref_addr: int, value_addr: int) -> None:
         if value_cell[0] == TAG_REF:
             ref_addr, value_addr = value_addr, ref_addr
         else:
-            # Neither is REF: cannot bind (should not happen in valid usage)
+            # Neither is REF after deref: binding two non-variables is a no-op.
+            # This case should not occur in valid usage where bind() is called
+            # with at least one unbound variable. We treat it as a silent no-op
+            # to avoid crashing on degenerate inputs, but proper usage should
+            # check types before calling bind().
             return
     elif value_cell[0] == TAG_REF:
         # Both are REFs: prefer binding newer to older (ref_addr > value_addr)

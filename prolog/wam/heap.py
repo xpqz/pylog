@@ -40,7 +40,7 @@ __all__ = [
     "new_con",
     "new_str",
     "new_list",
-    "write_struct_args",
+    "note_struct_args",
 ]
 
 
@@ -177,24 +177,25 @@ def new_list(machine, head_addr: int, tail_addr: int) -> int:
     return addr
 
 
-def write_struct_args(machine, *args: int) -> None:
-    """Write N argument cells after a structure's functor.
+def note_struct_args(machine, *args: int) -> None:
+    """Note structure arguments for readability (no-op).
 
-    Helper for writing structure arguments in sequence. Each arg should
-    be a heap address (typically from new_ref, new_con, etc.).
+    This is an intentional no-op helper for test readability and documentation.
+    Structure arguments are allocated via new_ref/new_con/etc after new_str,
+    which naturally places them at functor_addr+1, functor_addr+2, etc.
+
+    The function name 'note' (not 'write') emphasizes that this is purely
+    documentary - no mutation occurs. Use in tests to clarify intent when
+    building structures on the heap.
 
     Args:
-        machine: Machine instance with heap and H register
-        *args: Variable number of heap addresses to write as arguments
+        machine: Machine instance (unused, present for API consistency)
+        *args: Heap addresses that form structure arguments (unused)
 
     Example:
         str_addr = new_str(m, "foo", 2)
         arg1 = new_ref(m)
         arg2 = new_con(m, "bar")
-        # Arguments are already written during allocation
+        note_struct_args(m, arg1, arg2)  # Documents that these are foo's args
     """
-    # This is a no-op helper for documentation/readability.
-    # Arguments are typically allocated via new_ref/new_con after new_str,
-    # which naturally places them at functor_addr+1, functor_addr+2, etc.
-    # This function exists primarily for test readability and documentation.
     pass
