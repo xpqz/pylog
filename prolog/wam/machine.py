@@ -47,6 +47,8 @@ class Machine:
         E: Environment frame pointer
         CP: Continuation pointer (return address)
         TR: Trail pointer
+        S: Structure argument pointer (Phase 1)
+        EF: Exception frame pointer (-1 when no exception context)
         X: Argument/temporary registers (list)
 
     Data areas:
@@ -67,6 +69,7 @@ class Machine:
         self.CP: int | None = None
         self.TR: int = 0
         self.S: int | None = None  # Structure argument pointer (Phase 1)
+        self.EF: int = -1  # Exception frame pointer (-1 = none)
 
         # Unification mode flag (Phase 1)
         self.unify_mode: str | None = None  # "read" or "write"
