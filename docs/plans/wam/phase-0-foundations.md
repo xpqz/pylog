@@ -113,7 +113,7 @@ Rollout
 ---
 
 Implementation Checklist
-- [ ] Package + modules scaffolded
+- [x] Package + modules scaffolded
 - [ ] Opcode set bootstrapped
 - [ ] Machine state + run loop implemented
 - [ ] Snapshots + pretty printer
