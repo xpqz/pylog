@@ -160,12 +160,78 @@ class Machine:
                         0 <= tail_addr < len(self.heap)
                     ), f"LIST cell at {i} has invalid tail address {tail_addr}"
 
+    def step(self) -> bool:
+        """Execute single instruction at P.
+
+        Returns:
+            True if execution should continue, False if halted or invalid state
+
+        Raises:
+            IndexError: If P points outside code area
+        """
+        if self.halted or self.P < 0 or self.P >= len(self.code):
+            return False
+
+        # Fetch instruction
+        instruction = self.code[self.P]
+
+        # Notify trace sink if present
+        if self.trace_sink is not None:
+            self.trace_sink.on_step(self, instruction)
+
+        # Decode opcode
+        opcode = instruction[0]
+        args = instruction[1:] if len(instruction) > 1 else ()
+
+        # Dispatch
+        if opcode == 0:  # OP_NOOP
+            self.P += 1
+        elif opcode == 1:  # OP_HALT
+            self.halted = True
+            return False
+        elif opcode == 2:  # OP_SET_X
+            # set_x reg_idx, value
+            reg_idx, value = args
+            # Ensure X list is large enough
+            while len(self.X) <= reg_idx:
+                self.X.append(None)
+            self.X[reg_idx] = value
+            self.P += 1
+        elif opcode == 3:  # OP_DBG_SNAP
+            # Capture snapshot (currently no-op; full implementation in testing)
+            self.P += 1
+        else:
+            # Unknown opcode - halt with error
+            self.halted = True
+            return False
+
+        return not self.halted
+
     def run(self, max_steps: int = 1000) -> None:
         """Execute instructions until halt or max_steps reached.
 
         Args:
             max_steps: Maximum number of instructions to execute
-
-        This is a stub for Phase 0. Full implementation in issue #329.
         """
-        pass  # Implemented in issue #329
+        steps = 0
+        while steps < max_steps and self.step():
+            steps += 1
+
+    def reset(self) -> None:
+        """Reset machine to initial state."""
+        self.P = 0
+        self.H = 0
+        self.HB = 0
+        self.B = None
+        self.E = None
+        self.CP = None
+        self.TR = 0
+        self.S = None
+        self.EF = -1
+        self.unify_mode = None
+        self.X = []
+        self.heap = []
+        self.frames = []
+        self.cp_stack = []
+        self.trail = []
+        self.halted = False

@@ -116,7 +116,7 @@ Implementation Checklist
 - [x] Package + modules scaffolded
 - [x] Opcode set bootstrapped
 - [x] Machine state + data structures
-- [ ] Dispatch + run loop implemented
+- [x] Dispatch + run loop implemented
 - [x] Snapshots + pretty printer
-- [ ] Unit tests
+- [x] Unit tests
 - [ ] CI job (non‑blocking)
