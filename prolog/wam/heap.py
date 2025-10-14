@@ -36,6 +36,10 @@ __all__ = [
     "is_str",
     "is_con",
     "is_list",
+    "new_ref",
+    "new_con",
+    "new_str",
+    "new_list",
 ]
 
 
@@ -82,3 +86,87 @@ def is_con(cell: tuple) -> bool:
 def is_list(cell: tuple) -> bool:
     """Check if cell is a list."""
     return cell[0] == TAG_LIST
+
+
+# Heap allocation helpers (mutate machine.heap and machine.H)
+
+
+def new_ref(machine) -> int:
+    """Allocate unbound reference on heap.
+
+    Creates a self-referential REF cell (canonical unbound form).
+
+    Args:
+        machine: Machine instance with heap and H register
+
+    Returns:
+        Address of new REF cell
+    """
+    addr = machine.H
+    cell = make_ref(addr)  # Self-referential
+    machine.heap.append(cell)
+    machine.H += 1
+    return addr
+
+
+def new_con(machine, value) -> int:
+    """Allocate constant cell on heap.
+
+    Args:
+        machine: Machine instance with heap and H register
+        value: Atom (str), int, float, or (name, arity) tuple for functors
+
+    Returns:
+        Address of new CON cell
+    """
+    addr = machine.H
+    cell = make_con(value)
+    machine.heap.append(cell)
+    machine.H += 1
+    return addr
+
+
+def new_str(machine, name: str, arity: int) -> int:
+    """Allocate structure cell on heap.
+
+    Creates STR cell followed by functor cell. Caller must write
+    argument cells at functor_addr+1 through functor_addr+arity.
+
+    Args:
+        machine: Machine instance with heap and H register
+        name: Functor name
+        arity: Functor arity
+
+    Returns:
+        Address of STR cell (functor is at returned_addr+1)
+    """
+    str_addr = machine.H
+    functor_addr = machine.H + 1
+
+    # Append STR cell pointing to functor
+    machine.heap.append(make_str(functor_addr))
+    machine.H += 1
+
+    # Append functor cell
+    machine.heap.append(make_functor(name, arity))
+    machine.H += 1
+
+    return str_addr
+
+
+def new_list(machine, head_addr: int, tail_addr: int) -> int:
+    """Allocate list cell on heap.
+
+    Args:
+        machine: Machine instance with heap and H register
+        head_addr: Address of head element
+        tail_addr: Address of tail element
+
+    Returns:
+        Address of new LIST cell
+    """
+    addr = machine.H
+    cell = make_list(head_addr, tail_addr)
+    machine.heap.append(cell)
+    machine.H += 1
+    return addr
