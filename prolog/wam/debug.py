@@ -9,6 +9,8 @@ from typing import Protocol
 
 from prolog.wam.machine import Machine
 
+__all__ = ["TraceSink", "snapshot", "pretty_snapshot"]
+
 
 class TraceSink(Protocol):
     """Protocol for trace event consumers.
@@ -66,11 +68,13 @@ def snapshot(machine: "Machine") -> dict:
             "CP": machine.CP,
             "TR": machine.TR,
             "HB": machine.HB,
+            "S": machine.S,
         },
+        "unify_mode": machine.unify_mode,
         "X": list(machine.X),
         "heap": list(machine.heap),
-        "frames": list(machine.env_stack),
-        "choicepoints": list(machine.choice_stack),
+        "frames": list(machine.frames),
+        "choicepoints": list(machine.cp_stack),
         "trail": list(machine.trail),
     }
 
@@ -91,8 +95,10 @@ def pretty_snapshot(snap: dict, max_heap: int | None = None) -> str:
     regs = snap["regs"]
     lines.append(
         f"P={regs['P']} H={regs['H']} B={regs['B']} "
-        f"E={regs['E']} CP={regs['CP']} TR={regs['TR']} HB={regs['HB']}"
+        f"E={regs['E']} CP={regs['CP']} TR={regs['TR']} HB={regs['HB']} S={regs['S']}"
     )
+    if snap.get("unify_mode"):
+        lines.append(f"Mode: {snap['unify_mode']}")
 
     # X registers
     x_vals = snap["X"]

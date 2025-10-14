@@ -20,8 +20,8 @@ class Machine:
 
     Data areas:
         heap: List of tagged cells
-        env_stack: Environment frames for permanent variables
-        choice_stack: Choicepoint records for backtracking
+        frames: Environment frames for permanent variables
+        cp_stack: Choicepoint records for backtracking
         trail: Trail of bindings for undo on backtrack
     """
 
@@ -35,14 +35,18 @@ class Machine:
         self.E: int | None = None
         self.CP: int | None = None
         self.TR: int = 0
+        self.S: int | None = None  # Structure argument pointer (Phase 1)
+
+        # Unification mode flag (Phase 1)
+        self.unify_mode: str | None = None  # "read" or "write"
 
         # Register banks
         self.X: list = []
 
         # Data areas
         self.heap: list = []
-        self.env_stack: list = []
-        self.choice_stack: list = []
+        self.frames: list = []  # Environment stack
+        self.cp_stack: list = []  # Choicepoint stack
         self.trail: list = []
 
         # Execution control

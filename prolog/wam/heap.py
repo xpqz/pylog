@@ -18,6 +18,26 @@ TAG_STR = 1
 TAG_CON = 2
 TAG_LIST = 3
 
+# Type alias for heap cells
+Cell = tuple[int, ...]
+
+__all__ = [
+    "TAG_REF",
+    "TAG_STR",
+    "TAG_CON",
+    "TAG_LIST",
+    "Cell",
+    "make_ref",
+    "make_str",
+    "make_con",
+    "make_list",
+    "make_functor",
+    "is_ref",
+    "is_str",
+    "is_con",
+    "is_list",
+]
+
 
 def make_ref(addr: int) -> tuple[int, int]:
     """Create a reference cell pointing to given heap address."""

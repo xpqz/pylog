@@ -35,6 +35,16 @@ _INSTRUCTION_ARITY = {
     OP_DBG_SNAP: 0,
 }
 
+__all__ = [
+    "OP_NOOP",
+    "OP_HALT",
+    "OP_SET_X",
+    "OP_DBG_SNAP",
+    "opcode_name",
+    "name_to_opcode",
+    "validate_instruction",
+]
+
 
 def opcode_name(opcode: int) -> str:
     """Convert opcode integer to name string."""
