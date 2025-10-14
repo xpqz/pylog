@@ -69,6 +69,7 @@ def snapshot(machine: "Machine") -> dict:
             "TR": machine.TR,
             "HB": machine.HB,
             "S": machine.S,
+            "EF": machine.EF,
         },
         "unify_mode": machine.unify_mode,
         "X": list(machine.X),
@@ -95,7 +96,8 @@ def pretty_snapshot(snap: dict, max_heap: int | None = None) -> str:
     regs = snap["regs"]
     lines.append(
         f"P={regs['P']} H={regs['H']} B={regs['B']} "
-        f"E={regs['E']} CP={regs['CP']} TR={regs['TR']} HB={regs['HB']} S={regs['S']}"
+        f"E={regs['E']} CP={regs['CP']} TR={regs['TR']} HB={regs['HB']} "
+        f"S={regs['S']} EF={regs['EF']}"
     )
     if snap.get("unify_mode"):
         lines.append(f"Mode: {snap['unify_mode']}")

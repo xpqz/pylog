@@ -220,3 +220,17 @@ The `launch.json` will be expanded to include engine-specific settings.
 - **Docs**
   - [ ] README for the extension
   - [ ] User guide page with screenshots
+
+---
+
+## WAM Integration Notes (experimental backend)
+
+- Backend toggle: support both tree‑walker and WAM backends; add a `backend` field in launch config (e.g., `"wam"` or `"tree"`).
+- Stepping granularity:
+  - Goal‑level (ports): default, same as tree‑walker using CALL/EXIT/REDO/FAIL.
+  - Instruction‑level: optional; pauses at WAM instruction boundaries with registers view.
+- Variables view (WAM):
+  - Expose `P`, `CP`, `B`, `E`, `HB`, `H`, `TR` and selected `X[i]`/`Y[i]` values as expandable nodes.
+  - Reify only on demand and with depth/length caps to avoid heavy serialization.
+- Catch/throw mapping: ensure thrown terms and error terms surface identically under both backends; stop reasons include `exception` where applicable.
+- Performance: keep tracing/debugging costs bounded; gate heavy reification and heap snapshots behind explicit flags.

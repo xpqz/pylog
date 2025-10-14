@@ -53,7 +53,7 @@ Detailed plans for each implementation phase:
 - [phase-2-control-backtracking.md](phase-2-control-backtracking.md) — Call/return, environments, choicepoints, cut
 - [phase-3-compiler.md](phase-3-compiler.md) — Prolog to WAM compiler
 - [phase-3-5-exceptions-occurs-check.md](phase-3-5-exceptions-occurs-check.md) — Exception handling and occurs-check policy
-- [phase-4-control-builtins-bridge.md](phase-4-control-builtins-bridge.md) — Disjunction, if-then-else, builtins bridge
+- [phase-4-control-builtins.md](phase-4-control-builtins.md) — Disjunction, if-then-else, core builtins
 - [phase-5-indexing.md](phase-5-indexing.md) — First-argument indexing
 - [phase-5-5-optimization.md](phase-5-5-optimization.md) — Peephole optimisations, LCO, trimming
 - [phase-6-gc.md](phase-6-gc.md) — Garbage collection

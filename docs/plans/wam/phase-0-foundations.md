@@ -114,8 +114,9 @@ Rollout
 
 Implementation Checklist
 - [x] Package + modules scaffolded
-- [ ] Opcode set bootstrapped
-- [ ] Machine state + run loop implemented
-- [ ] Snapshots + pretty printer
+- [x] Opcode set bootstrapped
+- [x] Machine state + data structures
+- [ ] Dispatch + run loop implemented
+- [x] Snapshots + pretty printer
 - [ ] Unit tests
 - [ ] CI job (non‑blocking)
