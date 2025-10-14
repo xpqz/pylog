@@ -105,6 +105,10 @@ class Machine:
         - All REF cells point to valid heap addresses
         - Unbound REF cells are canonical (self-referential)
         - All cell addresses are within heap bounds
+
+        Future: Once the loader is wired, may add assertion that STR cells'
+        functor addresses point to CON cells with (name, arity) tuples.
+        Currently relaxed to allow manual heap construction in tests.
         """
         # Heap pointer within bounds
         assert (
