@@ -35,7 +35,17 @@ Frame and choicepoint manipulation will be implemented in subsequent phases.
 Phase 0 provides only the data structure scaffolding.
 """
 
-from prolog.wam.instructions import OP_DBG_SNAP, OP_HALT, OP_NOOP, OP_SET_X
+from prolog.wam.heap import new_con, new_ref, new_str
+from prolog.wam.instructions import (
+    OP_DBG_SNAP,
+    OP_HALT,
+    OP_NOOP,
+    OP_PUT_CONSTANT,
+    OP_PUT_STRUCTURE,
+    OP_PUT_VALUE,
+    OP_PUT_VARIABLE,
+    OP_SET_X,
+)
 
 
 class Machine:
@@ -202,6 +212,55 @@ class Machine:
             self.P += 1
         elif opcode == OP_DBG_SNAP:
             # Capture snapshot (currently no-op; full implementation in testing)
+            self.P += 1
+        elif opcode == OP_PUT_VARIABLE:
+            # put_variable Xi, Aj
+            xi, aj = args
+            # Create new unbound REF
+            addr = new_ref(self)
+            # Extend X if needed
+            while len(self.X) <= max(xi, aj):
+                self.X.append(None)
+            # Store in both Xi and Aj
+            self.X[xi] = addr
+            self.X[aj] = addr
+            self.P += 1
+        elif opcode == OP_PUT_VALUE:
+            # put_value Xi, Aj
+            xi, aj = args
+            # Extend X if needed for both Xi and Aj
+            while len(self.X) <= max(xi, aj):
+                self.X.append(None)
+            # Copy Xi to Aj
+            self.X[aj] = self.X[xi]
+            self.P += 1
+        elif opcode == OP_PUT_CONSTANT:
+            # put_constant C, Aj
+            const_value, aj = args
+            # Allocate constant on heap
+            addr = new_con(self, const_value)
+            # Extend X if needed
+            while len(self.X) <= aj:
+                self.X.append(None)
+            # Store in Aj
+            self.X[aj] = addr
+            self.P += 1
+        elif opcode == OP_PUT_STRUCTURE:
+            # put_structure F/N, Aj
+            functor, aj = args  # functor is (name, arity) tuple
+            name, arity = functor
+            # Allocate structure (STR then functor)
+            str_addr = new_str(self, name, arity)
+            # Extend X if needed
+            while len(self.X) <= aj:
+                self.X.append(None)
+            # Store STR address in Aj
+            self.X[aj] = str_addr
+            # Set write mode
+            self.unify_mode = "write"
+            # Set S to first argument slot (functor_addr + 1)
+            functor_addr = str_addr + 1
+            self.S = functor_addr + 1
             self.P += 1
         else:
             # Unknown opcode - halt with error
