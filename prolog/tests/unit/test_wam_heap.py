@@ -18,6 +18,7 @@ from prolog.wam.heap import (
     new_list,
     new_ref,
     new_str,
+    write_struct_args,
 )
 from prolog.wam.machine import Machine
 
@@ -384,9 +385,10 @@ class TestIntegrationScenarios:
         str_addr = new_str(m, "foo", 2)
         functor_addr = str_addr + 1
 
-        # Arguments at functor_addr + 1, functor_addr + 2
+        # Write arguments at functor_addr + 1, functor_addr + 2
         arg1 = new_ref(m)  # X
         arg2 = new_con(m, "bar")
+        write_struct_args(m, arg1, arg2)  # Documents intent
 
         # Verify structure
         assert m.heap[str_addr] == (TAG_STR, functor_addr)

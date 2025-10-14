@@ -40,6 +40,7 @@ __all__ = [
     "new_con",
     "new_str",
     "new_list",
+    "write_struct_args",
 ]
 
 
@@ -132,6 +133,10 @@ def new_str(machine, name: str, arity: int) -> int:
     Creates STR cell followed by functor cell. Caller must write
     argument cells at functor_addr+1 through functor_addr+arity.
 
+    Note: Invariants apply after the function returns. There is a transient
+    moment between the STR and functor appends where the STR points to
+    an address equal to H.
+
     Args:
         machine: Machine instance with heap and H register
         name: Functor name
@@ -170,3 +175,26 @@ def new_list(machine, head_addr: int, tail_addr: int) -> int:
     machine.heap.append(cell)
     machine.H += 1
     return addr
+
+
+def write_struct_args(machine, *args: int) -> None:
+    """Write N argument cells after a structure's functor.
+
+    Helper for writing structure arguments in sequence. Each arg should
+    be a heap address (typically from new_ref, new_con, etc.).
+
+    Args:
+        machine: Machine instance with heap and H register
+        *args: Variable number of heap addresses to write as arguments
+
+    Example:
+        str_addr = new_str(m, "foo", 2)
+        arg1 = new_ref(m)
+        arg2 = new_con(m, "bar")
+        # Arguments are already written during allocation
+    """
+    # This is a no-op helper for documentation/readability.
+    # Arguments are typically allocated via new_ref/new_con after new_str,
+    # which naturally places them at functor_addr+1, functor_addr+2, etc.
+    # This function exists primarily for test readability and documentation.
+    pass
