@@ -35,6 +35,8 @@ Frame and choicepoint manipulation will be implemented in subsequent phases.
 Phase 0 provides only the data structure scaffolding.
 """
 
+from prolog.wam.instructions import OP_DBG_SNAP, OP_HALT, OP_NOOP, OP_SET_X
+
 
 class Machine:
     """Warren Abstract Machine for Prolog execution.
@@ -164,10 +166,7 @@ class Machine:
         """Execute single instruction at P.
 
         Returns:
-            True if execution should continue, False if halted or invalid state
-
-        Raises:
-            IndexError: If P points outside code area
+            True if execution should continue, False if halted or P out of bounds
         """
         if self.halted or self.P < 0 or self.P >= len(self.code):
             return False
@@ -184,12 +183,12 @@ class Machine:
         args = instruction[1:] if len(instruction) > 1 else ()
 
         # Dispatch
-        if opcode == 0:  # OP_NOOP
+        if opcode == OP_NOOP:
             self.P += 1
-        elif opcode == 1:  # OP_HALT
+        elif opcode == OP_HALT:
             self.halted = True
             return False
-        elif opcode == 2:  # OP_SET_X
+        elif opcode == OP_SET_X:
             # set_x reg_idx, value
             reg_idx, value = args
             # Ensure X list is large enough
@@ -197,7 +196,7 @@ class Machine:
                 self.X.append(None)
             self.X[reg_idx] = value
             self.P += 1
-        elif opcode == 3:  # OP_DBG_SNAP
+        elif opcode == OP_DBG_SNAP:
             # Capture snapshot (currently no-op; full implementation in testing)
             self.P += 1
         else:
