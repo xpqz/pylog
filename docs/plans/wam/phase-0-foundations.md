@@ -119,4 +119,4 @@ Implementation Checklist
 - [x] Dispatch + run loop implemented
 - [x] Snapshots + pretty printer
 - [x] Unit tests
-- [ ] CI job (non‑blocking)
+- [x] CI job (non‑blocking)
