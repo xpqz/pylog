@@ -270,8 +270,8 @@ class Machine:
         elif opcode == OP_GET_VARIABLE:
             # get_variable Xi, Aj
             xi, aj = args
-            # Extend X if needed
-            while len(self.X) <= xi:
+            # Extend X if needed for both Xi and Aj
+            while len(self.X) <= max(xi, aj):
                 self.X.append(None)
             # Copy Aj to Xi
             self.X[xi] = self.X[aj]
@@ -298,19 +298,27 @@ class Machine:
             # Deref Aj to see what we have
             addr = deref(self, self.X[aj])
             cell = self.heap[addr]
+            tag = cell[0]
 
-            # Check if already matches without allocating
-            if cell[0] == 2 and cell[1] == const_value:  # TAG_CON and matching value
-                # Already matches, no allocation needed
-                self.P += 1
-            else:
-                # Need to allocate and unify
-                const_addr = new_con(self, const_value)
-                if not unify(self, self.X[aj], const_addr):
-                    # Unification failed
+            # TAG_CON = 2
+            if tag == 2:  # TAG_CON
+                # Already a constant: check match
+                if cell[1] == const_value:
+                    # Match: succeed without allocation
+                    self.P += 1
+                else:
+                    # Mismatch: fail without allocation
                     self.halted = True
                     return False
+            elif tag == 0:  # TAG_REF (unbound variable)
+                # Allocate constant and bind
+                const_addr = new_con(self, const_value)
+                bind(self, addr, const_addr)
                 self.P += 1
+            else:
+                # Type mismatch (STR or LIST): fail without allocation
+                self.halted = True
+                return False
         elif opcode == OP_GET_STRUCTURE:
             # get_structure F/N, Aj
             functor, aj = args  # functor is (name, arity) tuple

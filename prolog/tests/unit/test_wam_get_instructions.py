@@ -296,16 +296,20 @@ class TestGetConstant:
         assert m.P == 1
 
     def test_get_constant_fails_on_different_constant(self):
-        """get_constant fails when Aj has different constant."""
+        """get_constant fails when Aj has different constant without allocating."""
         m = Machine()
         const = new_con(m, "foo")
         m.X = [const]
         m.code = [(OP_GET_CONSTANT, "bar", 0)]
 
+        initial_h = m.H
+
         m.step()
 
         # Unification should fail
         assert m.halted
+        # Should not allocate on known mismatch
+        assert m.H == initial_h
 
     def test_get_constant_with_integer(self):
         """get_constant works with integer constants."""
@@ -333,6 +337,23 @@ class TestGetConstant:
         const_addr = m.H - 1
         assert m.heap[const_addr] == (TAG_CON, "atom")
         assert not m.halted
+
+    def test_get_constant_fails_on_type_mismatch(self):
+        """get_constant fails on type mismatch (STR/LIST) without allocating."""
+        m = Machine()
+        str_addr = new_str(m, "f", 1)
+        new_ref(m)  # arg
+        m.X = [str_addr]
+        m.code = [(OP_GET_CONSTANT, 42, 0)]
+
+        initial_h = m.H
+
+        m.step()
+
+        # Should fail on type mismatch
+        assert m.halted
+        # Should not allocate
+        assert m.H == initial_h
 
 
 class TestGetStructure:
