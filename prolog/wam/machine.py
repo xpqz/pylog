@@ -37,6 +37,8 @@ Phase 0 provides only the data structure scaffolding.
 
 from prolog.wam.heap import is_ref, is_str, new_con, new_ref, new_str
 from prolog.wam.instructions import (
+    OP_ALLOCATE,
+    OP_DEALLOCATE,
     OP_DBG_SNAP,
     OP_GET_CONSTANT,
     OP_GET_STRUCTURE,
@@ -108,6 +110,44 @@ class Machine:
 
         # Optional trace sink
         self.trace_sink = None
+
+    def get_y(self, yi: int):
+        """Read Y register from current environment frame.
+
+        Args:
+            yi: Y register index (0-based)
+
+        Returns:
+            Value stored in Y[yi]
+
+        Raises:
+            IndexError: If yi is out of bounds for current frame
+            AssertionError: If E is None (no active frame)
+        """
+        assert self.E is not None, "No active environment frame"
+        # Y registers start at E + 2 (after prev_E and saved_CP)
+        addr = self.E + 2 + yi
+        if addr >= len(self.frames):
+            raise IndexError(f"Y register Y{yi} out of bounds for current frame")
+        return self.frames[addr]
+
+    def set_y(self, yi: int, value) -> None:
+        """Write Y register in current environment frame.
+
+        Args:
+            yi: Y register index (0-based)
+            value: Value to store in Y[yi]
+
+        Raises:
+            IndexError: If yi is out of bounds for current frame
+            AssertionError: If E is None (no active frame)
+        """
+        assert self.E is not None, "No active environment frame"
+        # Y registers start at E + 2 (after prev_E and saved_CP)
+        addr = self.E + 2 + yi
+        if addr >= len(self.frames):
+            raise IndexError(f"Y register Y{yi} out of bounds for current frame")
+        self.frames[addr] = value
 
     def check_invariants(self) -> None:
         """Verify machine state invariants.
@@ -350,6 +390,31 @@ class Machine:
                 # Type mismatch (not REF or STR)
                 self.halted = True
                 return False
+
+            self.P += 1
+        elif opcode == OP_ALLOCATE:
+            # allocate N
+            (n,) = args
+
+            # Create frame: [prev_E, saved_CP, Y0, Y1, ..., Y_{N-1}]
+            frame = [self.E, self.CP] + [None] * n
+
+            # Push frame by extending frames list
+            frame_addr = len(self.frames)
+            self.frames.extend(frame)
+            self.E = frame_addr
+
+            self.P += 1
+        elif opcode == OP_DEALLOCATE:
+            # deallocate
+            if self.E is None:
+                # No frame to deallocate - error condition
+                self.halted = True
+                return False
+
+            # Restore from current frame
+            self.CP = self.frames[self.E + 1]
+            self.E = self.frames[self.E + 0]
 
             self.P += 1
         else:
