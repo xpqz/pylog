@@ -985,13 +985,13 @@ def unify_terms(addr_a: int, addr_b: int) -> bool:
 
 **Unify Family** (read mode, matching existing heap):
 
-- `unify_variable Xi`: `Xi = deref(heap[S]); S += 1`
-- `unify_value Xi`: `unify(Xi, deref(heap[S])); S += 1`
+- `unify_variable Xi`: `Xi = heap[S]; S += 1` (reads address or cell from arg slot)
+- `unify_value Xi`: `unify(Xi, heap[S]); S += 1` (unifies with address stored in arg slot)
 
 **Set Family** (write mode, building new heap structure):
 
-- `set_variable Xi`: `Xi = allocate_ref(); heap.append(Xi); H += 1`
-- `set_value Xi`: `heap.append(deref(Xi)); H += 1`
+- `set_variable Xi`: `Xi = allocate_ref(); heap.append(Xi); H += 1` (writes cell in-place)
+- `set_value Xi`: `heap.append(Xi); H += 1` (writes address from Xi)
 
 ---
 

@@ -1,6 +1,5 @@
 """Unit tests for WAM unification operations."""
 
-
 from prolog.wam.heap import TAG_REF, make_ref, new_con, new_ref
 from prolog.wam.machine import Machine
 from prolog.wam.unify import bind, deref, trail_if_needed, untrail

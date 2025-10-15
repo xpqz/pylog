@@ -10,6 +10,7 @@ from prolog.wam.instructions import (
     OP_UNIFY_VARIABLE,
 )
 from prolog.wam.machine import Machine
+from prolog.wam.unify import deref
 
 
 class TestSetVariable:
@@ -271,15 +272,17 @@ class TestUnifyValue:
     def test_unify_value_binds_variable(self):
         """unify_value binds Xi when it's unbound."""
         m = Machine()
-        var_addr = new_ref(m)  # heap[0] - unbound
-        str_addr = new_str(m, "f", 1)  # heap[1-2]
-        const_addr = new_con(m, 99)  # heap[3]
-        m.heap.append(const_addr)  # heap[4] = 99
-        m.X = [str_addr, var_addr]
+        # Build structure f(99) properly
+        const_addr = new_con(m, 99)
+        var_addr = new_ref(m)
+        m.X = [const_addr, var_addr]
 
         m.code = [
-            (OP_GET_STRUCTURE, ("f", 1), 0),  # S=4
-            (OP_UNIFY_VALUE, 1),  # Unify X1 (heap[0]) with heap[4]
+            (OP_PUT_STRUCTURE, ("f", 1), 2),  # Build f/_ in A2
+            (OP_SET_VALUE, 0),  # Write const as arg
+            # Now unify with var
+            (OP_GET_STRUCTURE, ("f", 1), 2),  # Read from A2
+            (OP_UNIFY_VALUE, 1),  # Unify X1 (var) with arg
         ]
 
         m.run()
@@ -345,11 +348,19 @@ class TestUnifyVariableWriteMode:
         m.step()  # get_structure
         assert m.unify_mode == "write"
 
+        # After get_structure on unbound: X[0] still points to REF, which is now bound to STR
+        # Must deref to get actual STR address
+        str_addr = deref(m, m.X[0])
+        functor_addr = str_addr + 1
+        expected_s = functor_addr + 1
+        assert m.S == expected_s
+
         m.step()  # unify_variable
 
-        # Should create REF at heap[2]
-        assert m.heap[2] == (TAG_REF, 2)
-        assert m.X[1] == 2
+        # Should create REF at the arg slot
+        arg_addr = expected_s
+        assert m.heap[arg_addr] == (TAG_REF, arg_addr)
+        assert m.X[1] == arg_addr
 
 
 class TestUnifyValueWriteMode:
@@ -370,10 +381,16 @@ class TestUnifyValueWriteMode:
         m.step()  # get_structure
         assert m.unify_mode == "write"
 
+        # After get_structure: X[0] still points to REF, must deref to get STR
+        str_addr = deref(m, m.X[0])
+        functor_addr = str_addr + 1
+        arg_addr = functor_addr + 1
+        assert m.S == arg_addr
+
         m.step()  # unify_value
 
-        # Should write X1's address to heap[2]
-        assert m.heap[2] == const_addr
+        # Should write X1's address to arg slot
+        assert m.heap[arg_addr] == const_addr
 
 
 class TestSetIntegration:
@@ -383,19 +400,22 @@ class TestSetIntegration:
         """Build f(X) using put_structure + set_variable."""
         m = Machine()
         m.code = [
-            (OP_PUT_STRUCTURE, ("f", 1), 0),
-            (OP_SET_VARIABLE, 0),
+            (OP_PUT_STRUCTURE, ("f", 1), 1),  # Build in A1, not A0
+            (OP_SET_VARIABLE, 0),  # X0 gets the new REF
         ]
 
         m.run()
 
-        # heap[0] = STR → heap[1]
-        # heap[1] = CON (f, 1)
-        # heap[2] = REF 2 (X)
-        assert m.heap[0] == (TAG_STR, 1)
-        assert m.heap[1] == (TAG_CON, ("f", 1))
-        assert m.heap[2] == (TAG_REF, 2)
-        assert m.X[0] == 0  # A0 points to structure
+        # Get structure address and compute offsets
+        str_addr = m.X[1]
+        functor_addr = str_addr + 1
+        arg_addr = functor_addr + 1
+
+        # Verify layout
+        assert m.heap[str_addr] == (TAG_STR, functor_addr)
+        assert m.heap[functor_addr] == (TAG_CON, ("f", 1))
+        assert m.heap[arg_addr] == (TAG_REF, arg_addr)  # X is unbound REF
+        assert m.X[0] == arg_addr  # X0 points to the REF
 
     def test_build_structure_with_constant(self):
         """Build f(42) using put_structure + set_value."""
@@ -420,24 +440,38 @@ class TestSetIntegration:
         m = Machine()
         m.code = [
             # Build g(X)
-            (OP_PUT_STRUCTURE, ("g", 1), 0),
-            (OP_SET_VARIABLE, 0),  # X
+            (OP_PUT_STRUCTURE, ("g", 1), 2),  # Build in A2
+            (OP_SET_VARIABLE, 0),  # X in X0
             # Build f(g(X), Y)
-            (OP_PUT_STRUCTURE, ("f", 2), 1),
-            (OP_SET_VALUE, 0),  # g(X)
-            (OP_SET_VARIABLE, 1),  # Y
+            (OP_PUT_STRUCTURE, ("f", 2), 3),  # Build in A3
+            (OP_SET_VALUE, 2),  # Write g(X) from A2
+            (OP_SET_VARIABLE, 1),  # Y in X1
         ]
 
         m.run()
 
-        # g(X) at heap[0-2], f(...) at heap[3-5]
-        assert m.heap[0] == (TAG_STR, 1)
-        assert m.heap[1] == (TAG_CON, ("g", 1))
-        assert m.heap[2] == (TAG_REF, 2)  # X
-        assert m.heap[3] == (TAG_STR, 4)
-        assert m.heap[4] == (TAG_CON, ("f", 2))
-        assert m.heap[5] == 0  # Points to g(X)
-        assert m.heap[6] == (TAG_REF, 6)  # Y
+        # Get addresses
+        g_str_addr = m.X[2]
+        g_functor_addr = g_str_addr + 1
+        g_arg_addr = g_functor_addr + 1
+
+        f_str_addr = m.X[3]
+        f_functor_addr = f_str_addr + 1
+        f_arg1_addr = f_functor_addr + 1
+        f_arg2_addr = f_arg1_addr + 1
+
+        # Verify g(X)
+        assert m.heap[g_str_addr] == (TAG_STR, g_functor_addr)
+        assert m.heap[g_functor_addr] == (TAG_CON, ("g", 1))
+        assert m.heap[g_arg_addr] == (TAG_REF, g_arg_addr)  # X unbound
+        assert m.X[0] == g_arg_addr  # X0 points to X
+
+        # Verify f(g(X), Y)
+        assert m.heap[f_str_addr] == (TAG_STR, f_functor_addr)
+        assert m.heap[f_functor_addr] == (TAG_CON, ("f", 2))
+        assert m.heap[f_arg1_addr] == g_str_addr  # Points to g(X)
+        assert m.heap[f_arg2_addr] == (TAG_REF, f_arg2_addr)  # Y unbound
+        assert m.X[1] == f_arg2_addr  # X1 points to Y
 
 
 class TestUnifyIntegration:
@@ -446,21 +480,22 @@ class TestUnifyIntegration:
     def test_match_simple_structure(self):
         """Match f(42) using get_structure + unify_variable."""
         m = Machine()
-        # Build f(42) on heap
-        str_addr = new_str(m, "f", 1)
+        # Build f(42) properly
         const_addr = new_con(m, 42)
-        m.heap.append(const_addr)  # Argument
-        m.X = [str_addr]
+        m.X = [const_addr]
 
         m.code = [
-            (OP_GET_STRUCTURE, ("f", 1), 0),
-            (OP_UNIFY_VARIABLE, 1),  # X1 = 42
+            (OP_PUT_STRUCTURE, ("f", 1), 1),  # Build f/_ in A1
+            (OP_SET_VALUE, 0),  # Write const as arg
+            # Now match it
+            (OP_GET_STRUCTURE, ("f", 1), 1),  # Read from A1
+            (OP_UNIFY_VARIABLE, 2),  # X2 = arg
         ]
 
         m.run()
 
         assert not m.halted
-        assert m.X[1] == const_addr
+        assert m.X[2] == const_addr
 
     def test_match_with_unify_value(self):
         """Match f(X, X) with f(a, a) using unify_value."""
@@ -484,25 +519,28 @@ class TestUnifyIntegration:
     def test_match_nested_structure(self):
         """Match f(g(X)) using nested get_structure + unify sequences."""
         m = Machine()
-        # Build f(g(42)) on heap
-        inner_str = new_str(m, "g", 1)  # heap[0-1]
-        const_addr = new_con(m, 42)  # heap[2]
-        m.heap.append(const_addr)  # heap[3] = 42
-        outer_str = new_str(m, "f", 1)  # heap[4-5]
-        m.heap.append(inner_str)  # heap[6] = points to g(...)
-        m.X = [outer_str]
+        # Build f(g(42)) properly
+        const_addr = new_con(m, 42)
+        m.X = [const_addr]
 
         m.code = [
-            (OP_GET_STRUCTURE, ("f", 1), 0),  # Match f
-            (OP_UNIFY_VARIABLE, 1),  # X1 = g(...)
-            (OP_GET_STRUCTURE, ("g", 1), 1),  # Match g in X1
-            (OP_UNIFY_VARIABLE, 2),  # X2 = 42
+            # Build g(42)
+            (OP_PUT_STRUCTURE, ("g", 1), 1),  # Build g/_ in A1
+            (OP_SET_VALUE, 0),  # Write const
+            # Build f(g(42))
+            (OP_PUT_STRUCTURE, ("f", 1), 2),  # Build f/_ in A2
+            (OP_SET_VALUE, 1),  # Write g structure
+            # Now match it
+            (OP_GET_STRUCTURE, ("f", 1), 2),  # Match f in A2
+            (OP_UNIFY_VARIABLE, 3),  # X3 = g(...)
+            (OP_GET_STRUCTURE, ("g", 1), 3),  # Match g in X3
+            (OP_UNIFY_VARIABLE, 4),  # X4 = 42
         ]
 
         m.run()
 
         assert not m.halted
-        assert m.X[2] == const_addr
+        assert m.X[4] == const_addr
 
 
 class TestMixedSequences:
@@ -512,19 +550,19 @@ class TestMixedSequences:
         """Build structure, then match it."""
         m = Machine()
         m.code = [
-            # Build f(42)
-            (OP_PUT_STRUCTURE, ("f", 1), 0),
-            (OP_SET_VARIABLE, 0),  # X0 will be REF
+            # Build f(X) where X is unbound
+            (OP_PUT_STRUCTURE, ("f", 1), 1),  # Build in A1
+            (OP_SET_VARIABLE, 0),  # X0 = new REF
             # Match against it
-            (OP_GET_STRUCTURE, ("f", 1), 0),
-            (OP_UNIFY_VARIABLE, 1),  # X1 = X0's REF
+            (OP_GET_STRUCTURE, ("f", 1), 1),  # Match A1
+            (OP_UNIFY_VARIABLE, 2),  # X2 = arg
         ]
 
         m.run()
 
         assert not m.halted
-        # Both should point to same REF
-        assert m.X[0] == m.X[1]
+        # X0 and X2 should point to same REF
+        assert m.X[0] == m.X[2]
 
 
 class TestEdgeCases:
@@ -580,7 +618,7 @@ class TestEdgeCases:
         m.run()
 
         # Should write None to heap
-        assert m.heap[2] == None
+        assert m.heap[2] is None
 
     def test_unify_value_none_handling(self):
         """unify_value with None should handle gracefully."""

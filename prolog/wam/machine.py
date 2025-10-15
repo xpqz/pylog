@@ -362,12 +362,23 @@ class Machine:
             (xi,) = args
 
             if self.unify_mode == "read":
-                # Read mode: read heap[S] to Xi
+                # Read mode: store address of argument slot in Xi
+                # Bounds check
+                if self.S >= len(self.heap):
+                    self.halted = True
+                    return False
                 # Extend X if needed
                 while len(self.X) <= xi:
                     self.X.append(None)
-                # Read from heap at S
-                self.X[xi] = self.heap[self.S]
+                # Check what's at heap[S]
+                value = self.heap[self.S]
+                if isinstance(value, int):
+                    # It's an address (from set_value/unify_value)
+                    self.X[xi] = value
+                else:
+                    # It's a cell (from set_variable/unify_variable)
+                    # Store the address of this heap position
+                    self.X[xi] = self.S
                 self.S += 1
             elif self.unify_mode == "write":
                 # Write mode: create new REF, write to heap, assign to Xi
@@ -404,17 +415,17 @@ class Machine:
             self.P += 1
         elif opcode == OP_SET_VARIABLE:
             # set_variable Xi
-            # Create new unbound REF, write to heap, assign to Xi
+            # Create new unbound REF in argument slot, assign address to Xi
             (xi,) = args
 
-            # Create REF on heap
+            # Create REF cell in argument slot (new_ref appends to heap)
             addr = new_ref(self)
             # Extend X if needed
             while len(self.X) <= xi:
                 self.X.append(None)
-            # Assign to Xi
+            # Assign address to Xi
             self.X[xi] = addr
-            # heap already has the REF from new_ref
+            # new_ref already appended the cell and advanced H
             self.S += 1
             self.P += 1
         elif opcode == OP_SET_VALUE:
