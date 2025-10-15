@@ -422,9 +422,25 @@ class Machine:
                 self.halted = True
                 return False
 
+            # Get frame size from n_slots field
+            n_slots = self.frames[self.E + 2]
+            frame_size = 3 + n_slots  # prev_E, saved_CP, n_slots, Y0...Y_{n-1}
+
             # Restore from current frame
             self.CP = self.frames[self.E + 1]
-            self.E = self.frames[self.E + 0]
+            prev_E = self.frames[self.E + 0]
+
+            # Actually free the frame memory by removing it from frames list
+            # Remove frame: [E .. E+frame_size)
+            del self.frames[self.E : self.E + frame_size]
+
+            # Restore E (no adjustment needed if removing from end, but prev_E may need adjustment)
+            # If prev_E was after this frame, adjust it
+            if prev_E is not None and prev_E > self.E:
+                # prev_E pointed past the frame we just deleted
+                self.E = prev_E - frame_size
+            else:
+                self.E = prev_E
 
             self.P += 1
         else:

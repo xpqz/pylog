@@ -460,3 +460,51 @@ class TestFrameIntegration:
         # Heap should be unchanged
         assert m.H == initial_H
         assert len(m.heap) == initial_H
+
+    def test_deallocate_actually_frees_frame_memory(self):
+        """deallocate must actually remove frame from frames list to prevent memory leak.
+
+        Regression test: deallocate was only restoring CP/E but leaving stale data in
+        frames list, causing unbounded growth in tail-recursive/loop scenarios.
+        """
+        m = Machine()
+        # Simulate tail-recursive loop: allocate then deallocate repeatedly
+        m.code = [
+            (OP_ALLOCATE, 2),
+            (OP_DEALLOCATE,),
+            (OP_ALLOCATE, 2),
+            (OP_DEALLOCATE,),
+            (OP_ALLOCATE, 2),
+            (OP_DEALLOCATE,),
+            (OP_HALT,),
+        ]
+        m.CP = 10
+
+        # First iteration
+        m.step()  # allocate
+        assert m.E == 0
+        first_frame_size = len(m.frames)
+        assert first_frame_size == 5  # [prev_E, CP, n_slots, Y0, Y1]
+
+        m.step()  # deallocate
+        assert m.E is None
+        # Frame should be removed from frames list
+        assert len(m.frames) == 0, "deallocate should free frame memory"
+
+        # Second iteration
+        m.step()  # allocate
+        assert m.E == 0
+        assert len(m.frames) == 5
+
+        m.step()  # deallocate
+        assert m.E is None
+        assert len(m.frames) == 0, "frames should not grow on repeated alloc/dealloc"
+
+        # Third iteration
+        m.step()  # allocate
+        assert m.E == 0
+        assert len(m.frames) == 5
+
+        m.step()  # deallocate
+        assert m.E is None
+        assert len(m.frames) == 0, "frames should remain bounded"
