@@ -20,6 +20,12 @@ Phase 1 get instruction family:
 - OP_GET_VALUE: Unify Xi with Aj
 - OP_GET_CONSTANT: Unify Aj with constant
 - OP_GET_STRUCTURE: Unify Aj with structure
+
+Phase 1 unify/set instruction families:
+- OP_UNIFY_VARIABLE: Read mode: read heap[S] to Xi; Write mode: create REF, write to heap
+- OP_UNIFY_VALUE: Read mode: unify Xi with heap[S]; Write mode: write Xi to heap
+- OP_SET_VARIABLE: Create new unbound REF, write to heap, assign to Xi
+- OP_SET_VALUE: Write Xi value to heap
 """
 
 # Opcode constants
@@ -35,6 +41,10 @@ OP_GET_VARIABLE = 8
 OP_GET_VALUE = 9
 OP_GET_CONSTANT = 10
 OP_GET_STRUCTURE = 11
+OP_UNIFY_VARIABLE = 12
+OP_UNIFY_VALUE = 13
+OP_SET_VARIABLE = 14
+OP_SET_VALUE = 15
 
 # Opcode name mapping for debugging and pretty-printing
 _OPCODE_NAMES = {
@@ -50,6 +60,10 @@ _OPCODE_NAMES = {
     OP_GET_VALUE: "get_value",
     OP_GET_CONSTANT: "get_constant",
     OP_GET_STRUCTURE: "get_structure",
+    OP_UNIFY_VARIABLE: "unify_variable",
+    OP_UNIFY_VALUE: "unify_value",
+    OP_SET_VARIABLE: "set_variable",
+    OP_SET_VALUE: "set_value",
 }
 
 # Reverse mapping for name->opcode lookup
@@ -69,6 +83,10 @@ _INSTRUCTION_ARITY = {
     OP_GET_VALUE: 2,  # get_value Xi, Aj
     OP_GET_CONSTANT: 2,  # get_constant C, Aj
     OP_GET_STRUCTURE: 2,  # get_structure F/N, Aj
+    OP_UNIFY_VARIABLE: 1,  # unify_variable Xi
+    OP_UNIFY_VALUE: 1,  # unify_value Xi
+    OP_SET_VARIABLE: 1,  # set_variable Xi
+    OP_SET_VALUE: 1,  # set_value Xi
 }
 
 __all__ = [
@@ -84,6 +102,10 @@ __all__ = [
     "OP_GET_VALUE",
     "OP_GET_CONSTANT",
     "OP_GET_STRUCTURE",
+    "OP_UNIFY_VARIABLE",
+    "OP_UNIFY_VALUE",
+    "OP_SET_VARIABLE",
+    "OP_SET_VALUE",
     "opcode_name",
     "name_to_opcode",
     "validate_instruction",

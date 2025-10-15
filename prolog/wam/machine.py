@@ -48,7 +48,11 @@ from prolog.wam.instructions import (
     OP_PUT_STRUCTURE,
     OP_PUT_VALUE,
     OP_PUT_VARIABLE,
+    OP_SET_VALUE,
+    OP_SET_VARIABLE,
     OP_SET_X,
+    OP_UNIFY_VALUE,
+    OP_UNIFY_VARIABLE,
 )
 from prolog.wam.unify import bind, deref, unify
 
@@ -351,6 +355,78 @@ class Machine:
                 self.halted = True
                 return False
 
+            self.P += 1
+        elif opcode == OP_UNIFY_VARIABLE:
+            # unify_variable Xi
+            # Behavior depends on unify_mode (set by get_structure/put_structure)
+            (xi,) = args
+
+            if self.unify_mode == "read":
+                # Read mode: read heap[S] to Xi
+                # Extend X if needed
+                while len(self.X) <= xi:
+                    self.X.append(None)
+                # Read from heap at S
+                self.X[xi] = self.heap[self.S]
+                self.S += 1
+            elif self.unify_mode == "write":
+                # Write mode: create new REF, write to heap, assign to Xi
+                addr = new_ref(self)
+                # Extend X if needed
+                while len(self.X) <= xi:
+                    self.X.append(None)
+                self.X[xi] = addr
+                # heap already has the REF from new_ref
+                self.S += 1
+            self.P += 1
+        elif opcode == OP_UNIFY_VALUE:
+            # unify_value Xi
+            # Behavior depends on unify_mode
+            (xi,) = args
+
+            if self.unify_mode == "read":
+                # Read mode: unify Xi with heap[S]
+                if self.X[xi] is None or self.S >= len(self.heap):
+                    self.halted = True
+                    return False
+                # Unify Xi with the address stored at heap[S]
+                if not unify(self, self.X[xi], self.heap[self.S]):
+                    # Unification failed
+                    self.halted = True
+                    return False
+                self.S += 1
+            elif self.unify_mode == "write":
+                # Write mode: write Xi address to heap
+                addr = self.X[xi]
+                self.heap.append(addr)
+                self.H += 1
+                self.S += 1
+            self.P += 1
+        elif opcode == OP_SET_VARIABLE:
+            # set_variable Xi
+            # Create new unbound REF, write to heap, assign to Xi
+            (xi,) = args
+
+            # Create REF on heap
+            addr = new_ref(self)
+            # Extend X if needed
+            while len(self.X) <= xi:
+                self.X.append(None)
+            # Assign to Xi
+            self.X[xi] = addr
+            # heap already has the REF from new_ref
+            self.S += 1
+            self.P += 1
+        elif opcode == OP_SET_VALUE:
+            # set_value Xi
+            # Write Xi address to heap (not the cell itself)
+            (xi,) = args
+
+            # Write Xi's address to heap
+            addr = self.X[xi]
+            self.heap.append(addr)
+            self.H += 1
+            self.S += 1
             self.P += 1
         else:
             # Unknown opcode - halt with error
