@@ -14,6 +14,12 @@ Phase 1 put instruction family:
 - OP_PUT_VALUE: Copy Xi to Aj
 - OP_PUT_CONSTANT: Create constant, store in Aj
 - OP_PUT_STRUCTURE: Create structure on heap, store in Aj
+
+Phase 1 get instruction family:
+- OP_GET_VARIABLE: Copy Aj to Xi
+- OP_GET_VALUE: Unify Xi with Aj
+- OP_GET_CONSTANT: Unify Aj with constant
+- OP_GET_STRUCTURE: Unify Aj with structure
 """
 
 # Opcode constants
@@ -25,6 +31,10 @@ OP_PUT_VARIABLE = 4
 OP_PUT_VALUE = 5
 OP_PUT_CONSTANT = 6
 OP_PUT_STRUCTURE = 7
+OP_GET_VARIABLE = 8
+OP_GET_VALUE = 9
+OP_GET_CONSTANT = 10
+OP_GET_STRUCTURE = 11
 
 # Opcode name mapping for debugging and pretty-printing
 _OPCODE_NAMES = {
@@ -36,6 +46,10 @@ _OPCODE_NAMES = {
     OP_PUT_VALUE: "put_value",
     OP_PUT_CONSTANT: "put_constant",
     OP_PUT_STRUCTURE: "put_structure",
+    OP_GET_VARIABLE: "get_variable",
+    OP_GET_VALUE: "get_value",
+    OP_GET_CONSTANT: "get_constant",
+    OP_GET_STRUCTURE: "get_structure",
 }
 
 # Reverse mapping for name->opcode lookup
@@ -51,6 +65,10 @@ _INSTRUCTION_ARITY = {
     OP_PUT_VALUE: 2,  # put_value Xi, Aj
     OP_PUT_CONSTANT: 2,  # put_constant C, Aj
     OP_PUT_STRUCTURE: 2,  # put_structure F/N, Aj
+    OP_GET_VARIABLE: 2,  # get_variable Xi, Aj
+    OP_GET_VALUE: 2,  # get_value Xi, Aj
+    OP_GET_CONSTANT: 2,  # get_constant C, Aj
+    OP_GET_STRUCTURE: 2,  # get_structure F/N, Aj
 }
 
 __all__ = [
@@ -62,6 +80,10 @@ __all__ = [
     "OP_PUT_VALUE",
     "OP_PUT_CONSTANT",
     "OP_PUT_STRUCTURE",
+    "OP_GET_VARIABLE",
+    "OP_GET_VALUE",
+    "OP_GET_CONSTANT",
+    "OP_GET_STRUCTURE",
     "opcode_name",
     "name_to_opcode",
     "validate_instruction",
