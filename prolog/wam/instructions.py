@@ -20,6 +20,10 @@ Phase 1 get instruction family:
 - OP_GET_VALUE: Unify Xi with Aj
 - OP_GET_CONSTANT: Unify Aj with constant
 - OP_GET_STRUCTURE: Unify Aj with structure
+
+Phase 2 environment frame operations:
+- OP_ALLOCATE: Allocate environment frame with N permanent variable slots
+- OP_DEALLOCATE: Deallocate current environment frame, restore CP and E
 """
 
 # Opcode constants
@@ -35,6 +39,8 @@ OP_GET_VARIABLE = 8
 OP_GET_VALUE = 9
 OP_GET_CONSTANT = 10
 OP_GET_STRUCTURE = 11
+OP_ALLOCATE = 12
+OP_DEALLOCATE = 13
 
 # Opcode name mapping for debugging and pretty-printing
 _OPCODE_NAMES = {
@@ -50,6 +56,8 @@ _OPCODE_NAMES = {
     OP_GET_VALUE: "get_value",
     OP_GET_CONSTANT: "get_constant",
     OP_GET_STRUCTURE: "get_structure",
+    OP_ALLOCATE: "allocate",
+    OP_DEALLOCATE: "deallocate",
 }
 
 # Reverse mapping for name->opcode lookup
@@ -69,6 +77,8 @@ _INSTRUCTION_ARITY = {
     OP_GET_VALUE: 2,  # get_value Xi, Aj
     OP_GET_CONSTANT: 2,  # get_constant C, Aj
     OP_GET_STRUCTURE: 2,  # get_structure F/N, Aj
+    OP_ALLOCATE: 1,  # allocate N
+    OP_DEALLOCATE: 0,  # deallocate
 }
 
 __all__ = [
@@ -84,6 +94,8 @@ __all__ = [
     "OP_GET_VALUE",
     "OP_GET_CONSTANT",
     "OP_GET_STRUCTURE",
+    "OP_ALLOCATE",
+    "OP_DEALLOCATE",
     "opcode_name",
     "name_to_opcode",
     "validate_instruction",

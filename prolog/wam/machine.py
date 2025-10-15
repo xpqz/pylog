@@ -3,14 +3,16 @@
 Environment Frame Layout
 ------------------------
 Environment frames store permanent variables (Y registers) and control info:
-    [prev_E, saved_CP, Y0, Y1, Y2, ...]
+    [prev_E, saved_CP, n_slots, Y0, Y1, Y2, ...]
 
 Where:
 - prev_E: Previous environment frame pointer (int or None)
 - saved_CP: Continuation pointer to restore on return (int or None)
+- n_slots: Number of Y register slots in this frame (int)
 - Y0, Y1, ...: Permanent variable slots (any value)
 
 The E register points to the start of the current frame in the frames list.
+Y registers are accessed at offset E + 3 + yi (after prev_E, saved_CP, n_slots).
 
 Choicepoint Layout
 ------------------
@@ -37,6 +39,8 @@ Phase 0 provides only the data structure scaffolding.
 
 from prolog.wam.heap import is_ref, is_str, new_con, new_ref, new_str
 from prolog.wam.instructions import (
+    OP_ALLOCATE,
+    OP_DEALLOCATE,
     OP_DBG_SNAP,
     OP_GET_CONSTANT,
     OP_GET_STRUCTURE,
@@ -108,6 +112,52 @@ class Machine:
 
         # Optional trace sink
         self.trace_sink = None
+
+    def get_y(self, yi: int):
+        """Read Y register from current environment frame.
+
+        Args:
+            yi: Y register index (0-based)
+
+        Returns:
+            Value stored in Y[yi]
+
+        Raises:
+            IndexError: If yi is out of bounds for current frame
+            AssertionError: If E is None (no active frame)
+        """
+        assert self.E is not None, "No active environment frame"
+        # Frame layout: [prev_E, saved_CP, n_slots, Y0, Y1, ...]
+        n_slots = self.frames[self.E + 2]
+        if yi < 0 or yi >= n_slots:
+            raise IndexError(
+                f"Y register Y{yi} out of bounds for frame with {n_slots} slots"
+            )
+        # Y registers start at E + 3 (after prev_E, saved_CP, n_slots)
+        addr = self.E + 3 + yi
+        return self.frames[addr]
+
+    def set_y(self, yi: int, value) -> None:
+        """Write Y register in current environment frame.
+
+        Args:
+            yi: Y register index (0-based)
+            value: Value to store in Y[yi]
+
+        Raises:
+            IndexError: If yi is out of bounds for current frame
+            AssertionError: If E is None (no active frame)
+        """
+        assert self.E is not None, "No active environment frame"
+        # Frame layout: [prev_E, saved_CP, n_slots, Y0, Y1, ...]
+        n_slots = self.frames[self.E + 2]
+        if yi < 0 or yi >= n_slots:
+            raise IndexError(
+                f"Y register Y{yi} out of bounds for frame with {n_slots} slots"
+            )
+        # Y registers start at E + 3 (after prev_E, saved_CP, n_slots)
+        addr = self.E + 3 + yi
+        self.frames[addr] = value
 
     def check_invariants(self) -> None:
         """Verify machine state invariants.
@@ -350,6 +400,31 @@ class Machine:
                 # Type mismatch (not REF or STR)
                 self.halted = True
                 return False
+
+            self.P += 1
+        elif opcode == OP_ALLOCATE:
+            # allocate N
+            (n,) = args
+
+            # Create frame: [prev_E, saved_CP, n_slots, Y0, Y1, ..., Y_{N-1}]
+            frame = [self.E, self.CP, n] + [None] * n
+
+            # Push frame by extending frames list
+            frame_addr = len(self.frames)
+            self.frames.extend(frame)
+            self.E = frame_addr
+
+            self.P += 1
+        elif opcode == OP_DEALLOCATE:
+            # deallocate
+            if self.E is None:
+                # No frame to deallocate - error condition
+                self.halted = True
+                return False
+
+            # Restore from current frame
+            self.CP = self.frames[self.E + 1]
+            self.E = self.frames[self.E + 0]
 
             self.P += 1
         else:
