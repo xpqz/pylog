@@ -76,6 +76,7 @@ for sol in solutions:
 ```python
 Engine(
     program,                    # Program(clauses)
+    backend="tree",            # "tree" (default) or "wam" (experimental)
     occurs_check=False,        # Occurs check in unification
     max_solutions=None,        # Limit solutions
     max_steps=None,            # Step budget (safety)

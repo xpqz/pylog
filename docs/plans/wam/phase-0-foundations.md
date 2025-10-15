@@ -28,7 +28,7 @@ Design
 - Registers: `X` (list), `Y` (frame cells), scalars `H, HB, B, E, CP, P, TR` on `Machine`.
 - Dispatch: start with dict `{opcode: fn(machine, arg)}` with local bindings in the loop for speed. Prototype and benchmark alternatives (enum + list/array table, and structural `match/case`) with a tiny microbenchmark harness; record baseline choice.
 - **Decision point**: Select default dispatch by end of Phase 0; document methodology and results. Revisit in Phase 5.5 if profiling shows dispatch dominates execution time (>20% of instruction loop time).
-- Tracing: `machine.snapshot()` returns dict of minimal state for printing/comparison.
+- Tracing: `debug.snapshot(machine)` returns dict of minimal state for printing/comparison.
 
 Data Structures (concrete)
 - Heap: Python list of cells. Cell encodings:
@@ -113,9 +113,10 @@ Rollout
 ---
 
 Implementation Checklist
-- [ ] Package + modules scaffolded
-- [ ] Opcode set bootstrapped
-- [ ] Machine state + run loop implemented
-- [ ] Snapshots + pretty printer
-- [ ] Unit tests
-- [ ] CI job (non‑blocking)
+- [x] Package + modules scaffolded
+- [x] Opcode set bootstrapped
+- [x] Machine state + data structures
+- [x] Dispatch + run loop implemented
+- [x] Snapshots + pretty printer
+- [x] Unit tests
+- [x] CI job (non‑blocking)

@@ -53,7 +53,7 @@ Detailed plans for each implementation phase:
 - [phase-2-control-backtracking.md](phase-2-control-backtracking.md) — Call/return, environments, choicepoints, cut
 - [phase-3-compiler.md](phase-3-compiler.md) — Prolog to WAM compiler
 - [phase-3-5-exceptions-occurs-check.md](phase-3-5-exceptions-occurs-check.md) — Exception handling and occurs-check policy
-- [phase-4-control-builtins-bridge.md](phase-4-control-builtins-bridge.md) — Disjunction, if-then-else, builtins bridge
+- [phase-4-control-builtins.md](phase-4-control-builtins.md) — Disjunction, if-then-else, core builtins
 - [phase-5-indexing.md](phase-5-indexing.md) — First-argument indexing
 - [phase-5-5-optimization.md](phase-5-5-optimization.md) — Peephole optimisations, LCO, trimming
 - [phase-6-gc.md](phase-6-gc.md) — Garbage collection
@@ -116,10 +116,13 @@ Phase 9 (Web/Pyodide) ← needs stable runtime
 - **Testable**: Strong unit and differential testing throughout
 - **Observable**: Debug hooks and tracing at every stage
 - **Correct first**: Performance comes after correctness
-- **Dual-engine**: Tree-walker remains functional during WAM development
+- **Independence strategy**: WAM implementation proceeds independently; tree-walker coexists during development and will be replaced when WAM is complete
 
 ## Status
 
-**Current Status**: Planning phase complete, implementation not yet started.
+**Current Status**: Phase 0 (Foundations) in progress.
 
-All documentation reviewed and updated as of 2025-10-13. Ready for Phase 0 implementation.
+- Phase 0 scaffold complete: Machine state, dispatch loop, instruction handlers, debug snapshots
+- Comprehensive unit test suite covering machine initialization, execution, and invariants
+- All core data structures and execution framework operational
+- Documentation updated as of 2025-10-14
