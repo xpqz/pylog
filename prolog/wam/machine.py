@@ -35,9 +35,13 @@ Frame and choicepoint manipulation will be implemented in subsequent phases.
 Phase 0 provides only the data structure scaffolding.
 """
 
-from prolog.wam.heap import new_con, new_ref, new_str
+from prolog.wam.heap import is_ref, is_str, new_con, new_ref, new_str
 from prolog.wam.instructions import (
     OP_DBG_SNAP,
+    OP_GET_CONSTANT,
+    OP_GET_STRUCTURE,
+    OP_GET_VALUE,
+    OP_GET_VARIABLE,
     OP_HALT,
     OP_NOOP,
     OP_PUT_CONSTANT,
@@ -46,6 +50,7 @@ from prolog.wam.instructions import (
     OP_PUT_VARIABLE,
     OP_SET_X,
 )
+from prolog.wam.unify import bind, deref, unify
 
 
 class Machine:
@@ -261,6 +266,91 @@ class Machine:
             # Set S to first argument slot (functor_addr + 1)
             functor_addr = str_addr + 1
             self.S = functor_addr + 1
+            self.P += 1
+        elif opcode == OP_GET_VARIABLE:
+            # get_variable Xi, Aj
+            xi, aj = args
+            # Extend X if needed for both Xi and Aj
+            while len(self.X) <= max(xi, aj):
+                self.X.append(None)
+            # Copy Aj to Xi
+            self.X[xi] = self.X[aj]
+            self.P += 1
+        elif opcode == OP_GET_VALUE:
+            # get_value Xi, Aj
+            xi, aj = args
+            # Unify Xi and Aj
+            # Handle None gracefully - halt if either is None
+            if self.X[xi] is None or self.X[aj] is None:
+                self.halted = True
+                return False
+            if not unify(self, self.X[xi], self.X[aj]):
+                # Unification failed
+                self.halted = True
+                return False
+            self.P += 1
+        elif opcode == OP_GET_CONSTANT:
+            # get_constant C, Aj
+            const_value, aj = args
+            if self.X[aj] is None:
+                self.halted = True
+                return False
+            # Deref Aj to see what we have
+            addr = deref(self, self.X[aj])
+            cell = self.heap[addr]
+            tag = cell[0]
+
+            # TAG_CON = 2
+            if tag == 2:  # TAG_CON
+                # Already a constant: check match
+                if cell[1] == const_value:
+                    # Match: succeed without allocation
+                    self.P += 1
+                else:
+                    # Mismatch: fail without allocation
+                    self.halted = True
+                    return False
+            elif tag == 0:  # TAG_REF (unbound variable)
+                # Allocate constant and bind
+                const_addr = new_con(self, const_value)
+                bind(self, addr, const_addr)
+                self.P += 1
+            else:
+                # Type mismatch (STR or LIST): fail without allocation
+                self.halted = True
+                return False
+        elif opcode == OP_GET_STRUCTURE:
+            # get_structure F/N, Aj
+            functor, aj = args  # functor is (name, arity) tuple
+            name, arity = functor
+
+            # Deref Aj
+            addr = deref(self, self.X[aj])
+            cell = self.heap[addr]
+
+            if is_ref(cell):
+                # Unbound variable: build structure and bind
+                str_addr = new_str(self, name, arity)
+                bind(self, addr, str_addr)
+                self.unify_mode = "write"
+                functor_addr = str_addr + 1
+                self.S = functor_addr + 1
+            elif is_str(cell):
+                # Structure: check functor match
+                functor_addr = cell[1]
+                functor_cell = self.heap[functor_addr]
+                if functor_cell[1] != (name, arity):
+                    # Functor mismatch
+                    self.halted = True
+                    return False
+                # Functor matches: enter read mode
+                self.unify_mode = "read"
+                self.S = functor_addr + 1
+            else:
+                # Type mismatch (not REF or STR)
+                self.halted = True
+                return False
+
             self.P += 1
         else:
             # Unknown opcode - halt with error
