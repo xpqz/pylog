@@ -3,11 +3,12 @@
 Tests for allocate/deallocate instructions and Y register access.
 
 Frame layout:
-    [prev_E, saved_CP, Y0, Y1, ..., Y_{N-1}]
+    [prev_E, saved_CP, n_slots, Y0, Y1, ..., Y_{N-1}]
 
 Where:
 - prev_E: Previous environment frame pointer (int or None)
 - saved_CP: Continuation pointer to restore on return (int or None)
+- n_slots: Number of Y register slots in this frame (int)
 - Y0, Y1, ...: Permanent variable slots (N slots)
 """
 
@@ -28,13 +29,14 @@ class TestAllocateInstruction:
 
         m.step()
 
-        # Frame should have: [prev_E, saved_CP, Y0, Y1, Y2]
-        assert len(m.frames) == 5
+        # Frame should have: [prev_E, saved_CP, n_slots, Y0, Y1, Y2]
+        assert len(m.frames) == 6
         assert m.frames[0] is None  # prev_E (no previous frame)
         assert m.frames[1] == 42  # saved_CP
-        assert m.frames[2] is None  # Y0
-        assert m.frames[3] is None  # Y1
-        assert m.frames[4] is None  # Y2
+        assert m.frames[2] == 3  # n_slots
+        assert m.frames[3] is None  # Y0
+        assert m.frames[4] is None  # Y1
+        assert m.frames[5] is None  # Y2
 
     def test_allocate_sets_E_register(self):
         """allocate sets E to point to new frame base."""
@@ -70,10 +72,11 @@ class TestAllocateInstruction:
 
         m.step()
 
-        # Frame should have only: [prev_E, saved_CP]
-        assert len(m.frames) == 2
+        # Frame should have: [prev_E, saved_CP, n_slots]
+        assert len(m.frames) == 3
         assert m.frames[0] is None
         assert m.frames[1] == 99
+        assert m.frames[2] == 0  # n_slots = 0
 
     def test_allocate_advances_program_counter(self):
         """allocate advances P by 1."""
@@ -160,10 +163,10 @@ class TestYRegisterAccess:
         m.code = [(OP_ALLOCATE, 3), (OP_HALT,)]
         m.step()  # allocate
 
-        # Manually set Y registers
-        m.frames[m.E + 2] = 100  # Y0
-        m.frames[m.E + 3] = 200  # Y1
-        m.frames[m.E + 4] = 300  # Y2
+        # Manually set Y registers (frame: [prev_E, saved_CP, n_slots, Y0, Y1, Y2])
+        m.frames[m.E + 3] = 100  # Y0
+        m.frames[m.E + 4] = 200  # Y1
+        m.frames[m.E + 5] = 300  # Y2
 
         assert m.get_y(0) == 100
         assert m.get_y(1) == 200
@@ -178,8 +181,8 @@ class TestYRegisterAccess:
         m.set_y(0, 42)
         m.set_y(1, 99)
 
-        assert m.frames[m.E + 2] == 42
-        assert m.frames[m.E + 3] == 99
+        assert m.frames[m.E + 3] == 42
+        assert m.frames[m.E + 4] == 99
 
     def test_y_registers_persist_across_nested_frames(self):
         """Y registers in outer frame remain accessible after inner frame."""
@@ -297,16 +300,16 @@ class TestFrameEdgeCases:
         ]
         m.CP = 10
 
-        m.step()  # 4 slots (prev_E, CP, Y0, Y1)
-        assert len(m.frames) == 4
+        m.step()  # 5 slots (prev_E, CP, n_slots, Y0, Y1)
+        assert len(m.frames) == 5
 
         m.CP = 20
-        m.step()  # +5 slots (prev_E, CP, Y0, Y1, Y2)
-        assert len(m.frames) == 9
+        m.step()  # +6 slots (prev_E, CP, n_slots, Y0, Y1, Y2)
+        assert len(m.frames) == 11
 
         m.CP = 30
-        m.step()  # +3 slots (prev_E, CP, Y0)
-        assert len(m.frames) == 12
+        m.step()  # +4 slots (prev_E, CP, n_slots, Y0)
+        assert len(m.frames) == 15
 
     def test_y_register_bounds_check(self):
         """Accessing Y register out of bounds raises error."""
@@ -333,6 +336,44 @@ class TestFrameEdgeCases:
         # Should either halt or raise error
         result = m.step()
         assert result is False or m.halted
+
+    def test_y_register_bounds_after_nested_deallocation(self):
+        """Y register access must validate against current frame size, not total frames length.
+
+        Regression test: After allocating nested frames and deallocating the inner one,
+        accessing Y registers beyond the outer frame's size should raise an error,
+        even though the frames list still contains the deallocated inner frame's data.
+        """
+        m = Machine()
+        m.code = [
+            (OP_ALLOCATE, 2),  # Outer: Y0, Y1 (2 slots)
+            (OP_ALLOCATE, 1),  # Inner: Y0 (1 slot)
+            (OP_DEALLOCATE,),  # Pop inner, back to outer
+            (OP_HALT,),
+        ]
+        m.CP = 10
+
+        m.step()  # Allocate outer (2 Y slots)
+        outer_E = m.E
+        m.set_y(0, 100)
+        m.set_y(1, 200)
+
+        m.CP = 20
+        m.step()  # Allocate inner (1 Y slot)
+
+        m.step()  # Deallocate inner, back to outer
+        assert m.E == outer_E
+
+        # Outer frame has only Y0 and Y1 (indices 0 and 1)
+        assert m.get_y(0) == 100  # Valid
+        assert m.get_y(1) == 200  # Valid
+
+        # Y2 is out of bounds for outer frame (even though frames list is longer)
+        with pytest.raises((IndexError, AssertionError)):
+            m.get_y(2)
+
+        with pytest.raises((IndexError, AssertionError)):
+            m.set_y(2, 999)
 
 
 class TestFrameIntegration:

@@ -3,14 +3,16 @@
 Environment Frame Layout
 ------------------------
 Environment frames store permanent variables (Y registers) and control info:
-    [prev_E, saved_CP, Y0, Y1, Y2, ...]
+    [prev_E, saved_CP, n_slots, Y0, Y1, Y2, ...]
 
 Where:
 - prev_E: Previous environment frame pointer (int or None)
 - saved_CP: Continuation pointer to restore on return (int or None)
+- n_slots: Number of Y register slots in this frame (int)
 - Y0, Y1, ...: Permanent variable slots (any value)
 
 The E register points to the start of the current frame in the frames list.
+Y registers are accessed at offset E + 3 + yi (after prev_E, saved_CP, n_slots).
 
 Choicepoint Layout
 ------------------
@@ -125,10 +127,14 @@ class Machine:
             AssertionError: If E is None (no active frame)
         """
         assert self.E is not None, "No active environment frame"
-        # Y registers start at E + 2 (after prev_E and saved_CP)
-        addr = self.E + 2 + yi
-        if addr >= len(self.frames):
-            raise IndexError(f"Y register Y{yi} out of bounds for current frame")
+        # Frame layout: [prev_E, saved_CP, n_slots, Y0, Y1, ...]
+        n_slots = self.frames[self.E + 2]
+        if yi < 0 or yi >= n_slots:
+            raise IndexError(
+                f"Y register Y{yi} out of bounds for frame with {n_slots} slots"
+            )
+        # Y registers start at E + 3 (after prev_E, saved_CP, n_slots)
+        addr = self.E + 3 + yi
         return self.frames[addr]
 
     def set_y(self, yi: int, value) -> None:
@@ -143,10 +149,14 @@ class Machine:
             AssertionError: If E is None (no active frame)
         """
         assert self.E is not None, "No active environment frame"
-        # Y registers start at E + 2 (after prev_E and saved_CP)
-        addr = self.E + 2 + yi
-        if addr >= len(self.frames):
-            raise IndexError(f"Y register Y{yi} out of bounds for current frame")
+        # Frame layout: [prev_E, saved_CP, n_slots, Y0, Y1, ...]
+        n_slots = self.frames[self.E + 2]
+        if yi < 0 or yi >= n_slots:
+            raise IndexError(
+                f"Y register Y{yi} out of bounds for frame with {n_slots} slots"
+            )
+        # Y registers start at E + 3 (after prev_E, saved_CP, n_slots)
+        addr = self.E + 3 + yi
         self.frames[addr] = value
 
     def check_invariants(self) -> None:
@@ -396,8 +406,8 @@ class Machine:
             # allocate N
             (n,) = args
 
-            # Create frame: [prev_E, saved_CP, Y0, Y1, ..., Y_{N-1}]
-            frame = [self.E, self.CP] + [None] * n
+            # Create frame: [prev_E, saved_CP, n_slots, Y0, Y1, ..., Y_{N-1}]
+            frame = [self.E, self.CP, n] + [None] * n
 
             # Push frame by extending frames list
             frame_addr = len(self.frames)
