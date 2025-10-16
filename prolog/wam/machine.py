@@ -55,9 +55,12 @@ from prolog.wam.instructions import (
     OP_PUT_STRUCTURE,
     OP_PUT_VALUE,
     OP_PUT_VARIABLE,
+    OP_RETRY_ME_ELSE,
     OP_SET_X,
+    OP_TRUST_ME,
+    OP_TRY_ME_ELSE,
 )
-from prolog.wam.unify import bind, deref, unify
+from prolog.wam.unify import bind, deref, unify, untrail
 
 
 class Machine:
@@ -515,6 +518,116 @@ class Machine:
 
             # Return to saved address
             self.P = self.CP
+        elif opcode == OP_TRY_ME_ELSE:
+            # try_me_else Label
+            (alt_label,) = args
+
+            # Set HB to current H (heap backtrack boundary) BEFORE creating choicepoint
+            # so saved_HB equals saved_H
+            self.HB = self.H
+
+            # Create choicepoint record: [prev_B, saved_CP, saved_E, saved_P, saved_H, saved_TR, saved_HB, alt_ptr]
+            choicepoint = [
+                self.B,  # prev_B
+                self.CP,  # saved_CP
+                self.E,  # saved_E
+                self.P,  # saved_P (before incrementing)
+                self.H,  # saved_H
+                self.TR,  # saved_TR
+                self.HB,  # saved_HB (now equals H)
+                alt_label,  # alt_ptr
+            ]
+
+            # Push choicepoint to cp_stack
+            choicepoint_addr = len(self.cp_stack)
+            self.cp_stack.extend(choicepoint)
+
+            # Update B to point to new choicepoint
+            self.B = choicepoint_addr
+
+            # Advance P to next instruction
+            self.P += 1
+        elif opcode == OP_RETRY_ME_ELSE:
+            # retry_me_else Label
+            (alt_label,) = args
+
+            # Check if B is None (no choicepoint)
+            if self.B is None:
+                self.halted = True
+                return False
+
+            # Restore state from choicepoint at B
+            # Choicepoint layout: [prev_B, saved_CP, saved_E, saved_P, saved_H, saved_TR, saved_HB, alt_ptr]
+            saved_CP = self.cp_stack[self.B + 1]
+            saved_E = self.cp_stack[self.B + 2]
+            # saved_P not used - retry_me_else advances P normally
+            saved_H = self.cp_stack[self.B + 4]
+            saved_TR = self.cp_stack[self.B + 5]
+            saved_HB = self.cp_stack[self.B + 6]
+
+            # Restore registers
+            self.CP = saved_CP
+            self.E = saved_E
+
+            # Unwind trail from current TR down to saved_TR
+            untrail(self, saved_TR)
+            # Truncate trail list to saved_TR
+            del self.trail[saved_TR:]
+
+            # Truncate heap to saved_H
+            del self.heap[saved_H:]
+            self.H = saved_H
+
+            # Restore HB
+            self.HB = saved_HB
+
+            # Update alt_ptr in current choicepoint to new label
+            self.cp_stack[self.B + 7] = alt_label
+
+            # Advance P to next instruction
+            self.P += 1
+        elif opcode == OP_TRUST_ME:
+            # trust_me (no arguments)
+
+            # Check if B is None (no choicepoint)
+            if self.B is None:
+                self.halted = True
+                return False
+
+            # Restore state from choicepoint at B
+            # Choicepoint layout: [prev_B, saved_CP, saved_E, saved_P, saved_H, saved_TR, saved_HB, alt_ptr]
+            prev_B = self.cp_stack[self.B + 0]
+            saved_CP = self.cp_stack[self.B + 1]
+            saved_E = self.cp_stack[self.B + 2]
+            # saved_P not used - trust_me advances P normally
+            saved_H = self.cp_stack[self.B + 4]
+            saved_TR = self.cp_stack[self.B + 5]
+            saved_HB = self.cp_stack[self.B + 6]
+
+            # Restore registers
+            self.CP = saved_CP
+            self.E = saved_E
+
+            # Unwind trail from current TR down to saved_TR
+            untrail(self, saved_TR)
+            # Truncate trail list to saved_TR
+            del self.trail[saved_TR:]
+
+            # Truncate heap to saved_H
+            del self.heap[saved_H:]
+            self.H = saved_H
+
+            # Restore HB
+            self.HB = saved_HB
+
+            # Pop choicepoint by removing 8 fields from cp_stack
+            del self.cp_stack[self.B : self.B + 8]
+
+            # Restore B to prev_B
+            self.B = prev_B
+
+            # Advance P to next instruction
+            self.P += 1
         else:
             # Unknown opcode - halt with error
             self.halted = True

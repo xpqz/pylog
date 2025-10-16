@@ -12,7 +12,7 @@ Instructions:
 - trust_me: Restore state from current choicepoint, pop it (no more alternatives)
 """
 
-from prolog.wam.heap import TAG_CON, new_con, new_ref
+from prolog.wam.heap import TAG_CON, TAG_REF, new_con, new_ref
 from prolog.wam.unify import bind
 from prolog.wam.instructions import (
     OP_ALLOCATE,
@@ -205,11 +205,14 @@ class TestRetryMeElse:
         assert m.P == 11, "P should advance to instruction after retry_me_else"
 
     def test_retry_me_else_unwinds_trail(self):
-        """retry_me_else must unwind bindings from trail."""
+        """retry_me_else must unwind bindings from trail.
+
+        Create variable BEFORE choicepoint so addr < HB and trailing occurs.
+        """
         m = Machine()
         m.code = [
-            (OP_TRY_ME_ELSE, 5),  # 0: Create choicepoint
-            (OP_PUT_VARIABLE, 0, 0),  # 1: Create var in X0
+            (OP_PUT_VARIABLE, 0, 0),  # 0: Create var BEFORE choice (heap[0])
+            (OP_TRY_ME_ELSE, 5),  # 1: Create choicepoint - sets HB=1
             (OP_HALT,),  # 2: (pad)
             (OP_HALT,),  # 3: (pad)
             (OP_HALT,),  # 4: (pad)
@@ -217,20 +220,24 @@ class TestRetryMeElse:
             (OP_HALT,),  # 6: Second clause
         ]
 
-        m.step()  # try_me_else - H=0, TR=0
-        saved_H = m.H
-        saved_TR = m.TR
-
-        m.step()  # put_variable X0, A0 - creates ref on heap
+        m.step()  # put_variable X0, A0 - creates ref on heap[0]
         ref_addr = 0
         assert m.H == 1, "Heap should have one cell"
         assert m.X[0] == ref_addr
 
+        m.step()  # try_me_else - sets HB=1, TR=0
+        saved_H = m.H
+        saved_TR = m.TR
+        assert m.HB == 1, "HB should be 1"
+
         # Bind the variable and trail it
+        # Since ref_addr (0) < HB (1), this WILL be trailed
         const_addr = new_con(m, 42)
         bind(m, ref_addr, const_addr)
         assert len(m.trail) > saved_TR, "Trail should have binding"
-        assert m.heap[ref_addr] == (TAG_CON, 42), "Variable should be bound"
+        # After bind, ref_addr points to const_addr
+        assert m.heap[ref_addr] == (TAG_REF, const_addr), "Ref should point to constant"
+        assert m.heap[const_addr] == (TAG_CON, 42), "Constant at correct address"
 
         # Backtrack with retry_me_else
         m.P = 5
@@ -241,6 +248,8 @@ class TestRetryMeElse:
         assert m.TR == saved_TR, "TR restored"
         assert len(m.heap) == saved_H, "Heap truncated"
         assert len(m.trail) == saved_TR, "Trail truncated"
+        # Check that ref was restored to self-referential
+        assert m.heap[ref_addr] == (TAG_REF, ref_addr), "Ref restored to unbound"
 
     def test_retry_me_else_preserves_earlier_bindings(self):
         """retry_me_else only unwinds trail entries after saved_TR.
@@ -378,36 +387,46 @@ class TestTrustMe:
         assert len(m.cp_stack) == 8, "Only outer choicepoint remains"
 
     def test_trust_me_unwinds_trail_correctly(self):
-        """trust_me must unwind trail entries created after choicepoint."""
+        """trust_me must unwind trail entries created after choicepoint.
+
+        Create variable BEFORE choicepoint so addr < HB and trailing occurs.
+        """
         m = Machine()
         m.code = [
-            (OP_TRY_ME_ELSE, 3),  # 0: Create choice
-            (OP_PUT_VARIABLE, 0, 0),  # 1: Create var after choice
+            (OP_PUT_VARIABLE, 0, 0),  # 0: Create var BEFORE choice (heap[0])
+            (OP_TRY_ME_ELSE, 4),  # 1: Create choice - sets HB=1
             (OP_HALT,),  # 2: (pad)
-            (OP_TRUST_ME,),  # 3: Final alternative
-            (OP_HALT,),  # 4: (pad)
+            (OP_HALT,),  # 3: (pad)
+            (OP_TRUST_ME,),  # 4: Final alternative
+            (OP_HALT,),  # 5: (pad)
         ]
-
-        m.step()  # try_me_else - saves H=0, TR=0
-        saved_H = m.cp_stack[4]
-        saved_TR = m.cp_stack[5]
 
         m.step()  # put_variable - heap[0]
         ref_addr = 0
+        assert m.H == 1
+
+        m.step()  # try_me_else - saves H=1, TR=0, sets HB=1
+        saved_H = m.cp_stack[4]
+        saved_TR = m.cp_stack[5]
+        assert saved_H == 1
+        assert m.HB == 1
 
         # Bind and trail
+        # Since ref_addr (0) < HB (1), this WILL be trailed
         const_addr = new_con(m, 99)
         bind(m, ref_addr, const_addr)
         assert len(m.trail) > saved_TR
 
         # Backtrack with trust_me
-        m.P = 3
+        m.P = 4
         m.step()
 
         # Trail unwound, heap truncated
         assert len(m.trail) == saved_TR
         assert len(m.heap) == saved_H
         assert m.B is None
+        # Check that ref was restored to self-referential
+        assert m.heap[ref_addr] == (TAG_REF, ref_addr), "Ref restored to unbound"
 
 
 class TestBacktrackingScenarios:
@@ -502,7 +521,7 @@ class TestBacktrackingScenarios:
         # Predicate that builds structure in clause 1
         m.code = [
             (OP_TRY_ME_ELSE, 3),  # 0
-            (OP_PUT_STRUCTURE, "f/1", 0),  # 1: Build f/1 structure on heap
+            (OP_PUT_STRUCTURE, ("f", 1), 0),  # 1: Build f/1 structure on heap
             (OP_HALT,),  # 2
             (OP_TRUST_ME,),  # 3
             (OP_PROCEED,),  # 4
