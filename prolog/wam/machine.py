@@ -194,6 +194,102 @@ class Machine:
             raise RuntimeError(f"Undefined predicate: {name}")
         return self.predicate_table[name]
 
+    def _restore_from_choicepoint(
+        self,
+        saved_CP: int | None,
+        saved_E: int | None,
+        saved_H: int,
+        saved_TR: int,
+        saved_HB: int,
+    ) -> None:
+        """Restore machine state from choicepoint snapshot.
+
+        Restores CP, E, unwinds trail, truncates heap and trail, and restores HB.
+        Common logic for retry_me_else and trust_me instructions.
+
+        Args:
+            saved_CP: Continuation pointer to restore
+            saved_E: Environment frame pointer to restore
+            saved_H: Heap top to restore
+            saved_TR: Trail pointer to restore
+            saved_HB: Heap backtrack boundary to restore
+        """
+        # Restore registers
+        self.CP = saved_CP
+        self.E = saved_E
+
+        # Unwind trail from current TR down to saved_TR
+        untrail(self, saved_TR)
+        # Truncate trail list to saved_TR
+        del self.trail[saved_TR:]
+
+        # Truncate heap to saved_H
+        del self.heap[saved_H:]
+        self.H = saved_H
+
+        # Restore HB
+        self.HB = saved_HB
+
+    def _check_choicepoint_invariants(self) -> None:
+        """Verify choicepoint stack invariants.
+
+        Raises:
+            AssertionError: If any invariant is violated
+
+        Invariants checked:
+        - cp_stack length is multiple of 8 (choicepoint record size)
+        - B points to valid choicepoint start or is None
+        - All prev_B pointers form valid chain
+        """
+        # cp_stack must contain whole choicepoint records (8 fields each)
+        assert (
+            len(self.cp_stack) % 8 == 0
+        ), f"cp_stack length {len(self.cp_stack)} is not a multiple of 8"
+
+        # B must be None or point to a valid choicepoint start
+        if self.B is not None:
+            assert isinstance(self.B, int), f"B must be int or None, got {type(self.B)}"
+            assert self.B >= 0, f"B={self.B} is negative"
+            assert (
+                self.B % 8 == 0
+            ), f"B={self.B} does not point to choicepoint start (not multiple of 8)"
+            assert self.B < len(
+                self.cp_stack
+            ), f"B={self.B} points beyond cp_stack length {len(self.cp_stack)}"
+
+            # Verify prev_B chain integrity
+            visited = set()
+            current_B = self.B
+            while current_B is not None:
+                # Detect cycles
+                assert (
+                    current_B not in visited
+                ), f"Cycle detected in choicepoint chain at B={current_B}"
+                visited.add(current_B)
+
+                # Check valid index
+                assert current_B < len(
+                    self.cp_stack
+                ), f"Choicepoint B={current_B} points beyond cp_stack"
+
+                # Get prev_B from current choicepoint
+                prev_B = self.cp_stack[current_B]
+
+                # prev_B must be None or valid choicepoint pointer
+                if prev_B is not None:
+                    assert isinstance(
+                        prev_B, int
+                    ), f"prev_B at {current_B} is {type(prev_B)}, not int or None"
+                    assert prev_B >= 0, f"prev_B={prev_B} at {current_B} is negative"
+                    assert (
+                        prev_B % 8 == 0
+                    ), f"prev_B={prev_B} at {current_B} not aligned to choicepoint"
+                    assert (
+                        prev_B < current_B
+                    ), f"prev_B={prev_B} at {current_B} does not point backward"
+
+                current_B = prev_B
+
     def check_invariants(self) -> None:
         """Verify machine state invariants.
 
@@ -205,6 +301,7 @@ class Machine:
         - All REF cells point to valid heap addresses
         - Unbound REF cells are canonical (self-referential)
         - All cell addresses are within heap bounds
+        - Choicepoint stack integrity (via _check_choicepoint_invariants)
 
         Future: Once the loader is wired, may add assertion that STR cells'
         functor addresses point to CON cells with (name, arity) tuples.
@@ -214,6 +311,9 @@ class Machine:
         assert (
             0 <= self.H <= len(self.heap)
         ), f"Heap pointer H={self.H} out of range [0, {len(self.heap)}]"
+
+        # Choicepoint stack invariants
+        self._check_choicepoint_invariants()
 
         # Check all heap cells for valid addresses
         for i, cell in enumerate(self.heap):
@@ -565,21 +665,10 @@ class Machine:
             saved_TR = self.cp_stack[self.B + 5]
             saved_HB = self.cp_stack[self.B + 6]
 
-            # Restore registers
-            self.CP = saved_CP
-            self.E = saved_E
-
-            # Unwind trail from current TR down to saved_TR
-            untrail(self, saved_TR)
-            # Truncate trail list to saved_TR
-            del self.trail[saved_TR:]
-
-            # Truncate heap to saved_H
-            del self.heap[saved_H:]
-            self.H = saved_H
-
-            # Restore HB
-            self.HB = saved_HB
+            # Restore machine state from choicepoint
+            self._restore_from_choicepoint(
+                saved_CP, saved_E, saved_H, saved_TR, saved_HB
+            )
 
             # Update alt_ptr in current choicepoint to new label
             self.cp_stack[self.B + 7] = alt_label
@@ -604,21 +693,10 @@ class Machine:
             saved_TR = self.cp_stack[self.B + 5]
             saved_HB = self.cp_stack[self.B + 6]
 
-            # Restore registers
-            self.CP = saved_CP
-            self.E = saved_E
-
-            # Unwind trail from current TR down to saved_TR
-            untrail(self, saved_TR)
-            # Truncate trail list to saved_TR
-            del self.trail[saved_TR:]
-
-            # Truncate heap to saved_H
-            del self.heap[saved_H:]
-            self.H = saved_H
-
-            # Restore HB
-            self.HB = saved_HB
+            # Restore machine state from choicepoint
+            self._restore_from_choicepoint(
+                saved_CP, saved_E, saved_H, saved_TR, saved_HB
+            )
 
             # Pop choicepoint by removing 8 fields from cp_stack
             del self.cp_stack[self.B : self.B + 8]
