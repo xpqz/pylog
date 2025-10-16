@@ -41,14 +41,17 @@ from prolog.wam.heap import is_ref, is_str, new_con, new_ref, new_str
 from prolog.wam.instructions import (
     OP_ALLOCATE,
     OP_CALL,
+    OP_CUT,
     OP_DEALLOCATE,
     OP_DBG_SNAP,
     OP_EXECUTE,
     OP_GET_CONSTANT,
+    OP_GET_LEVEL,
     OP_GET_STRUCTURE,
     OP_GET_VALUE,
     OP_GET_VARIABLE,
     OP_HALT,
+    OP_NECK_CUT,
     OP_NOOP,
     OP_PROCEED,
     OP_PUT_CONSTANT,
@@ -703,6 +706,62 @@ class Machine:
 
             # Restore B to prev_B
             self.B = prev_B
+
+            # Advance P to next instruction
+            self.P += 1
+        elif opcode == OP_GET_LEVEL:
+            # get_level Yk
+            (yk,) = args
+
+            # Require active environment
+            if self.E is None:
+                raise RuntimeError("get_level requires active environment frame")
+
+            # Save current B into Yk
+            self.set_y(yk, self.B)
+
+            # Advance P to next instruction
+            self.P += 1
+        elif opcode == OP_CUT:
+            # cut Yk
+            (yk,) = args
+
+            # Retrieve saved level from Yk
+            saved_level = self.get_y(yk)
+
+            # Prune choicepoints by setting B to saved level
+            self.B = saved_level
+
+            # Update HB to match new B
+            if self.B is not None:
+                # HB comes from choicepoint's saved_HB field (index 6)
+                if self.B + 6 >= len(self.cp_stack):
+                    raise IndexError(
+                        f"Cut level B={self.B} points beyond cp_stack length {len(self.cp_stack)}"
+                    )
+                self.HB = self.cp_stack[self.B + 6]
+            else:
+                # No choicepoints - HB is 0
+                self.HB = 0
+
+            # Advance P to next instruction
+            self.P += 1
+        elif opcode == OP_NECK_CUT:
+            # neck_cut (no arguments)
+
+            # If no choicepoint, this is a no-op
+            if self.B is not None:
+                # Get prev_B from current choicepoint
+                prev_B = self.cp_stack[self.B + 0]
+
+                # Restore B to prev_B
+                self.B = prev_B
+
+                # Update HB from new B
+                if prev_B is not None:
+                    self.HB = self.cp_stack[prev_B + 6]
+                else:
+                    self.HB = 0
 
             # Advance P to next instruction
             self.P += 1

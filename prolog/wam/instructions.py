@@ -34,6 +34,11 @@ Phase 2 choicepoint instructions:
 - OP_TRY_ME_ELSE: Create choicepoint with alternative, continue to next instruction
 - OP_RETRY_ME_ELSE: Restore state from choicepoint, update alternative pointer
 - OP_TRUST_ME: Restore state from choicepoint and pop it (last alternative)
+
+Phase 2 cut instructions:
+- OP_GET_LEVEL: Save current B (choicepoint pointer) into Y register for later cut
+- OP_CUT: Prune all choicepoints above the level saved in Y register
+- OP_NECK_CUT: Prune choicepoint created by current clause (optimization)
 """
 
 # Opcode constants
@@ -57,6 +62,9 @@ OP_PROCEED = 16
 OP_TRY_ME_ELSE = 17
 OP_RETRY_ME_ELSE = 18
 OP_TRUST_ME = 19
+OP_GET_LEVEL = 20
+OP_CUT = 21
+OP_NECK_CUT = 22
 
 # Opcode name mapping for debugging and pretty-printing
 _OPCODE_NAMES = {
@@ -80,6 +88,9 @@ _OPCODE_NAMES = {
     OP_TRY_ME_ELSE: "try_me_else",
     OP_RETRY_ME_ELSE: "retry_me_else",
     OP_TRUST_ME: "trust_me",
+    OP_GET_LEVEL: "get_level",
+    OP_CUT: "cut",
+    OP_NECK_CUT: "neck_cut",
 }
 
 # Reverse mapping for name->opcode lookup
@@ -107,6 +118,9 @@ _INSTRUCTION_ARITY = {
     OP_TRY_ME_ELSE: 1,  # try_me_else Label (create choicepoint)
     OP_RETRY_ME_ELSE: 1,  # retry_me_else Label (restore and update alt)
     OP_TRUST_ME: 0,  # trust_me (restore and pop choicepoint)
+    OP_GET_LEVEL: 1,  # get_level Yk (save B into Y register)
+    OP_CUT: 1,  # cut Yk (prune to level in Yk)
+    OP_NECK_CUT: 0,  # neck_cut (prune clause choicepoint)
 }
 
 __all__ = [
@@ -130,6 +144,9 @@ __all__ = [
     "OP_TRY_ME_ELSE",
     "OP_RETRY_ME_ELSE",
     "OP_TRUST_ME",
+    "OP_GET_LEVEL",
+    "OP_CUT",
+    "OP_NECK_CUT",
     "opcode_name",
     "name_to_opcode",
     "validate_instruction",
