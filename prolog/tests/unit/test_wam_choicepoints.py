@@ -12,7 +12,7 @@ Instructions:
 - trust_me: Restore state from current choicepoint, pop it (no more alternatives)
 """
 
-from prolog.wam.heap import TAG_CON, TAG_REF, new_con, new_ref
+from prolog.wam.heap import TAG_CON, new_con, new_ref
 from prolog.wam.unify import bind
 from prolog.wam.instructions import (
     OP_ALLOCATE,
@@ -107,9 +107,11 @@ class TestChoicepointBasics:
         ]
 
         # Modify heap and trail before choice
-        new_ref(m)
+        # Trail format: just integer addresses
+        ref_addr = new_ref(m)
         new_con(m, 42)
-        m.trail.extend([("bind", 0, (TAG_REF, 0))])
+        # Manually trail an address (simulating a binding that occurred)
+        m.trail.append(ref_addr)
         m.TR = len(m.trail)
 
         m.step()
@@ -175,9 +177,10 @@ class TestRetryMeElse:
         assert m.P == 1
 
         # Modify machine state
-        new_ref(m)
+        ref_addr = new_ref(m)
         new_con(m, 99)
-        m.trail.append(("bind", 0, (TAG_REF, 0)))
+        # Trail format: just integer addresses
+        m.trail.append(ref_addr)
         m.TR = len(m.trail)
         m.CP = 200  # Changed CP
 
@@ -240,50 +243,55 @@ class TestRetryMeElse:
         assert len(m.trail) == saved_TR, "Trail truncated"
 
     def test_retry_me_else_preserves_earlier_bindings(self):
-        """retry_me_else only unwinds trail entries after saved_TR."""
+        """retry_me_else only unwinds trail entries after saved_TR.
+
+        This test verifies that backtracking truncates the trail at saved_TR,
+        preserving any trail entries that existed before the choicepoint.
+        Since trailing depends on addr < HB, we manually set up trail entries
+        to simulate the scenario.
+        """
         m = Machine()
         m.code = [
-            (OP_PUT_VARIABLE, 0, 0),  # 0: Create var before choice (X0 -> heap[0])
-            (OP_TRY_ME_ELSE, 5),  # 1: Create choicepoint
-            (OP_PUT_VARIABLE, 1, 1),  # 2: Create var after choice (X1 -> heap[1])
-            (OP_HALT,),  # 3: (pad)
-            (OP_HALT,),  # 4: (pad)
-            (OP_RETRY_ME_ELSE, 10),  # 5: Backtrack
-            (OP_HALT,),  # 6: Alternative
+            (OP_TRY_ME_ELSE, 3),  # 0: Create choicepoint
+            (OP_PUT_VARIABLE, 0, 0),  # 1: Create var after choice
+            (OP_HALT,),  # 2: (pad)
+            (OP_RETRY_ME_ELSE, 10),  # 3: Backtrack
+            (OP_HALT,),  # 4: Alternative
         ]
 
-        m.step()  # put_variable X0 - heap[0]
-        early_ref_addr = 0
+        # Manually add an "early" trail entry before choicepoint
+        # (simulating a binding that occurred before the choice)
+        early_addr = 99  # Some address
+        m.trail.append(early_addr)
+        m.TR = 1
+
+        m.step()  # try_me_else - saves TR=1
+        saved_TR = m.cp_stack[5]
+        assert saved_TR == 1, "Choicepoint should save TR=1"
+
+        m.step()  # put_variable - creates heap[0]
+        late_ref_addr = 0
         assert m.H == 1
 
-        # Bind before choice and trail it
-        early_const = new_con(m, 10)
-        bind(m, early_ref_addr, early_const)
-        early_trail_len = len(m.trail)
-        assert early_trail_len > 0
-
-        m.step()  # try_me_else - saves TR (with early binding)
-        saved_TR = m.cp_stack[5]
-        assert saved_TR == early_trail_len
-
-        m.step()  # put_variable X1 - heap[2] (after early const at 1)
-        late_ref_addr = 2
-        assert m.H == 3
-
-        # Bind after choice
-        late_const = new_con(m, 20)
-        bind(m, late_ref_addr, late_const)
-        assert len(m.trail) > early_trail_len
+        # Bind after choice and trail it
+        const_addr = new_con(m, 42)
+        bind(m, late_ref_addr, const_addr)
+        # This binding should be trailed since late_ref_addr (0) < HB (was set to H=0 by try_me_else)
+        # Actually, bind only trails if addr < HB. After try_me_else, HB=0, so addr 0 won't trail.
+        # Let's manually add to trail to simulate
+        m.trail.append(late_ref_addr)
+        m.TR = len(m.trail)
+        assert len(m.trail) == 2, "Should have 2 trail entries now"
 
         # Backtrack
-        m.P = 5
+        m.P = 3
         m.step()
 
-        # Late binding undone, early binding preserved
+        # Late binding undone, early trail entry preserved
         assert len(m.trail) == saved_TR, "Trail truncated to saved_TR"
-        assert len(m.heap) == 2, "Heap truncated to saved_H (2: ref + const)"
-        # Early binding should still be in trail (before saved_TR)
-        assert m.trail[0][1] == early_ref_addr
+        assert m.trail[0] == early_addr, "Early trail entry preserved"
+        # Heap should be truncated to saved_H (0)
+        assert len(m.heap) == 0, "Heap truncated to saved_H"
 
 
 class TestTrustMe:
@@ -309,9 +317,10 @@ class TestTrustMe:
         assert len(m.cp_stack) == 8
 
         # Modify state
-        new_ref(m)
+        ref_addr = new_ref(m)
         new_con(m, 5)
-        m.trail.append(("bind", 0, (TAG_REF, 0)))
+        # Trail format: just integer addresses
+        m.trail.append(ref_addr)
         m.TR = len(m.trail)
         m.CP = 200
 
