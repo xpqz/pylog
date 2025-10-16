@@ -40,14 +40,17 @@ Phase 0 provides only the data structure scaffolding.
 from prolog.wam.heap import is_ref, is_str, new_con, new_ref, new_str
 from prolog.wam.instructions import (
     OP_ALLOCATE,
+    OP_CALL,
     OP_DEALLOCATE,
     OP_DBG_SNAP,
+    OP_EXECUTE,
     OP_GET_CONSTANT,
     OP_GET_STRUCTURE,
     OP_GET_VALUE,
     OP_GET_VARIABLE,
     OP_HALT,
     OP_NOOP,
+    OP_PROCEED,
     OP_PUT_CONSTANT,
     OP_PUT_STRUCTURE,
     OP_PUT_VALUE,
@@ -110,6 +113,10 @@ class Machine:
         # Code area (loaded by loader)
         self.code: list[tuple] = []
 
+        # Predicate symbol table (Phase 2)
+        # Maps "module:name/arity" -> code address (int)
+        self.predicate_table: dict[str, int] = {}
+
         # Optional trace sink
         self.trace_sink = None
 
@@ -158,6 +165,31 @@ class Machine:
         # Y registers start at E + 3 (after prev_E, saved_CP, n_slots)
         addr = self.E + 3 + yi
         self.frames[addr] = value
+
+    def register_predicate(self, name: str, address: int) -> None:
+        """Register predicate entry point in symbol table.
+
+        Args:
+            name: Predicate identifier (format: "module:name/arity")
+            address: Code address of predicate entry point
+        """
+        self.predicate_table[name] = address
+
+    def resolve_predicate(self, name: str) -> int:
+        """Resolve predicate name to code address.
+
+        Args:
+            name: Predicate identifier (format: "module:name/arity")
+
+        Returns:
+            Code address of predicate entry point
+
+        Raises:
+            RuntimeError: If predicate is not registered
+        """
+        if name not in self.predicate_table:
+            raise RuntimeError(f"Undefined predicate: {name}")
+        return self.predicate_table[name]
 
     def check_invariants(self) -> None:
         """Verify machine state invariants.
@@ -443,6 +475,46 @@ class Machine:
                 self.E = prev_E
 
             self.P += 1
+        elif opcode == OP_CALL:
+            # call Pred
+            (pred,) = args
+
+            # Save return address
+            self.CP = self.P + 1
+
+            # Resolve predicate (symbol or absolute address)
+            if isinstance(pred, str):
+                # Symbol reference
+                entry = self.resolve_predicate(pred)
+            else:
+                # Absolute address
+                entry = pred
+
+            # Jump to predicate
+            self.P = entry
+        elif opcode == OP_EXECUTE:
+            # execute Pred (tail call)
+            (pred,) = args
+
+            # Resolve predicate (symbol or absolute address)
+            if isinstance(pred, str):
+                # Symbol reference
+                entry = self.resolve_predicate(pred)
+            else:
+                # Absolute address
+                entry = pred
+
+            # Jump to predicate without saving CP
+            self.P = entry
+        elif opcode == OP_PROCEED:
+            # proceed (return)
+            if self.CP is None:
+                # No return address - halt
+                self.halted = True
+                return False
+
+            # Return to saved address
+            self.P = self.CP
         else:
             # Unknown opcode - halt with error
             self.halted = True
