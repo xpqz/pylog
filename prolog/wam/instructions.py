@@ -24,6 +24,16 @@ Phase 1 get instruction family:
 Phase 2 environment frame operations:
 - OP_ALLOCATE: Allocate environment frame with N permanent variable slots
 - OP_DEALLOCATE: Deallocate current environment frame, restore CP and E
+
+Phase 2 control flow instructions:
+- OP_CALL: Call predicate, save return address in CP
+- OP_EXECUTE: Tail call predicate without saving CP
+- OP_PROCEED: Return to saved CP
+
+Phase 2 choicepoint instructions:
+- OP_TRY_ME_ELSE: Create choicepoint with alternative, continue to next instruction
+- OP_RETRY_ME_ELSE: Restore state from choicepoint, update alternative pointer
+- OP_TRUST_ME: Restore state from choicepoint and pop it (last alternative)
 """
 
 # Opcode constants
@@ -41,6 +51,12 @@ OP_GET_CONSTANT = 10
 OP_GET_STRUCTURE = 11
 OP_ALLOCATE = 12
 OP_DEALLOCATE = 13
+OP_CALL = 14
+OP_EXECUTE = 15
+OP_PROCEED = 16
+OP_TRY_ME_ELSE = 17
+OP_RETRY_ME_ELSE = 18
+OP_TRUST_ME = 19
 
 # Opcode name mapping for debugging and pretty-printing
 _OPCODE_NAMES = {
@@ -58,6 +74,12 @@ _OPCODE_NAMES = {
     OP_GET_STRUCTURE: "get_structure",
     OP_ALLOCATE: "allocate",
     OP_DEALLOCATE: "deallocate",
+    OP_CALL: "call",
+    OP_EXECUTE: "execute",
+    OP_PROCEED: "proceed",
+    OP_TRY_ME_ELSE: "try_me_else",
+    OP_RETRY_ME_ELSE: "retry_me_else",
+    OP_TRUST_ME: "trust_me",
 }
 
 # Reverse mapping for name->opcode lookup
@@ -79,6 +101,12 @@ _INSTRUCTION_ARITY = {
     OP_GET_STRUCTURE: 2,  # get_structure F/N, Aj
     OP_ALLOCATE: 1,  # allocate N
     OP_DEALLOCATE: 0,  # deallocate
+    OP_CALL: 1,  # call Pred (address or symbol)
+    OP_EXECUTE: 1,  # execute Pred (tail call)
+    OP_PROCEED: 0,  # proceed (return)
+    OP_TRY_ME_ELSE: 1,  # try_me_else Label (create choicepoint)
+    OP_RETRY_ME_ELSE: 1,  # retry_me_else Label (restore and update alt)
+    OP_TRUST_ME: 0,  # trust_me (restore and pop choicepoint)
 }
 
 __all__ = [
@@ -96,6 +124,12 @@ __all__ = [
     "OP_GET_STRUCTURE",
     "OP_ALLOCATE",
     "OP_DEALLOCATE",
+    "OP_CALL",
+    "OP_EXECUTE",
+    "OP_PROCEED",
+    "OP_TRY_ME_ELSE",
+    "OP_RETRY_ME_ELSE",
+    "OP_TRUST_ME",
     "opcode_name",
     "name_to_opcode",
     "validate_instruction",
