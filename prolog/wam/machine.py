@@ -729,6 +729,16 @@ class Machine:
             # Retrieve saved level from Yk
             saved_level = self.get_y(yk)
 
+            # Validate alignment for non-None level (detect corruption early)
+            if saved_level is not None:
+                assert isinstance(
+                    saved_level, int
+                ), f"Cut level must be int or None, got {type(saved_level)}"
+                assert (
+                    saved_level % 8 == 0
+                ), f"Cut level {saved_level} not aligned to choicepoint boundary"
+                assert saved_level >= 0, f"Cut level {saved_level} is negative"
+
             # Prune choicepoints by setting B to saved level
             self.B = saved_level
 
