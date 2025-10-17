@@ -390,3 +390,20 @@ class TestPrologDictSupport:
         # Y appears after call - permanent
         assert x.id in temp
         assert y.id in perm
+
+    def test_dict_variable_spans_calls(self):
+        """Variable inside dict spans multiple calls - must be permanent."""
+        # p :- q(_{a:X}), r(X).
+        # This is the critical case: X appears in dict in goal 0 and in goal 1
+        x = Var(id=1, hint="X")
+        dict_term = PrologDict(pairs=((Atom("a"), x),))
+
+        clause = Clause(
+            head=Atom("p"),
+            body=(Struct("q", (dict_term,)), Struct("r", (x,))),
+        )
+
+        temp, perm = classify_vars(clause)
+        # X spans calls - must be permanent
+        assert x.id in perm, "X in dict spanning calls must be permanent"
+        assert x.id not in temp

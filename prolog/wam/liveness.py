@@ -17,11 +17,21 @@ from prolog.ast.terms import Term, Var, Struct, List, Atom, Int, Float, PrologDi
 def extract_vars(term: Term) -> Set[int]:
     """Extract all variable IDs from a term recursively.
 
+    Handles all Prolog term types:
+    - Var: Returns the variable ID
+    - Struct: Recursively extracts from all arguments
+    - List: Recursively extracts from items and tail
+    - PrologDict: Recursively extracts from tag, keys, and values
+    - Atom, Int, Float: No variables (returns empty set)
+
     Args:
         term: Any Prolog term
 
     Returns:
         Set of variable IDs found in term
+
+    Raises:
+        AssertionError: If an unknown term type is encountered (development check)
     """
     if isinstance(term, Var):
         return {term.id}
@@ -41,7 +51,7 @@ def extract_vars(term: Term) -> Set[int]:
         # Extract from tag (if present)
         if term.tag is not None:
             vars_set.update(extract_vars(term.tag))
-        # Extract from all keys and values
+        # Extract from all keys and values (both can contain variables)
         for key, value in term.pairs:
             vars_set.update(extract_vars(key))
             vars_set.update(extract_vars(value))
@@ -49,8 +59,11 @@ def extract_vars(term: Term) -> Set[int]:
     elif isinstance(term, (Atom, Int, Float)):
         return set()
     else:
-        # Unknown term type - conservatively return empty set
-        return set()
+        # Should never reach here - all term types should be handled above
+        raise AssertionError(
+            f"Unknown term type in extract_vars: {type(term).__name__}. "
+            f"This is a bug - all term types must be explicitly handled."
+        )
 
 
 def classify_vars(clause: Clause) -> tuple[Set[int], Set[int]]:
