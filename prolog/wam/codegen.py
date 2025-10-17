@@ -15,9 +15,42 @@ from prolog.wam.instructions import (
     OP_UNIFY_VARIABLE,
     OP_UNIFY_VALUE,
     OP_UNIFY_CONSTANT,
+    OP_PUT_VARIABLE,
+    OP_PUT_VALUE,
+    OP_PUT_CONSTANT,
+    OP_PUT_STRUCTURE,
+    OP_CALL,
 )
+from prolog.wam.liveness import extract_vars
 
-__all__ = ["compile_head", "build_list_struct"]
+__all__ = ["compile_head", "build_list_struct", "compile_body"]
+
+
+def _get_constant_value(term):
+    """Extract raw constant value from AST term.
+
+    Args:
+        term: AST term (Atom, Int, Float, or raw value)
+
+    Returns:
+        Raw value suitable for WAM constant instructions (str, int, float)
+
+    Examples:
+        >>> _get_constant_value(Atom("foo"))
+        "foo"
+        >>> _get_constant_value(Int(42))
+        42
+        >>> _get_constant_value(Float(3.14))
+        3.14
+    """
+    if isinstance(term, Atom):
+        return term.name
+    elif isinstance(term, Int):
+        return term.value
+    elif isinstance(term, Float):
+        return term.value
+    else:
+        return term
 
 
 def build_list_struct(list_term):
@@ -91,17 +124,6 @@ def compile_head(clause, register_map, perm_count):
     if perm_count > 0:
         instructions.append((OP_ALLOCATE, perm_count))
 
-    # Helper to get constant value (raw, not AST)
-    def get_constant_value(term):
-        if isinstance(term, Atom):
-            return term.name
-        elif isinstance(term, Int):
-            return term.value
-        elif isinstance(term, Float):
-            return term.value
-        else:
-            return term
-
     # Helper to compile term in unify context (inside structure)
     def compile_unify_term(term):
         nonlocal seen_vars, next_temp_x
@@ -118,7 +140,7 @@ def compile_head(clause, register_map, perm_count):
 
         elif isinstance(term, (Atom, Int, Float)):
             # Constant -> unify_constant
-            instructions.append((OP_UNIFY_CONSTANT, get_constant_value(term)))
+            instructions.append((OP_UNIFY_CONSTANT, _get_constant_value(term)))
 
         elif isinstance(term, Struct):
             # Nested structure: allocate temp register, emit get_structure, recurse
@@ -171,7 +193,7 @@ def compile_head(clause, register_map, perm_count):
 
         elif isinstance(arg, (Atom, Int, Float)):
             # Constant at top level -> get_constant
-            instructions.append((OP_GET_CONSTANT, get_constant_value(arg), aj_idx))
+            instructions.append((OP_GET_CONSTANT, _get_constant_value(arg), aj_idx))
 
         elif isinstance(arg, Struct):
             # Structure at top level
@@ -194,5 +216,169 @@ def compile_head(clause, register_map, perm_count):
                 instructions.append((OP_GET_STRUCTURE, (".", 2), aj_idx))
                 compile_unify_term(list_struct.args[0])  # First item
                 compile_unify_term(list_struct.args[1])  # Nested tail
+
+    return instructions
+
+
+def compile_body(clause, register_map):
+    """Compile clause body to WAM put/call instruction sequence.
+
+    Args:
+        clause: Clause with body to compile
+        register_map: dict mapping var_id -> ("X"|"Y", index)
+
+    Returns:
+        List of instruction tuples
+
+    Notes:
+        - Emits put_* instructions for goal arguments
+        - Emits call instructions for each body goal
+        - Tracks variable first/subsequent occurrences across entire body
+        - Empty body returns empty list
+        - Lists compiled as ./2 structures per Prolog semantics
+        - Call targets formatted as "user:{functor}/{arity}"
+    """
+    instructions = []
+
+    # Handle empty body
+    if not clause.body:
+        return []
+
+    # Single seen set across entire body for first/subsequent occurrence tracking
+    # Pre-populate with head variables (they're already bound from head matching)
+    seen_vars = set()
+    head_vars = extract_vars(clause.head)
+    seen_vars.update(head_vars)
+
+    # Find max X register index for temp allocation
+    max_x = -1
+    for vid, (bank, idx) in register_map.items():
+        if bank == "X" and idx > max_x:
+            max_x = idx
+    next_temp_x = max_x + 1  # Counter for temp X allocation
+
+    # Helper to compile term in unify context (inside structure being built)
+    def compile_unify_term_body(term):
+        nonlocal seen_vars, next_temp_x
+
+        if isinstance(term, Var):
+            reg = register_map[term.id]
+            if term.id in seen_vars:
+                # Subsequent occurrence -> unify_value
+                instructions.append((OP_UNIFY_VALUE, reg))
+            else:
+                # First occurrence -> unify_variable
+                instructions.append((OP_UNIFY_VARIABLE, reg))
+                seen_vars.add(term.id)
+
+        elif isinstance(term, (Atom, Int, Float)):
+            # Constant -> unify_constant
+            instructions.append((OP_UNIFY_CONSTANT, _get_constant_value(term)))
+
+        elif isinstance(term, Struct):
+            # Nested structure: allocate temp register, emit get_structure, recurse
+            temp_idx = next_temp_x
+            next_temp_x += 1
+            temp_reg = ("X", temp_idx)
+
+            # Emit unify_variable for temp register to hold nested structure
+            instructions.append((OP_UNIFY_VARIABLE, temp_reg))
+
+            # Emit get_structure for nested structure with int index
+            # This matches head semantics: unify_variable creates a REF,
+            # get_structure binds that REF to the allocated structure
+            instructions.append(
+                (OP_GET_STRUCTURE, (term.functor, len(term.args)), temp_idx)
+            )
+
+            # Compile arguments
+            for arg in term.args:
+                compile_unify_term_body(arg)
+
+        elif isinstance(term, List):
+            # Transform list to nested ./2 structures and compile
+            list_struct = build_list_struct(term)
+            if isinstance(list_struct, Atom):
+                # Empty list -> constant
+                instructions.append((OP_UNIFY_CONSTANT, "[]"))
+            else:
+                # Nested pairs -> compile as structure
+                compile_unify_term_body(list_struct)
+
+    # Helper to compile a single goal argument term
+    def compile_put_term(term, aj_idx):
+        nonlocal seen_vars, next_temp_x
+
+        if isinstance(term, Var):
+            # Variable
+            reg = register_map[term.id]
+            if term.id in seen_vars:
+                # Subsequent occurrence -> put_value
+                instructions.append((OP_PUT_VALUE, reg, aj_idx))
+            else:
+                # First occurrence -> put_variable
+                instructions.append((OP_PUT_VARIABLE, reg, aj_idx))
+                seen_vars.add(term.id)
+
+        elif isinstance(term, (Atom, Int, Float)):
+            # Constant -> put_constant
+            instructions.append((OP_PUT_CONSTANT, _get_constant_value(term), aj_idx))
+
+        elif isinstance(term, Struct):
+            # Structure: build into temp Xk, then put_value
+            temp_idx = next_temp_x
+            next_temp_x += 1
+            temp_reg = ("X", temp_idx)
+
+            # Emit put_structure into temp register
+            instructions.append(
+                (OP_PUT_STRUCTURE, (term.functor, len(term.args)), temp_idx)
+            )
+
+            # Compile structure arguments
+            for arg in term.args:
+                compile_unify_term_body(arg)
+
+            # Put the built structure into target argument register
+            instructions.append((OP_PUT_VALUE, temp_reg, aj_idx))
+
+        elif isinstance(term, List):
+            # Transform list to nested ./2 structures and compile
+            list_struct = build_list_struct(term)
+            if isinstance(list_struct, Atom):
+                # Empty list -> put_constant
+                instructions.append((OP_PUT_CONSTANT, "[]", aj_idx))
+            else:
+                # Nested pairs: build structure into temp, then put_value
+                temp_idx = next_temp_x
+                next_temp_x += 1
+                temp_reg = ("X", temp_idx)
+
+                # Build outermost ./2 structure
+                instructions.append((OP_PUT_STRUCTURE, (".", 2), temp_idx))
+                compile_unify_term_body(list_struct.args[0])  # First item
+                compile_unify_term_body(list_struct.args[1])  # Nested tail
+
+                # Put the built list into target argument register
+                instructions.append((OP_PUT_VALUE, temp_reg, aj_idx))
+
+    # Process each goal in body
+    for goal in clause.body:
+
+        if isinstance(goal, Atom):
+            # Atom goal (0-arity predicate)
+            target = f"user:{goal.name}/0"
+            instructions.append((OP_CALL, target))
+
+        elif isinstance(goal, Struct):
+            # Structure goal (N-arity predicate)
+
+            # Emit put sequences for each argument
+            for aj_idx, arg in enumerate(goal.args):
+                compile_put_term(arg, aj_idx)
+
+            # Emit call
+            target = f"user:{goal.functor}/{len(goal.args)}"
+            instructions.append((OP_CALL, target))
 
     return instructions
