@@ -39,6 +39,11 @@ Phase 2 cut instructions:
 - OP_GET_LEVEL: Save current B (choicepoint pointer) into Y register for later cut
 - OP_CUT: Prune all choicepoints above the level saved in Y register
 - OP_NECK_CUT: Prune choicepoint created by current clause (optimization)
+
+Phase 3 unify instruction family:
+- OP_UNIFY_VARIABLE: Unify structure argument with new variable (write mode) or read variable (read mode)
+- OP_UNIFY_VALUE: Unify structure argument with existing value (write mode) or read and unify (read mode)
+- OP_UNIFY_CONSTANT: Unify structure argument with constant (write mode) or read and check (read mode)
 """
 
 # Opcode constants
@@ -65,6 +70,9 @@ OP_TRUST_ME = 19
 OP_GET_LEVEL = 20
 OP_CUT = 21
 OP_NECK_CUT = 22
+OP_UNIFY_VARIABLE = 23
+OP_UNIFY_VALUE = 24
+OP_UNIFY_CONSTANT = 25
 
 # Opcode name mapping for debugging and pretty-printing
 _OPCODE_NAMES = {
@@ -91,6 +99,9 @@ _OPCODE_NAMES = {
     OP_GET_LEVEL: "get_level",
     OP_CUT: "cut",
     OP_NECK_CUT: "neck_cut",
+    OP_UNIFY_VARIABLE: "unify_variable",
+    OP_UNIFY_VALUE: "unify_value",
+    OP_UNIFY_CONSTANT: "unify_constant",
 }
 
 # Reverse mapping for name->opcode lookup
@@ -121,6 +132,9 @@ _INSTRUCTION_ARITY = {
     OP_GET_LEVEL: 1,  # get_level Yk (save B into Y register)
     OP_CUT: 1,  # cut Yk (prune to level in Yk)
     OP_NECK_CUT: 0,  # neck_cut (prune clause choicepoint)
+    OP_UNIFY_VARIABLE: 1,  # unify_variable Xi|Yi (structure arg)
+    OP_UNIFY_VALUE: 1,  # unify_value Xi|Yi (structure arg)
+    OP_UNIFY_CONSTANT: 1,  # unify_constant C (structure arg)
 }
 
 __all__ = [
@@ -147,6 +161,9 @@ __all__ = [
     "OP_GET_LEVEL",
     "OP_CUT",
     "OP_NECK_CUT",
+    "OP_UNIFY_VARIABLE",
+    "OP_UNIFY_VALUE",
+    "OP_UNIFY_CONSTANT",
     "opcode_name",
     "name_to_opcode",
     "validate_instruction",
