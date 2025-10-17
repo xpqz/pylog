@@ -17,7 +17,46 @@ from prolog.wam.instructions import (
     OP_UNIFY_CONSTANT,
 )
 
-__all__ = ["compile_head"]
+__all__ = ["compile_head", "build_list_struct"]
+
+
+def build_list_struct(list_term):
+    """Transform a List AST node into nested ./2 Struct nodes.
+
+    Prolog lists are syntactic sugar for nested pairs using the dot functor:
+    - [H|T] becomes .(H, T)
+    - [a, b|T] becomes .(a, .(b, T))
+    - [X, Y, Z] becomes .(X, .(Y, .(Z, [])))
+
+    The transformation builds nested structures from right to left, starting
+    with the tail and wrapping each item in a ./2 structure.
+
+    Args:
+        list_term: List AST node with items tuple and optional tail
+
+    Returns:
+        Struct node representing nested ./2 pairs, or Atom("[]") for empty list
+
+    Examples:
+        >>> build_list_struct(List(items=(Atom("a"),), tail=Var(1, "T")))
+        Struct(".", (Atom("a"), Var(1, "T")))
+
+        >>> build_list_struct(List(items=(Atom("a"), Atom("b")), tail=Atom("[]")))
+        Struct(".", (Atom("a"), Struct(".", (Atom("b"), Atom("[]")))))
+    """
+    if not list_term.items:
+        # Empty list: []
+        return Atom("[]")
+
+    # Build nested pairs from right to left
+    # Start with tail (or [] if no tail specified)
+    result = list_term.tail if list_term.tail else Atom("[]")
+
+    # Wrap each item in ./2, processing right-to-left
+    for item in reversed(list_term.items):
+        result = Struct(".", (item, result))
+
+    return result
 
 
 def compile_head(clause, register_map, perm_count):
@@ -100,18 +139,14 @@ def compile_head(clause, register_map, perm_count):
                 compile_unify_term(arg)
 
         elif isinstance(term, List):
-            # List is sugar for ./2 structure
-            # [H|T] -> .(H, T)
-            # [a, b|T] -> .(a, .(b, T))  (nested pairs)
-            if term.items:
-                # Build nested dot structures from right to left
-                tail = term.tail if term.tail else Atom("[]")
-                for item in reversed(term.items):
-                    tail = Struct(".", (item, tail))
-                compile_unify_term(tail)
-            else:
-                # Empty list is just atom []
+            # Transform list to nested ./2 structures and compile
+            list_struct = build_list_struct(term)
+            if isinstance(list_struct, Atom):
+                # Empty list -> constant
                 instructions.append((OP_UNIFY_CONSTANT, "[]"))
+            else:
+                # Nested pairs -> compile as structure
+                compile_unify_term(list_struct)
 
     # Step 2: Compile head arguments
     head = clause.head
@@ -149,20 +184,15 @@ def compile_head(clause, register_map, perm_count):
                 compile_unify_term(struct_arg)
 
         elif isinstance(arg, List):
-            # List is sugar for ./2
-            if arg.items:
-                # Non-empty list: [H|T] -> .(H, T)
-                # [a, b|T] -> .(a, .(b, T))  (nested pairs)
-                tail = arg.tail if arg.tail else Atom("[]")
-                for item in reversed(arg.items):
-                    tail = Struct(".", (item, tail))
-
-                # Now compile the nested dot structure
-                instructions.append((OP_GET_STRUCTURE, (".", 2), aj_idx))
-                compile_unify_term(tail.args[0])  # First item
-                compile_unify_term(tail.args[1])  # Nested tail
-            else:
-                # Empty list [] is just a constant
+            # Transform list to nested ./2 structures and compile
+            list_struct = build_list_struct(arg)
+            if isinstance(list_struct, Atom):
+                # Empty list -> get_constant
                 instructions.append((OP_GET_CONSTANT, "[]", aj_idx))
+            else:
+                # Nested pairs -> get_structure for outermost pair
+                instructions.append((OP_GET_STRUCTURE, (".", 2), aj_idx))
+                compile_unify_term(list_struct.args[0])  # First item
+                compile_unify_term(list_struct.args[1])  # Nested tail
 
     return instructions

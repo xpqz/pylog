@@ -260,6 +260,46 @@ class TestListCompilation:
         assert instructions[3][0] == OP_GET_STRUCTURE
         assert instructions[3][1] == (".", 2)
 
+    def test_get_list_four_elements_with_tail(self):
+        """Longer list [a, b, c|T] as nested pairs."""
+        # p([a, b, c|T]) -> p(.(a, .(b, .(c, T))))
+        t = Var(id=1, hint="T")
+        list_term = List(items=(Atom("a"), Atom("b"), Atom("c")), tail=t)
+        clause = Clause(head=Struct("p", (list_term,)), body=())
+
+        temp, perm = classify_vars(clause)
+        regmap = allocate_registers(clause, temp, perm)
+        instructions = compile_head(clause, regmap, len(perm))
+
+        # Expected:
+        # get_structure ./2, A1
+        # unify_constant a
+        # unify_variable X1 (temp for .(b, .(c, T)))
+        # get_structure ./2, X1
+        # unify_constant b
+        # unify_variable X2 (temp for .(c, T))
+        # get_structure ./2, X2
+        # unify_constant c
+        # unify_variable X0 (T)
+        assert len(instructions) == 9
+        assert instructions[0] == (OP_GET_STRUCTURE, (".", 2), 0)  # A1 (0-based)
+        assert instructions[1] == (OP_UNIFY_CONSTANT, "a")
+        assert instructions[2][0] == OP_UNIFY_VARIABLE  # Temp for .(b, .(c, T))
+        assert instructions[3] == (
+            OP_GET_STRUCTURE,
+            (".", 2),
+            instructions[2][1][1],
+        )  # Using temp idx
+        assert instructions[4] == (OP_UNIFY_CONSTANT, "b")
+        assert instructions[5][0] == OP_UNIFY_VARIABLE  # Temp for .(c, T)
+        assert instructions[6] == (
+            OP_GET_STRUCTURE,
+            (".", 2),
+            instructions[5][1][1],
+        )  # Using temp idx
+        assert instructions[7] == (OP_UNIFY_CONSTANT, "c")
+        assert instructions[8] == (OP_UNIFY_VARIABLE, ("X", 0))  # T
+
 
 class TestPermanentVariables:
     """Allocate K when permanent variables present."""
