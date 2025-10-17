@@ -9,9 +9,10 @@ Test comments use human-friendly "A1, A2..." notation but assertions use 0-based
 """
 
 from prolog.ast.clauses import Clause
-from prolog.ast.terms import Atom, Int, Float, Var, Struct, List
+from prolog.ast.terms import Atom, Int, Var, Struct, List
 from prolog.wam.liveness import classify_vars
 from prolog.wam.regalloc import allocate_registers
+from prolog.wam.codegen import compile_head
 from prolog.wam.instructions import (
     OP_ALLOCATE,
     OP_GET_VARIABLE,
@@ -22,136 +23,6 @@ from prolog.wam.instructions import (
     OP_UNIFY_VALUE,
     OP_UNIFY_CONSTANT,
 )
-
-
-def compile_head(clause, register_map, perm_count):
-    """Compile clause head to WAM get/unify instruction sequence.
-
-    Args:
-        clause: Clause with head to compile
-        register_map: dict mapping var_id -> ("X"|"Y", index)
-        perm_count: Number of permanent variables (for allocate K)
-
-    Returns:
-        List of instruction tuples
-    """
-    instructions = []
-    seen_vars = set()  # Track which variables have been seen
-
-    # Step 1: Emit allocate K if permanent variables present
-    if perm_count > 0:
-        instructions.append((OP_ALLOCATE, perm_count))
-
-    # Helper to get constant value (raw, not AST)
-    def get_constant_value(term):
-        if isinstance(term, Atom):
-            return term.name
-        elif isinstance(term, Int):
-            return term.value
-        elif isinstance(term, Float):
-            return term.value
-        else:
-            return term
-
-    # Helper to compile term in unify context (inside structure)
-    def compile_unify_term(term):
-        nonlocal seen_vars
-
-        if isinstance(term, Var):
-            reg = register_map[term.id]
-            if term.id in seen_vars:
-                # Subsequent occurrence -> unify_value
-                instructions.append((OP_UNIFY_VALUE, reg))
-            else:
-                # First occurrence -> unify_variable
-                instructions.append((OP_UNIFY_VARIABLE, reg))
-                seen_vars.add(term.id)
-
-        elif isinstance(term, (Atom, Int, Float)):
-            # Constant -> unify_constant
-            instructions.append((OP_UNIFY_CONSTANT, get_constant_value(term)))
-
-        elif isinstance(term, Struct):
-            # Nested structure: allocate temp register, emit get_structure, recurse
-            # Find an unused X register for the nested structure
-            max_x = -1
-            for vid, (bank, idx) in register_map.items():
-                if bank == "X" and idx > max_x:
-                    max_x = idx
-            temp_reg = ("X", max_x + 1)
-
-            # Emit unify_variable for temp register to hold structure
-            instructions.append((OP_UNIFY_VARIABLE, temp_reg))
-
-            # Emit get_structure for nested structure
-            instructions.append(
-                (OP_GET_STRUCTURE, (term.functor, len(term.args)), temp_reg)
-            )
-
-            # Compile arguments
-            for arg in term.args:
-                compile_unify_term(arg)
-
-        elif isinstance(term, List):
-            # List is sugar for ./2 structure
-            # Convert to Struct(".", (items..., tail))
-            if term.items:
-                dot_args = term.items + (term.tail if term.tail else Atom("[]"),)
-                dot_struct = Struct(".", dot_args)
-                compile_unify_term(dot_struct)
-            else:
-                # Empty list is just atom []
-                instructions.append((OP_UNIFY_CONSTANT, "[]"))
-
-    # Step 2: Compile head arguments
-    head = clause.head
-
-    # Handle atom predicates (no arguments)
-    if isinstance(head, Atom):
-        return instructions
-
-    # Process each argument position
-    for aj_idx, arg in enumerate(head.args):
-
-        if isinstance(arg, Var):
-            # Variable at top level
-            reg = register_map[arg.id]
-            if arg.id in seen_vars:
-                # Subsequent occurrence -> get_value
-                instructions.append((OP_GET_VALUE, reg, aj_idx))
-            else:
-                # First occurrence -> get_variable
-                instructions.append((OP_GET_VARIABLE, reg, aj_idx))
-                seen_vars.add(arg.id)
-
-        elif isinstance(arg, (Atom, Int, Float)):
-            # Constant at top level -> get_constant
-            instructions.append((OP_GET_CONSTANT, get_constant_value(arg), aj_idx))
-
-        elif isinstance(arg, Struct):
-            # Structure at top level
-            instructions.append(
-                (OP_GET_STRUCTURE, (arg.functor, len(arg.args)), aj_idx)
-            )
-
-            # Compile structure arguments
-            for struct_arg in arg.args:
-                compile_unify_term(struct_arg)
-
-        elif isinstance(arg, List):
-            # List is sugar for ./2
-            if arg.items:
-                # Non-empty list: [items...|tail] -> .(items..., tail)
-                dot_args = arg.items + (arg.tail if arg.tail else Atom("[]"),)
-                instructions.append((OP_GET_STRUCTURE, (".", len(dot_args)), aj_idx))
-
-                for list_item in dot_args:
-                    compile_unify_term(list_item)
-            else:
-                # Empty list [] is just a constant
-                instructions.append((OP_GET_CONSTANT, "[]", aj_idx))
-
-    return instructions
 
 
 class TestBasicGetSequences:
@@ -332,6 +203,62 @@ class TestListCompilation:
         # Expected: get_constant [], A1
         assert len(instructions) == 1
         assert instructions[0] == (OP_GET_CONSTANT, "[]", 0)  # A1 (0-based)
+
+    def test_get_list_two_elements(self):
+        """List with two elements [a, b|T] as nested pairs."""
+        # p([a, b|T]) -> p(.(a, .(b, T)))
+        t = Var(id=1, hint="T")
+        list_term = List(items=(Atom("a"), Atom("b")), tail=t)
+        clause = Clause(head=Struct("p", (list_term,)), body=())
+
+        temp, perm = classify_vars(clause)
+        regmap = allocate_registers(clause, temp, perm)
+        instructions = compile_head(clause, regmap, len(perm))
+
+        # Expected:
+        # get_structure ./2, A1
+        # unify_constant a
+        # unify_variable X1 (temp for nested .(b, T))
+        # get_structure ./2, X1
+        # unify_constant b
+        # unify_variable X0 (T)
+        assert instructions[0] == (OP_GET_STRUCTURE, (".", 2), 0)  # A1 (0-based)
+        assert instructions[1] == (OP_UNIFY_CONSTANT, "a")
+        assert instructions[2][0] == OP_UNIFY_VARIABLE  # Temp for nested pair
+        assert instructions[3][0] == OP_GET_STRUCTURE
+        assert instructions[3][1] == (".", 2)
+        assert instructions[4] == (OP_UNIFY_CONSTANT, "b")
+        assert instructions[5] == (OP_UNIFY_VARIABLE, ("X", 0))  # T
+
+    def test_get_list_three_elements_with_vars(self):
+        """List with three variable elements [X, Y, Z]."""
+        # p([X, Y, Z]) -> p(.(X, .(Y, .(Z, []))))
+        x = Var(id=1, hint="X")
+        y = Var(id=2, hint="Y")
+        z = Var(id=3, hint="Z")
+        list_term = List(items=(x, y, z), tail=Atom("[]"))
+        clause = Clause(head=Struct("p", (list_term,)), body=())
+
+        temp, perm = classify_vars(clause)
+        regmap = allocate_registers(clause, temp, perm)
+        instructions = compile_head(clause, regmap, len(perm))
+
+        # Expected nested structure:
+        # get_structure ./2, A1
+        # unify_variable X0 (X)
+        # unify_variable X3 (temp for .(Y, .(Z, [])))
+        # get_structure ./2, X3
+        # unify_variable X1 (Y)
+        # unify_variable X4 (temp for .(Z, []))
+        # get_structure ./2, X4
+        # unify_variable X2 (Z)
+        # unify_constant []
+        assert instructions[0] == (OP_GET_STRUCTURE, (".", 2), 0)  # A1 (0-based)
+        assert instructions[1] == (OP_UNIFY_VARIABLE, ("X", 0))  # X
+        # Check nested structure pattern continues
+        assert instructions[2][0] == OP_UNIFY_VARIABLE  # Temp reg
+        assert instructions[3][0] == OP_GET_STRUCTURE
+        assert instructions[3][1] == (".", 2)
 
 
 class TestPermanentVariables:
