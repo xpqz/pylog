@@ -11,7 +11,7 @@ The classification determines register allocation:
 
 from typing import Set
 from prolog.ast.clauses import Clause
-from prolog.ast.terms import Term, Var, Struct, List, Atom, Int, Float
+from prolog.ast.terms import Term, Var, Struct, List, Atom, Int, Float, PrologDict
 
 
 def extract_vars(term: Term) -> Set[int]:
@@ -35,6 +35,16 @@ def extract_vars(term: Term) -> Set[int]:
         for item in term.items:
             vars_set.update(extract_vars(item))
         vars_set.update(extract_vars(term.tail))
+        return vars_set
+    elif isinstance(term, PrologDict):
+        vars_set = set()
+        # Extract from tag (if present)
+        if term.tag is not None:
+            vars_set.update(extract_vars(term.tag))
+        # Extract from all keys and values
+        for key, value in term.pairs:
+            vars_set.update(extract_vars(key))
+            vars_set.update(extract_vars(value))
         return vars_set
     elif isinstance(term, (Atom, Int, Float)):
         return set()

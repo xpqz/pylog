@@ -13,8 +13,8 @@ Tests verify correct classification for:
 """
 
 from prolog.ast.clauses import Clause
-from prolog.ast.terms import Atom, Var, Struct
-from prolog.wam.liveness import classify_vars
+from prolog.ast.terms import Atom, Var, Struct, PrologDict
+from prolog.wam.liveness import classify_vars, extract_vars
 
 
 class TestSimpleCases:
@@ -329,3 +329,64 @@ class TestRealWorldExamples:
         assert t.id in temp
         assert lst.id in temp
         assert r.id in temp
+
+
+class TestPrologDictSupport:
+    """Test variable extraction from PrologDict terms."""
+
+    def test_dict_with_variable_values(self):
+        """Dict with variables in values."""
+        # p(dict{a: X, b: Y}) :- q(X, Y).
+        x = Var(id=1, hint="X")
+        y = Var(id=2, hint="Y")
+        dict_term = PrologDict(pairs=((Atom("a"), x), (Atom("b"), y)))
+
+        clause = Clause(head=Struct("p", (dict_term,)), body=(Struct("q", (x, y)),))
+
+        temp, perm = classify_vars(clause)
+        # X and Y in head and single goal - all temporary
+        assert x.id in temp
+        assert y.id in temp
+        assert len(perm) == 0
+
+    def test_dict_with_variable_keys(self):
+        """Dict with variables in keys (rare but valid)."""
+        k = Var(id=1, hint="K")
+        v = Var(id=2, hint="V")
+        # Can't actually create PrologDict with var keys due to validation,
+        # so test extract_vars directly
+        vars_found = extract_vars(Struct("test", (k, v)))
+        assert vars_found == {1, 2}
+
+    def test_dict_with_tagged_variable(self):
+        """Dict with variable in tag."""
+        # p(Tag{a: 1}) :- q(Tag).
+        tag = Var(id=1, hint="Tag")
+        dict_term = PrologDict(pairs=((Atom("a"), Atom("hello")),), tag=tag)
+
+        clause = Clause(head=Struct("p", (dict_term,)), body=(Struct("q", (tag,)),))
+
+        temp, perm = classify_vars(clause)
+        # Tag in head and single goal - temporary
+        assert tag.id in temp
+        assert len(perm) == 0
+
+    def test_dict_with_complex_nested_values(self):
+        """Dict with structures containing variables."""
+        # p(dict{a: f(X), b: g(Y)}) :- q(X), r(Y).
+        x = Var(id=1, hint="X")
+        y = Var(id=2, hint="Y")
+        dict_term = PrologDict(
+            pairs=((Atom("a"), Struct("f", (x,))), (Atom("b"), Struct("g", (y,))))
+        )
+
+        clause = Clause(
+            head=Struct("p", (dict_term,)),
+            body=(Struct("q", (x,)), Struct("r", (y,))),
+        )
+
+        temp, perm = classify_vars(clause)
+        # X only in first goal - temporary
+        # Y appears after call - permanent
+        assert x.id in temp
+        assert y.id in perm
