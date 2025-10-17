@@ -41,6 +41,13 @@ def compile_head(clause, register_map, perm_count):
     instructions = []
     seen_vars = set()  # Track which variables have been seen
 
+    # Find max X register index for temp allocation
+    max_x = -1
+    for vid, (bank, idx) in register_map.items():
+        if bank == "X" and idx > max_x:
+            max_x = idx
+    next_temp_x = max_x + 1  # Counter for temp X allocation
+
     # Step 1: Emit allocate K if permanent variables present
     if perm_count > 0:
         instructions.append((OP_ALLOCATE, perm_count))
@@ -58,7 +65,7 @@ def compile_head(clause, register_map, perm_count):
 
     # Helper to compile term in unify context (inside structure)
     def compile_unify_term(term):
-        nonlocal seen_vars
+        nonlocal seen_vars, next_temp_x
 
         if isinstance(term, Var):
             reg = register_map[term.id]
@@ -76,19 +83,16 @@ def compile_head(clause, register_map, perm_count):
 
         elif isinstance(term, Struct):
             # Nested structure: allocate temp register, emit get_structure, recurse
-            # Find an unused X register for the nested structure
-            max_x = -1
-            for vid, (bank, idx) in register_map.items():
-                if bank == "X" and idx > max_x:
-                    max_x = idx
-            temp_reg = ("X", max_x + 1)
+            temp_idx = next_temp_x
+            next_temp_x += 1
+            temp_reg = ("X", temp_idx)
 
             # Emit unify_variable for temp register to hold structure
             instructions.append((OP_UNIFY_VARIABLE, temp_reg))
 
-            # Emit get_structure for nested structure
+            # Emit get_structure for nested structure with int index
             instructions.append(
-                (OP_GET_STRUCTURE, (term.functor, len(term.args)), temp_reg)
+                (OP_GET_STRUCTURE, (term.functor, len(term.args)), temp_idx)
             )
 
             # Compile arguments

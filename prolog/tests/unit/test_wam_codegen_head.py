@@ -365,6 +365,51 @@ class TestMixedArguments:
 class TestVariableOccurrencePatterns:
     """Advanced variable occurrence patterns."""
 
+    def test_repeated_vars_across_structures_with_constants(self):
+        """Variable repeated across structures with constants: p(f(a, X), f(X))."""
+        # p(f(a, X), f(X)).
+        x = Var(id=1, hint="X")
+        clause = Clause(
+            head=Struct("p", (Struct("f", (Atom("a"), x)), Struct("f", (x,)))),
+            body=(),
+        )
+
+        temp, perm = classify_vars(clause)
+        regmap = allocate_registers(clause, temp, perm)
+        instructions = compile_head(clause, regmap, len(perm))
+
+        # Expected:
+        # get_structure f/2, A1
+        # unify_constant a
+        # unify_variable X0 (first occurrence)
+        # get_structure f/1, A2
+        # unify_value X0 (subsequent occurrence)
+        assert len(instructions) == 5
+        assert instructions[0] == (OP_GET_STRUCTURE, ("f", 2), 0)  # A1 (0-based)
+        assert instructions[1] == (OP_UNIFY_CONSTANT, "a")
+        assert instructions[2] == (OP_UNIFY_VARIABLE, ("X", 0))
+        assert instructions[3] == (OP_GET_STRUCTURE, ("f", 1), 1)  # A2 (0-based)
+        assert instructions[4] == (OP_UNIFY_VALUE, ("X", 0))
+
+    def test_permanent_variable_in_structure_with_other_args(self):
+        """Permanent variable inside structure with other arguments."""
+        # p(f(Y, a)) :- q(Y), r(Y).  (Y permanent, mixed with constant)
+        y = Var(id=1, hint="Y")
+        clause = Clause(
+            head=Struct("p", (Struct("f", (y, Atom("a"))),)),
+            body=(Struct("q", (y,)), Struct("r", (y,))),
+        )
+
+        temp, perm = classify_vars(clause)
+        regmap = allocate_registers(clause, temp, perm)
+        instructions = compile_head(clause, regmap, len(perm))
+
+        # Expected: allocate 1; get_structure f/2, A1; unify_variable Y0; unify_constant a
+        assert instructions[0] == (OP_ALLOCATE, 1)
+        assert instructions[1] == (OP_GET_STRUCTURE, ("f", 2), 0)  # A1 (0-based)
+        assert instructions[2] == (OP_UNIFY_VARIABLE, ("Y", 0))
+        assert instructions[3] == (OP_UNIFY_CONSTANT, "a")
+
     def test_permanent_variable_in_structure(self):
         """Permanent variable appears inside structure argument."""
         # p(f(X)) :- q(X), r(X).  (X permanent, first occurrence in structure)
