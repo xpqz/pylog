@@ -1203,37 +1203,80 @@ Prolog AST
 **Variable Classification**:
 
 - **Temporary (X)**: Variable dies before next call or occurs only once
-- **Permanent (Y)**: Variable lives across calls or occurs in multiple goals
+- **Permanent (Y)**: Variable lives across calls or must survive backtracking
 
-**Liveness Analysis** (simplified):
+**Why Y registers are needed**:
+
+X registers are caller-scratch and **not saved on choicepoints**. When a goal creates choicepoints and later goals fail, backtracking re-enters that goal to try alternatives. The goal's input arguments must be preserved for this re-entry, requiring Y registers (saved in the environment frame).
+
+**Liveness Analysis Algorithm**:
+
+Two complementary rules determine permanence:
+
+1. **Classic "appears after call"**: Variables used in goals i>0 that appeared earlier
+2. **Generator-input preservation**: When a non-last goal produces outputs used later, its inputs must survive
+
+Rule 2 is crucial: if goal i introduces variables used in goal j (j>i), and goal j fails, backtracking to goal i requires the original input arguments to goal i, even if those inputs don't appear in goal j.
 
 ```python
 def classify_vars(clause):
     """Classify vars as temporary (X) or permanent (Y)."""
-    temp_vars = set()
     perm_vars = set()
 
-    # Scan head: all vars initially temporary
-    for var in clause.head.vars():
-        temp_vars.add(var)
+    # Precompute first/last occurrence for each var (head = -1)
+    first_occurrence = {}  # var -> first goal index (-1 for head)
+    last_occurrence = {}   # var -> last goal index
 
-    # Scan body goals left-to-right
+    for var in clause.head.vars():
+        first_occurrence[var] = -1
+        last_occurrence[var] = -1
+
+    for i, goal in enumerate(clause.body):
+        for var in goal.vars():
+            if var not in first_occurrence:
+                first_occurrence[var] = i
+            last_occurrence[var] = i
+
+    # Apply two promotion rules
+    n = len(clause.body)
     for i, goal in enumerate(clause.body):
         goal_vars = goal.vars()
 
-        # Any var appearing after a call becomes permanent
+        # Rule 1: Classic "appears after call"
         if i > 0:
             for var in goal_vars:
-                if var in temp_vars:
+                if first_occurrence[var] < i:
                     perm_vars.add(var)
-                    temp_vars.remove(var)
 
-        # First occurrence: temporary
-        for var in goal_vars:
-            if var not in temp_vars and var not in perm_vars:
-                temp_vars.add(var)
+        # Rule 2: Generator-input preservation
+        if i < n - 1:  # Non-last goal
+            # Find outputs: vars first appearing here and used later
+            outputs = {v for v in goal_vars
+                      if first_occurrence[v] == i and last_occurrence[v] > i}
+
+            if outputs:
+                # This goal is a generator - promote all its inputs
+                inputs = {v for v in goal_vars if first_occurrence[v] < i}
+                perm_vars.update(inputs)
+
+    # All vars not marked permanent are temporary
+    all_vars = set(first_occurrence.keys())
+    temp_vars = all_vars - perm_vars
 
     return temp_vars, perm_vars
+```
+
+**Examples**:
+
+```prolog
+% p(X,Y) :- q(X), r(Y).
+% X temp: appears in head and goal 0 only, q produces no outputs used later
+% Y perm: appears after call (rule 1)
+
+% p(X) :- q(X,Y), r(Y,Z).
+% X perm: generator input (rule 2) - q introduces Y used in r, so X must survive
+% Y perm: spans calls (rule 1)
+% Z temp: only in last goal
 ```
 
 **Register Assignment**:
