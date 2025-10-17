@@ -26,6 +26,33 @@ from prolog.wam.liveness import extract_vars
 __all__ = ["compile_head", "build_list_struct", "compile_body"]
 
 
+def _get_constant_value(term):
+    """Extract raw constant value from AST term.
+
+    Args:
+        term: AST term (Atom, Int, Float, or raw value)
+
+    Returns:
+        Raw value suitable for WAM constant instructions (str, int, float)
+
+    Examples:
+        >>> _get_constant_value(Atom("foo"))
+        "foo"
+        >>> _get_constant_value(Int(42))
+        42
+        >>> _get_constant_value(Float(3.14))
+        3.14
+    """
+    if isinstance(term, Atom):
+        return term.name
+    elif isinstance(term, Int):
+        return term.value
+    elif isinstance(term, Float):
+        return term.value
+    else:
+        return term
+
+
 def build_list_struct(list_term):
     """Transform a List AST node into nested ./2 Struct nodes.
 
@@ -97,17 +124,6 @@ def compile_head(clause, register_map, perm_count):
     if perm_count > 0:
         instructions.append((OP_ALLOCATE, perm_count))
 
-    # Helper to get constant value (raw, not AST)
-    def get_constant_value(term):
-        if isinstance(term, Atom):
-            return term.name
-        elif isinstance(term, Int):
-            return term.value
-        elif isinstance(term, Float):
-            return term.value
-        else:
-            return term
-
     # Helper to compile term in unify context (inside structure)
     def compile_unify_term(term):
         nonlocal seen_vars, next_temp_x
@@ -124,7 +140,7 @@ def compile_head(clause, register_map, perm_count):
 
         elif isinstance(term, (Atom, Int, Float)):
             # Constant -> unify_constant
-            instructions.append((OP_UNIFY_CONSTANT, get_constant_value(term)))
+            instructions.append((OP_UNIFY_CONSTANT, _get_constant_value(term)))
 
         elif isinstance(term, Struct):
             # Nested structure: allocate temp register, emit get_structure, recurse
@@ -177,7 +193,7 @@ def compile_head(clause, register_map, perm_count):
 
         elif isinstance(arg, (Atom, Int, Float)):
             # Constant at top level -> get_constant
-            instructions.append((OP_GET_CONSTANT, get_constant_value(arg), aj_idx))
+            instructions.append((OP_GET_CONSTANT, _get_constant_value(arg), aj_idx))
 
         elif isinstance(arg, Struct):
             # Structure at top level
@@ -241,17 +257,6 @@ def compile_body(clause, register_map):
             max_x = idx
     next_temp_x = max_x + 1  # Counter for temp X allocation
 
-    # Helper to get constant value (raw, not AST)
-    def get_constant_value(term):
-        if isinstance(term, Atom):
-            return term.name
-        elif isinstance(term, Int):
-            return term.value
-        elif isinstance(term, Float):
-            return term.value
-        else:
-            return term
-
     # Helper to compile term in unify context (inside structure being built)
     def compile_unify_term_body(term):
         nonlocal seen_vars, next_temp_x
@@ -268,10 +273,10 @@ def compile_body(clause, register_map):
 
         elif isinstance(term, (Atom, Int, Float)):
             # Constant -> unify_constant
-            instructions.append((OP_UNIFY_CONSTANT, get_constant_value(term)))
+            instructions.append((OP_UNIFY_CONSTANT, _get_constant_value(term)))
 
         elif isinstance(term, Struct):
-            # Nested structure: allocate temp register, emit put_structure, recurse
+            # Nested structure: allocate temp register, emit get_structure, recurse
             temp_idx = next_temp_x
             next_temp_x += 1
             temp_reg = ("X", temp_idx)
@@ -279,9 +284,11 @@ def compile_body(clause, register_map):
             # Emit unify_variable for temp register to hold nested structure
             instructions.append((OP_UNIFY_VARIABLE, temp_reg))
 
-            # Emit put_structure for nested structure with int index
+            # Emit get_structure for nested structure with int index
+            # This matches head semantics: unify_variable creates a REF,
+            # get_structure binds that REF to the allocated structure
             instructions.append(
-                (OP_PUT_STRUCTURE, (term.functor, len(term.args)), temp_idx)
+                (OP_GET_STRUCTURE, (term.functor, len(term.args)), temp_idx)
             )
 
             # Compile arguments
@@ -315,7 +322,7 @@ def compile_body(clause, register_map):
 
         elif isinstance(term, (Atom, Int, Float)):
             # Constant -> put_constant
-            instructions.append((OP_PUT_CONSTANT, get_constant_value(term), aj_idx))
+            instructions.append((OP_PUT_CONSTANT, _get_constant_value(term), aj_idx))
 
         elif isinstance(term, Struct):
             # Structure: build into temp Xk, then put_value

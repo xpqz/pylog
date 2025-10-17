@@ -17,6 +17,7 @@ from prolog.wam.instructions import (
     OP_PUT_VALUE,
     OP_PUT_CONSTANT,
     OP_PUT_STRUCTURE,
+    OP_GET_STRUCTURE,
     OP_CALL,
     OP_UNIFY_VARIABLE,
     OP_UNIFY_CONSTANT,
@@ -147,10 +148,29 @@ class TestStructureCompilation:
         regmap = allocate_registers(clause, temp, perm)
         instructions = compile_body(clause, regmap)
 
-        # Nested structures should build inner-to-outer
-        # Verify we have put_structure instructions
+        # Nested structures: outer put_structure, inner get_structure (like head)
+        # Expected sequence:
+        #   put_structure f/1, Xk    (k = temp register)
+        #   unify_variable Xj        (j = another temp)
+        #   get_structure g/1, Xj    (not put_structure - matches head semantics)
+        #   unify_variable X0        (X allocated to X0)
+        #   put_value Xk, A1         (built structure to arg register)
+        #   call user:q/1
+
         put_structs = [i for i in instructions if i[0] == OP_PUT_STRUCTURE]
-        assert len(put_structs) == 2
+        get_structs = [i for i in instructions if i[0] == OP_GET_STRUCTURE]
+
+        # Outermost structure uses put_structure
+        assert len(put_structs) == 1
+        assert put_structs[0][0] == OP_PUT_STRUCTURE
+        assert put_structs[0][1] == ("f", 1)
+
+        # Inner nested structure uses get_structure (after unify_variable)
+        assert len(get_structs) == 1
+        assert get_structs[0][0] == OP_GET_STRUCTURE
+        assert get_structs[0][1] == ("g", 1)
+
+        # Final instruction is call
         assert instructions[-1][0] == OP_CALL
 
 
