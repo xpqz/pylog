@@ -17,7 +17,7 @@ from prolog.wam.instructions import (
     OP_UNIFY_CONSTANT,
 )
 
-__all__ = ["compile_head", "build_list_struct"]
+__all__ = ["compile_head", "build_list_struct", "compile_body"]
 
 
 def build_list_struct(list_term):
@@ -196,3 +196,23 @@ def compile_head(clause, register_map, perm_count):
                 compile_unify_term(list_struct.args[1])  # Nested tail
 
     return instructions
+
+
+def compile_body(clause, register_map):
+    """Compile clause body to WAM put/call instruction sequence.
+
+    Args:
+        clause: Clause with body to compile
+        register_map: dict mapping var_id -> ("X"|"Y", index)
+
+    Returns:
+        List of instruction tuples
+
+    Notes:
+        - Emits put_* instructions for goal arguments
+        - Emits call instructions for each body goal
+        - Tracks variable first/subsequent occurrences
+        - Empty body returns empty list
+    """
+    # Placeholder for implementation - will be written after test approval
+    raise NotImplementedError("To be implemented after test review")
