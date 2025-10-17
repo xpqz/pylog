@@ -17,6 +17,7 @@ Key insight: Y register ordering must be stable for:
 
 from typing import Dict, Set, Tuple
 from prolog.ast.clauses import Clause
+from prolog.ast.terms import Var
 
 
 def allocate_registers(
@@ -63,7 +64,7 @@ def allocate_registers(
 
 
 def debug_registers(clause: Clause, register_map: Dict[int, Tuple[str, int]]) -> None:
-    """Pretty-print register allocation.
+    """Pretty-print register allocation with variable hints.
 
     Args:
         clause: The clause being allocated
@@ -74,6 +75,25 @@ def debug_registers(clause: Clause, register_map: Dict[int, Tuple[str, int]]) ->
         print("  (no variables)")
         return
 
+    # Extract variable hints from clause
+    def collect_var_hints(term, hints_dict):
+        """Recursively collect variable hints."""
+        if isinstance(term, Var):
+            if term.hint:
+                hints_dict[term.id] = term.hint
+        elif hasattr(term, "args"):  # Struct
+            for arg in term.args:
+                collect_var_hints(arg, hints_dict)
+        elif hasattr(term, "items"):  # List
+            for item in term.items:
+                collect_var_hints(item, hints_dict)
+            collect_var_hints(term.tail, hints_dict)
+
+    var_hints = {}
+    collect_var_hints(clause.head, var_hints)
+    for goal in clause.body:
+        collect_var_hints(goal, var_hints)
+
     # Group by register type
     x_regs = {vid: idx for vid, (rtype, idx) in register_map.items() if rtype == "X"}
     y_regs = {vid: idx for vid, (rtype, idx) in register_map.items() if rtype == "Y"}
@@ -81,12 +101,14 @@ def debug_registers(clause: Clause, register_map: Dict[int, Tuple[str, int]]) ->
     if y_regs:
         print("  Permanent (Y):")
         for var_id in sorted(y_regs.keys()):
-            print(f"    var_{var_id} -> Y{y_regs[var_id]}")
+            hint = var_hints.get(var_id, f"var_{var_id}")
+            print(f"    {hint} (id={var_id}) -> Y{y_regs[var_id]}")
 
     if x_regs:
         print("  Temporary (X):")
         for var_id in sorted(x_regs.keys()):
-            print(f"    var_{var_id} -> X{x_regs[var_id]}")
+            hint = var_hints.get(var_id, f"var_{var_id}")
+            print(f"    {hint} (id={var_id}) -> X{x_regs[var_id]}")
 
 
 __all__ = ["allocate_registers", "debug_registers"]

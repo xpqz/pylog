@@ -98,11 +98,11 @@ class TestStableOrdering:
         # Should be identical
         assert regmap1 == regmap2 == regmap3
 
-    def test_y_registers_ordered_by_first_occurrence(self):
-        """Y registers ordered by variable first occurrence for debuggability."""
+    def test_y_registers_ordered_by_var_id(self):
+        """Y registers ordered by variable ID for stable, deterministic allocation."""
         # p(A, B, C) :- q(A, B), r(B, C), s(A, C).
-        # First occurrence: A=head, B=head, C=head (all at -1)
-        # But A appears first in source, then B, then C
+        # Var IDs: A=10, B=20, C=30
+        # Y allocation sorted by ID: Y0=10, Y1=20, Y2=30
         a = Var(id=10, hint="A")
         b = Var(id=20, hint="B")
         c = Var(id=30, hint="C")
@@ -186,7 +186,7 @@ class TestComplexClauses:
     def test_append_recursive_case(self):
         """append([H|T], L, [H|R]) :- append(T, L, R).
 
-        All vars permanent (appear in head and recursive call).
+        Single goal - all vars temporary (liveness: no call boundary crossed).
         """
         h = Var(id=1, hint="H")
         t = Var(id=2, hint="T")
@@ -206,16 +206,16 @@ class TestComplexClauses:
         temp, perm = classify_vars(clause)
         regmap = allocate_registers(clause, temp, perm)
 
-        # All permanent (single goal, all vars in head and body)
-        assert regmap[h.id][0] == "X"  # Only in head structure, not in body call
-        assert regmap[t.id][0] == "X"  # Single goal = temporary
+        # Single goal - all temporary (no call boundary crossed)
+        assert regmap[h.id][0] == "X"
+        assert regmap[t.id][0] == "X"
         assert regmap[lst.id][0] == "X"
         assert regmap[r.id][0] == "X"
 
     def test_member_second_clause(self):
         """member(X, [_|T]) :- member(X, T).
 
-        X and T permanent (span call).
+        Single goal - all vars temporary (no call boundary crossed).
         """
         x = Var(id=1, hint="X")
         anon = Var(id=2, hint="_")
