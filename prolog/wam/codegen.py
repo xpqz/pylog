@@ -8,6 +8,7 @@ efficient get/put/unify sequences for pattern matching and term construction.
 from prolog.ast.terms import Atom, Int, Float, Var, Struct, List
 from prolog.wam.instructions import (
     OP_ALLOCATE,
+    OP_DEALLOCATE,
     OP_GET_VARIABLE,
     OP_GET_VALUE,
     OP_GET_CONSTANT,
@@ -20,10 +21,12 @@ from prolog.wam.instructions import (
     OP_PUT_CONSTANT,
     OP_PUT_STRUCTURE,
     OP_CALL,
+    OP_EXECUTE,
+    OP_PROCEED,
 )
 from prolog.wam.liveness import extract_vars
 
-__all__ = ["compile_head", "build_list_struct", "compile_body"]
+__all__ = ["compile_head", "build_list_struct", "compile_body", "finalize_clause"]
 
 
 def _get_constant_value(term):
@@ -382,3 +385,72 @@ def compile_body(clause, register_map):
             instructions.append((OP_CALL, target))
 
     return instructions
+
+
+def finalize_clause(head_instructions, body_instructions, perm_count):
+    """Add frame management and return instructions to complete clause.
+
+    Combines head and body instruction sequences and adds proper frame management
+    (allocate/deallocate) and return instructions (proceed/execute). Implements
+    last call optimization (LCO) by replacing the final CALL with EXECUTE.
+
+    Args:
+        head_instructions: Instructions from compile_head()
+        body_instructions: Instructions from compile_body()
+        perm_count: Number of permanent variables (Y registers)
+
+    Returns:
+        Complete instruction sequence with allocate/deallocate/proceed or execute
+
+    Notes:
+        - allocate K already emitted by compile_head() if perm_count > 0
+        - LCO: Replace last CALL with EXECUTE (tail call optimization)
+        - deallocate before return if perm_count > 0
+        - proceed for non-LCO returns
+        - LCO applies to any last call, including fail/0 (true WAM semantics)
+
+    Examples:
+        Fact (no body):
+            [get_..., proceed]
+
+        Single goal, no permanents:
+            [get_..., put_..., execute user:q/1]
+
+        Multi-goal, with permanents:
+            [allocate 1, get_..., put_..., call user:q/1, deallocate, execute user:r/1]
+    """
+    # Combine head and body instructions
+    code = [*head_instructions, *body_instructions]
+
+    # Empty body (fact): append proceed
+    if not body_instructions:
+        # For facts, deallocate before proceed if perm_count > 0
+        # (In practice, facts shouldn't have permanent vars, but guard anyway)
+        if perm_count > 0:
+            code.append((OP_DEALLOCATE,))
+        code.append((OP_PROCEED,))
+        return code
+
+    # Non-empty body: check if last instruction is CALL (LCO candidate)
+    last_instr = code[-1]
+    last_op = last_instr[0]
+
+    if last_op == OP_CALL:
+        # LCO: Replace last CALL with EXECUTE
+        target = last_instr[1]
+
+        # If permanent variables, insert deallocate before the execute
+        if perm_count > 0:
+            code.insert(len(code) - 1, (OP_DEALLOCATE,))
+
+        # Replace CALL with EXECUTE
+        code[-1] = (OP_EXECUTE, target)
+    else:
+        # Non-LCO case: append deallocate (if needed) and proceed
+        # (Shouldn't happen in normal code since compile_body always ends with CALL,
+        #  but handle gracefully)
+        if perm_count > 0:
+            code.append((OP_DEALLOCATE,))
+        code.append((OP_PROCEED,))
+
+    return code

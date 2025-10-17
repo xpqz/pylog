@@ -9,7 +9,7 @@ from prolog.ast.clauses import Clause
 from prolog.ast.terms import Atom, Var, Struct
 from prolog.wam.liveness import classify_vars
 from prolog.wam.regalloc import allocate_registers
-from prolog.wam.codegen import compile_head, compile_body
+from prolog.wam.codegen import compile_head, compile_body, finalize_clause
 from prolog.wam.instructions import (
     OP_ALLOCATE,
     OP_DEALLOCATE,
@@ -17,21 +17,6 @@ from prolog.wam.instructions import (
     OP_EXECUTE,
     OP_CALL,
 )
-
-
-# Placeholder for finalize_clause - will be implemented in prolog/wam/codegen.py
-def finalize_clause(head_instructions, body_instructions, perm_count):
-    """Add frame management and return instructions to complete clause.
-
-    Args:
-        head_instructions: Instructions from compile_head()
-        body_instructions: Instructions from compile_body()
-        perm_count: Number of permanent variables (Y registers)
-
-    Returns:
-        Complete instruction sequence with allocate/deallocate/proceed or execute
-    """
-    raise NotImplementedError("To be implemented after test review")
 
 
 class TestAllocateAndDeallocate:
@@ -74,8 +59,8 @@ class TestAllocateAndDeallocate:
         assert len(allocates) == 0
 
     def test_deallocate_before_return(self):
-        """Normal return includes deallocate before proceed."""
-        # p(X) :- q(X), r(X).  (X permanent, no LCO because r not last optimizable)
+        """Deallocate before execute when permanents present with LCO."""
+        # p(X) :- q(X), r(X).  (X permanent, r gets LCO -> execute)
         x = Var(id=1, hint="X")
         clause = Clause(
             head=Struct("p", (x,)),
@@ -89,13 +74,13 @@ class TestAllocateAndDeallocate:
         body_instrs = compile_body(clause, regmap)
         instructions = finalize_clause(head_instrs, body_instrs, len(perm))
 
-        # Should end with: ..., deallocate, proceed
+        # Should end with: ..., deallocate, execute
         assert instructions[-2][0] == OP_DEALLOCATE
-        assert instructions[-1][0] == OP_PROCEED
+        assert instructions[-1][0] == OP_EXECUTE
 
     def test_allocate_count_matches_permanents(self):
         """allocate K where K equals number of permanent variables."""
-        # p(X, Y, Z) :- q(X), r(Y), s(Z).  (all permanent)
+        # p(X, Y, Z) :- q(X), r(Y), s(Z).  (X temp, Y and Z permanent)
         x = Var(id=1, hint="X")
         y = Var(id=2, hint="Y")
         z = Var(id=3, hint="Z")
@@ -111,8 +96,8 @@ class TestAllocateAndDeallocate:
         body_instrs = compile_body(clause, regmap)
         instructions = finalize_clause(head_instrs, body_instrs, len(perm))
 
-        # allocate 3 (three permanent vars)
-        assert instructions[0] == (OP_ALLOCATE, 3)
+        # allocate 2 (Y and Z are permanent, X is temporary)
+        assert instructions[0] == (OP_ALLOCATE, 2)
 
 
 class TestLastCallOptimization:
@@ -155,12 +140,12 @@ class TestLastCallOptimization:
         # First goal uses call
         calls = [i for i in instructions if i[0] == OP_CALL]
         assert len(calls) == 1
-        assert "user:q/1" in calls[0]
+        assert calls[0][1] == "user:q/1"
 
         # Last goal uses execute (with deallocate before it)
         executes = [i for i in instructions if i[0] == OP_EXECUTE]
         assert len(executes) == 1
-        assert "user:r/1" in executes[0]
+        assert executes[0][1] == "user:r/1"
 
     def test_lco_with_permanents_deallocates_before_execute(self):
         """LCO with permanent variables: deallocate before execute."""
@@ -187,9 +172,9 @@ class TestLastCallOptimization:
 class TestProceedVsExecute:
     """Distinguish between proceed (normal return) and execute (tail call)."""
 
-    def test_proceed_after_non_last_call(self):
-        """Non-optimizable clauses end with proceed."""
-        # p :- q, r, fail.  (fail at end prevents LCO)
+    def test_lco_applies_to_fail(self):
+        """LCO applies even to fail/0 (simpler, true to WAM semantics)."""
+        # p :- q, r, fail.  (fail at end gets tail-called via execute)
         clause = Clause(
             head=Atom("p"),
             body=(Atom("q"), Atom("r"), Atom("fail")),
@@ -202,8 +187,9 @@ class TestProceedVsExecute:
         body_instrs = compile_body(clause, regmap)
         instructions = finalize_clause(head_instrs, body_instrs, len(perm))
 
-        # Ends with proceed (LCO not applicable with fail)
-        assert instructions[-1][0] == OP_PROCEED
+        # Last instruction is execute (even for fail/0)
+        assert instructions[-1][0] == OP_EXECUTE
+        assert instructions[-1][1] == "user:fail/0"
 
     def test_execute_replaces_call_proceed(self):
         """Last goal eligible for LCO: execute instead of call+proceed."""
@@ -267,7 +253,7 @@ class TestMixedCases:
 
     def test_permanent_vars_multi_goal(self):
         """Multiple goals with permanent variables: allocate, then deallocate+execute."""
-        # p(X, Y) :- q(X), r(Y).  (both permanent)
+        # p(X, Y) :- q(X), r(Y).  (X temp, Y permanent)
         x = Var(id=1, hint="X")
         y = Var(id=2, hint="Y")
         clause = Clause(
@@ -282,8 +268,8 @@ class TestMixedCases:
         body_instrs = compile_body(clause, regmap)
         instructions = finalize_clause(head_instrs, body_instrs, len(perm))
 
-        # allocate 2 at start
-        assert instructions[0] == (OP_ALLOCATE, 2)
+        # allocate 1 (only Y is permanent)
+        assert instructions[0] == (OP_ALLOCATE, 1)
 
         # deallocate before execute at end
         assert instructions[-2][0] == OP_DEALLOCATE
@@ -330,7 +316,7 @@ class TestEdgeCases:
 
         # Last is execute (s)
         assert instructions[-1][0] == OP_EXECUTE
-        assert "user:s/1" in instructions[-1]
+        assert instructions[-1][1] == "user:s/1"
 
     def test_head_with_permanent_vars(self):
         """Head variables that become permanent are tracked correctly."""
