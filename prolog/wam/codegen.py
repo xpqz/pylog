@@ -445,10 +445,14 @@ def finalize_clause(head_instructions, body_instructions, perm_count):
 
         # Replace CALL with EXECUTE
         code[-1] = (OP_EXECUTE, target)
+    elif last_op == OP_EXECUTE or last_op == OP_PROCEED:
+        # Defensive: already finalized (shouldn't happen in normal compilation)
+        # Return as-is to avoid appending duplicate returns
+        return code
     else:
         # Non-LCO case: append deallocate (if needed) and proceed
         # (Shouldn't happen in normal code since compile_body always ends with CALL,
-        #  but handle gracefully)
+        #  but handle gracefully for future compiler phases)
         if perm_count > 0:
             code.append((OP_DEALLOCATE,))
         code.append((OP_PROCEED,))
