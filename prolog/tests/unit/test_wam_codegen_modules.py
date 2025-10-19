@@ -1,6 +1,12 @@
 """Unit tests for WAM module-qualified symbol compilation.
 
 Tests module context, symbol qualification, and M:Goal syntax.
+
+Implementation plan:
+- Add module="user" kwarg to compile_body()
+- Add resolver: extract (module, goal) from Struct(":", (...)) or use default
+- Emit OP_CALL for non-last goals, OP_EXECUTE for last goal
+- finalize_clause() already handles OP_EXECUTE-ending bodies correctly
 """
 
 from prolog.ast.clauses import Clause
@@ -25,7 +31,8 @@ class TestDefaultModule:
         temp_vars, perm_vars = classify_vars(clause)
         register_map = allocate_registers(clause, temp_vars, perm_vars)
 
-        head_instrs = compile_head(clause.head, register_map, module="user")
+        # compile_head doesn't need module (head context is local)
+        head_instrs = compile_head(clause, register_map, len(perm_vars))
         body_instrs = compile_body(clause, register_map, module="user")
         instructions = finalize_clause(head_instrs, body_instrs, len(perm_vars))
 
@@ -296,3 +303,22 @@ class TestEdgeCases:
         executes = [i for i in body_instrs if i[0] == OP_EXECUTE]
         assert len(executes) == 1
         assert executes[0][1] == ":q/0"  # Odd but consistent
+
+
+class TestBuiltinsWithArgs:
+    """Test qualified built-ins with arguments."""
+
+    def test_qualified_builtin_with_args(self):
+        """System-qualified built-in with arguments formats correctly."""
+        # p(X) :- system:call(X).
+        x = Var(0, "X")
+        qualified_call = Struct(":", (Atom("system"), Struct("call", (x,))))
+        clause = Clause(head=Struct("p", (x,)), body=(qualified_call,))
+        temp_vars, perm_vars = classify_vars(clause)
+        register_map = allocate_registers(clause, temp_vars, perm_vars)
+
+        body_instrs = compile_body(clause, register_map, module="user")
+
+        executes = [i for i in body_instrs if i[0] == OP_EXECUTE]
+        assert len(executes) == 1
+        assert executes[0][1] == "system:call/1"
