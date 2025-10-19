@@ -19,6 +19,7 @@ from prolog.wam.instructions import (
     OP_PUT_STRUCTURE,
     OP_GET_STRUCTURE,
     OP_CALL,
+    OP_EXECUTE,
     OP_UNIFY_VARIABLE,
     OP_UNIFY_CONSTANT,
 )
@@ -37,10 +38,10 @@ class TestBasicPutSequences:
         regmap = allocate_registers(clause, temp, perm)
         instructions = compile_body(clause, regmap)
 
-        # Expected: put_variable X0, A1; call user:q/1
+        # Expected: put_variable X0, A1; execute user:q/1 (last goal uses execute)
         assert len(instructions) == 2
         assert instructions[0] == (OP_PUT_VARIABLE, ("X", 0), 0)  # A1 (0-based)
-        assert instructions[1][0] == OP_CALL
+        assert instructions[1][0] == OP_EXECUTE
         assert "q/1" in str(instructions[1][1])
 
     def test_put_value_from_head(self):
@@ -53,10 +54,10 @@ class TestBasicPutSequences:
         regmap = allocate_registers(clause, temp, perm)
         instructions = compile_body(clause, regmap)
 
-        # Expected: put_value X0, A1; call user:q/1
+        # Expected: put_value X0, A1; execute user:q/1 (last goal uses execute)
         assert len(instructions) == 2
         assert instructions[0] == (OP_PUT_VALUE, ("X", 0), 0)  # A1 (0-based)
-        assert instructions[1][0] == OP_CALL
+        assert instructions[1][0] == OP_EXECUTE
 
     def test_put_constant_atom(self):
         """Atom constant in body goal."""
@@ -67,10 +68,10 @@ class TestBasicPutSequences:
         regmap = allocate_registers(clause, temp, perm)
         instructions = compile_body(clause, regmap)
 
-        # Expected: put_constant foo, A1; call user:q/1
+        # Expected: put_constant foo, A1; execute user:q/1 (last goal uses execute)
         assert len(instructions) == 2
         assert instructions[0] == (OP_PUT_CONSTANT, "foo", 0)  # A1 (0-based)
-        assert instructions[1][0] == OP_CALL
+        assert instructions[1][0] == OP_EXECUTE
 
     def test_put_constant_integer(self):
         """Integer constant in body goal."""
@@ -81,10 +82,10 @@ class TestBasicPutSequences:
         regmap = allocate_registers(clause, temp, perm)
         instructions = compile_body(clause, regmap)
 
-        # Expected: put_constant 42, A1; call user:q/1
+        # Expected: put_constant 42, A1; execute user:q/1 (last goal uses execute)
         assert len(instructions) == 2
         assert instructions[0] == (OP_PUT_CONSTANT, 42, 0)  # A1 (0-based)
-        assert instructions[1][0] == OP_CALL
+        assert instructions[1][0] == OP_EXECUTE
 
 
 class TestStructureCompilation:
@@ -104,12 +105,12 @@ class TestStructureCompilation:
         # put_structure f/1, X1 (temp for structure)
         # unify_variable X0 (the X variable)
         # put_value X1, A1 (pass structure to q)
-        # call user:q/1
+        # execute user:q/1 (last goal uses execute)
         assert instructions[0][0] == OP_PUT_STRUCTURE
         assert instructions[0][1] == ("f", 1)
         assert instructions[1] == (OP_UNIFY_VARIABLE, ("X", 0))
         assert instructions[2][0] == OP_PUT_VALUE
-        assert instructions[3][0] == OP_CALL
+        assert instructions[3][0] == OP_EXECUTE
 
     def test_put_structure_multiple_args(self):
         """Structure with multiple arguments."""
@@ -128,13 +129,13 @@ class TestStructureCompilation:
         # unify_variable X0
         # unify_constant a
         # put_value temp, A1
-        # call user:q/1
+        # execute user:q/1 (last goal uses execute)
         assert instructions[0][0] == OP_PUT_STRUCTURE
         assert instructions[0][1] == ("f", 2)
         assert instructions[1] == (OP_UNIFY_VARIABLE, ("X", 0))
         assert instructions[2] == (OP_UNIFY_CONSTANT, "a")
         assert instructions[3][0] == OP_PUT_VALUE
-        assert instructions[4][0] == OP_CALL
+        assert instructions[4][0] == OP_EXECUTE
 
     def test_put_structure_nested(self):
         """Nested structures in body."""
@@ -170,8 +171,8 @@ class TestStructureCompilation:
         assert get_structs[0][0] == OP_GET_STRUCTURE
         assert get_structs[0][1] == ("g", 1)
 
-        # Final instruction is call
-        assert instructions[-1][0] == OP_CALL
+        # Final instruction is execute (last goal uses execute)
+        assert instructions[-1][0] == OP_EXECUTE
 
 
 class TestMultiGoalBodies:
@@ -190,11 +191,13 @@ class TestMultiGoalBodies:
 
         # Expected:
         # put_variable X0, A1; call user:q/1
-        # put_variable X1, A1; call user:r/1
+        # put_variable X1, A1; execute user:r/1 (last goal uses execute)
         calls = [i for i in instructions if i[0] == OP_CALL]
-        assert len(calls) == 2
+        executes = [i for i in instructions if i[0] == OP_EXECUTE]
+        assert len(calls) == 1
+        assert len(executes) == 1
         assert "q/1" in str(calls[0][1])
-        assert "r/1" in str(calls[1][1])
+        assert "r/1" in str(executes[0][1])
 
     def test_two_goals_shared_var(self):
         """Two goals sharing a variable."""
@@ -214,8 +217,11 @@ class TestMultiGoalBodies:
         # Y is put_variable in q (first occurrence)
         # Y is put_value in r (subsequent occurrence)
         # Z is put_variable in r (first occurrence)
+        # q gets call, r gets execute (last goal)
         calls = [i for i in instructions if i[0] == OP_CALL]
-        assert len(calls) == 2
+        executes = [i for i in instructions if i[0] == OP_EXECUTE]
+        assert len(calls) == 1
+        assert len(executes) == 1
 
     def test_three_goal_chain(self):
         """Three goals with variable threading."""
@@ -233,11 +239,14 @@ class TestMultiGoalBodies:
 
         # X: first in q, reused in r
         # Y: first in r, reused in s
+        # q and r get call, s gets execute (last goal)
         calls = [i for i in instructions if i[0] == OP_CALL]
-        assert len(calls) == 3
+        executes = [i for i in instructions if i[0] == OP_EXECUTE]
+        assert len(calls) == 2
+        assert len(executes) == 1
         assert "q/1" in str(calls[0][1])
         assert "r/2" in str(calls[1][1])
-        assert "s/1" in str(calls[2][1])
+        assert "s/1" in str(executes[0][1])
 
 
 class TestGeneratorOutputs:
@@ -258,8 +267,11 @@ class TestGeneratorOutputs:
         # Y must be put_variable in q (first occurrence)
         # Y must be put_value in r (subsequent, even though q "generates" it)
         # This follows WAM semantics: put sequences are for term construction
+        # q gets call, r gets execute (last goal)
         calls = [i for i in instructions if i[0] == OP_CALL]
-        assert len(calls) == 2
+        executes = [i for i in instructions if i[0] == OP_EXECUTE]
+        assert len(calls) == 1
+        assert len(executes) == 1
 
     def test_multiple_generators(self):
         """Chain of generator outputs."""
@@ -282,8 +294,11 @@ class TestGeneratorOutputs:
         instructions = compile_body(clause, regmap)
 
         # All variables should be tracked correctly
+        # q, r, s get call; t gets execute (last goal)
         calls = [i for i in instructions if i[0] == OP_CALL]
-        assert len(calls) == 4
+        executes = [i for i in instructions if i[0] == OP_EXECUTE]
+        assert len(calls) == 3
+        assert len(executes) == 1
 
 
 class TestCallTargets:
@@ -299,9 +314,10 @@ class TestCallTargets:
         regmap = allocate_registers(clause, temp, perm)
         instructions = compile_body(clause, regmap)
 
-        call_instr = [i for i in instructions if i[0] == OP_CALL][0]
+        # Single goal uses execute (last goal)
+        execute_instr = [i for i in instructions if i[0] == OP_EXECUTE][0]
         # Should be "user:q/1" or similar module-qualified format
-        assert "q/1" in str(call_instr[1])
+        assert "q/1" in str(execute_instr[1])
 
     def test_call_different_arities(self):
         """Calls with different arities."""
@@ -318,11 +334,14 @@ class TestCallTargets:
         regmap = allocate_registers(clause, temp, perm)
         instructions = compile_body(clause, regmap)
 
+        # q and r get call, s gets execute (last goal)
         calls = [i for i in instructions if i[0] == OP_CALL]
-        assert len(calls) == 3
+        executes = [i for i in instructions if i[0] == OP_EXECUTE]
+        assert len(calls) == 2
+        assert len(executes) == 1
         assert "q/1" in str(calls[0][1])
         assert "r/2" in str(calls[1][1])
-        assert "s/3" in str(calls[2][1])
+        assert "s/3" in str(executes[0][1])
 
 
 class TestEdgeCases:
@@ -338,9 +357,9 @@ class TestEdgeCases:
         regmap = allocate_registers(clause, temp, perm)
         instructions = compile_body(clause, regmap)
 
-        # Should have put sequence + call
-        calls = [i for i in instructions if i[0] == OP_CALL]
-        assert len(calls) == 1
+        # Should have put sequence + execute (last goal)
+        executes = [i for i in instructions if i[0] == OP_EXECUTE]
+        assert len(executes) == 1
 
     def test_body_with_constants_only(self):
         """Body goal with only constants."""
@@ -354,10 +373,10 @@ class TestEdgeCases:
         regmap = allocate_registers(clause, temp, perm)
         instructions = compile_body(clause, regmap)
 
-        # Expected: three put_constant, one call
+        # Expected: three put_constant, one execute (last goal)
         put_consts = [i for i in instructions if i[0] == OP_PUT_CONSTANT]
         assert len(put_consts) == 3
-        assert instructions[-1][0] == OP_CALL
+        assert instructions[-1][0] == OP_EXECUTE
 
     def test_variable_used_multiple_times_same_goal(self):
         """Variable appears multiple times in same goal."""

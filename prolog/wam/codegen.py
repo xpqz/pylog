@@ -223,29 +223,55 @@ def compile_head(clause, register_map, perm_count):
     return instructions
 
 
-def compile_body(clause, register_map):
+def compile_body(clause, register_map, module="user"):
     """Compile clause body to WAM put/call instruction sequence.
 
     Args:
         clause: Clause with body to compile
         register_map: dict mapping var_id -> ("X"|"Y", index)
+        module: Current module context for unqualified calls (default "user")
 
     Returns:
         List of instruction tuples
 
     Notes:
         - Emits put_* instructions for goal arguments
-        - Emits call instructions for each body goal
+        - Emits OP_CALL for non-last goals, OP_EXECUTE for last goal (LCO)
         - Tracks variable first/subsequent occurrences across entire body
         - Empty body returns empty list
         - Lists compiled as ./2 structures per Prolog semantics
-        - Call targets formatted as "user:{functor}/{arity}"
+        - Unqualified calls use module parameter: "module:functor/arity"
+        - Qualified calls (M:Goal) use explicit module M
+        - Symbol format always "module:functor/arity"
     """
     instructions = []
 
     # Handle empty body
     if not clause.body:
         return []
+
+    # Helper to resolve module qualification
+    def resolve_goal(goal):
+        """Extract (module, actual_goal) from potentially qualified goal.
+
+        Args:
+            goal: Either unqualified (Atom/Struct) or qualified Struct(":", (Atom(m), Goal))
+
+        Returns:
+            (module_name, actual_goal) tuple
+        """
+        if isinstance(goal, Struct) and goal.functor == ":" and len(goal.args) == 2:
+            # Qualified: M:Goal
+            module_term, actual_goal = goal.args
+            if isinstance(module_term, Atom):
+                return (module_term.name, actual_goal)
+            else:
+                # Malformed qualification (e.g., variable module)
+                # Treat as calling functor ":" with arity 2
+                return (module, goal)
+        else:
+            # Unqualified: use current module
+            return (module, goal)
 
     # Single seen set across entire body for first/subsequent occurrence tracking
     # Pre-populate with head variables (they're already bound from head matching)
@@ -366,23 +392,34 @@ def compile_body(clause, register_map):
                 instructions.append((OP_PUT_VALUE, temp_reg, aj_idx))
 
     # Process each goal in body
-    for goal in clause.body:
+    num_goals = len(clause.body)
+    for goal_idx, goal in enumerate(clause.body):
+        is_last = goal_idx == num_goals - 1
 
-        if isinstance(goal, Atom):
+        # Resolve module qualification
+        call_module, actual_goal = resolve_goal(goal)
+
+        if isinstance(actual_goal, Atom):
             # Atom goal (0-arity predicate)
-            target = f"user:{goal.name}/0"
-            instructions.append((OP_CALL, target))
+            target = f"{call_module}:{actual_goal.name}/0"
+            if is_last:
+                instructions.append((OP_EXECUTE, target))
+            else:
+                instructions.append((OP_CALL, target))
 
-        elif isinstance(goal, Struct):
+        elif isinstance(actual_goal, Struct):
             # Structure goal (N-arity predicate)
 
             # Emit put sequences for each argument
-            for aj_idx, arg in enumerate(goal.args):
+            for aj_idx, arg in enumerate(actual_goal.args):
                 compile_put_term(arg, aj_idx)
 
-            # Emit call
-            target = f"user:{goal.functor}/{len(goal.args)}"
-            instructions.append((OP_CALL, target))
+            # Emit call or execute
+            target = f"{call_module}:{actual_goal.functor}/{len(actual_goal.args)}"
+            if is_last:
+                instructions.append((OP_EXECUTE, target))
+            else:
+                instructions.append((OP_CALL, target))
 
     return instructions
 
@@ -431,7 +468,7 @@ def finalize_clause(head_instructions, body_instructions, perm_count):
         code.append((OP_PROCEED,))
         return code
 
-    # Non-empty body: check if last instruction is CALL (LCO candidate)
+    # Non-empty body: check if last instruction is CALL or EXECUTE
     last_instr = code[-1]
     last_op = last_instr[0]
 
@@ -445,13 +482,18 @@ def finalize_clause(head_instructions, body_instructions, perm_count):
 
         # Replace CALL with EXECUTE
         code[-1] = (OP_EXECUTE, target)
-    elif last_op == OP_EXECUTE or last_op == OP_PROCEED:
-        # Defensive: already finalized (shouldn't happen in normal compilation)
+    elif last_op == OP_EXECUTE:
+        # compile_body() already emitted EXECUTE for last goal
+        # If permanent variables, insert deallocate before the execute
+        if perm_count > 0:
+            code.insert(len(code) - 1, (OP_DEALLOCATE,))
+    elif last_op == OP_PROCEED:
+        # Defensive: already has proceed (shouldn't happen in normal compilation)
         # Return as-is to avoid appending duplicate returns
         return code
     else:
         # Non-LCO case: append deallocate (if needed) and proceed
-        # (Shouldn't happen in normal code since compile_body always ends with CALL,
+        # (Shouldn't happen in normal code since compile_body always ends with EXECUTE,
         #  but handle gracefully for future compiler phases)
         if perm_count > 0:
             code.append((OP_DEALLOCATE,))
