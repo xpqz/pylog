@@ -43,6 +43,25 @@ Register Allocation Strategy
 - X registers allocated from left to right for goal arguments.
 - Y registers assigned via liveness analysis across the body; simple data‑flow sufficient at this stage.
 
+Register Operand Format & Runtime Compatibility
+- **Codegen output format**: Code generation emits banked register operands as `(bank, index)` tuples:
+  - X registers: `("X", i)` where `i` is the X register index
+  - Y registers: `("Y", k)` where `k` is the Y register index (frame-relative)
+  - Example: `(OP_GET_VARIABLE, ("X", 0), 1)` means "get Argument 1 into X0"
+  - Example: `(OP_GET_VARIABLE, ("Y", 2), 0)` means "get Argument 0 into Y2"
+- **Machine operand expectations**: Current Machine implementation expects integer operands for register indices (Phase 1-2 legacy).
+- **Format mismatch**: Direct execution of codegen output `(OP_GET_VARIABLE, ("X", 0), 1)` raises `TypeError` in Machine because it attempts integer comparisons on tuple operands.
+- **Resolution strategy**: The assembler/loader stage (Issues #364-#367) will bridge this gap by:
+  1. Accepting banked operands from codegen (preserves test readability and correctness assertions)
+  2. Lowering banked operands to Machine-compatible format during load:
+     - For `("X", i)`: pass through as integer `i` (Machine already handles X registers)
+     - For `("Y", k)`: either:
+       - Expand to Y-specific opcodes (e.g., `OP_GET_Y_VARIABLE`) if Machine adds them, or
+       - Encode bank information in operand and teach Machine to decode at runtime
+  3. Validating register bounds per predicate during load (max X/Y indices used)
+- **Current state**: Codegen tests verify banked operand emission. Machine execution tests defer to assembler/loader implementation.
+- **Migration path**: Once assembler/loader is complete, end-to-end tests will compile → load → execute under Machine.
+
 Module Resolution & Qualified Calls
 - **Current module context**: Compiler maintains a current module (default `user`); unqualified predicate references resolve within this module.
 - **Qualified calls**: `M:Goal` syntax compiles to lookups using explicit module `M`; symbol keys use format `module:name/arity`.

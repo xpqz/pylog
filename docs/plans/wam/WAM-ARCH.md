@@ -1322,6 +1322,59 @@ Final call becomes `execute`:
   execute user:r/1       # Tail call, no proceed needed
 ```
 
+### 7.3.1 Register Operand Format (Codegen vs Runtime)
+
+**Codegen Output Format**:
+
+Code generation emits banked register operands as `(bank, index)` tuples for clarity and type safety:
+
+- X registers: `("X", i)` where `i` is the X register index
+- Y registers: `("Y", k)` where `k` is the Y register index (frame-relative)
+
+Examples:
+```python
+(OP_GET_VARIABLE, ("X", 0), 1)  # Get A1 into X0
+(OP_GET_VARIABLE, ("Y", 2), 0)  # Get A0 into Y2 (permanent)
+(OP_PUT_VALUE, ("Y", 1), 3)     # Put Y1 into A3
+```
+
+**Machine Runtime Expectations**:
+
+The Machine implementation (Phase 1-2) expects integer operands for register indices, not tuples. This creates a format mismatch.
+
+**Format Mismatch Example**:
+
+Direct execution of `(OP_GET_VARIABLE, ("X", 0), 1)` raises:
+```python
+TypeError: '>' not supported between instances of 'int' and 'tuple'
+```
+
+Because Machine attempts integer comparisons like `max(xi, aj)` where `xi` is `("X", 0)`.
+
+**Resolution via Assembler/Loader**:
+
+The assembler/loader stage (Phase 3, Issues #364-#367) bridges this gap:
+
+1. **Accept banked operands** from codegen (preserves test clarity and assertions)
+2. **Lower to Machine format** during load:
+   - For `("X", i)`: pass through as integer `i` (Machine handles X registers)
+   - For `("Y", k)`: either:
+     - Expand to Y-specific opcodes (`OP_GET_Y_VARIABLE`, etc.) if added, or
+     - Encode bank tag in operand and teach Machine to decode at runtime
+3. **Validate register bounds** per predicate (max X/Y indices used)
+
+**Current State**:
+
+- Codegen tests verify correct banked operand emission
+- Machine execution tests are deferred pending assembler/loader
+- End-to-end tests (compile → load → execute) come after assembler implementation
+
+**Migration Path**:
+
+```
+AST → [Codegen: banked operands] → [Assembler: lower to ints] → [Machine: execute]
+```
+
 ### 7.4 Assembler Format
 
 Text format for debugging and golden tests:
