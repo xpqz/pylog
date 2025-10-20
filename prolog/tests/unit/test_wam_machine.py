@@ -20,7 +20,7 @@ class TestMachineInitialization:
         assert m.CP is None
         assert m.TR == 0
         assert m.S is None
-        assert m.EF == -1
+        assert m.EF is None  # No active exception frame
         assert m.unify_mode is None
         assert m.X == []
         assert m.heap == []

@@ -66,6 +66,90 @@ from prolog.wam.instructions import (
 from prolog.wam.unify import bind, deref, unify, untrail
 
 
+class ExceptionFrame:
+    """Exception frame for catch/3 unwinding.
+
+    Saves complete machine state at catch entry point to enable
+    proper unwinding on throw/1.
+
+    Attributes:
+        prev_frame: Index of previous exception frame (or None if bottom)
+        ball_pattern: Heap address of catch pattern for matching
+        handler_label: Code address of handler to execute on match
+        CP: Saved continuation pointer
+        E: Saved environment pointer
+        B: Saved choicepoint pointer
+        H: Saved heap top
+        TR: Saved trail pointer
+        HB: Saved heap backtrack boundary
+    """
+
+    def __init__(
+        self,
+        prev_frame: int | None,
+        ball_pattern: int,
+        handler_label: int,
+        CP: int | None,
+        E: int | None,
+        B: int | None,
+        H: int,
+        TR: int,
+        HB: int,
+    ):
+        self.prev_frame = prev_frame
+        self.ball_pattern = ball_pattern
+        self.handler_label = handler_label
+        self.CP = CP
+        self.E = E
+        self.B = B
+        self.H = H
+        self.TR = TR
+        self.HB = HB
+
+
+def push_exception_frame(machine, ball_pattern: int, handler_label: int):
+    """Push new exception frame onto stack.
+
+    Captures current machine state for potential unwinding.
+
+    Args:
+        machine: WAM machine
+        ball_pattern: Heap address of catch pattern
+        handler_label: Code address of handler
+    """
+    frame = ExceptionFrame(
+        prev_frame=machine.EF,
+        ball_pattern=ball_pattern,
+        handler_label=handler_label,
+        CP=machine.CP,
+        E=machine.E,
+        B=machine.B,
+        H=machine.H,
+        TR=machine.TR,
+        HB=machine.HB,
+    )
+
+    idx = len(machine.exception_frames)
+    machine.exception_frames.append(frame)
+    machine.EF = idx
+
+
+def pop_exception_frame(machine):
+    """Pop exception frame from stack.
+
+    Restores EF to previous frame (normal catch exit).
+    Frame remains in list but is no longer active.
+
+    Args:
+        machine: WAM machine
+    """
+    if machine.EF is None:
+        return  # No active frame
+
+    frame = machine.exception_frames[machine.EF]
+    machine.EF = frame.prev_frame
+
+
 class Machine:
     """Warren Abstract Machine for Prolog execution.
 
@@ -78,7 +162,7 @@ class Machine:
         CP: Continuation pointer (return address)
         TR: Trail pointer
         S: Structure argument pointer (Phase 1)
-        EF: Exception frame pointer (-1 when no exception context)
+        EF: Exception frame pointer (None when no exception context)
         X: Argument/temporary registers (list)
 
     Data areas:
@@ -86,6 +170,7 @@ class Machine:
         frames: Environment frames for permanent variables
         cp_stack: Choicepoint records for backtracking
         trail: Trail of bindings for undo on backtrack
+        exception_frames: Exception frames for catch/3 (indexed by EF)
     """
 
     def __init__(self):
@@ -99,7 +184,7 @@ class Machine:
         self.CP: int | None = None
         self.TR: int = 0
         self.S: int | None = None  # Structure argument pointer (Phase 1)
-        self.EF: int = -1  # Exception frame pointer (-1 = none)
+        self.EF: int | None = None  # Exception frame pointer (None = no active frame)
 
         # Unification mode flag (Phase 1)
         self.unify_mode: str | None = None  # "read" or "write"
@@ -112,6 +197,7 @@ class Machine:
         self.frames: list = []  # Environment stack
         self.cp_stack: list = []  # Choicepoint stack
         self.trail: list = []
+        self.exception_frames: list = []  # Exception frames for catch/3
 
         # Execution control
         self.halted: bool = False
@@ -802,11 +888,12 @@ class Machine:
         self.CP = None
         self.TR = 0
         self.S = None
-        self.EF = -1
+        self.EF = None  # No active exception frame
         self.unify_mode = None
         self.X = []
         self.heap = []
         self.frames = []
         self.cp_stack = []
         self.trail = []
+        self.exception_frames = []  # Clear exception stack
         self.halted = False
