@@ -162,7 +162,7 @@ class Machine:
         CP: Continuation pointer (return address)
         TR: Trail pointer
         S: Structure argument pointer (Phase 1)
-        EF: Exception frame pointer (-1 when no exception context)
+        EF: Exception frame pointer (None when no exception context)
         X: Argument/temporary registers (list)
 
     Data areas:
@@ -170,6 +170,7 @@ class Machine:
         frames: Environment frames for permanent variables
         cp_stack: Choicepoint records for backtracking
         trail: Trail of bindings for undo on backtrack
+        exception_frames: Exception frames for catch/3 (indexed by EF)
     """
 
     def __init__(self):
@@ -887,11 +888,12 @@ class Machine:
         self.CP = None
         self.TR = 0
         self.S = None
-        self.EF = -1
+        self.EF = None  # No active exception frame
         self.unify_mode = None
         self.X = []
         self.heap = []
         self.frames = []
         self.cp_stack = []
         self.trail = []
+        self.exception_frames = []  # Clear exception stack
         self.halted = False
