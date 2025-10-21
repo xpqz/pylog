@@ -41,6 +41,8 @@ from prolog.wam.heap import is_ref, is_str, new_con, new_ref, new_str
 from prolog.wam.instructions import (
     OP_ALLOCATE,
     OP_CALL,
+    OP_CATCH_CLEANUP,
+    OP_CATCH_SETUP,
     OP_CUT,
     OP_DEALLOCATE,
     OP_DBG_SNAP,
@@ -863,6 +865,23 @@ class Machine:
                     self.HB = self.cp_stack[prev_B + 6]
                 else:
                     self.HB = 0
+
+            # Advance P to next instruction
+            self.P += 1
+        elif opcode == OP_CATCH_SETUP:
+            # catch_setup Handler_Label, Ball_Pattern_Addr
+            handler_label, ball_pattern_addr = args
+
+            # Push exception frame
+            push_exception_frame(self, ball_pattern_addr, handler_label)
+
+            # Advance P to next instruction
+            self.P += 1
+        elif opcode == OP_CATCH_CLEANUP:
+            # catch_cleanup (no arguments)
+
+            # Pop exception frame
+            pop_exception_frame(self)
 
             # Advance P to next instruction
             self.P += 1

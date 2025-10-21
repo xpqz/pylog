@@ -9,12 +9,14 @@ Tests catch/3 exception handling:
 """
 
 from prolog.wam.heap import new_con, new_ref
+from prolog.wam.instructions import OP_CATCH_CLEANUP, OP_CATCH_SETUP, OP_HALT
 from prolog.wam.machine import (
     Machine,
     UnhandledPrologException,
     instr_catch_cleanup,
     instr_catch_setup,
     instr_throw,
+    push_exception_frame,
 )
 
 
@@ -391,3 +393,122 @@ class TestCatchStateRestoration:
         assert machine.E == 100
         assert machine.B == 50
         assert machine.HB == 35
+
+
+class TestCatchDispatch:
+    """Test catch_setup and catch_cleanup execution through Machine.step()."""
+
+    def test_catch_setup_via_step(self):
+        """catch_setup executes correctly via step() dispatcher."""
+        machine = Machine()
+
+        # Create pattern and handler
+        pattern_addr = new_con(machine, "error")
+        handler_label = 100
+
+        # Load catch_setup instruction
+        machine.code = [(OP_CATCH_SETUP, handler_label, pattern_addr)]
+        machine.P = 0
+
+        # Execute via step
+        result = machine.step()
+
+        # Should succeed
+        assert result is True
+        assert machine.halted is False
+
+        # Exception frame should be pushed
+        assert machine.EF == 0
+        assert len(machine.exception_frames) == 1
+
+        # P should advance
+        assert machine.P == 1
+
+    def test_catch_cleanup_via_step(self):
+        """catch_cleanup executes correctly via step() dispatcher."""
+        machine = Machine()
+
+        # Create and push exception frame first
+        pattern_addr = new_con(machine, "error")
+        push_exception_frame(machine, pattern_addr, 100)
+
+        # Load catch_cleanup instruction
+        machine.code = [(OP_CATCH_CLEANUP,)]
+        machine.P = 0
+
+        # Execute via step
+        result = machine.step()
+
+        # Should succeed
+        assert result is True
+        assert machine.halted is False
+
+        # Exception frame should be popped
+        assert machine.EF is None
+
+        # P should advance
+        assert machine.P == 1
+
+    def test_catch_setup_cleanup_sequence_via_step(self):
+        """catch_setup followed by catch_cleanup via step()."""
+        machine = Machine()
+
+        # Create pattern
+        pattern_addr = new_con(machine, "my_error")
+        handler_label = 200
+
+        # Load sequence: catch_setup, catch_cleanup
+        machine.code = [
+            (OP_CATCH_SETUP, handler_label, pattern_addr),
+            (OP_CATCH_CLEANUP,),
+        ]
+        machine.P = 0
+
+        # Execute catch_setup
+        result = machine.step()
+        assert result is True
+        assert machine.EF == 0
+        assert machine.P == 1
+
+        # Execute catch_cleanup
+        result = machine.step()
+        assert result is True
+        assert machine.EF is None
+        assert machine.P == 2
+
+    def test_catch_throw_integration_via_step(self):
+        """catch_setup + throw integration via step()."""
+        machine = Machine()
+
+        # Create ball and pattern (matching)
+        ball_addr = new_con(machine, "test_error")
+        pattern_addr = new_con(machine, "test_error")
+
+        # Put ball in X[0] for throw
+        machine.X = [ball_addr]
+
+        # Load code: catch_setup, halt (handler location)
+        machine.code = [
+            (OP_CATCH_SETUP, 2, pattern_addr),  # Handler at index 2
+            (OP_HALT,),  # Index 1 - shouldn't execute
+            (OP_HALT,),  # Index 2 - handler (halt)
+        ]
+        machine.P = 0
+
+        # Execute catch_setup
+        result = machine.step()
+        assert result is True
+        assert machine.EF == 0
+        assert machine.P == 1
+
+        # Now throw (manually call instr_throw since we're testing catch dispatch)
+        instr_throw(machine)
+
+        # Should have jumped to handler
+        assert machine.P == 2
+        assert machine.EF is None
+
+        # Execute handler (halt)
+        result = machine.step()
+        assert result is False
+        assert machine.halted is True
