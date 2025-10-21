@@ -23,7 +23,7 @@ Example builtin handler:
 
 from __future__ import annotations
 
-from prolog.wam.errors import PrologError, SystemError
+from prolog.wam.errors import python_exception_to_prolog
 
 __all__ = [
     "WAM_BUILTINS",
@@ -33,6 +33,7 @@ __all__ = [
 
 
 # Builtin registry: maps "module:name/arity" to handler function
+# Handler signature: (machine) -> bool
 WAM_BUILTINS: dict[str, callable] = {}
 
 
@@ -42,6 +43,12 @@ def register_builtin(symbol: str, handler: callable) -> None:
     Args:
         symbol: Builtin identifier ("module:name/arity")
         handler: Function taking (machine) -> bool
+
+    Handler contract:
+        - Return True on success, False on failure
+        - Raise PrologError for ISO-style errors
+        - Don't mutate machine state unless succeeding
+        - Machine state is unspecified after raising errors
 
     Example:
         register_builtin("system:var/1", builtin_var)
@@ -88,14 +95,8 @@ def dispatch_builtin(machine, symbol: str) -> bool:
         result = handler(machine)
         return result
     except Exception as e:
-        # Check if it's already a PrologError
-        if isinstance(e, PrologError):
-            # Re-raise Prolog errors as-is
-            raise
-        else:
-            # Convert Python exceptions to system_error
-            error_msg = f"{type(e).__name__}: {str(e)}"
-            # Truncate long messages
-            if len(error_msg) > 200:
-                error_msg = error_msg[:197] + "..."
-            raise SystemError(error_msg)
+        # Convert Python exceptions to PrologError using standard mapping
+        # (ZeroDivisionError -> evaluation_error, TypeError -> domain_error, etc.)
+        # PrologError instances pass through unchanged
+        prolog_error = python_exception_to_prolog(e)
+        raise prolog_error

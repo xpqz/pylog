@@ -6,15 +6,16 @@ Tests loading and validation of assembled bytecode into Machine.
 import pytest
 from prolog.wam.asm import assemble
 from prolog.wam.instructions import (
+    OP_CALL,
+    OP_CALL_BUILTIN,
+    OP_CATCH_SETUP,
+    OP_EXECUTE,
     OP_GET_CONSTANT,
     OP_GET_STRUCTURE,
     OP_GET_VARIABLE,
     OP_PROCEED,
-    OP_CALL,
-    OP_EXECUTE,
-    OP_UNIFY_VARIABLE,
     OP_UNIFY_CONSTANT,
-    OP_CATCH_SETUP,
+    OP_UNIFY_VARIABLE,
 )
 from prolog.wam.loader import BytecodeLoadError, load_program, PredicateRegistry
 
@@ -449,6 +450,19 @@ class TestValidationDetails:
             load_program(bytecode)
 
         assert getattr(exc.value, "code", None) == "BAD_CATCH_SETUP_OPERANDS"
+
+    def test_validate_call_builtin_symbol(self):
+        """call_builtin requires string symbol operand."""
+        # Non-string operand should raise BAD_BUILTIN_SYMBOL
+        bytecode = {
+            "code": [(OP_CALL_BUILTIN, 123)],  # Should be "module:name/arity"
+            "symbols": {},
+        }
+
+        with pytest.raises(BytecodeLoadError) as exc:
+            load_program(bytecode)
+
+        assert getattr(exc.value, "code", None) == "BAD_BUILTIN_SYMBOL"
 
 
 class TestIncrementalLoading:

@@ -25,6 +25,7 @@ from typing import Dict, List, Optional, Tuple, Union
 from .instructions import (
     OP_ALLOCATE,
     OP_CALL,
+    OP_CALL_BUILTIN,
     OP_DEALLOCATE,
     OP_EXECUTE,
     OP_GET_CONSTANT,
@@ -191,6 +192,12 @@ def parse_instruction(line: str) -> tuple:
         sym = arg_str.strip()
         if not sym:
             raise AssemblerError(f"{op_name} requires predicate symbol")
+        return (opcode, sym)
+
+    if opcode == OP_CALL_BUILTIN:
+        sym = arg_str.strip()
+        if not sym:
+            raise AssemblerError("call_builtin requires builtin symbol")
         return (opcode, sym)
 
     if opcode in (OP_TRY_ME_ELSE, OP_RETRY_ME_ELSE):

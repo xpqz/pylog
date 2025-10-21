@@ -915,6 +915,8 @@ class Machine:
                     self.P += 1
                 else:
                     # Builtin failed: backtrack (no choicepoint = halt)
+                    # TODO: When full backtracking is implemented, replace halt
+                    # with proper failure/backtracking instead of immediate halt
                     self.halted = True
                     return False
 

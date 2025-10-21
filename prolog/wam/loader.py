@@ -18,6 +18,7 @@ from typing import Dict, List, Optional, Tuple, Union
 
 from .instructions import (
     OP_CALL,
+    OP_CALL_BUILTIN,
     OP_CATCH_CLEANUP,
     OP_CATCH_SETUP,
     OP_EXECUTE,
@@ -182,6 +183,14 @@ def _validate_instruction_operands(instr: tuple, pc: int) -> None:
         if not isinstance(target, str):
             raise BytecodeLoadError(
                 "call target must be a string", code="BAD_CALL_TARGET", pc=pc
+            )
+    elif opcode == OP_CALL_BUILTIN:
+        _, symbol = instr
+        if not isinstance(symbol, str):
+            raise BytecodeLoadError(
+                "call_builtin symbol must be a string",
+                code="BAD_BUILTIN_SYMBOL",
+                pc=pc,
             )
     elif opcode == OP_CATCH_SETUP:
         # catch_setup Handler_Label, Ball_Pattern_Addr

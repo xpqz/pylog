@@ -4,7 +4,12 @@ import pytest
 
 from prolog.ast.terms import Atom
 from prolog.wam.builtins import WAM_BUILTINS, dispatch_builtin, register_builtin
-from prolog.wam.errors import InstantiationError, SystemError, TypeError
+from prolog.wam.errors import (
+    DomainError,
+    EvaluationError,
+    InstantiationError,
+    TypeError,
+)
 from prolog.wam.heap import is_ref, new_con, new_ref
 from prolog.wam.instructions import OP_CALL_BUILTIN
 from prolog.wam.machine import Machine
@@ -126,8 +131,8 @@ class TestBuiltinDispatcher:
         # Cleanup
         del WAM_BUILTINS["test:error/0"]
 
-    def test_dispatch_converts_python_exception_to_system_error(self):
-        """dispatch_builtin() converts Python exceptions to SystemError."""
+    def test_dispatch_converts_python_exception_to_prolog_error(self):
+        """dispatch_builtin() converts Python exceptions using python_exception_to_prolog()."""
 
         def python_error_handler(machine):
             raise ValueError("test error message")
@@ -136,36 +141,35 @@ class TestBuiltinDispatcher:
 
         machine = Machine()
 
-        with pytest.raises(SystemError) as exc_info:
+        # ValueError should be converted to DomainError
+        with pytest.raises(DomainError) as exc_info:
             dispatch_builtin(machine, "test:pyerror/0")
 
-        # Check error message includes exception type and message
-        assert "ValueError" in str(exc_info.value)
-        assert "test error message" in str(exc_info.value)
+        # Check it's a proper DomainError
+        assert exc_info.value.kwargs["domain"] == "valid_value"
 
         # Cleanup
         del WAM_BUILTINS["test:pyerror/0"]
 
-    def test_dispatch_truncates_long_error_messages(self):
-        """dispatch_builtin() truncates error messages over 200 chars."""
-        long_message = "x" * 300
+    def test_dispatch_converts_zerodivision_to_evaluation_error(self):
+        """dispatch_builtin() converts ZeroDivisionError to evaluation_error(zero_divisor)."""
 
-        def long_error_handler(machine):
-            raise ValueError(long_message)
+        def division_error_handler(machine):
+            return 1 // 0  # ZeroDivisionError
 
-        register_builtin("test:longerror/0", long_error_handler)
+        register_builtin("test:divzero/0", division_error_handler)
 
         machine = Machine()
 
-        with pytest.raises(SystemError) as exc_info:
-            dispatch_builtin(machine, "test:longerror/0")
+        # ZeroDivisionError should be converted to EvaluationError
+        with pytest.raises(EvaluationError) as exc_info:
+            dispatch_builtin(machine, "test:divzero/0")
 
-        error_msg = str(exc_info.value)
-        assert len(error_msg) <= 220  # "ValueError: " + 200 chars + "..."
-        assert error_msg.endswith("...")
+        # Check it's evaluation_error(zero_divisor)
+        assert exc_info.value.kwargs["error"] == "zero_divisor"
 
         # Cleanup
-        del WAM_BUILTINS["test:longerror/0"]
+        del WAM_BUILTINS["test:divzero/0"]
 
 
 class TestBuiltinInstruction:
