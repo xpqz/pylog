@@ -23,6 +23,7 @@ Example builtin handler:
 
 from __future__ import annotations
 
+from prolog.wam.builtins_meta import register_meta_builtins
 from prolog.wam.builtins_type import register_type_builtins
 from prolog.wam.errors import python_exception_to_prolog
 
@@ -39,6 +40,9 @@ WAM_BUILTINS: dict[str, callable] = {}
 
 # Register type checking builtins
 register_type_builtins(WAM_BUILTINS)
+
+# Register meta-call builtins
+register_meta_builtins(WAM_BUILTINS)
 
 
 def register_builtin(symbol: str, handler: callable) -> None:
