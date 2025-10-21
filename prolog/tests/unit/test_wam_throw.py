@@ -27,7 +27,7 @@ class TestThrowBasic:
         machine = Machine()
 
         # Put ball in X[0]
-        ball_addr = new_con(machine.heap, "error")
+        ball_addr = new_con(machine, "error")
         machine.X = [ball_addr]
 
         # No exception frames
@@ -46,8 +46,8 @@ class TestThrowBasic:
         machine = Machine()
 
         # Create ball and pattern (same atom)
-        ball_addr = new_con(machine.heap, "my_error")
-        pattern_addr = new_con(machine.heap, "my_error")
+        ball_addr = new_con(machine, "my_error")
+        pattern_addr = new_con(machine, "my_error")
 
         # Set up exception frame
         handler_label = 100
@@ -86,8 +86,8 @@ class TestThrowBasic:
         machine = Machine()
 
         # Create ball and different pattern
-        ball_addr = new_con(machine.heap, "error_a")
-        pattern_addr = new_con(machine.heap, "error_b")
+        ball_addr = new_con(machine, "error_a")
+        pattern_addr = new_con(machine, "error_b")
 
         # Set up exception frame
         push_exception_frame(machine, pattern_addr, 100)
@@ -123,8 +123,8 @@ class TestThrowStateRestoration:
         machine.HB = 35
 
         # Create matching frame
-        ball_addr = new_con(machine.heap, "err")
-        pattern_addr = new_con(machine.heap, "err")
+        ball_addr = new_con(machine, "err")
+        pattern_addr = new_con(machine, "err")
         push_exception_frame(machine, pattern_addr, 200)
 
         # Modify state after push
@@ -154,22 +154,22 @@ class TestThrowStateRestoration:
         machine = Machine()
 
         # Create some heap cells
-        ref1 = new_ref(machine.heap)
-        ref2 = new_ref(machine.heap)
-        con_addr = new_con(machine.heap, "value")
+        ref1 = new_ref(machine)
+        ref2 = new_ref(machine)
+        con_addr = new_con(machine, "value")
 
         # Bind ref1 (trail it)
-        machine.trail.append(("bind", ref1, machine.heap[ref1]))
+        machine.trail.append(ref1)
         machine.heap[ref1] = (1, con_addr)  # TAG_REF pointing to con
         machine.TR = 1
 
         # Save state in exception frame
-        ball_addr = new_con(machine.heap, "err")
-        pattern_addr = new_con(machine.heap, "err")
+        ball_addr = new_con(machine, "err")
+        pattern_addr = new_con(machine, "err")
         push_exception_frame(machine, pattern_addr, 100)
 
         # Bind ref2 (trail it)
-        machine.trail.append(("bind", ref2, machine.heap[ref2]))
+        machine.trail.append(ref2)
         machine.heap[ref2] = (1, con_addr)
         machine.TR = 2
 
@@ -196,14 +196,14 @@ class TestThrowNestedFrames:
         machine = Machine()
 
         # Create ball
-        ball_addr = new_con(machine.heap, "err")
+        ball_addr = new_con(machine, "err")
 
         # Outer frame (matches)
-        pattern_outer = new_con(machine.heap, "err")
+        pattern_outer = new_con(machine, "err")
         push_exception_frame(machine, pattern_outer, 100)
 
         # Inner frame (also matches)
-        pattern_inner = new_con(machine.heap, "err")
+        pattern_inner = new_con(machine, "err")
         push_exception_frame(machine, pattern_inner, 200)
 
         # throw should match inner frame
@@ -221,16 +221,16 @@ class TestThrowNestedFrames:
         machine = Machine()
 
         # Create ball
-        ball_addr = new_con(machine.heap, "target_error")
+        ball_addr = new_con(machine, "target_error")
 
         # Outer frame (matches)
-        pattern_outer = new_con(machine.heap, "target_error")
+        pattern_outer = new_con(machine, "target_error")
         machine.H = 100
         push_exception_frame(machine, pattern_outer, 300)
         saved_H = 100
 
         # Inner frame (doesn't match)
-        pattern_inner = new_con(machine.heap, "other_error")
+        pattern_inner = new_con(machine, "other_error")
         machine.H = 200
         push_exception_frame(machine, pattern_inner, 400)
 
@@ -250,11 +250,11 @@ class TestThrowNestedFrames:
         machine = Machine()
 
         # Create ball
-        ball_addr = new_con(machine.heap, "no_match")
+        ball_addr = new_con(machine, "no_match")
 
         # Create several non-matching frames
         for i in range(3):
-            pattern = new_con(machine.heap, f"error_{i}")
+            pattern = new_con(machine, f"error_{i}")
             push_exception_frame(machine, pattern, 100 * (i + 1))
 
         # All frames are non-matching
@@ -279,10 +279,10 @@ class TestThrowUnification:
         machine = Machine()
 
         # Create ball (concrete)
-        ball_addr = new_con(machine.heap, "my_error")
+        ball_addr = new_con(machine, "my_error")
 
         # Create pattern (variable)
-        pattern_addr = new_ref(machine.heap)
+        pattern_addr = new_ref(machine)
 
         # Set up exception frame
         push_exception_frame(machine, pattern_addr, 100)
@@ -303,16 +303,14 @@ class TestThrowUnification:
         machine = Machine()
 
         # Create ball: error(type, culprit)
-        ball_functor = new_str(machine.heap, "error", 2)
-        new_con(machine.heap, "type")  # arg1
-        new_con(machine.heap, "foo")  # arg2
-        ball_addr = ball_functor - 1  # STR points to functor
+        ball_addr = new_str(machine, "error", 2)  # Returns STR address
+        new_con(machine, "type")  # arg1
+        new_con(machine, "foo")  # arg2
 
         # Create pattern: error(X, Y) where X and Y are variables
-        pattern_functor = new_str(machine.heap, "error", 2)
-        new_ref(machine.heap)  # arg1 (variable X)
-        new_ref(machine.heap)  # arg2 (variable Y)
-        pattern_addr = pattern_functor - 1
+        pattern_addr = new_str(machine, "error", 2)  # Returns STR address
+        new_ref(machine)  # arg1 (variable X)
+        new_ref(machine)  # arg2 (variable Y)
 
         # Set up exception frame
         push_exception_frame(machine, pattern_addr, 100)
@@ -334,27 +332,23 @@ class TestThrowUntrail:
         machine = Machine()
 
         # Create refs
-        ref1 = new_ref(machine.heap)
-        ref2 = new_ref(machine.heap)
-
-        # Save original cells
-        original1 = machine.heap[ref1]
-        original2 = machine.heap[ref2]
+        ref1 = new_ref(machine)
+        ref2 = new_ref(machine)
 
         # Modify and trail
         machine.heap[ref1] = (1, 999)
-        machine.trail.append(("bind", ref1, original1))
+        machine.trail.append(ref1)
         machine.TR = 1
 
         machine.heap[ref2] = (1, 888)
-        machine.trail.append(("bind", ref2, original2))
+        machine.trail.append(ref2)
         machine.TR = 2
 
         # Untrail to TR=1 (undo ref2 but not ref1)
         untrail_to(machine, 1)
 
         assert machine.TR == 1
-        assert machine.heap[ref2] == original2  # Restored
+        assert machine.heap[ref2] == (0, ref2)  # Restored to self-ref
         assert machine.heap[ref1] == (1, 999)  # Still modified
 
     def test_untrail_to_zero(self):
@@ -365,11 +359,10 @@ class TestThrowUntrail:
         # Create and bind several refs
         refs = []
         for i in range(5):
-            ref = new_ref(machine.heap)
+            ref = new_ref(machine)
             refs.append(ref)
-            original = machine.heap[ref]
             machine.heap[ref] = (1, 100 + i)
-            machine.trail.append(("bind", ref, original))
+            machine.trail.append(ref)
             machine.TR = i + 1
 
         # Untrail all
@@ -388,7 +381,7 @@ class TestUnhandledPrologException:
     def test_exception_has_ball_addr(self):
         """UnhandledPrologException stores ball address."""
         machine = Machine()
-        ball_addr = new_con(machine.heap, "error")
+        ball_addr = new_con(machine, "error")
 
         exc = UnhandledPrologException(ball_addr)
 
@@ -433,14 +426,14 @@ class TestThrowEdgeCases:
         machine = Machine()
 
         # Create pattern with variable
-        pattern_addr = new_ref(machine.heap)
+        pattern_addr = new_ref(machine)
 
         # Save H before frame
         saved_H = machine.H
         push_exception_frame(machine, pattern_addr, 100)
 
         # Add more heap after frame
-        ball_addr = new_con(machine.heap, "error")
+        ball_addr = new_con(machine, "error")
         new_H = machine.H
 
         # throw will unify (binding pattern var), then restore H
