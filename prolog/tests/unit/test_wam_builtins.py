@@ -19,16 +19,19 @@ from prolog.wam.unify import deref
 class TestBuiltinRegistry:
     """Test builtin registration and lookup."""
 
-    def test_registry_initially_empty(self):
-        """Builtin registry starts empty (no builtins pre-registered yet)."""
-        # Clear registry for test isolation
+    def test_registry_can_be_cleared_and_restored(self):
+        """Builtin registry can be cleared and restored for test isolation."""
+        # Save current state (may include pre-registered builtins)
         original_builtins = WAM_BUILTINS.copy()
-        WAM_BUILTINS.clear()
+        original_count = len(WAM_BUILTINS)
 
+        # Clear registry
+        WAM_BUILTINS.clear()
         assert len(WAM_BUILTINS) == 0
 
         # Restore original state
         WAM_BUILTINS.update(original_builtins)
+        assert len(WAM_BUILTINS) == original_count
 
     def test_register_builtin(self):
         """register_builtin() adds handler to registry."""
@@ -267,9 +270,9 @@ class TestBuiltinExamples:
     """Example builtin implementations for documentation."""
 
     def test_example_var_builtin(self):
-        """Example: var/1 builtin checks if argument is unbound."""
+        """Example: var/1 builtin implementation pattern."""
 
-        def builtin_var(machine):
+        def example_var_impl(machine):
             """Check if X0 is unbound variable."""
             addr = machine.X[0]
             dereffed = deref(machine, addr)
@@ -277,14 +280,14 @@ class TestBuiltinExamples:
             # Unbound if REF pointing to itself
             return cell[0] == 0 and cell[1] == dereffed
 
-        register_builtin("system:var/1", builtin_var)
+        register_builtin("test:example_var/1", example_var_impl)
 
         # Test with unbound variable
         machine = Machine()
         x_addr = new_ref(machine)
         machine.X = [x_addr]
 
-        result = dispatch_builtin(machine, "system:var/1")
+        result = dispatch_builtin(machine, "test:example_var/1")
         assert result is True
 
         # Test with bound variable
@@ -292,11 +295,11 @@ class TestBuiltinExamples:
         bound_addr = new_con(machine2, 42)
         machine2.X = [bound_addr]
 
-        result2 = dispatch_builtin(machine2, "system:var/1")
+        result2 = dispatch_builtin(machine2, "test:example_var/1")
         assert result2 is False
 
         # Cleanup
-        del WAM_BUILTINS["system:var/1"]
+        del WAM_BUILTINS["test:example_var/1"]
 
     def test_example_builtin_with_error(self):
         """Example: Builtin that raises error on wrong type."""
