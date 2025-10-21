@@ -49,14 +49,14 @@ class TestThrowBasic:
         ball_addr = new_con(machine, "my_error")
         pattern_addr = new_con(machine, "my_error")
 
-        # Set up exception frame
+        # Set up initial state
         handler_label = 100
         machine.CP = 42
         machine.E = 50
         machine.B = 25
-        machine.H = 10
-        machine.TR = 5
         machine.HB = 8
+        saved_H = machine.H
+        saved_TR = machine.TR
 
         push_exception_frame(machine, pattern_addr, handler_label)
 
@@ -73,8 +73,8 @@ class TestThrowBasic:
         assert machine.CP == 42
         assert machine.E == 50
         assert machine.B == 25
-        assert machine.H == 10
-        assert machine.TR == 5
+        assert machine.H == saved_H
+        assert machine.TR == saved_TR
         assert machine.HB == 8
 
         # Exception frame popped
@@ -114,26 +114,31 @@ class TestThrowStateRestoration:
 
         machine = Machine()
 
+        # Pre-allocate heap to desired H
+        for _ in range(40):
+            new_ref(machine)
+
         # Set initial state
         machine.CP = 10
         machine.E = 20
         machine.B = 30
-        machine.H = 40
-        machine.TR = 50
         machine.HB = 35
 
         # Create matching frame
         ball_addr = new_con(machine, "err")
         pattern_addr = new_con(machine, "err")
+        saved_H = machine.H
+        saved_TR = machine.TR
         push_exception_frame(machine, pattern_addr, 200)
 
-        # Modify state after push
+        # Modify state after push (allocate more to change H and TR)
         machine.CP = 999
         machine.E = 888
         machine.B = 777
-        machine.H = 666
-        machine.TR = 555
         machine.HB = 444
+        # Allocate more to increase H and TR naturally
+        for _ in range(10):
+            new_ref(machine)
 
         # throw
         machine.X = [ball_addr]
@@ -143,8 +148,8 @@ class TestThrowStateRestoration:
         assert machine.CP == 10
         assert machine.E == 20
         assert machine.B == 30
-        assert machine.H == 40
-        assert machine.TR == 50
+        assert machine.H == saved_H
+        assert machine.TR == saved_TR
         assert machine.HB == 35
         assert machine.P == 200
 
@@ -225,13 +230,17 @@ class TestThrowNestedFrames:
 
         # Outer frame (matches)
         pattern_outer = new_con(machine, "target_error")
-        machine.H = 100
+        # Allocate more heap to simulate outer frame context
+        for _ in range(10):
+            new_ref(machine)
+        saved_H_outer = machine.H
         push_exception_frame(machine, pattern_outer, 300)
-        saved_H = 100
 
         # Inner frame (doesn't match)
         pattern_inner = new_con(machine, "other_error")
-        machine.H = 200
+        # Allocate more heap to simulate inner frame context
+        for _ in range(10):
+            new_ref(machine)
         push_exception_frame(machine, pattern_inner, 400)
 
         # throw should skip inner, match outer
@@ -239,7 +248,7 @@ class TestThrowNestedFrames:
         instr_throw(machine)
 
         assert machine.P == 300  # Outer handler
-        assert machine.H == saved_H  # Restored from outer frame
+        assert machine.H == saved_H_outer  # Restored from outer frame
 
         # Should have popped to before outer frame
         assert machine.EF is None
@@ -405,13 +414,9 @@ class TestThrowEdgeCases:
 
         machine = Machine()
 
-        # Ball at heap[0]
-        ball_addr = 0
-        machine.heap.append((2, "error"))  # TAG_CON
-
-        # Pattern at heap[1]
-        pattern_addr = 1
-        machine.heap.append((2, "error"))
+        # Create ball and pattern using proper allocation
+        ball_addr = new_con(machine, "error")
+        pattern_addr = new_con(machine, "error")
 
         push_exception_frame(machine, pattern_addr, 50)
 
