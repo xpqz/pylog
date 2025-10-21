@@ -117,6 +117,11 @@ def push_exception_frame(machine, ball_pattern: int, handler_label: int):
         ball_pattern: Heap address of catch pattern
         handler_label: Code address of handler
     """
+    # Debug invariant: H must equal len(heap)
+    assert machine.H == len(
+        machine.heap
+    ), f"Heap invariant violated: H={machine.H}, len(heap)={len(machine.heap)}"
+
     frame = ExceptionFrame(
         prev_frame=machine.EF,
         ball_pattern=ball_pattern,
@@ -897,3 +902,111 @@ class Machine:
         self.trail = []
         self.exception_frames = []  # Clear exception stack
         self.halted = False
+
+
+class UnhandledPrologException(Exception):
+    """Exception raised when throw/1 finds no matching catch frame.
+
+    Attributes:
+        ball_addr: Heap address of the exception ball term
+    """
+
+    def __init__(self, ball_addr: int):
+        self.ball_addr = ball_addr
+        super().__init__(f"Unhandled Prolog exception at heap address {ball_addr}")
+
+
+def untrail_to(machine, target_TR: int) -> None:
+    """Untrail bindings and truncate trail to target_TR.
+
+    Restores all trailed bindings from current TR down to target_TR,
+    then truncates the trail list.
+
+    Args:
+        machine: WAM machine
+        target_TR: Trail pointer to restore to
+    """
+    # Only untrail entries that actually exist in the trail
+    # (TR might be > len(trail) if trail was artificially set in tests)
+    actual_TR = min(machine.TR, len(machine.trail))
+
+    # Temporarily set machine.TR to actual value for untrail()
+    machine.TR = actual_TR
+
+    # Unwind trail from actual_TR down to target_TR
+    if actual_TR > target_TR:
+        untrail(machine, target_TR)
+
+    # Truncate trail list and set TR
+    del machine.trail[target_TR:]
+    machine.TR = target_TR
+
+
+def instr_throw(machine) -> None:
+    """Execute throw/1 instruction - unwind exception frames to find handler.
+
+    Algorithm:
+    1. Get ball from X[0]
+    2. Iterate exception frames from EF (innermost first)
+    3. For each frame:
+       - Restore CP, E, B, HB from frame (HB critical for trailing decisions)
+       - Try unify(ball, pattern) with restored HB but current H and TR
+       - If match:
+         * Untrail to frame.TR (undo all bindings since frame)
+         * Truncate heap to frame.H
+         * Set P=handler, pop frame, return
+       - If no match:
+         * Untrail to frame.TR (undo bindings from this attempt + earlier)
+         * Pop frame, continue to next
+    4. No match found: raise UnhandledPrologException
+
+    Critical: HB must be restored before unification for correct trailing
+    decisions, but H and TR remain at current values until after unification
+    succeeds (so ball/pattern are accessible and trail records all bindings).
+
+    Args:
+        machine: WAM machine
+
+    Raises:
+        UnhandledPrologException: If no exception frame matches the ball
+    """
+    # Debug invariant: H must equal len(heap)
+    assert machine.H == len(
+        machine.heap
+    ), f"Heap invariant violated: H={machine.H}, len(heap)={len(machine.heap)}"
+
+    # Get ball from X[0]
+    ball_addr = machine.X[0]
+
+    # Iterate frames from EF (innermost first)
+    ef = machine.EF
+    while ef is not None:
+        frame = machine.exception_frames[ef]
+
+        # Restore registers needed for correct unification (critical: HB for trailing)
+        # Don't restore H or TR yet - need current heap and trail
+        machine.CP = frame.CP
+        machine.E = frame.E
+        machine.B = frame.B
+        machine.HB = frame.HB
+
+        # Try unifying ball with pattern (with correct HB for trailing decisions)
+        if unify(machine, ball_addr, frame.ball_pattern):
+            # Match! Restore H/TR, truncate heap/trail, jump to handler
+            untrail_to(machine, frame.TR)
+            del machine.heap[frame.H :]
+            machine.H = frame.H
+            machine.P = frame.handler_label
+            machine.EF = frame.prev_frame
+            return
+
+        # No match - untrail to undo bindings from failed unification attempt
+        # (including any that existed before the frame)
+        untrail_to(machine, frame.TR)
+
+        # Pop frame and continue to next
+        machine.EF = frame.prev_frame
+        ef = machine.EF
+
+    # No matching frame found - raise UnhandledPrologException
+    raise UnhandledPrologException(ball_addr)
