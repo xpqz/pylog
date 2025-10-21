@@ -14,6 +14,7 @@ from prolog.wam.instructions import (
     OP_EXECUTE,
     OP_UNIFY_VARIABLE,
     OP_UNIFY_CONSTANT,
+    OP_CATCH_SETUP,
 )
 from prolog.wam.loader import BytecodeLoadError, load_program, PredicateRegistry
 
@@ -434,6 +435,20 @@ class TestValidationDetails:
         except BytecodeLoadError:
             # Loader may reject certain constant forms
             pass
+
+    def test_validate_catch_setup_operands(self):
+        """catch_setup requires integer handler and pattern operands."""
+
+        # Non-integer operands should raise BAD_CATCH_SETUP_OPERANDS
+        bytecode = {
+            "code": [(OP_CATCH_SETUP, "L1", "P")],
+            "symbols": {},
+        }
+
+        with pytest.raises(BytecodeLoadError) as exc:
+            load_program(bytecode)
+
+        assert getattr(exc.value, "code", None) == "BAD_CATCH_SETUP_OPERANDS"
 
 
 class TestIncrementalLoading:

@@ -173,6 +173,11 @@ def parse_instruction(line: str) -> tuple:
         if arg_str.strip():
             raise AssemblerError(f"{op_name} takes no arguments")
         return (opcode,)
+    # throw has no explicit operands; ball is in X[0]
+    if op_name == "throw":
+        if arg_str.strip():
+            raise AssemblerError("throw takes no arguments")
+        return (opcode,)
 
     if opcode == OP_ALLOCATE:
         arg_str = arg_str.strip()

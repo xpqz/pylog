@@ -292,12 +292,12 @@ def occurs(machine, var_addr: int, term_addr: int) -> bool:
             # functor_cell format: (TAG_CON, (name, arity))
             name, arity = functor_cell[1]
 
-            # Push argument cells (functor_addr + 1 through functor_addr + arity)
-            # Note: arguments may not exist yet if structure is being built
+            # Push only argument cells that are already allocated
+            # (functor_addr + 1 through functor_addr + arity)
             for i in range(arity):
                 arg_addr = functor_addr + 1 + i
-                # Will be filtered by heap bounds check at top of loop
-                stack.append(arg_addr)
+                if arg_addr < len(machine.heap):
+                    stack.append(arg_addr)
 
         elif tag == 3:  # TAG_LIST
             # List: push head and tail

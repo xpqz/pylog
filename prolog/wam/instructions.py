@@ -79,6 +79,8 @@ OP_UNIFY_VALUE = 24
 OP_UNIFY_CONSTANT = 25
 OP_CATCH_SETUP = 26
 OP_CATCH_CLEANUP = 27
+OP_THROW = 28
+OP_CALL_BUILTIN = 29
 
 # Opcode name mapping for debugging and pretty-printing
 _OPCODE_NAMES = {
@@ -110,6 +112,8 @@ _OPCODE_NAMES = {
     OP_UNIFY_CONSTANT: "unify_constant",
     OP_CATCH_SETUP: "catch_setup",
     OP_CATCH_CLEANUP: "catch_cleanup",
+    OP_THROW: "throw",
+    OP_CALL_BUILTIN: "call_builtin",
 }
 
 # Reverse mapping for name->opcode lookup
@@ -145,6 +149,8 @@ _INSTRUCTION_ARITY = {
     OP_UNIFY_CONSTANT: 1,  # unify_constant C (structure arg)
     OP_CATCH_SETUP: 2,  # catch_setup Handler_Label, Ball_Pattern_Addr
     OP_CATCH_CLEANUP: 0,  # catch_cleanup
+    OP_THROW: 0,  # throw/1 uses ball in X[0]
+    OP_CALL_BUILTIN: 1,  # call_builtin Symbol (builtin identifier)
 }
 
 __all__ = [
@@ -176,6 +182,8 @@ __all__ = [
     "OP_UNIFY_CONSTANT",
     "OP_CATCH_SETUP",
     "OP_CATCH_CLEANUP",
+    "OP_THROW",
+    "OP_CALL_BUILTIN",
     "opcode_name",
     "name_to_opcode",
     "validate_instruction",
