@@ -949,16 +949,20 @@ def instr_throw(machine) -> None:
     1. Get ball from X[0]
     2. Iterate exception frames from EF (innermost first)
     3. For each frame:
-       - Try unify(ball, pattern) FIRST (doesn't allocate, side effects temporary)
+       - Restore CP, E, B, HB from frame (HB critical for trailing decisions)
+       - Try unify(ball, pattern) with restored HB but current H and TR
        - If match:
-         * Restore state: untrail to frame.TR, restore all registers
+         * Untrail to frame.TR (undo all bindings since frame)
+         * Truncate heap to frame.H
          * Set P=handler, pop frame, return
-       - If no match: pop frame, continue
+       - If no match:
+         * Untrail to frame.TR (undo bindings from this attempt + earlier)
+         * Pop frame, continue to next
     4. No match found: raise UnhandledPrologException
 
-    Note: Unification is tried before state restoration. Since unify() doesn't
-    allocate heap cells, any bindings it creates are temporary and will be
-    undone by the untrail operation if the pattern matches.
+    Critical: HB must be restored before unification for correct trailing
+    decisions, but H and TR remain at current values until after unification
+    succeeds (so ball/pattern are accessible and trail records all bindings).
 
     Args:
         machine: WAM machine
@@ -979,32 +983,28 @@ def instr_throw(machine) -> None:
     while ef is not None:
         frame = machine.exception_frames[ef]
 
-        # Try unifying ball with pattern FIRST (before restoring state)
-        # Unification doesn't allocate, so H remains unchanged
+        # Restore registers needed for correct unification (critical: HB for trailing)
+        # Don't restore H or TR yet - need current heap and trail
+        machine.CP = frame.CP
+        machine.E = frame.E
+        machine.B = frame.B
+        machine.HB = frame.HB
+
+        # Try unifying ball with pattern (with correct HB for trailing decisions)
         if unify(machine, ball_addr, frame.ball_pattern):
-            # Match! Restore state and jump to handler
-
-            # Untrail to frame.TR (undoes any bindings from unification)
+            # Match! Restore H/TR, truncate heap/trail, jump to handler
             untrail_to(machine, frame.TR)
-
-            # Truncate heap to frame.H
             del machine.heap[frame.H :]
             machine.H = frame.H
-
-            # Restore registers from frame
-            machine.CP = frame.CP
-            machine.E = frame.E
-            machine.B = frame.B
-            machine.HB = frame.HB
-
-            # Jump to handler
             machine.P = frame.handler_label
-
-            # Pop this frame (restore EF to prev_frame)
             machine.EF = frame.prev_frame
             return
 
-        # No match - pop frame and continue to next
+        # No match - untrail to undo bindings from failed unification attempt
+        # (including any that existed before the frame)
+        untrail_to(machine, frame.TR)
+
+        # Pop frame and continue to next
         machine.EF = frame.prev_frame
         ef = machine.EF
 
