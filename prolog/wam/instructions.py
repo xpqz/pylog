@@ -44,6 +44,10 @@ Phase 3 unify instruction family:
 - OP_UNIFY_VARIABLE: Unify structure argument with new variable (write mode) or read variable (read mode)
 - OP_UNIFY_VALUE: Unify structure argument with existing value (write mode) or read and unify (read mode)
 - OP_UNIFY_CONSTANT: Unify structure argument with constant (write mode) or read and check (read mode)
+
+Phase 3.5 exception handling instructions:
+- OP_CATCH_SETUP: Set up exception frame for catch/3, push frame with handler label and ball pattern
+- OP_CATCH_CLEANUP: Clean up exception frame on normal exit from catch/3
 """
 
 # Opcode constants
@@ -73,6 +77,8 @@ OP_NECK_CUT = 22
 OP_UNIFY_VARIABLE = 23
 OP_UNIFY_VALUE = 24
 OP_UNIFY_CONSTANT = 25
+OP_CATCH_SETUP = 26
+OP_CATCH_CLEANUP = 27
 
 # Opcode name mapping for debugging and pretty-printing
 _OPCODE_NAMES = {
@@ -102,6 +108,8 @@ _OPCODE_NAMES = {
     OP_UNIFY_VARIABLE: "unify_variable",
     OP_UNIFY_VALUE: "unify_value",
     OP_UNIFY_CONSTANT: "unify_constant",
+    OP_CATCH_SETUP: "catch_setup",
+    OP_CATCH_CLEANUP: "catch_cleanup",
 }
 
 # Reverse mapping for name->opcode lookup
@@ -135,6 +143,8 @@ _INSTRUCTION_ARITY = {
     OP_UNIFY_VARIABLE: 1,  # unify_variable Xi|Yi (structure arg)
     OP_UNIFY_VALUE: 1,  # unify_value Xi|Yi (structure arg)
     OP_UNIFY_CONSTANT: 1,  # unify_constant C (structure arg)
+    OP_CATCH_SETUP: 2,  # catch_setup Handler_Label, Ball_Pattern_Addr
+    OP_CATCH_CLEANUP: 0,  # catch_cleanup
 }
 
 __all__ = [
@@ -164,6 +174,8 @@ __all__ = [
     "OP_UNIFY_VARIABLE",
     "OP_UNIFY_VALUE",
     "OP_UNIFY_CONSTANT",
+    "OP_CATCH_SETUP",
+    "OP_CATCH_CLEANUP",
     "opcode_name",
     "name_to_opcode",
     "validate_instruction",
