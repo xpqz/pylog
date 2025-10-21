@@ -196,6 +196,9 @@ class Machine:
         # Unification mode flag (Phase 1)
         self.unify_mode: str | None = None  # "read" or "write"
 
+        # Occurs-check flag (Phase 3.5)
+        self.occurs_check_enabled: bool = False  # ISO-style cycle detection
+
         # Register banks
         self.X: list = []
 
@@ -594,7 +597,10 @@ class Machine:
             elif tag == 0:  # TAG_REF (unbound variable)
                 # Allocate constant and bind
                 const_addr = new_con(self, const_value)
-                bind(self, addr, const_addr)
+                if not bind(self, addr, const_addr):
+                    # Binding failed (occurs-check)
+                    self.halted = True
+                    return False
                 self.P += 1
             else:
                 # Type mismatch (STR or LIST): fail without allocation
@@ -612,7 +618,10 @@ class Machine:
             if is_ref(cell):
                 # Unbound variable: build structure and bind
                 str_addr = new_str(self, name, arity)
-                bind(self, addr, str_addr)
+                if not bind(self, addr, str_addr):
+                    # Binding failed (occurs-check)
+                    self.halted = True
+                    return False
                 self.unify_mode = "write"
                 functor_addr = str_addr + 1
                 self.S = functor_addr + 1
@@ -914,6 +923,7 @@ class Machine:
         self.S = None
         self.EF = None  # No active exception frame
         self.unify_mode = None
+        self.occurs_check_enabled = False
         self.X = []
         self.heap = []
         self.frames = []

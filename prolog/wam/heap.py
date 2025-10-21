@@ -178,24 +178,42 @@ def new_list(machine, head_addr: int, tail_addr: int) -> int:
 
 
 def note_struct_args(machine, *args: int) -> None:
-    """Note structure arguments for readability (no-op).
+    """Place structure arguments on heap by adding REF cells pointing to them.
 
-    This is an intentional no-op helper for test readability and documentation.
-    Structure arguments are allocated via new_ref/new_con/etc after new_str,
-    which naturally places them at functor_addr+1, functor_addr+2, etc.
-
-    The function name 'note' (not 'write') emphasizes that this is purely
-    documentary - no mutation occurs. Use in tests to clarify intent when
-    building structures on the heap.
+    For each provided argument address, appends a REF cell pointing to that
+    address. This allows tests to build structures where arguments are allocated
+    first, then referenced from the structure.
 
     Args:
-        machine: Machine instance (unused, present for API consistency)
-        *args: Heap addresses that form structure arguments (unused)
+        machine: Machine instance with heap and H register
+        *args: Heap addresses to reference as structure arguments
 
     Example:
-        str_addr = new_str(m, "foo", 2)
-        arg1 = new_ref(m)
-        arg2 = new_con(m, "bar")
-        note_struct_args(m, arg1, arg2)  # Documents that these are foo's args
+        # Build f(X) where X is allocated first
+        x_addr = new_ref(m)              # heap[0] = REF(0)
+        f_addr = new_str(m, "f", 1)      # heap[1] = STR(2), heap[2] = CON(("f",1))
+        note_struct_args(m, x_addr)      # heap[3] = REF(0) - arg points to X
+
+        # Build f(a, b) with arguments allocated in place
+        f_addr = new_str(m, "f", 2)
+        arg1 = new_con(m, "a")            # Allocated at correct position
+        arg2 = new_con(m, "b")            # Allocated at correct position
+        note_struct_args(m, arg1, arg2)  # No-op, args already in place
     """
-    pass
+    start_H = machine.H
+    for i, arg_addr in enumerate(args):
+        # If arg was allocated before the current H, add REF pointing to it
+        # If arg equals current H, it was just allocated in sequence, already in place
+        if arg_addr < start_H:
+            # Arg allocated earlier, add REF cell pointing to it
+            machine.heap.append(make_ref(arg_addr))
+            machine.H += 1
+        elif arg_addr == machine.H:
+            # Arg just allocated at current position, already in place
+            # H was already advanced by the allocation function
+            pass
+        else:
+            # Arg address is beyond current H - shouldn't happen in valid usage
+            # Add REF anyway for robustness
+            machine.heap.append(make_ref(arg_addr))
+            machine.H += 1
