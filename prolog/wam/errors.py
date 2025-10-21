@@ -13,18 +13,29 @@ Error Term Format:
 
 Note: Error terms are returned unwrapped. The error/2 wrapper can be
 added at throw site if needed for ISO compliance.
+
+Naming: This module exports TypeError (Prolog error class). When working
+with Python's built-in TypeError, use builtins.TypeError explicitly.
+
+Handler Bindings: Current throw/catch implementation untrails to frame.TR
+on success, so handler won't observe Ball variable bindings. This differs
+from ISO Prolog where Ball=Term may be visible in the handler.
 """
 
 from __future__ import annotations
 
 import builtins
 
-from prolog.ast.terms import Atom, Int, Struct, Term, Var
-from prolog.wam.heap import new_con, new_ref, new_str, note_struct_args
+from prolog.ast.terms import Atom, Float, Int, List, PrologDict, Struct, Term, Var
+from prolog.wam.heap import new_con, new_list, new_ref, new_str, note_struct_args
 
 
 def _term_to_heap(machine, term: Term) -> int:
     """Convert AST term to heap structure.
+
+    Handles all Prolog term types: Atom, Int, Float, Var, Struct, List, PrologDict.
+    Arguments are allocated sequentially right after functor to form valid structure segments.
+    Strings become atoms (not Prolog strings) in error terms.
 
     Args:
         machine: WAM machine instance
@@ -32,11 +43,16 @@ def _term_to_heap(machine, term: Term) -> int:
 
     Returns:
         Heap address of term
+
+    Raises:
+        ValueError: If term type is not recognized
     """
 
     if isinstance(term, Atom):
         return new_con(machine, term.name)
     elif isinstance(term, Int):
+        return new_con(machine, term.value)
+    elif isinstance(term, Float):
         return new_con(machine, term.value)
     elif isinstance(term, Var):
         return new_ref(machine)
@@ -44,9 +60,45 @@ def _term_to_heap(machine, term: Term) -> int:
         # Create structure with functor
         arity = len(term.args)
         addr = new_str(machine, term.functor, arity)
-        # Convert arguments to heap and add them
+        # Convert arguments to heap and add them sequentially
         arg_addrs = [_term_to_heap(machine, arg) for arg in term.args]
         note_struct_args(machine, *arg_addrs)
+        return addr
+    elif isinstance(term, List):
+        # Convert Prolog list to heap list cells
+        # Build list from items + tail
+        if not term.items:
+            # Empty list or just tail
+            return _term_to_heap(machine, term.tail)
+
+        # Build list cells right-to-left
+        tail_addr = _term_to_heap(machine, term.tail)
+        # Process items in reverse to build proper list structure
+        for item in reversed(term.items):
+            item_addr = _term_to_heap(machine, item)
+            tail_addr = new_list(machine, item_addr, tail_addr)
+        return tail_addr
+    elif isinstance(term, PrologDict):
+        # Convert PrologDict to structure dict{K1:V1, K2:V2, ...}
+        # Use SWI-compatible dict format: dict functor with key-value pairs
+        if not term.pairs:
+            # Empty dict - use atom 'dict'
+            return new_con(machine, "dict")
+
+        # Build dict as structure with pairs
+        # Format: dict(Key1-Value1, Key2-Value2, ...)
+        pair_addrs = []
+        for key, value in term.pairs:
+            key_addr = _term_to_heap(machine, key)
+            value_addr = _term_to_heap(machine, value)
+            # Create pair as -(Key, Value) structure
+            pair_addr = new_str(machine, "-", 2)
+            note_struct_args(machine, key_addr, value_addr)
+            pair_addrs.append(pair_addr)
+
+        # Create dict structure
+        addr = new_str(machine, "dict", len(pair_addrs))
+        note_struct_args(machine, *pair_addrs)
         return addr
     else:
         raise ValueError(f"Unknown term type: {type(term)}")
@@ -294,6 +346,13 @@ def python_exception_to_prolog(exc: Exception) -> PrologError:
     if isinstance(exc, ZeroDivisionError):
         return EvaluationError("zero_divisor")
 
+    if isinstance(exc, OverflowError):
+        return EvaluationError("overflow")
+
+    if isinstance(exc, ArithmeticError):
+        # Generic arithmetic error (base class for ZeroDivisionError, OverflowError, etc.)
+        return EvaluationError("undefined")
+
     # Python TypeError (not our TypeError which is a PrologError)
     if isinstance(exc, builtins.TypeError):
         return DomainError("valid_value", Atom(str(exc)))
@@ -307,8 +366,22 @@ def python_exception_to_prolog(exc: Exception) -> PrologError:
     if isinstance(exc, KeyError):
         return ExistenceError("key", Atom(str(exc)))
 
+    if isinstance(exc, FileNotFoundError):
+        # Use filename if available, otherwise message
+        filename = getattr(exc, "filename", None)
+        culprit = Atom(filename) if filename else Atom(str(exc))
+        return ExistenceError("file", culprit)
+
+    if isinstance(exc, OSError):
+        # Generic OS error - use system_error
+        return SystemError(str(exc))
+
     # Default: wrap unknown exceptions as system_error
-    return SystemError(str(exc))
+    message = str(exc)
+    # Truncate very long messages
+    if len(message) > 200:
+        message = message[:197] + "..."
+    return SystemError(message)
 
 
 __all__ = [

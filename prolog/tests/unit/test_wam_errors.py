@@ -9,7 +9,7 @@ Tests error classes and conversion between Python exceptions and Prolog error te
 
 import builtins
 
-from prolog.ast.terms import Atom, Struct
+from prolog.ast.terms import Atom, Float, Int, List, PrologDict, Struct
 from prolog.wam.errors import (
     DomainError,
     EvaluationError,
@@ -492,3 +492,120 @@ class TestErrorIntegration:
         assert machine.P == handler_label
         # Exception frame should be popped
         assert machine.EF is None
+
+
+class TestTermToHeapExtensions:
+    """Test _term_to_heap() with Float, List, and PrologDict."""
+
+    def test_type_error_with_float_culprit(self):
+        """TypeError with Float culprit converts correctly."""
+        culprit = Float(3.14)
+        err = TypeError("integer", culprit)
+        term = err.to_prolog_term()
+
+        assert len(term.args) == 2
+        assert isinstance(term.args[1], Float)
+        assert term.args[1].value == 3.14
+
+    def test_domain_error_with_float_to_heap(self):
+        """DomainError with Float builds correct heap."""
+        machine = Machine()
+        culprit = Float(1.5)
+        err = DomainError("integer", culprit)
+        addr = err.to_heap(machine)
+
+        # Should create structure on heap
+        assert isinstance(addr, int)
+        assert addr < len(machine.heap)
+
+    def test_type_error_with_list_culprit(self):
+        """TypeError with List culprit converts correctly."""
+        culprit = List((Atom("a"), Atom("b")), Atom("[]"))
+        err = TypeError("integer", culprit)
+        addr = err.to_heap(Machine())
+
+        # Should succeed without ValueError
+        assert isinstance(addr, int)
+
+    def test_domain_error_with_empty_list(self):
+        """DomainError with empty list culprit."""
+        culprit = List((), Atom("[]"))
+        err = DomainError("positive_integer", culprit)
+        addr = err.to_heap(Machine())
+
+        assert isinstance(addr, int)
+
+    def test_type_error_with_prolog_dict(self):
+        """TypeError with PrologDict culprit converts correctly."""
+        culprit = PrologDict(
+            pairs=((Atom("key"), Atom("value")), (Atom("num"), Int(42)))
+        )
+        err = TypeError("atom", culprit)
+        addr = err.to_heap(Machine())
+
+        # Should build dict structure
+        assert isinstance(addr, int)
+
+    def test_existence_error_with_empty_dict(self):
+        """ExistenceError with empty PrologDict."""
+        culprit = PrologDict(pairs=())
+        err = ExistenceError("object", culprit)
+        addr = err.to_heap(Machine())
+
+        assert isinstance(addr, int)
+
+
+class TestAdditionalPythonExceptionMappings:
+    """Test additional Python exception mappings."""
+
+    def test_overflow_error_to_evaluation_error(self):
+        """OverflowError maps to evaluation_error(overflow)."""
+        py_exc = OverflowError("too large")
+        prolog_err = python_exception_to_prolog(py_exc)
+
+        assert isinstance(prolog_err, EvaluationError)
+        assert prolog_err.kwargs["error"] == "overflow"
+
+    def test_arithmetic_error_to_evaluation_error(self):
+        """ArithmeticError maps to evaluation_error(undefined)."""
+        py_exc = ArithmeticError("arithmetic problem")
+        prolog_err = python_exception_to_prolog(py_exc)
+
+        assert isinstance(prolog_err, EvaluationError)
+        assert prolog_err.kwargs["error"] == "undefined"
+
+    def test_file_not_found_error_to_existence_error(self):
+        """FileNotFoundError maps to existence_error(file, ...)."""
+        py_exc = FileNotFoundError("No such file")
+        py_exc.filename = "/path/to/file.txt"
+        prolog_err = python_exception_to_prolog(py_exc)
+
+        assert isinstance(prolog_err, ExistenceError)
+        assert prolog_err.kwargs["obj_type"] == "file"
+        assert prolog_err.kwargs["culprit"].name == "/path/to/file.txt"
+
+    def test_file_not_found_error_without_filename(self):
+        """FileNotFoundError without filename uses message."""
+        py_exc = FileNotFoundError("file not found")
+        prolog_err = python_exception_to_prolog(py_exc)
+
+        assert isinstance(prolog_err, ExistenceError)
+        assert prolog_err.kwargs["obj_type"] == "file"
+
+    def test_os_error_to_system_error(self):
+        """OSError maps to system_error."""
+        py_exc = OSError("permission denied")
+        prolog_err = python_exception_to_prolog(py_exc)
+
+        assert isinstance(prolog_err, SystemError)
+        assert "permission denied" in prolog_err.message
+
+    def test_long_message_truncation(self):
+        """Very long exception messages are truncated."""
+        long_message = "x" * 300
+        py_exc = RuntimeError(long_message)
+        prolog_err = python_exception_to_prolog(py_exc)
+
+        assert isinstance(prolog_err, SystemError)
+        assert len(prolog_err.message) <= 200
+        assert prolog_err.message.endswith("...")
