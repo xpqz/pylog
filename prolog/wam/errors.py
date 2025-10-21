@@ -60,9 +60,9 @@ def _term_to_heap(machine, term: Term) -> int:
         # Create structure with functor
         arity = len(term.args)
         addr = new_str(machine, term.functor, arity)
-        # Convert arguments to heap and add them sequentially
-        arg_addrs = [_term_to_heap(machine, arg) for arg in term.args]
-        note_struct_args(machine, *arg_addrs)
+        # Convert arguments to heap - they're allocated sequentially in place
+        for arg in term.args:
+            _term_to_heap(machine, arg)
         return addr
     elif isinstance(term, List):
         # Convert Prolog list to heap list cells
@@ -89,15 +89,17 @@ def _term_to_heap(machine, term: Term) -> int:
         # Format: dict(Key1-Value1, Key2-Value2, ...)
         pair_addrs = []
         for key, value in term.pairs:
-            key_addr = _term_to_heap(machine, key)
-            value_addr = _term_to_heap(machine, value)
+            # Allocate key and value on heap (sequentially in place)
+            _term_to_heap(machine, key)
+            _term_to_heap(machine, value)
             # Create pair as -(Key, Value) structure
             pair_addr = new_str(machine, "-", 2)
-            note_struct_args(machine, key_addr, value_addr)
+            # Key and value already allocated at correct positions
             pair_addrs.append(pair_addr)
 
         # Create dict structure
         addr = new_str(machine, "dict", len(pair_addrs))
+        # Add REFs to pair structures (they're not contiguous)
         note_struct_args(machine, *pair_addrs)
         return addr
     else:

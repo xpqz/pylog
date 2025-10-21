@@ -324,6 +324,23 @@ class TestUnificationWithOccursCheck:
 class TestOccursCheckEdgeCases:
     """Test edge cases and complex scenarios."""
 
+    def test_occurs_check_with_uninitialized_structure(self):
+        """Occurs-check handles structures with uninitialized arguments gracefully."""
+        machine = Machine()
+        machine.occurs_check_enabled = True
+
+        x_addr = new_ref(machine)
+
+        # Build f/2 structure but don't initialize arguments yet
+        # This simulates get_structure in write mode with occurs-check enabled
+        f_addr = new_str(machine, "f", 2)
+        # At this point, functor_addr+1 and functor_addr+2 don't exist yet
+
+        # Occurs-check should handle missing arguments without IndexError
+        result = occurs(machine, x_addr, f_addr)
+        # X doesn't occur in the uninitialized structure
+        assert result is False
+
     def test_occurs_with_multiple_args_structure(self):
         """occurs() checks all arguments in multi-arg structure."""
         machine = Machine()

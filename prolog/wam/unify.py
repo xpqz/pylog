@@ -254,13 +254,17 @@ def occurs(machine, var_addr: int, term_addr: int) -> bool:
     while stack:
         addr = stack.pop()
 
+        # Skip addresses beyond current heap (uninitialized structure arguments)
+        if addr >= len(machine.heap):
+            continue
+
+        # Deref current address
+        addr = deref(machine, addr)
+
         # Skip already-visited addresses (prevent loops)
         if addr in visited:
             continue
         visited.add(addr)
-
-        # Deref current address
-        addr = deref(machine, addr)
 
         # Check if we've reached the variable
         if addr == var_root:
@@ -279,13 +283,20 @@ def occurs(machine, var_addr: int, term_addr: int) -> bool:
         elif tag == 1:  # TAG_STR
             # Structure: read arity from functor cell and push args
             functor_addr = cell[1]
+
+            # Guard against functor beyond heap bounds
+            if functor_addr >= len(machine.heap):
+                continue
+
             functor_cell = machine.heap[functor_addr]
             # functor_cell format: (TAG_CON, (name, arity))
             name, arity = functor_cell[1]
 
             # Push argument cells (functor_addr + 1 through functor_addr + arity)
+            # Note: arguments may not exist yet if structure is being built
             for i in range(arity):
                 arg_addr = functor_addr + 1 + i
+                # Will be filtered by heap bounds check at top of loop
                 stack.append(arg_addr)
 
         elif tag == 3:  # TAG_LIST
