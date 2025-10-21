@@ -900,7 +900,12 @@ class Machine:
             self.P += 1
         elif opcode == OP_THROW:
             # throw/1: uses ball in X[0]
-            instr_throw(self)
+            try:
+                instr_throw(self)
+            except UnhandledPrologException:
+                # No exception frame to catch - halt
+                self.halted = True
+                return False
         elif opcode == OP_CALL_BUILTIN:
             # call_builtin Symbol
             (symbol,) = args
