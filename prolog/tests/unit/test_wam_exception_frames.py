@@ -7,6 +7,7 @@ Tests exception frame management for catch/3 support:
 - State snapshot capture
 """
 
+from prolog.wam.heap import new_ref
 from prolog.wam.machine import (
     ExceptionFrame,
     Machine,
@@ -86,7 +87,9 @@ class TestExceptionFrameStack:
         machine.CP = 42
         machine.E = 100
         machine.B = 50
-        machine.H = 75
+        # Pre-allocate heap to H=75
+        for _ in range(75):
+            new_ref(machine)
         machine.TR = 5
         machine.HB = 70
 
@@ -112,14 +115,18 @@ class TestExceptionFrameStack:
         """Multiple pushes create frame chain."""
 
         machine = Machine()
-        machine.CP, machine.E, machine.H = 10, 50, 25
+        machine.CP, machine.E = 10, 50
+        for _ in range(25):
+            new_ref(machine)
 
         # Push first frame
         push_exception_frame(machine, ball_pattern=10, handler_label=100)
         assert machine.EF == 0
 
         # Change state and push second frame
-        machine.CP, machine.E, machine.H = 20, 60, 30
+        machine.CP, machine.E = 20, 60
+        for _ in range(5):
+            new_ref(machine)
         push_exception_frame(machine, ball_pattern=20, handler_label=200)
         assert machine.EF == 1
 
@@ -202,12 +209,14 @@ class TestExceptionFrameChaining:
         machine = Machine()
 
         # Outer catch
-        machine.H = 10
+        for _ in range(10):
+            new_ref(machine)
         push_exception_frame(machine, ball_pattern=5, handler_label=100)
         outer_ef = machine.EF
 
         # Inner catch (nested)
-        machine.H = 20
+        for _ in range(10):
+            new_ref(machine)
         push_exception_frame(machine, ball_pattern=15, handler_label=200)
         inner_ef = machine.EF
 
@@ -234,7 +243,8 @@ class TestExceptionFrameStateSnapshot:
         machine.CP = 2
         machine.E = 3
         machine.B = 4
-        machine.H = 5
+        for _ in range(5):
+            new_ref(machine)
         machine.TR = 6
         machine.HB = 7
 
@@ -253,18 +263,21 @@ class TestExceptionFrameStateSnapshot:
         """Frame snapshot is independent of later machine state changes."""
 
         machine = Machine()
-        machine.H = 10
+        for _ in range(10):
+            new_ref(machine)
         machine.TR = 5
 
         push_exception_frame(machine, 20, 200)
+        saved_H = 10
 
         # Modify machine state after push
-        machine.H = 50
+        for _ in range(40):
+            new_ref(machine)
         machine.TR = 25
 
         # Frame still has old values
         frame = machine.exception_frames[0]
-        assert frame.H == 10
+        assert frame.H == saved_H
         assert frame.TR == 5
 
 
