@@ -23,6 +23,7 @@ Example builtin handler:
 
 from __future__ import annotations
 
+from prolog.wam.builtins_type import register_type_builtins
 from prolog.wam.errors import python_exception_to_prolog
 
 __all__ = [
@@ -35,6 +36,9 @@ __all__ = [
 # Builtin registry: maps "module:name/arity" to handler function
 # Handler signature: (machine) -> bool
 WAM_BUILTINS: dict[str, callable] = {}
+
+# Register type checking builtins
+register_type_builtins(WAM_BUILTINS)
 
 
 def register_builtin(symbol: str, handler: callable) -> None:
