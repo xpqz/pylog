@@ -18,6 +18,9 @@ from typing import Dict, List, Optional, Tuple, Union
 
 from .instructions import (
     OP_CALL,
+    OP_CALL_BUILTIN,
+    OP_CATCH_CLEANUP,
+    OP_CATCH_SETUP,
     OP_EXECUTE,
     OP_GET_CONSTANT,
     OP_GET_STRUCTURE,
@@ -27,6 +30,7 @@ from .instructions import (
     OP_PUT_STRUCTURE,
     OP_PUT_VALUE,
     OP_PUT_VARIABLE,
+    OP_THROW,
     OP_UNIFY_CONSTANT,
     OP_UNIFY_VALUE,
     OP_UNIFY_VARIABLE,
@@ -180,6 +184,35 @@ def _validate_instruction_operands(instr: tuple, pc: int) -> None:
             raise BytecodeLoadError(
                 "call target must be a string", code="BAD_CALL_TARGET", pc=pc
             )
+    elif opcode == OP_CALL_BUILTIN:
+        _, symbol = instr
+        if not isinstance(symbol, str):
+            raise BytecodeLoadError(
+                "call_builtin symbol must be a string",
+                code="BAD_BUILTIN_SYMBOL",
+                pc=pc,
+            )
+    elif opcode == OP_CATCH_SETUP:
+        # catch_setup Handler_Label, Ball_Pattern_Addr
+        _, handler, pattern = instr
+        if not isinstance(handler, int) or not isinstance(pattern, int):
+            raise BytecodeLoadError(
+                "catch_setup expects integer handler label and pattern address",
+                code="BAD_CATCH_SETUP_OPERANDS",
+                pc=pc,
+            )
+        if handler < 0 or pattern < 0:
+            raise BytecodeLoadError(
+                "catch_setup operands must be non-negative",
+                code="BAD_CATCH_SETUP_OPERANDS",
+                pc=pc,
+            )
+    elif opcode == OP_CATCH_CLEANUP:
+        # No operands beyond arity check
+        pass
+    elif opcode == OP_THROW:
+        # No operands; ball is in X[0]
+        pass
     else:
         # Remaining opcodes either have no extra operand checks here or are validated by arity
         pass

@@ -41,6 +41,7 @@ from prolog.wam.heap import is_ref, is_str, new_con, new_ref, new_str
 from prolog.wam.instructions import (
     OP_ALLOCATE,
     OP_CALL,
+    OP_CALL_BUILTIN,
     OP_CATCH_CLEANUP,
     OP_CATCH_SETUP,
     OP_CUT,
@@ -62,9 +63,12 @@ from prolog.wam.instructions import (
     OP_PUT_VARIABLE,
     OP_RETRY_ME_ELSE,
     OP_SET_X,
+    OP_THROW,
     OP_TRUST_ME,
     OP_TRY_ME_ELSE,
 )
+from prolog.wam.builtins import dispatch_builtin
+from prolog.wam.errors import PrologError
 from prolog.wam.unify import bind, deref, unify, untrail
 
 
@@ -894,6 +898,54 @@ class Machine:
 
             # Advance P to next instruction
             self.P += 1
+        elif opcode == OP_THROW:
+            # throw/1: uses ball in X[0]
+            try:
+                instr_throw(self)
+            except UnhandledPrologException:
+                # No exception frame to catch - halt
+                self.halted = True
+                return False
+        elif opcode == OP_CALL_BUILTIN:
+            # call_builtin Symbol
+            (symbol,) = args
+
+            # Dispatch to builtin
+            try:
+                # Call builtin handler
+                success = dispatch_builtin(self, symbol)
+
+                if success:
+                    # Builtin succeeded: continue to next instruction
+                    self.P += 1
+                else:
+                    # Builtin failed: backtrack (no choicepoint = halt)
+                    # TODO: When full backtracking is implemented, replace halt
+                    # with proper failure/backtracking instead of immediate halt
+                    self.halted = True
+                    return False
+
+            except PrologError as e:
+                # Builtin raised error: convert to error term and throw
+                # Get error term on heap
+                error_addr = e.to_heap(self)
+
+                # Put error term in X[0] for throw protocol
+                self.X = [error_addr]
+
+                # Execute throw/1 protocol
+                try:
+                    instr_throw(self)
+                except UnhandledPrologException:
+                    # No exception frame to catch - halt
+                    self.halted = True
+                    return False
+
+            except RuntimeError:
+                # Undefined builtin or other runtime error
+                # Halt machine with error
+                self.halted = True
+                return False
         else:
             # Unknown opcode - halt with error
             self.halted = True
