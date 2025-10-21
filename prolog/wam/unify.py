@@ -25,6 +25,7 @@ __all__ = [
     "trail_if_needed",
     "untrail",
     "unify",
+    "occurs",
 ]
 
 
@@ -91,8 +92,8 @@ def trail_if_needed(machine, addr: int) -> None:
         machine.TR += 1
 
 
-def bind(machine, ref_addr: int, value_addr: int) -> None:
-    """Bind REF cell to another cell with trailing.
+def bind(machine, ref_addr: int, value_addr: int) -> bool:
+    """Bind REF cell to another cell with trailing and optional occurs-check.
 
     Binds a reference variable to a value. Both addresses are dereferenced
     first. If they resolve to the same cell, binding is a no-op.
@@ -103,25 +104,39 @@ def bind(machine, ref_addr: int, value_addr: int) -> None:
 
     Trailing occurs if the bound address is below HB (addr < HB).
 
+    If machine.occurs_check_enabled is True, performs occurs-check before
+    binding to detect cycles. Returns False if cycle detected.
+
     Args:
-        machine: Machine instance with heap, trail, TR, HB
+        machine: Machine instance with heap, trail, TR, HB, occurs_check_enabled
         ref_addr: Address of REF cell to bind (will be dereferenced)
         value_addr: Address of value to bind to (will be dereferenced)
+
+    Returns:
+        True if binding succeeds, False if occurs-check fails
 
     Example:
         # Bind unbound variable to constant
         # heap[0] = (REF, 0)  # Unbound
         # heap[1] = (CON, 42)
-        bind(m, 0, 1)
+        bind(m, 0, 1)  # True
         # Result: heap[0] = (REF, 1)
+
+        # Occurs-check failure
+        # heap[0] = (REF, 0)  # X
+        # heap[1] = (STR, 2)  # f(X)
+        # heap[2] = (CON, ("f", 1))
+        # heap[3] = (REF, 0)  # X argument
+        m.occurs_check_enabled = True
+        bind(m, 0, 1)  # False - cycle detected
     """
     # Deref both addresses
     ref_addr = deref(machine, ref_addr)
     value_addr = deref(machine, value_addr)
 
-    # Already bound to same cell: no-op
+    # Already bound to same cell: no-op (success)
     if ref_addr == value_addr:
-        return
+        return True
 
     # Ensure ref_addr points to a REF cell
     # If both are REFs, prefer binding newer to older
@@ -138,17 +153,24 @@ def bind(machine, ref_addr: int, value_addr: int) -> None:
             # with at least one unbound variable. We treat it as a silent no-op
             # to avoid crashing on degenerate inputs, but proper usage should
             # check types before calling bind().
-            return
+            return True
     elif value_cell[0] == TAG_REF:
         # Both are REFs: prefer binding newer to older (ref_addr > value_addr)
         if ref_addr < value_addr:
             ref_addr, value_addr = value_addr, ref_addr
+
+    # Occurs-check if enabled
+    if machine.occurs_check_enabled:
+        if occurs(machine, ref_addr, value_addr):
+            # Cycle detected: fail without binding
+            return False
 
     # Trail if binding old variable (below HB)
     trail_if_needed(machine, ref_addr)
 
     # Perform binding: make ref_addr point to value_addr
     machine.heap[ref_addr] = make_ref(value_addr)
+    return True
 
 
 def untrail(machine, target_TR: int) -> None:
@@ -176,6 +198,120 @@ def untrail(machine, target_TR: int) -> None:
 
         # Restore to self-referential REF (unbound)
         machine.heap[addr] = make_ref(addr)
+
+
+def occurs(machine, var_addr: int, term_addr: int) -> bool:
+    """Check if variable occurs in term (occurs-check for cycle detection).
+
+    Performs iterative occurs-check using explicit stack and visited set.
+    Detects cycles where var_addr would appear inside term_addr after binding.
+
+    Args:
+        machine: Machine instance with heap
+        var_addr: Heap address of variable to check (dereferenced REF root)
+        term_addr: Heap address of term to search (will be dereferenced)
+
+    Returns:
+        True if var_addr occurs in term_addr, False otherwise
+
+    Examples:
+        # X occurs in f(X)
+        x_addr = new_ref(m)
+        f_addr = new_str(m, "f", 1)
+        note_struct_args(m, x_addr)
+        occurs(m, x_addr, f_addr)  # True - cycle detected
+
+        # X does not occur in f(a)
+        x_addr = new_ref(m)
+        f_addr = new_str(m, "f", 1)
+        a_addr = new_con(m, "a")
+        note_struct_args(m, a_addr)
+        occurs(m, x_addr, f_addr)  # False - no cycle
+
+    Algorithm:
+        1. Deref both addresses
+        2. If var_addr == term_addr: return True (immediate cycle)
+        3. Use explicit stack to traverse term structure
+        4. Track visited addresses to prevent infinite loops
+        5. For each cell type:
+           - REF: Compare root addresses
+           - STR: Read arity from functor, push argument cells
+           - LIST: Push head and tail cells
+           - CON: Return False (constants don't contain variables)
+    """
+    # Deref both addresses to roots
+    var_root = deref(machine, var_addr)
+    term_root = deref(machine, term_addr)
+
+    # Immediate cycle: variable occurs directly
+    if var_root == term_root:
+        return True
+
+    # Explicit stack for iterative traversal
+    stack = [term_root]
+    visited = set()
+
+    while stack:
+        addr = stack.pop()
+
+        # Skip addresses beyond current heap (uninitialized structure arguments)
+        if addr >= len(machine.heap):
+            continue
+
+        # Deref current address
+        addr = deref(machine, addr)
+
+        # Skip already-visited addresses (prevent loops)
+        if addr in visited:
+            continue
+        visited.add(addr)
+
+        # Check if we've reached the variable
+        if addr == var_root:
+            return True
+
+        # Examine cell type and push subterms
+        cell = machine.heap[addr]
+        tag = cell[0]
+
+        if tag == TAG_REF:
+            # REF: Already dereferenced, check root
+            # (Covered by deref above, but be explicit)
+            if addr == var_root:
+                return True
+
+        elif tag == 1:  # TAG_STR
+            # Structure: read arity from functor cell and push args
+            functor_addr = cell[1]
+
+            # Guard against functor beyond heap bounds
+            if functor_addr >= len(machine.heap):
+                continue
+
+            functor_cell = machine.heap[functor_addr]
+            # functor_cell format: (TAG_CON, (name, arity))
+            name, arity = functor_cell[1]
+
+            # Push argument cells (functor_addr + 1 through functor_addr + arity)
+            # Note: arguments may not exist yet if structure is being built
+            for i in range(arity):
+                arg_addr = functor_addr + 1 + i
+                # Will be filtered by heap bounds check at top of loop
+                stack.append(arg_addr)
+
+        elif tag == 3:  # TAG_LIST
+            # List: push head and tail
+            head_addr = cell[1]
+            tail_addr = cell[2]
+            stack.append(head_addr)
+            stack.append(tail_addr)
+
+        elif tag == 2:  # TAG_CON
+            # Constant: no subterms, cannot contain variable
+            continue
+
+    # Variable not found in term
+    return False
 
 
 def unify(machine, addr_a: int, addr_b: int) -> bool:
@@ -250,7 +386,9 @@ def unify(machine, addr_a: int, addr_b: int) -> bool:
 
         # At least one is REF: bind them
         if is_ref(cell_u) or is_ref(cell_v):
-            bind(machine, u, v)
+            if not bind(machine, u, v):
+                # Binding failed (occurs-check)
+                return False
             continue
 
         # Both CON: must be equal
