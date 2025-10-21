@@ -41,6 +41,8 @@ from prolog.wam.heap import is_ref, is_str, new_con, new_ref, new_str
 from prolog.wam.instructions import (
     OP_ALLOCATE,
     OP_CALL,
+    OP_CATCH_CLEANUP,
+    OP_CATCH_SETUP,
     OP_CUT,
     OP_DEALLOCATE,
     OP_DBG_SNAP,
@@ -866,6 +868,23 @@ class Machine:
 
             # Advance P to next instruction
             self.P += 1
+        elif opcode == OP_CATCH_SETUP:
+            # catch_setup Handler_Label, Ball_Pattern_Addr
+            handler_label, ball_pattern_addr = args
+
+            # Push exception frame
+            push_exception_frame(self, ball_pattern_addr, handler_label)
+
+            # Advance P to next instruction
+            self.P += 1
+        elif opcode == OP_CATCH_CLEANUP:
+            # catch_cleanup (no arguments)
+
+            # Pop exception frame
+            pop_exception_frame(self)
+
+            # Advance P to next instruction
+            self.P += 1
         else:
             # Unknown opcode - halt with error
             self.halted = True
@@ -1010,3 +1029,42 @@ def instr_throw(machine) -> None:
 
     # No matching frame found - raise UnhandledPrologException
     raise UnhandledPrologException(ball_addr)
+
+
+def instr_catch_setup(machine, handler_label: int, ball_pattern_addr: int) -> None:
+    """Execute catch_setup instruction - push exception frame for catch/3.
+
+    Sets up exception frame with:
+    - handler_label: Code address to jump to if exception matches
+    - ball_pattern_addr: Heap address of pattern to unify with thrown ball
+
+    Args:
+        machine: WAM machine
+        handler_label: Code address of exception handler
+        ball_pattern_addr: Heap address of catch pattern term
+
+    Side effects:
+        - Pushes new exception frame onto stack
+        - Updates EF to point to new frame
+        - Advances P to next instruction
+    """
+    push_exception_frame(machine, ball_pattern_addr, handler_label)
+    machine.P += 1
+
+
+def instr_catch_cleanup(machine) -> None:
+    """Execute catch_cleanup instruction - pop exception frame on normal exit.
+
+    Called when catch/3 Goal completes successfully without throwing.
+    Pops the exception frame that was pushed by catch_setup.
+
+    Args:
+        machine: WAM machine
+
+    Side effects:
+        - Pops exception frame from stack
+        - Updates EF to previous frame
+        - Advances P to next instruction
+    """
+    pop_exception_frame(machine)
+    machine.P += 1
