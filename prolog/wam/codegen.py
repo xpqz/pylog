@@ -298,6 +298,24 @@ def compile_disjunction(branches, register_map, is_last_goal, module, seen_vars)
     2. Passes seen_vars through to preserve bindings (Bug #2)
     3. Uses compile_put_term for structured arguments (Bug #3)
 
+    KNOWN LIMITATION (requires follow-up):
+        Continuation after disjunction is compiled ONCE with shared seen_vars.
+        This can cause incorrect put_variable emission that overwrites bindings.
+
+        Example: (true ; p(X)), q(X)
+            - Branch 1 (true): doesn't bind X
+            - Branch 2 (p(X)): binds X
+            - Continuation q(X) compiled once → emits put_variable
+            - BUG: Overwrites X binding from branch 2!
+
+        Proper fix requires per-branch continuation compilation:
+            Each branch should compile its goal AND the continuation with
+            its own seen_vars, so q(X) uses put_variable in branch 1 but
+            put_value in branch 2.
+
+        TODO: Refactor compile_body to pass continuation goals to
+        compile_disjunction for per-branch compilation.
+
     Args:
         branches: List of branch goal terms (already flattened)
         register_map: dict mapping var_id -> ("X"|"Y", index)
