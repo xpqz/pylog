@@ -16,8 +16,8 @@ before performing the comparison.
 from __future__ import annotations
 
 from prolog.wam.arithmetic import eval_arithmetic
-from prolog.wam.heap import new_con
-from prolog.wam.unify import unify
+from prolog.wam.heap import TAG_CON, new_con
+from prolog.wam.unify import deref, unify
 
 __all__ = [
     "builtin_is",
@@ -53,6 +53,10 @@ def builtin_is(machine) -> bool:
         ?- 6 is 2 + 3.          % fails
         ?- X is Y.              % instantiation_error
         ?- X is 5 // 0.         % evaluation_error(zero_divisor)
+
+    Implementation note:
+        To avoid heap allocation on failure, checks if LHS is already bound
+        to a constant and compares directly before allocating new heap cell.
     """
     # Get arguments
     lhs_addr = machine.X[0]
@@ -61,10 +65,18 @@ def builtin_is(machine) -> bool:
     # Evaluate RHS expression
     result = eval_arithmetic(rhs_addr, machine)
 
-    # Allocate result on heap
-    result_addr = new_con(machine, result)
+    # Dereference LHS to check if it's already bound
+    lhs_deref = deref(machine, lhs_addr)
+    lhs_cell = machine.heap[lhs_deref]
 
-    # Unify LHS with result
+    # If LHS is already bound to a constant, compare directly
+    # This avoids allocating a heap cell when unification will fail
+    if lhs_cell[0] == TAG_CON:
+        # Direct comparison - no heap allocation
+        return lhs_cell[1] == result
+
+    # LHS is unbound or non-constant - allocate result and unify
+    result_addr = new_con(machine, result)
     return unify(machine, lhs_addr, result_addr)
 
 

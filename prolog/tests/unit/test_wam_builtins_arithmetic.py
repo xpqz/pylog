@@ -87,6 +87,32 @@ class TestIsBuiltin:
         result = builtin_is(machine)
         assert result is False
 
+    def test_is_failure_doesnt_allocate_heap(self):
+        """Repeated failures of 6 is 2 + 3 don't leak heap cells."""
+        machine = init_machine_with_registers()
+
+        # Build expression once: 2 + 3
+        expr_addr = new_str(machine, "+", 2)
+        new_con(machine, 2)
+        new_con(machine, 3)
+
+        # Build constant 6
+        six_addr = new_con(machine, 6)
+
+        # Record initial heap size
+        initial_heap_size = len(machine.heap)
+
+        # Call is/2 multiple times with bound LHS
+        # Should fail each time without allocating heap cells
+        for _ in range(100):
+            machine.X[0] = six_addr
+            machine.X[1] = expr_addr
+            result = builtin_is(machine)
+            assert result is False
+
+        # Heap should not have grown
+        assert len(machine.heap) == initial_heap_size
+
     def test_is_with_unbound_variable_raises(self):
         """X is Y → instantiation_error."""
         machine = init_machine_with_registers()
