@@ -23,10 +23,33 @@ from prolog.wam.instructions import (
     OP_CALL,
     OP_EXECUTE,
     OP_PROCEED,
+    OP_TRY_ME_ELSE,
+    OP_RETRY_ME_ELSE,
+    OP_TRUST_ME,
 )
 from prolog.wam.liveness import extract_vars
 
-__all__ = ["compile_head", "build_list_struct", "compile_body", "finalize_clause"]
+__all__ = [
+    "compile_head",
+    "build_list_struct",
+    "compile_body",
+    "compile_disjunction",
+    "finalize_clause",
+]
+
+# Global counter for generating unique labels
+_label_counter = 0
+
+
+def _gen_label():
+    """Generate unique label for choicepoint branches.
+
+    Returns:
+        Unique label string (e.g., "L1", "L2", ...)
+    """
+    global _label_counter
+    _label_counter += 1
+    return f"L{_label_counter}"
 
 
 def _get_constant_value(term):
@@ -219,6 +242,142 @@ def compile_head(clause, register_map, perm_count):
                 instructions.append((OP_GET_STRUCTURE, (".", 2), aj_idx))
                 compile_unify_term(list_struct.args[0])  # First item
                 compile_unify_term(list_struct.args[1])  # Nested tail
+
+    return instructions
+
+
+def compile_disjunction(branches, register_map, is_last_goal, module="user"):
+    """Compile disjunction (;/2) into choicepoint instruction sequence.
+
+    Implements the WAM choicepoint pattern for disjunction:
+    - try_me_else for first N-1 branches
+    - retry_me_else between middle branches
+    - trust_me before final branch
+    - Each branch gets a label for backtracking
+
+    Args:
+        branches: List of goal terms (AST nodes) representing disjunction branches
+        register_map: dict mapping var_id -> ("X"|"Y", index)
+        is_last_goal: Whether this disjunction is the last goal in the clause
+        module: Current module context (default "user")
+
+    Returns:
+        List of instruction tuples including choicepoint instructions and labels
+
+    Example:
+        (a ; b ; c) compiles to:
+            try_me_else L1
+            <code for a>
+            retry_me_else L2
+        L1:
+            <code for b>
+            trust_me
+        L2:
+            <code for c>
+
+    Notes:
+        - Single branch: compiles without choicepoint overhead
+        - Labels generated using _gen_label() for uniqueness
+        - Each branch compiled as if it were a standalone goal
+        - Uses execute for last goal (LCO), call otherwise
+    """
+    instructions = []
+
+    # Edge case: single branch (not really a disjunction)
+    if len(branches) == 1:
+        # Just compile the goal without choicepoint overhead
+        goal = branches[0]
+        goal_instrs = _compile_single_goal(
+            goal, register_map, is_last_goal, module, set()
+        )
+        return goal_instrs
+
+    # Multiple branches: generate choicepoint sequence
+    num_branches = len(branches)
+
+    # Generate labels: one for each branch after the first
+    branch_labels = [_gen_label() for _ in range(num_branches - 1)]
+
+    for i, branch in enumerate(branches):
+        # Before each branch (except first), place label
+        if i > 0:
+            instructions.append(("LABEL", branch_labels[i - 1]))
+
+        # Emit choicepoint instruction before branch code
+        if i == 0:
+            # First branch: try_me_else to next branch
+            instructions.append((OP_TRY_ME_ELSE, branch_labels[0]))
+        elif i < num_branches - 1:
+            # Middle branches: retry_me_else to next branch
+            instructions.append((OP_RETRY_ME_ELSE, branch_labels[i]))
+        else:
+            # Last branch: trust_me (no label arg)
+            instructions.append((OP_TRUST_ME,))
+
+        # Compile the branch goal
+        branch_instrs = _compile_single_goal(
+            branch, register_map, is_last_goal, module, set()
+        )
+        instructions.extend(branch_instrs)
+
+    return instructions
+
+
+def _compile_single_goal(goal, register_map, is_last, module, seen_vars):
+    """Compile a single goal term into put/call or put/execute sequence.
+
+    Args:
+        goal: AST term representing the goal
+        register_map: dict mapping var_id -> ("X"|"Y", index)
+        is_last: Whether this is the last goal (for LCO)
+        module: Module context for unqualified goals
+        seen_vars: Set of var_ids already seen (for first/subsequent occurrence)
+
+    Returns:
+        List of instruction tuples
+    """
+    instructions = []
+
+    # Handle module qualification
+    if isinstance(goal, Struct) and goal.functor == ":" and len(goal.args) == 2:
+        module_term, actual_goal = goal.args
+        if isinstance(module_term, Atom):
+            call_module = module_term.name
+            goal = actual_goal
+        else:
+            call_module = module
+    else:
+        call_module = module
+
+    # Compile based on goal type
+    if isinstance(goal, Atom):
+        # 0-arity predicate
+        target = f"{call_module}:{goal.name}/0"
+        if is_last:
+            instructions.append((OP_EXECUTE, target))
+        else:
+            instructions.append((OP_CALL, target))
+
+    elif isinstance(goal, Struct):
+        # N-arity predicate: emit put instructions for arguments
+        # (We need a helper to compile arguments - for now, simplified)
+        for aj_idx, arg in enumerate(goal.args):
+            if isinstance(arg, Var):
+                reg = register_map.get(arg.id, ("X", 0))  # Default to X0 if not in map
+                if arg.id in seen_vars:
+                    instructions.append((OP_PUT_VALUE, reg, aj_idx))
+                else:
+                    instructions.append((OP_PUT_VARIABLE, reg, aj_idx))
+                    seen_vars.add(arg.id)
+            elif isinstance(arg, (Atom, Int, Float)):
+                instructions.append((OP_PUT_CONSTANT, _get_constant_value(arg), aj_idx))
+            # TODO: Handle Struct and List arguments
+
+        target = f"{call_module}:{goal.functor}/{len(goal.args)}"
+        if is_last:
+            instructions.append((OP_EXECUTE, target))
+        else:
+            instructions.append((OP_CALL, target))
 
     return instructions
 
