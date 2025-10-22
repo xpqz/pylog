@@ -2,7 +2,9 @@
 
 import pytest
 
+from prolog.ast.terms import Int
 from prolog.wam.builtins import WAM_BUILTINS
+from prolog.wam.builtins_meta import builtin_call
 from prolog.wam.errors import InstantiationError, TypeError
 from prolog.wam.heap import new_con, new_ref, new_str
 from prolog.wam.instructions import OP_CALL_BUILTIN, OP_HALT, OP_PROCEED
@@ -184,6 +186,45 @@ class TestCallBuiltin:
     def test_call_builtin_registered(self):
         """call/1 is registered in WAM_BUILTINS."""
         assert "system:call/1" in WAM_BUILTINS
+
+    def test_type_error_serializes_to_heap(self):
+        """TypeError with AST term can be serialized to heap for throw/1.
+
+        This test locks in the fix for the serialization bug where TypeError
+        was being raised with heap addresses instead of AST terms, causing
+        crashes when to_heap() tried to serialize them.
+        """
+        machine = Machine()
+
+        # Create integer goal
+        int_addr = new_con(machine, 123)
+        machine.X = [int_addr]
+
+        # Call builtin_call directly and catch TypeError
+        try:
+            builtin_call(machine)
+            assert False, "Should have raised TypeError"
+        except TypeError as e:
+            # Verify TypeError has proper AST term as culprit
+            assert "culprit" in e.kwargs
+            culprit = e.kwargs["culprit"]
+
+            # Verify it's an AST Int, not a heap address integer
+            assert isinstance(culprit, Int)
+            assert culprit.value == 123
+
+            # Most importantly: verify it can be serialized to heap
+            # This is what would crash before the fix
+            error_addr = e.to_heap(machine)
+
+            # Verify we got a valid heap address
+            assert isinstance(error_addr, int)
+            assert 0 <= error_addr < len(machine.heap)
+
+            # The error term should be type_error(callable, 123)
+            # We don't need to parse it fully, just verify serialization worked
+            error_cell = machine.heap[error_addr]
+            assert error_cell[0] in (1, 2)  # STR or CON tag
 
 
 class TestCallIntegration:
