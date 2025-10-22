@@ -28,26 +28,6 @@ def build_const_binary_op(machine, op: str, left_val, right_val) -> int:
     return struct_addr
 
 
-def build_binary_op(machine, op: str, left_addr, right_addr) -> int:
-    """Build binary operation with existing operands.
-
-    Args:
-        machine: Machine instance
-        op: Operator name ("+", "-", etc.)
-        left_addr: Left operand address (already on heap)
-        right_addr: Right operand address (already on heap)
-
-    Returns:
-        Address of structure
-    """
-    # Create structure first (STR + functor cells)
-    struct_addr = new_str(machine, op, 2)
-    # Copy the operand cells to argument positions
-    machine.heap.append(machine.heap[left_addr])
-    machine.heap.append(machine.heap[right_addr])
-    return struct_addr
-
-
 def build_const_unary_op(machine, op: str, arg_val) -> int:
     """Build unary operation with constant operand.
 
