@@ -9,6 +9,7 @@ goals as data that can be manipulated and invoked dynamically.
 
 from __future__ import annotations
 
+from prolog.ast.terms import Atom, Int
 from prolog.wam.errors import InstantiationError, TypeError
 from prolog.wam.heap import TAG_CON, TAG_STR, is_ref
 from prolog.wam.unify import deref
@@ -67,7 +68,14 @@ def builtin_call(machine) -> bool:
 
         # Validate callable type
         if not isinstance(functor, str):
-            raise TypeError("callable", goal_addr)
+            # Convert non-callable to AST term for error
+            if isinstance(functor, int):
+                culprit = Int(functor)
+            elif isinstance(functor, bool):
+                culprit = Atom(str(functor).lower())
+            else:
+                culprit = Atom(str(functor))
+            raise TypeError("callable", culprit)
 
         # Build predicate symbol: use "user" as default module
         pred_symbol = f"user:{functor}/0"
@@ -93,17 +101,20 @@ def builtin_call(machine) -> bool:
 
         # Functor cell format: (TAG_CON, (name, arity))
         if functor_cell[0] != TAG_CON:
-            raise TypeError("callable", goal_addr)
+            # Malformed structure - use placeholder term
+            raise TypeError("callable", Atom("?"))
 
         functor_data = functor_cell[1]
         if not isinstance(functor_data, tuple) or len(functor_data) != 2:
-            raise TypeError("callable", goal_addr)
+            # Malformed functor - use placeholder term
+            raise TypeError("callable", Atom("?"))
 
         name, arity = functor_data
 
         # Validate functor name
         if not isinstance(name, str):
-            raise TypeError("callable", goal_addr)
+            # Invalid functor name - use placeholder term
+            raise TypeError("callable", Atom("?"))
 
         # Build predicate symbol
         pred_symbol = f"user:{name}/{arity}"
@@ -130,8 +141,8 @@ def builtin_call(machine) -> bool:
         return True
 
     else:
-        # Invalid goal type (LIST or unknown tag)
-        raise TypeError("callable", goal_addr)
+        # Invalid goal type (LIST or unknown tag) - use placeholder term
+        raise TypeError("callable", Atom("?"))
 
 
 def register_meta_builtins(registry: dict) -> None:

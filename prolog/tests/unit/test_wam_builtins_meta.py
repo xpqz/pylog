@@ -116,6 +116,28 @@ class TestCallBuiltin:
 
         assert exc_info.value.kwargs["expected"] == "callable"
 
+    def test_call_with_integer_via_instruction(self):
+        """call(123) via OP_CALL_BUILTIN properly converts TypeError to throw."""
+        machine = Machine()
+
+        # Set up code that calls call/1 with an integer
+        machine.code = [
+            (OP_CALL_BUILTIN, "system:call/1"),
+            (OP_HALT,),
+        ]
+
+        # Create integer goal
+        int_addr = new_con(machine, 123)
+        machine.X = [int_addr]
+        machine.P = 0
+
+        # Execute - should convert TypeError to PrologError and throw
+        # The exception handling will halt the machine
+        machine.step()
+
+        # Machine should halt due to unhandled exception
+        assert machine.halted is True
+
     def test_call_with_undefined_predicate_fails(self):
         """call(undefined_pred) fails when predicate not registered."""
         machine = Machine()
