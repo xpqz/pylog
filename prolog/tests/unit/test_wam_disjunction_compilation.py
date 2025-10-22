@@ -3,8 +3,9 @@
 Tests the compilation of disjunction (;/2) into choicepoint instruction sequences.
 """
 
+from prolog.ast.clauses import Clause
 from prolog.ast.terms import Atom, Int, Struct, Var
-from prolog.wam.codegen import compile_disjunction
+from prolog.wam.codegen import compile_disjunction, compile_body, _flatten_disjunction
 from prolog.wam.instructions import (
     OP_TRY_ME_ELSE,
     OP_RETRY_ME_ELSE,
@@ -234,3 +235,110 @@ class TestEmptyBranches:
         assert OP_TRY_ME_ELSE not in op_codes
         assert OP_TRUST_ME not in op_codes
         assert OP_EXECUTE in op_codes or OP_CALL in op_codes
+
+
+class TestFlattenDisjunction:
+    """Test the _flatten_disjunction helper function."""
+
+    def test_flatten_non_disjunction(self):
+        """Non-disjunction goal returns single-element list."""
+        goal = Atom("a")
+        result = _flatten_disjunction(goal)
+        assert result == [Atom("a")]
+
+    def test_flatten_simple_disjunction(self):
+        """(a ; b) flattens to [a, b]."""
+        goal = Struct(";", (Atom("a"), Atom("b")))
+        result = _flatten_disjunction(goal)
+        assert len(result) == 2
+        assert result[0] == Atom("a")
+        assert result[1] == Atom("b")
+
+    def test_flatten_nested_disjunction(self):
+        """((a ; b) ; c) flattens to [a, b, c]."""
+        inner = Struct(";", (Atom("a"), Atom("b")))
+        outer = Struct(";", (inner, Atom("c")))
+        result = _flatten_disjunction(outer)
+        assert len(result) == 3
+        assert result[0] == Atom("a")
+        assert result[1] == Atom("b")
+        assert result[2] == Atom("c")
+
+    def test_flatten_deeply_nested(self):
+        """(((a ; b) ; c) ; d) flattens to [a, b, c, d]."""
+        d1 = Struct(";", (Atom("a"), Atom("b")))
+        d2 = Struct(";", (d1, Atom("c")))
+        d3 = Struct(";", (d2, Atom("d")))
+        result = _flatten_disjunction(d3)
+        assert len(result) == 4
+
+
+class TestClauseLevelIntegration:
+    """Test disjunction integration with clause body compilation."""
+
+    def test_disjunction_as_only_goal(self):
+        """Clause with disjunction as only body goal."""
+        # p :- (a ; b).
+        head = Atom("p")
+        body_goal = Struct(";", (Atom("a"), Atom("b")))
+        clause = Clause(head, [body_goal])
+
+        instructions = compile_body(clause, {})
+
+        # Should have choicepoint instructions
+        op_codes = [instr[0] for instr in instructions]
+        assert OP_TRY_ME_ELSE in op_codes
+        assert OP_TRUST_ME in op_codes
+        # Last branch should use execute (LCO)
+        assert OP_EXECUTE in op_codes
+
+    def test_disjunction_in_middle_of_body(self):
+        """Clause with disjunction in middle: p :- q, (a ; b), r."""
+        head = Atom("p")
+        body_goals = [
+            Atom("q"),
+            Struct(";", (Atom("a"), Atom("b"))),
+            Atom("r"),
+        ]
+        clause = Clause(head, body_goals)
+
+        instructions = compile_body(clause, {})
+
+        # Should have call to q, choicepoint for (a;b), then call/execute to r
+        op_codes = [instr[0] for instr in instructions]
+        assert OP_CALL in op_codes  # q and branches use call (not last)
+        assert OP_TRY_ME_ELSE in op_codes
+        assert OP_TRUST_ME in op_codes
+        assert OP_EXECUTE in op_codes  # r uses execute (last goal)
+
+    def test_nested_disjunction_in_clause(self):
+        """Clause with nested disjunction: p :- ((a ; b) ; c)."""
+        head = Atom("p")
+        inner = Struct(";", (Atom("a"), Atom("b")))
+        outer = Struct(";", (inner, Atom("c")))
+        clause = Clause(head, [outer])
+
+        instructions = compile_body(clause, {})
+
+        # Should flatten to 3 branches
+        op_codes = [instr[0] for instr in instructions]
+        assert OP_TRY_ME_ELSE in op_codes
+        assert OP_RETRY_ME_ELSE in op_codes
+        assert OP_TRUST_ME in op_codes
+
+    def test_disjunction_at_start_of_body(self):
+        """Clause: p :- (a ; b), c."""
+        head = Atom("p")
+        body_goals = [
+            Struct(";", (Atom("a"), Atom("b"))),
+            Atom("c"),
+        ]
+        clause = Clause(head, body_goals)
+
+        instructions = compile_body(clause, {})
+
+        # Disjunction branches should use call, final c should use execute
+        op_codes = [instr[0] for instr in instructions]
+        assert OP_TRY_ME_ELSE in op_codes
+        assert OP_CALL in op_codes  # branches use call
+        assert OP_EXECUTE in op_codes  # c uses execute

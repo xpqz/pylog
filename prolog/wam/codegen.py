@@ -382,6 +382,34 @@ def _compile_single_goal(goal, register_map, is_last, module, seen_vars):
     return instructions
 
 
+def _flatten_disjunction(goal):
+    """Flatten nested disjunction into list of branches.
+
+    Recursively flattens nested ;/2 structures into a flat list of branches.
+    Non-disjunction goals return single-element list.
+
+    Args:
+        goal: AST term, potentially a Struct(";", (left, right))
+
+    Returns:
+        List of branch goals (flattened)
+
+    Examples:
+        _flatten_disjunction(Atom("a")) → [Atom("a")]
+        _flatten_disjunction(Struct(";", (a, b))) → [a, b]
+        _flatten_disjunction(Struct(";", (Struct(";", (a, b)), c))) → [a, b, c]
+    """
+    if isinstance(goal, Struct) and goal.functor == ";" and len(goal.args) == 2:
+        left, right = goal.args
+        # Recursively flatten both sides
+        left_branches = _flatten_disjunction(left)
+        right_branches = _flatten_disjunction(right)
+        return left_branches + right_branches
+    else:
+        # Not a disjunction - single branch
+        return [goal]
+
+
 def compile_body(clause, register_map, module="user"):
     """Compile clause body to WAM put/call instruction sequence.
 
@@ -402,6 +430,8 @@ def compile_body(clause, register_map, module="user"):
         - Unqualified calls use module parameter: "module:functor/arity"
         - Qualified calls (M:Goal) use explicit module M
         - Symbol format always "module:functor/arity"
+        - Disjunctions (;/2) compiled with choicepoint instructions
+        - Nested disjunctions automatically flattened
     """
     instructions = []
 
@@ -554,6 +584,16 @@ def compile_body(clause, register_map, module="user"):
     num_goals = len(clause.body)
     for goal_idx, goal in enumerate(clause.body):
         is_last = goal_idx == num_goals - 1
+
+        # Check if goal is a disjunction (;/2)
+        if isinstance(goal, Struct) and goal.functor == ";" and len(goal.args) == 2:
+            # Flatten nested disjunctions and compile
+            branches = _flatten_disjunction(goal)
+            disj_instructions = compile_disjunction(
+                branches, register_map, is_last, module
+            )
+            instructions.extend(disj_instructions)
+            continue
 
         # Resolve module qualification
         call_module, actual_goal = resolve_goal(goal)
