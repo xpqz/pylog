@@ -506,6 +506,100 @@ class TestContinuationCompilation:
         ), f"Should have 1 put_value instruction, got {len(put_values)}"
 
 
+class TestNestedDisjunctionContinuation:
+    """Test nested disjunction with continuation propagation."""
+
+    def test_nested_disjunction_preserves_variable_bindings(self):
+        """(true ; true), (p(X) ; true), q(X) preserves X binding in correct branch.
+
+        CRITICAL: Tests nested disjunction continuation propagation.
+        The second disjunction (p(X) ; true) must receive q(X) as its
+        continuation so that the p(X) branch compiles q(X) with X seen.
+
+        Without proper continuation propagation:
+        - Inner disjunction compiled with empty continuation []
+        - Outer loop compiles q(X) with original seen_vars
+        - Result: q(X) always uses put_variable (X treated as unseen)
+
+        With proper continuation propagation:
+        - Inner disjunction receives [q(X)] as continuation
+        - Branch 1 (p(X)): compiles q(X) with X seen → put_value
+        - Branch 2 (true): compiles q(X) with X not seen → put_variable
+        """
+        x_var = Var(0, "X")
+        clause = Clause(
+            head=Atom("test"),
+            body=[
+                Struct(";", (Atom("true"), Atom("true"))),  # Outer disjunction
+                Struct(";", (Struct("p", (x_var,)), Atom("true"))),  # Inner disjunction
+                Struct("q", (x_var,)),  # Continuation after inner disjunction
+            ],
+        )
+
+        instructions = compile_clause(clause, module="user")
+
+        # Count put_variable and put_value for X
+        put_variables = [
+            instr
+            for instr in instructions
+            if instr[0] == OP_PUT_VARIABLE and len(instr) >= 2
+        ]
+        put_values = [
+            instr
+            for instr in instructions
+            if instr[0] == OP_PUT_VALUE and len(instr) >= 2
+        ]
+
+        # Should have:
+        # Outer branches (true ; true): no X usage
+        # Inner branch 1 (p(X)): put_variable for p(X)
+        # Inner branch 1 continuation q(X): put_value (X seen from p(X))
+        # Inner branch 2 (true): no X usage
+        # Inner branch 2 continuation q(X): put_variable (X not seen)
+        #
+        # Total: 2 put_variable (p(X) and one q(X)), 1 put_value (other q(X))
+        assert (
+            len(put_variables) >= 2
+        ), f"Should have at least 2 put_variable, got {len(put_variables)}"
+        assert (
+            len(put_values) >= 1
+        ), f"Should have at least 1 put_value, got {len(put_values)}"
+
+    def test_multiple_nested_disjunctions_with_binding(self):
+        """(a ; b), (c(X) ; d), e(X) compiles e(X) correctly per inner branch.
+
+        Inner branch 1 (c(X)): binds X → e(X) uses put_value
+        Inner branch 2 (d): doesn't bind X → e(X) uses put_variable
+        """
+        x_var = Var(0, "X")
+        clause = Clause(
+            head=Atom("test"),
+            body=[
+                Struct(";", (Atom("a"), Atom("b"))),
+                Struct(";", (Struct("c", (x_var,)), Atom("d"))),
+                Struct("e", (x_var,)),
+            ],
+        )
+
+        instructions = compile_clause(clause, module="user")
+
+        # Count put_variable and put_value
+        put_variables = [
+            instr
+            for instr in instructions
+            if instr[0] == OP_PUT_VARIABLE and len(instr) >= 2
+        ]
+        put_values = [
+            instr
+            for instr in instructions
+            if instr[0] == OP_PUT_VALUE and len(instr) >= 2
+        ]
+
+        # Should have both put_variable and put_value for X
+        assert len(put_variables) >= 1, "Should have put_variable for X"
+        assert len(put_values) >= 1, "Should have put_value for X"
+
+
 class TestDisjunctionFailurePath:
     """Test disjunction failure leads to clause failure."""
 

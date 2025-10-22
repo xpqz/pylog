@@ -336,12 +336,11 @@ def compile_disjunction(branches, continuation_goals, register_map, module, seen
         instructions.extend(branch_instrs)
 
         # Compile continuation after the single branch
-        for goal_idx, goal in enumerate(continuation_goals):
-            is_last = goal_idx == len(continuation_goals) - 1
-            goal_instrs = _compile_goal_with_module(
-                goal, register_map, is_last, module, seen_vars
-            )
-            instructions.extend(goal_instrs)
+        # Handle nested disjunctions by propagating remaining continuation
+        cont_instrs = _compile_continuation(
+            continuation_goals, register_map, module, seen_vars
+        )
+        instructions.extend(cont_instrs)
 
         return instructions
 
@@ -374,12 +373,11 @@ def compile_disjunction(branches, continuation_goals, register_map, module, seen
         instructions.extend(branch_instrs)
 
         # CRITICAL: Compile continuation with THIS branch's seen_vars
-        for goal_idx, goal in enumerate(continuation_goals):
-            is_last = goal_idx == len(continuation_goals) - 1
-            goal_instrs = _compile_goal_with_module(
-                goal, register_map, is_last, module, branch_seen
-            )
-            instructions.extend(goal_instrs)
+        # Handle nested disjunctions by propagating remaining continuation
+        cont_instrs = _compile_continuation(
+            continuation_goals, register_map, module, branch_seen
+        )
+        instructions.extend(cont_instrs)
 
         # CRITICAL: Jump to end after successful branch (prevents fall-through)
         # All branches except the last need this jump
@@ -392,31 +390,52 @@ def compile_disjunction(branches, continuation_goals, register_map, module, seen
     return instructions
 
 
-def _compile_goal_with_module(goal, register_map, is_last, module, seen_vars):
-    """Compile a single goal with module resolution and disjunction detection.
+def _compile_continuation(continuation_goals, register_map, module, seen_vars):
+    """Compile continuation goals with proper nested disjunction handling.
 
-    This is a helper for compiling goals in continuation contexts where we
-    need to handle disjunctions recursively.
+    When a goal in the continuation is itself a disjunction, we must pass
+    the remaining continuation to that nested disjunction so each inner branch
+    compiles the rest of the continuation with its own seen_vars.
+
+    This prevents the bug where variables bound in nested disjunction branches
+    are treated as unseen in subsequent goals.
 
     Args:
-        goal: AST term (Atom, Struct, or disjunction)
+        continuation_goals: List of goals to compile
         register_map: dict mapping var_id -> ("X"|"Y", index)
-        is_last: True if goal is in tail position (enables LCO)
         module: Current module context
         seen_vars: Set of already-seen variable IDs (updated by this function)
 
     Returns:
         List of instruction tuples
     """
-    # Check if goal is a disjunction (;/2)
-    if isinstance(goal, Struct) and goal.functor == ";" and len(goal.args) == 2:
-        # Flatten nested disjunctions and compile recursively
-        branches = _flatten_disjunction(goal)
-        # No continuation here - we're compiling a single goal
-        return compile_disjunction(branches, [], register_map, module, seen_vars)
+    instructions = []
 
-    # Not a disjunction - compile as regular goal
-    return _compile_single_goal(goal, register_map, is_last, module, seen_vars)
+    for goal_idx, goal in enumerate(continuation_goals):
+        # Check if goal is a disjunction (;/2)
+        if isinstance(goal, Struct) and goal.functor == ";" and len(goal.args) == 2:
+            # Flatten nested disjunctions
+            branches = _flatten_disjunction(goal)
+
+            # CRITICAL: Pass remaining goals as continuation to nested disjunction
+            # This ensures each inner branch compiles the rest with its own seen_vars
+            remaining_goals = continuation_goals[goal_idx + 1 :]
+            nested_instrs = compile_disjunction(
+                branches, remaining_goals, register_map, module, seen_vars
+            )
+            instructions.extend(nested_instrs)
+
+            # Break out - nested compile_disjunction consumed the rest
+            break
+        else:
+            # Regular goal - compile as usual
+            is_last = goal_idx == len(continuation_goals) - 1
+            goal_instrs = _compile_single_goal(
+                goal, register_map, is_last, module, seen_vars
+            )
+            instructions.extend(goal_instrs)
+
+    return instructions
 
 
 def _compile_single_goal(goal, register_map, is_last, module, seen_vars):
