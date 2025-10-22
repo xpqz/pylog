@@ -277,77 +277,73 @@ def _flatten_disjunction(goal):
         return [goal]
 
 
-def compile_disjunction(branches, register_map, is_last_goal, module, seen_vars):
-    """Compile disjunction (;/2) into choicepoint instruction sequence.
+def compile_disjunction(branches, continuation_goals, register_map, module, seen_vars):
+    """Compile disjunction (;/2) with per-branch continuation compilation.
 
-    Implements the WAM choicepoint pattern with proper jumps to prevent fall-through:
-    - try_me_else L1 for first branch
-    - Branch 1 code
-    - jump Lend (CRITICAL: prevents fall-through to next branch)
-    - L1:
-    - retry_me_else L2 for middle branches (if any)
-    - Branch 2 code
-    - jump Lend
-    - L2:
-    - trust_me for final branch
-    - Branch N code
-    - Lend:
+    Implements the WAM choicepoint pattern where each branch compiles its goal
+    AND the continuation with its own seen_vars to ensure correct put_value/
+    put_variable emission.
+
+    Pattern for (a ; b), r:
+        try_me_else L1
+        call a
+        <continuation: r compiled with branch 1's seen_vars>
+        jump Lend
+    L1:
+        trust_me
+        call b
+        <continuation: r compiled with branch 2's seen_vars>
+    Lend:
 
     CRITICAL FIXES:
     1. Jump to end after each branch (prevents fall-through - Bug #1)
-    2. Passes seen_vars through to preserve bindings (Bug #2)
-    3. Uses compile_put_term for structured arguments (Bug #3)
+    2. Per-branch seen_vars cloning (prevents cross-contamination - Bug #2)
+    3. Full term compilation for structured arguments (Bug #3)
+    4. Per-branch continuation compilation (prevents binding overwrites - Bug #4)
 
-    KNOWN LIMITATION (requires follow-up):
-        Continuation after disjunction is compiled ONCE with shared seen_vars.
-        This can cause incorrect put_variable emission that overwrites bindings.
+    Variable Liveness:
+        Each branch gets its own clone of incoming seen_vars. Variables bound
+        in the branch goal are tracked, and continuation goals use the correct
+        put_value/put_variable based on what that specific branch has seen.
 
         Example: (true ; p(X)), q(X)
-            - Branch 1 (true): doesn't bind X
-            - Branch 2 (p(X)): binds X
-            - Continuation q(X) compiled once → emits put_variable
-            - BUG: Overwrites X binding from branch 2!
-
-        Proper fix requires per-branch continuation compilation:
-            Each branch should compile its goal AND the continuation with
-            its own seen_vars, so q(X) uses put_variable in branch 1 but
-            put_value in branch 2.
-
-        TODO: Refactor compile_body to pass continuation goals to
-        compile_disjunction for per-branch compilation.
+            Branch 1: true + q(X)
+                - true doesn't bind X
+                - q(X) emits put_variable X (X not seen in this branch)
+            Branch 2: p(X) + q(X)
+                - p(X) binds X
+                - q(X) emits put_value X (X seen in this branch)
 
     Args:
         branches: List of branch goal terms (already flattened)
+        continuation_goals: List of goals to compile after each branch
         register_map: dict mapping var_id -> ("X"|"Y", index)
-        is_last_goal: True if disjunction is last goal in clause (enables LCO)
         module: Current module context
-        seen_vars: Set of already-seen variable IDs (CRITICAL: must be passed through)
+        seen_vars: Set of already-seen variable IDs (cloned per branch)
 
     Returns:
         List of instruction tuples including choicepoint and jump instructions
-
-    Example:
-        (a ; b ; c) compiles to:
-            try_me_else L1
-            execute user:a/0 (or call if not last)
-            jump Lend
-        L1:
-            retry_me_else L2
-            execute user:b/0
-            jump Lend
-        L2:
-            trust_me
-            execute user:c/0
-        Lend:
     """
     instructions = []
 
-    # Single branch optimization: no choicepoint overhead
+    # Single branch optimization: compile branch + continuation without choicepoint
     if len(branches) == 1:
-        goal_instrs = _compile_single_goal(
-            branches[0], register_map, is_last_goal, module, seen_vars
+        # Branch is last if there's no continuation
+        branch_is_last = len(continuation_goals) == 0
+        branch_instrs = _compile_single_goal(
+            branches[0], register_map, branch_is_last, module, seen_vars
         )
-        return goal_instrs
+        instructions.extend(branch_instrs)
+
+        # Compile continuation after the single branch
+        for goal_idx, goal in enumerate(continuation_goals):
+            is_last = goal_idx == len(continuation_goals) - 1
+            goal_instrs = _compile_goal_with_module(
+                goal, register_map, is_last, module, seen_vars
+            )
+            instructions.extend(goal_instrs)
+
+        return instructions
 
     # Multiple branches: generate choicepoint sequence
     num_branches = len(branches)
@@ -367,11 +363,23 @@ def compile_disjunction(branches, register_map, is_last_goal, module, seen_vars)
         else:
             instructions.append((OP_TRUST_ME,))
 
-        # Compile branch goal (CRITICAL: pass seen_vars through)
+        # CRITICAL: Clone seen_vars for this branch to prevent cross-contamination
+        branch_seen = seen_vars.copy()
+
+        # Compile branch goal (last only if no continuation)
+        branch_is_last = len(continuation_goals) == 0
         branch_instrs = _compile_single_goal(
-            branch, register_map, is_last_goal, module, seen_vars
+            branch, register_map, branch_is_last, module, branch_seen
         )
         instructions.extend(branch_instrs)
+
+        # CRITICAL: Compile continuation with THIS branch's seen_vars
+        for goal_idx, goal in enumerate(continuation_goals):
+            is_last = goal_idx == len(continuation_goals) - 1
+            goal_instrs = _compile_goal_with_module(
+                goal, register_map, is_last, module, branch_seen
+            )
+            instructions.extend(goal_instrs)
 
         # CRITICAL: Jump to end after successful branch (prevents fall-through)
         # All branches except the last need this jump
@@ -382,6 +390,33 @@ def compile_disjunction(branches, register_map, is_last_goal, module, seen_vars)
     instructions.append(("LABEL", end_label))
 
     return instructions
+
+
+def _compile_goal_with_module(goal, register_map, is_last, module, seen_vars):
+    """Compile a single goal with module resolution and disjunction detection.
+
+    This is a helper for compiling goals in continuation contexts where we
+    need to handle disjunctions recursively.
+
+    Args:
+        goal: AST term (Atom, Struct, or disjunction)
+        register_map: dict mapping var_id -> ("X"|"Y", index)
+        is_last: True if goal is in tail position (enables LCO)
+        module: Current module context
+        seen_vars: Set of already-seen variable IDs (updated by this function)
+
+    Returns:
+        List of instruction tuples
+    """
+    # Check if goal is a disjunction (;/2)
+    if isinstance(goal, Struct) and goal.functor == ";" and len(goal.args) == 2:
+        # Flatten nested disjunctions and compile recursively
+        branches = _flatten_disjunction(goal)
+        # No continuation here - we're compiling a single goal
+        return compile_disjunction(branches, [], register_map, module, seen_vars)
+
+    # Not a disjunction - compile as regular goal
+    return _compile_single_goal(goal, register_map, is_last, module, seen_vars)
 
 
 def _compile_single_goal(goal, register_map, is_last, module, seen_vars):
@@ -706,11 +741,18 @@ def compile_body(clause, register_map, module="user"):
         if isinstance(goal, Struct) and goal.functor == ";" and len(goal.args) == 2:
             # Flatten nested disjunctions and compile
             branches = _flatten_disjunction(goal)
+
+            # Extract continuation goals (all goals after this disjunction)
+            continuation_goals = clause.body[goal_idx + 1 :]
+
+            # Compile disjunction with per-branch continuation
             disj_instructions = compile_disjunction(
-                branches, register_map, is_last, module, seen_vars
+                branches, continuation_goals, register_map, module, seen_vars
             )
             instructions.extend(disj_instructions)
-            continue
+
+            # CRITICAL: Break out of loop - continuation already compiled
+            break
 
         # Resolve module qualification
         call_module, actual_goal = resolve_goal(goal)

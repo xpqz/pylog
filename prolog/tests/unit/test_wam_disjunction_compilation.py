@@ -29,11 +29,10 @@ class TestSimpleDisjunction:
         """(a ; b) compiles with try_me_else, jump, trust_me pattern."""
         branches = [Atom("a"), Atom("b")]
         register_map = {}
-        is_last_goal = True
         seen_vars = set()
 
         instructions = compile_disjunction(
-            branches, register_map, is_last_goal, "user", seen_vars
+            branches, [], register_map, "user", seen_vars
         )
 
         # Expected pattern:
@@ -63,11 +62,10 @@ class TestSimpleDisjunction:
         """(a ; b ; c) compiles with try/retry/trust pattern."""
         branches = [Atom("a"), Atom("b"), Atom("c")]
         register_map = {}
-        is_last_goal = True
         seen_vars = set()
 
         instructions = compile_disjunction(
-            branches, register_map, is_last_goal, "user", seen_vars
+            branches, [], register_map, "user", seen_vars
         )
 
         # Expected pattern:
@@ -104,22 +102,6 @@ class TestSimpleDisjunction:
         # All labels must be distinct
         assert len({label1, label2, label_end}) == 3
 
-    def test_disjunction_not_last_goal(self):
-        """Disjunction not in tail position uses call instead of execute."""
-        branches = [Atom("a"), Atom("b")]
-        register_map = {}
-        is_last_goal = False
-        seen_vars = set()
-
-        instructions = compile_disjunction(
-            branches, register_map, is_last_goal, "user", seen_vars
-        )
-
-        # First branch should use call, not execute
-        assert instructions[1] == (OP_CALL, "user:a/0")
-        # Second branch should also use call
-        assert instructions[5] == (OP_CALL, "user:b/0")
-
 
 class TestDisjunctionWithStructureGoals:
     """Test disjunction with structured goals."""
@@ -131,11 +113,10 @@ class TestDisjunctionWithStructureGoals:
             Struct("q", (Atom("b"),)),
         ]
         register_map = {}
-        is_last_goal = True
         seen_vars = set()
 
         instructions = compile_disjunction(
-            branches, register_map, is_last_goal, "user", seen_vars
+            branches, [], register_map, "user", seen_vars
         )
 
         # Should have put_constant for arguments before calls
@@ -163,11 +144,10 @@ class TestDisjunctionWithStructureGoals:
             Struct("q", (Struct("g", (y_var,)),)),
         ]
         register_map = {0: ("X", 0), 1: ("X", 1)}
-        is_last_goal = True
         seen_vars = set()
 
         instructions = compile_disjunction(
-            branches, register_map, is_last_goal, "user", seen_vars
+            branches, [], register_map, "user", seen_vars
         )
 
         # Should have put_structure instructions for nested structures
@@ -195,11 +175,10 @@ class TestDisjunctionWithStructureGoals:
             Struct("q", (Atom("[]"),)),
         ]
         register_map = {0: ("X", 0), 1: ("X", 1)}
-        is_last_goal = True
         seen_vars = set()
 
         instructions = compile_disjunction(
-            branches, register_map, is_last_goal, "user", seen_vars
+            branches, [], register_map, "user", seen_vars
         )
 
         # Should have list construction for first branch
@@ -243,12 +222,11 @@ class TestDisjunctionWithVariables:
             Struct("q", (x_var,)),
         ]
         register_map = {0: ("X", 0)}
-        is_last_goal = True
         # CRITICAL: X already seen before disjunction
         seen_vars = {0}
 
         instructions = compile_disjunction(
-            branches, register_map, is_last_goal, "user", seen_vars
+            branches, [], register_map, "user", seen_vars
         )
 
         # Should use put_value for X in both branches (not put_variable)
@@ -281,11 +259,10 @@ class TestDisjunctionWithVariables:
             Struct("q", (y_var,)),
         ]
         register_map = {0: ("X", 0), 1: ("X", 1)}
-        is_last_goal = True
         seen_vars = set()  # Neither variable seen yet
 
         instructions = compile_disjunction(
-            branches, register_map, is_last_goal, "user", seen_vars
+            branches, [], register_map, "user", seen_vars
         )
 
         # First occurrence of each variable should use put_variable
@@ -310,14 +287,13 @@ class TestDisjunctionLabelGeneration:
         branches1 = [Atom("a"), Atom("b")]
         branches2 = [Atom("c"), Atom("d")]
         register_map = {}
-        is_last_goal = True
         seen_vars = set()
 
         instructions1 = compile_disjunction(
-            branches1, register_map, is_last_goal, "user", seen_vars
+            branches1, [], register_map, "user", seen_vars
         )
         instructions2 = compile_disjunction(
-            branches2, register_map, is_last_goal, "user", seen_vars
+            branches2, [], register_map, "user", seen_vars
         )
 
         # Extract labels from instructions1
@@ -347,11 +323,10 @@ class TestEmptyBranches:
         """Single branch optimizes to no choicepoint instructions."""
         branches = [Atom("a")]
         register_map = {}
-        is_last_goal = True
         seen_vars = set()
 
         instructions = compile_disjunction(
-            branches, register_map, is_last_goal, "user", seen_vars
+            branches, [], register_map, "user", seen_vars
         )
 
         # Should just be the goal, no try/trust/jump
@@ -480,6 +455,55 @@ class TestClauseLevelIntegration:
 
         assert found_jump, "Branches should jump to continuation"
         assert found_call_r, "Should have r as continuation"
+
+
+class TestContinuationCompilation:
+    """Test per-branch continuation compilation (Bug #4 fix)."""
+
+    def test_continuation_with_variable_from_branch(self):
+        """(true ; p(X)), q(X) compiles continuation correctly per branch.
+
+        CRITICAL: Tests Bug #4 fix - continuation must be compiled separately
+        for each branch with that branch's seen_vars to emit correct
+        put_variable/put_value instructions.
+
+        Branch 1 (true): X not seen → q(X) uses put_variable
+        Branch 2 (p(X)): X seen → q(X) uses put_value
+        """
+        x_var = Var(0, "X")
+        clause = Clause(
+            head=Atom("test"),
+            body=[
+                Struct(";", (Atom("true"), Struct("p", (x_var,)))),
+                Struct("q", (x_var,)),
+            ],
+        )
+
+        instructions = compile_clause(clause, module="user")
+
+        # X will be allocated to a register (could be X or Y register)
+        # Find which register was assigned to variable 0
+        put_variables = [
+            instr
+            for instr in instructions
+            if instr[0] == OP_PUT_VARIABLE and len(instr) >= 2
+        ]
+        put_values = [
+            instr
+            for instr in instructions
+            if instr[0] == OP_PUT_VALUE and len(instr) >= 2
+        ]
+
+        # Should have:
+        # - 1 put_variable for q(X) in branch 1 (true doesn't bind X)
+        # - 1 put_variable for p(X) in branch 2 (first occurrence in this branch)
+        # - 1 put_value for q(X) in branch 2 (X already seen from p(X))
+        assert (
+            len(put_variables) == 2
+        ), f"Should have 2 put_variable instructions, got {len(put_variables)}"
+        assert (
+            len(put_values) == 1
+        ), f"Should have 1 put_value instruction, got {len(put_values)}"
 
 
 class TestDisjunctionFailurePath:
