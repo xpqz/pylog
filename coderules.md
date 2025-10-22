@@ -73,3 +73,4 @@ In any git and GitHub messaging (commit messages, PR messages, issues, comments 
 3. **Don't use bold text**: don't embellish or add emphasis with bold or italic text.
 4. **Brevity**: issues and commit messages are written for co-workers. Respect their time. Obviously, be complete, but express yourself in a professional, concise tone.
 5. **UK English**: we use UK English spelling throughout.
+6. **Don't use `--force`**: `--force` should be considered banned. Use `--force-with-lease` if you must.
