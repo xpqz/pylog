@@ -277,7 +277,9 @@ def _flatten_disjunction(goal):
         return [goal]
 
 
-def compile_disjunction(branches, continuation_goals, register_map, module, seen_vars):
+def compile_disjunction(
+    branches, continuation_goals, register_map, module, seen_vars, perm_count=0
+):
     """Compile disjunction (;/2) with per-branch continuation compilation.
 
     Implements the WAM choicepoint pattern where each branch compiles its goal
@@ -288,11 +290,13 @@ def compile_disjunction(branches, continuation_goals, register_map, module, seen
         try_me_else L1
         call a
         <continuation: r compiled with branch 1's seen_vars>
+        deallocate (if perm_count > 0 and continuation ends in tail call)
         jump Lend
     L1:
         trust_me
         call b
         <continuation: r compiled with branch 2's seen_vars>
+        deallocate (if perm_count > 0 and continuation ends in tail call)
     Lend:
 
     CRITICAL FIXES:
@@ -300,6 +304,7 @@ def compile_disjunction(branches, continuation_goals, register_map, module, seen
     2. Per-branch seen_vars cloning (prevents cross-contamination - Bug #2)
     3. Full term compilation for structured arguments (Bug #3)
     4. Per-branch continuation compilation (prevents binding overwrites - Bug #4)
+    5. Per-branch deallocate before tail calls (prevents frame leaks - Bug #5)
 
     Variable Liveness:
         Each branch gets its own clone of incoming seen_vars. Variables bound
@@ -320,6 +325,7 @@ def compile_disjunction(branches, continuation_goals, register_map, module, seen
         register_map: dict mapping var_id -> ("X"|"Y", index)
         module: Current module context
         seen_vars: Set of already-seen variable IDs (cloned per branch)
+        perm_count: Number of permanent variables (for deallocate insertion)
 
     Returns:
         List of instruction tuples including choicepoint and jump instructions
@@ -338,9 +344,16 @@ def compile_disjunction(branches, continuation_goals, register_map, module, seen
         # Compile continuation after the single branch
         # Handle nested disjunctions by propagating remaining continuation
         cont_instrs = _compile_continuation(
-            continuation_goals, register_map, module, seen_vars
+            continuation_goals, register_map, module, seen_vars, perm_count
         )
         instructions.extend(cont_instrs)
+
+        # Insert deallocate before tail call if needed
+        if perm_count > 0 and len(instructions) > 0:
+            last_instr = instructions[-1]
+            if isinstance(last_instr, tuple) and last_instr[0] == OP_EXECUTE:
+                # Insert deallocate before the execute
+                instructions.insert(len(instructions) - 1, (OP_DEALLOCATE,))
 
         return instructions
 
@@ -375,9 +388,17 @@ def compile_disjunction(branches, continuation_goals, register_map, module, seen
         # CRITICAL: Compile continuation with THIS branch's seen_vars
         # Handle nested disjunctions by propagating remaining continuation
         cont_instrs = _compile_continuation(
-            continuation_goals, register_map, module, branch_seen
+            continuation_goals, register_map, module, branch_seen, perm_count
         )
         instructions.extend(cont_instrs)
+
+        # CRITICAL: Insert deallocate before tail call if needed
+        # Each branch that ends in execute needs its own deallocate
+        if perm_count > 0 and len(instructions) > 0:
+            last_instr = instructions[-1]
+            if isinstance(last_instr, tuple) and last_instr[0] == OP_EXECUTE:
+                # Insert deallocate before the execute
+                instructions.insert(len(instructions) - 1, (OP_DEALLOCATE,))
 
         # CRITICAL: Jump to end after successful branch (prevents fall-through)
         # All branches except the last need this jump
@@ -390,7 +411,9 @@ def compile_disjunction(branches, continuation_goals, register_map, module, seen
     return instructions
 
 
-def _compile_continuation(continuation_goals, register_map, module, seen_vars):
+def _compile_continuation(
+    continuation_goals, register_map, module, seen_vars, perm_count=0
+):
     """Compile continuation goals with proper nested disjunction handling.
 
     When a goal in the continuation is itself a disjunction, we must pass
@@ -405,6 +428,7 @@ def _compile_continuation(continuation_goals, register_map, module, seen_vars):
         register_map: dict mapping var_id -> ("X"|"Y", index)
         module: Current module context
         seen_vars: Set of already-seen variable IDs (updated by this function)
+        perm_count: Number of permanent variables (for nested disjunction deallocate)
 
     Returns:
         List of instruction tuples
@@ -421,7 +445,7 @@ def _compile_continuation(continuation_goals, register_map, module, seen_vars):
             # This ensures each inner branch compiles the rest with its own seen_vars
             remaining_goals = continuation_goals[goal_idx + 1 :]
             nested_instrs = compile_disjunction(
-                branches, remaining_goals, register_map, module, seen_vars
+                branches, remaining_goals, register_map, module, seen_vars, perm_count
             )
             instructions.extend(nested_instrs)
 
@@ -581,12 +605,13 @@ def _compile_single_goal(goal, register_map, is_last, module, seen_vars):
     return instructions
 
 
-def compile_body(clause, register_map, module="user"):
+def compile_body(clause, register_map, module="user", perm_count=0):
     """Compile clause body to WAM put/call instruction sequence.
 
     Args:
         clause: Clause with body to compile
         register_map: dict mapping var_id -> ("X"|"Y", index)
+        perm_count: Number of permanent variables (for disjunction deallocate)
         module: Current module context for unqualified calls (default "user")
 
     Returns:
@@ -766,7 +791,12 @@ def compile_body(clause, register_map, module="user"):
 
             # Compile disjunction with per-branch continuation
             disj_instructions = compile_disjunction(
-                branches, continuation_goals, register_map, module, seen_vars
+                branches,
+                continuation_goals,
+                register_map,
+                module,
+                seen_vars,
+                perm_count,
             )
             instructions.extend(disj_instructions)
 
@@ -880,8 +910,14 @@ def finalize_clause(head_instructions, body_instructions, perm_count):
     elif last_op == OP_EXECUTE:
         # compile_body() already emitted EXECUTE for last goal
         # If permanent variables, insert deallocate before the execute
+        # (unless one is already there from disjunction compilation)
         if perm_count > 0:
-            code.insert(last_idx, (OP_DEALLOCATE,))
+            # Check if deallocate already precedes the execute
+            if last_idx > 0 and code[last_idx - 1] == (OP_DEALLOCATE,):
+                # Already has deallocate, don't insert another
+                pass
+            else:
+                code.insert(last_idx, (OP_DEALLOCATE,))
     elif last_op == OP_PROCEED:
         # Defensive: already has proceed (shouldn't happen in normal compilation)
         # Return as-is to avoid appending duplicate returns
@@ -993,7 +1029,7 @@ def compile_clause(clause, module="user"):
 
     # Compile head and body
     head_instructions = compile_head(clause, register_map, perm_count)
-    body_instructions = compile_body(clause, register_map, module)
+    body_instructions = compile_body(clause, register_map, module, perm_count)
 
     # Finalize with frame management
     raw_instructions = finalize_clause(head_instructions, body_instructions, perm_count)
