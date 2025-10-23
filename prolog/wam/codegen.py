@@ -392,17 +392,24 @@ def compile_disjunction(
         )
         instructions.extend(cont_instrs)
 
-        # CRITICAL: Insert deallocate before tail call if needed
-        # Each branch that ends in execute needs its own deallocate
-        if perm_count > 0 and len(instructions) > 0:
+        # Check if branch ends with execute (tail call)
+        branch_ends_with_execute = False
+        if len(instructions) > 0:
             last_instr = instructions[-1]
             if isinstance(last_instr, tuple) and last_instr[0] == OP_EXECUTE:
-                # Insert deallocate before the execute
-                instructions.insert(len(instructions) - 1, (OP_DEALLOCATE,))
+                branch_ends_with_execute = True
+
+        # CRITICAL: Insert deallocate before tail call if needed
+        # Each branch that ends in execute needs its own deallocate
+        if branch_ends_with_execute and perm_count > 0:
+            # Insert deallocate before the execute
+            instructions.insert(len(instructions) - 1, (OP_DEALLOCATE,))
 
         # CRITICAL: Jump to end after successful branch (prevents fall-through)
         # All branches except the last need this jump
-        if i < num_branches - 1:
+        # EXCEPTION: If branch ends with execute (tail call), jump is unreachable
+        # and would point to len(code) which crashes the VM
+        if i < num_branches - 1 and not branch_ends_with_execute:
             instructions.append((OP_JUMP, end_label))
 
     # Place end label

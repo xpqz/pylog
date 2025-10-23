@@ -27,7 +27,7 @@ class TestSimpleDisjunction:
     """Test basic disjunction compilation patterns."""
 
     def test_two_branch_disjunction(self):
-        """(a ; b) compiles with try_me_else, jump, trust_me pattern."""
+        """(a ; b) compiles with try_me_else, trust_me pattern (no jump - tail calls)."""
         branches = [Atom("a"), Atom("b")]
         register_map = {}
         seen_vars = set()
@@ -36,25 +36,23 @@ class TestSimpleDisjunction:
             branches, [], register_map, "user", seen_vars
         )
 
-        # Expected pattern:
+        # Expected pattern (with LCO, no jumps since branches end with execute):
         # try_me_else L1
         # execute user:a/0
-        # jump Lend
         # L1:
         # trust_me
         # execute user:b/0
-        # Lend:
 
         assert instructions[0][0] == OP_TRY_ME_ELSE
         label1 = instructions[0][1]
         assert instructions[1] == (OP_EXECUTE, "user:a/0")
-        # CRITICAL: Must jump past second branch after first succeeds
-        assert instructions[2][0] == OP_JUMP
-        label_end = instructions[2][1]
-        assert instructions[3] == ("LABEL", label1)
-        assert instructions[4] == (OP_TRUST_ME,)
-        assert instructions[5] == (OP_EXECUTE, "user:b/0")
-        assert instructions[6] == ("LABEL", label_end)
+        # No jump - branch ends with execute (tail call) so jump would be unreachable
+        assert instructions[2] == ("LABEL", label1)  # Label for second branch
+        assert instructions[3] == (OP_TRUST_ME,)
+        assert instructions[4] == (OP_EXECUTE, "user:b/0")
+        # End label still present (unreferenced but harmless)
+        assert instructions[5][0] == "LABEL"
+        label_end = instructions[5][1]
 
         # Labels must be distinct
         assert label1 != label_end
@@ -69,36 +67,34 @@ class TestSimpleDisjunction:
             branches, [], register_map, "user", seen_vars
         )
 
-        # Expected pattern:
+        # Expected pattern (with LCO, no jumps since branches end with execute):
         # try_me_else L1
         # execute user:a/0
-        # jump Lend
         # L1:
         # retry_me_else L2
         # execute user:b/0
-        # jump Lend
         # L2:
         # trust_me
         # execute user:c/0
-        # Lend:
+        # Lend: (unreferenced)
 
         assert instructions[0][0] == OP_TRY_ME_ELSE
         label1 = instructions[0][1]
         assert instructions[1] == (OP_EXECUTE, "user:a/0")
-        assert instructions[2][0] == OP_JUMP
-        label_end = instructions[2][1]
+        # No jump - tail call
+        assert instructions[2] == ("LABEL", label1)
 
-        assert instructions[3] == ("LABEL", label1)
-        assert instructions[4][0] == OP_RETRY_ME_ELSE
-        label2 = instructions[4][1]
-        assert instructions[5] == (OP_EXECUTE, "user:b/0")
-        assert instructions[6][0] == OP_JUMP
-        assert instructions[6][1] == label_end  # Same end label
+        assert instructions[3][0] == OP_RETRY_ME_ELSE
+        label2 = instructions[3][1]
+        assert instructions[4] == (OP_EXECUTE, "user:b/0")
+        # No jump - tail call
+        assert instructions[5] == ("LABEL", label2)
 
-        assert instructions[7] == ("LABEL", label2)
-        assert instructions[8] == (OP_TRUST_ME,)
-        assert instructions[9] == (OP_EXECUTE, "user:c/0")
-        assert instructions[10] == ("LABEL", label_end)
+        assert instructions[6] == (OP_TRUST_ME,)
+        assert instructions[7] == (OP_EXECUTE, "user:c/0")
+        # End label still present (unreferenced)
+        assert instructions[8][0] == "LABEL"
+        label_end = instructions[8][1]
 
         # All labels must be distinct
         assert len({label1, label2, label_end}) == 3
@@ -372,7 +368,7 @@ class TestClauseLevelIntegration:
     """Test disjunction integrated into clause compilation."""
 
     def test_disjunction_as_only_goal(self):
-        """p :- (a ; b). compiles correctly."""
+        """p :- (a ; b). compiles correctly (no jumps - branches tail call)."""
         clause = Clause(head=Atom("p"), body=[Struct(";", (Atom("a"), Atom("b")))])
 
         instructions = compile_clause(clause, module="user")
@@ -380,17 +376,19 @@ class TestClauseLevelIntegration:
         # Should contain choicepoint instructions
         found_try = any(instr[0] == OP_TRY_ME_ELSE for instr in instructions)
         found_trust = any(instr[0] == OP_TRUST_ME for instr in instructions)
+        # No jumps since both branches end with execute (tail calls)
         found_jump = any(instr[0] == OP_JUMP for instr in instructions)
 
         assert found_try, "Should have try_me_else"
         assert found_trust, "Should have trust_me"
-        assert found_jump, "Should have jump to end"
+        assert not found_jump, "Should NOT have jump (branches tail call)"
 
     def test_disjunction_in_middle_of_body(self):
         """p :- q, (a ; b), r. compiles with goals before and after.
 
-        CRITICAL: This tests Bug #1 fix - disjunction must jump to
-        continuation (r), not fall through to next branch.
+        With per-branch continuation compilation, r is compiled as part of
+        each branch's continuation, so branches end with execute r (tail call).
+        No jumps needed since execute doesn't return.
         """
         clause = Clause(
             head=Atom("p"),
@@ -402,11 +400,11 @@ class TestClauseLevelIntegration:
         # Should have:
         # - call q
         # - try_me_else
-        # - call/execute a
-        # - jump to r
+        # - call a
+        # - execute r (tail call)
         # - trust_me
-        # - call/execute b
-        # - call/execute r (last goal, so execute)
+        # - call b
+        # - execute r (tail call)
 
         found_call_q = any(
             instr[0] == OP_CALL and instr[1] == "user:q/0" for instr in instructions
@@ -415,11 +413,12 @@ class TestClauseLevelIntegration:
             instr[0] in (OP_CALL, OP_EXECUTE) and instr[1] == "user:r/0"
             for instr in instructions
         )
+        # No jumps since branches end with execute (tail call to r)
         found_jump = any(instr[0] == OP_JUMP for instr in instructions)
 
         assert found_call_q, "Should call q before disjunction"
         assert found_call_r, "Should call/execute r after disjunction"
-        assert found_jump, "Should jump past second branch to continuation"
+        assert not found_jump, "Should NOT have jump (branches tail call to r)"
 
     def test_nested_disjunction_in_clause(self):
         """p :- ((a ; b) ; c). flattens and compiles correctly."""
@@ -440,21 +439,25 @@ class TestClauseLevelIntegration:
         assert found_trust, "Should have trust_me for last branch"
 
     def test_disjunction_at_start_of_body(self):
-        """p :- (a ; b), r. compiles with continuation after disjunction."""
+        """p :- (a ; b), r. compiles with continuation after disjunction.
+
+        With per-branch continuation compilation, r is compiled as part of
+        each branch's continuation, so branches end with execute r (tail call).
+        """
         clause = Clause(
             head=Atom("p"), body=[Struct(";", (Atom("a"), Atom("b"))), Atom("r")]
         )
 
         instructions = compile_clause(clause, module="user")
 
-        # Both branches should jump to r, not fall through
+        # No jumps since branches end with execute (tail call to r)
         found_jump = any(instr[0] == OP_JUMP for instr in instructions)
         found_call_r = any(
             instr[0] in (OP_CALL, OP_EXECUTE) and instr[1] == "user:r/0"
             for instr in instructions
         )
 
-        assert found_jump, "Branches should jump to continuation"
+        assert not found_jump, "Branches should NOT jump (tail call to r)"
         assert found_call_r, "Should have r as continuation"
 
 
