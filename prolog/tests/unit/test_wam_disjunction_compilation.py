@@ -10,6 +10,7 @@ from prolog.ast.terms import Atom, List, Struct, Var
 from prolog.wam.codegen import compile_clause, compile_disjunction, _flatten_disjunction
 from prolog.wam.instructions import (
     OP_CALL,
+    OP_DEALLOCATE,
     OP_EXECUTE,
     OP_JUMP,
     OP_PUT_CONSTANT,
@@ -631,7 +632,8 @@ class TestLabelResolution:
                     assert (
                         offset >= 0
                     ), f"{opcode} offset must be non-negative, got {offset}"
-                    assert offset < len(
+                    # Allow offset == len(instructions) for jumps to end label
+                    assert offset <= len(
                         instructions
                     ), f"{opcode} offset {offset} exceeds code size {len(instructions)}"
 
@@ -662,6 +664,68 @@ class TestLabelResolution:
         assert (
             instructions[try_target][0] == OP_TRUST_ME
         ), f"try_me_else should point to trust_me, got {instructions[try_target]}"
+
+
+class TestDisjunctionWithFrames:
+    """Test disjunction with environment frames and LCO."""
+
+    def test_disjunction_with_continuation_needs_deallocate(self):
+        """p(X, Y) :- (q(X) ; r(X)), s(Y), t(Y). needs deallocate before tail call.
+
+        CRITICAL: When body ends with disjunction, finalize_clause must skip
+        trailing LABEL pseudo-instructions to find the actual last operation
+        and insert OP_DEALLOCATE before the final OP_EXECUTE.
+
+        Without this fix:
+        - finalize_clause sees ("LABEL", ...) as last instruction
+        - Falls into generic else branch
+        - Never inserts OP_DEALLOCATE before tail call
+        - Leaks environment frames in tail-recursive code
+        """
+        x_var = Var(0, "X")
+        y_var = Var(1, "Y")
+        clause = Clause(
+            head=Struct("p", (x_var, y_var)),
+            body=[
+                Struct(";", (Struct("q", (x_var,)), Struct("r", (x_var,)))),
+                Struct("s", (y_var,)),
+                Struct("t", (y_var,)),
+            ],
+        )
+
+        instructions = compile_clause(clause, module="user")
+
+        # Find last execute instruction
+        last_execute_idx = None
+        for i in range(len(instructions) - 1, -1, -1):
+            if instructions[i][0] == OP_EXECUTE:
+                last_execute_idx = i
+                break
+
+        assert last_execute_idx is not None, "Should have execute for tail call"
+
+        # Check that deallocate comes immediately before the last execute
+        assert last_execute_idx > 0, "Execute should not be first instruction"
+        deallocate_idx = last_execute_idx - 1
+        assert (
+            instructions[deallocate_idx][0] == OP_DEALLOCATE
+        ), f"Expected OP_DEALLOCATE before final OP_EXECUTE, got {instructions[deallocate_idx]}"
+
+    def test_simple_disjunction_lco(self):
+        """p :- (a ; b). uses execute, not call+proceed."""
+        clause = Clause(head=Atom("p"), body=[Struct(";", (Atom("a"), Atom("b")))])
+
+        instructions = compile_clause(clause, module="user")
+
+        # Should have execute, not call followed by proceed
+        execute_count = sum(1 for instr in instructions if instr[0] == OP_EXECUTE)
+        call_count = sum(1 for instr in instructions if instr[0] == OP_CALL)
+
+        # Each branch should use execute (tail position)
+        assert (
+            execute_count >= 2
+        ), f"Expected at least 2 execute instructions, got {execute_count}"
+        assert call_count == 0, f"Should have no call instructions, got {call_count}"
 
 
 class TestDisjunctionFailurePath:

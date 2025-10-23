@@ -846,7 +846,24 @@ def finalize_clause(head_instructions, body_instructions, perm_count):
         return code
 
     # Non-empty body: check if last instruction is CALL or EXECUTE
-    last_instr = code[-1]
+    # Skip trailing LABEL pseudo-instructions to find actual last operation
+    last_idx = len(code) - 1
+    while last_idx >= 0:
+        instr = code[last_idx]
+        # Check if this is a LABEL pseudo-instruction
+        if isinstance(instr, tuple) and len(instr) == 2 and instr[0] == "LABEL":
+            last_idx -= 1
+            continue
+        break
+
+    if last_idx < 0:
+        # Only labels, no real instructions - shouldn't happen
+        if perm_count > 0:
+            code.append((OP_DEALLOCATE,))
+        code.append((OP_PROCEED,))
+        return code
+
+    last_instr = code[last_idx]
     last_op = last_instr[0]
 
     if last_op == OP_CALL:
@@ -855,15 +872,16 @@ def finalize_clause(head_instructions, body_instructions, perm_count):
 
         # If permanent variables, insert deallocate before the execute
         if perm_count > 0:
-            code.insert(len(code) - 1, (OP_DEALLOCATE,))
+            code.insert(last_idx, (OP_DEALLOCATE,))
+            last_idx += 1  # Adjust index after insertion
 
         # Replace CALL with EXECUTE
-        code[-1] = (OP_EXECUTE, target)
+        code[last_idx] = (OP_EXECUTE, target)
     elif last_op == OP_EXECUTE:
         # compile_body() already emitted EXECUTE for last goal
         # If permanent variables, insert deallocate before the execute
         if perm_count > 0:
-            code.insert(len(code) - 1, (OP_DEALLOCATE,))
+            code.insert(last_idx, (OP_DEALLOCATE,))
     elif last_op == OP_PROCEED:
         # Defensive: already has proceed (shouldn't happen in normal compilation)
         # Return as-is to avoid appending duplicate returns
