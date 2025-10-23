@@ -277,6 +277,19 @@ def _flatten_disjunction(goal):
         return [goal]
 
 
+def _flatten_conjunction(goal):
+    """Flatten conjunction into ordered list of goals.
+
+    Recursively flattens nested ,/2 terms into a flat goal list.
+    Non-conjunction goals return single-element list.
+    """
+    if isinstance(goal, Struct) and goal.functor == "," and len(goal.args) == 2:
+        left, right = goal.args
+        return _flatten_conjunction(left) + _flatten_conjunction(right)
+    else:
+        return [goal]
+
+
 def compile_disjunction(
     branches, continuation_goals, register_map, module, seen_vars, perm_count=0
 ):
@@ -334,12 +347,15 @@ def compile_disjunction(
 
     # Single branch optimization: compile branch + continuation without choicepoint
     if len(branches) == 1:
-        # Branch is last if there's no continuation
-        branch_is_last = len(continuation_goals) == 0
-        branch_instrs = _compile_single_goal(
-            branches[0], register_map, branch_is_last, module, seen_vars
-        )
-        instructions.extend(branch_instrs)
+        branch_goals = _flatten_conjunction(branches[0])
+        for goal_idx, branch_goal in enumerate(branch_goals):
+            is_last_goal = (
+                goal_idx == len(branch_goals) - 1 and len(continuation_goals) == 0
+            )
+            branch_instrs = _compile_single_goal(
+                branch_goal, register_map, is_last_goal, module, seen_vars
+            )
+            instructions.extend(branch_instrs)
 
         # Compile continuation after the single branch
         # Handle nested disjunctions by propagating remaining continuation
@@ -388,12 +404,17 @@ def compile_disjunction(
 
         branch_start = len(instructions)
 
-        # Compile branch goal (last only if no continuation)
-        branch_is_last = len(continuation_goals) == 0
-        branch_instrs = _compile_single_goal(
-            branch, register_map, branch_is_last, module, branch_seen
-        )
-        instructions.extend(branch_instrs)
+        branch_goals = _flatten_conjunction(branch)
+
+        # Compile branch goals sequentially
+        for goal_idx, branch_goal in enumerate(branch_goals):
+            is_last_goal = (
+                goal_idx == len(branch_goals) - 1 and len(continuation_goals) == 0
+            )
+            branch_instrs = _compile_single_goal(
+                branch_goal, register_map, is_last_goal, module, branch_seen
+            )
+            instructions.extend(branch_instrs)
 
         # CRITICAL: Compile continuation with THIS branch's seen_vars
         # Handle nested disjunctions by propagating remaining continuation
@@ -478,12 +499,17 @@ def _compile_continuation(
             # Break out - nested compile_disjunction consumed the rest
             break
         else:
-            # Regular goal - compile as usual
-            is_last = goal_idx == len(continuation_goals) - 1
-            goal_instrs = _compile_single_goal(
-                goal, register_map, is_last, module, seen_vars
-            )
-            instructions.extend(goal_instrs)
+            # Regular goal (may itself be a conjunction) - compile sequentially
+            flat_goals = _flatten_conjunction(goal)
+            for conj_idx, conj_goal in enumerate(flat_goals):
+                is_last = (
+                    goal_idx == len(continuation_goals) - 1
+                    and conj_idx == len(flat_goals) - 1
+                )
+                goal_instrs = _compile_single_goal(
+                    conj_goal, register_map, is_last, module, seen_vars
+                )
+                instructions.extend(goal_instrs)
 
     return instructions
 

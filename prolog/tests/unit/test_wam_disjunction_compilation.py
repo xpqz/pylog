@@ -333,6 +333,39 @@ class TestDisjunctionJumpElimination:
         ), f"Unexpected OP_JUMP in instructions: {instructions}"
 
 
+class TestDisjunctionConjunctionFlattening:
+    """Ensure conjunctions inside branches are expanded into sequential goals."""
+
+    def test_branch_conjunction_compiles_each_goal(self):
+        """(a, b ; c), d compiles calls to a, b, c without :,/2."""
+        clause = Clause(
+            head=Atom("p"),
+            body=[
+                Struct(
+                    ";",
+                    (
+                        Struct(",", (Atom("a"), Atom("b"))),
+                        Atom("c"),
+                    ),
+                ),
+                Atom("d"),
+            ],
+        )
+
+        instructions = compile_clause(clause, module="user")
+
+        targets = [
+            instr[1] for instr in instructions if instr[0] in (OP_CALL, OP_EXECUTE)
+        ]
+
+        assert "user:a/0" in targets, "Branch conjunction should call user:a/0"
+        assert "user:b/0" in targets, "Branch conjunction should call user:b/0"
+        assert "user:d/0" in targets, "Continuation should call user:d/0"
+        assert all(
+            target != "user:,/2" for target in targets
+        ), f"Found unexpected call to user:,/2 in {targets}"
+
+
 class TestEmptyBranches:
     """Test edge cases with single branches."""
 
