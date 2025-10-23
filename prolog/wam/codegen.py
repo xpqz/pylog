@@ -350,10 +350,18 @@ def compile_disjunction(
 
         # Insert deallocate before tail call if needed
         if perm_count > 0 and len(instructions) > 0:
-            last_instr = instructions[-1]
-            if isinstance(last_instr, tuple) and last_instr[0] == OP_EXECUTE:
-                # Insert deallocate before the execute
-                instructions.insert(len(instructions) - 1, (OP_DEALLOCATE,))
+            last_idx = len(instructions) - 1
+            while last_idx >= 0:
+                instr = instructions[last_idx]
+                if isinstance(instr, tuple) and len(instr) == 2 and instr[0] == "LABEL":
+                    last_idx -= 1
+                    continue
+                break
+            if last_idx >= 0 and instructions[last_idx][0] == OP_EXECUTE:
+                if not (
+                    last_idx > 0 and instructions[last_idx - 1] == (OP_DEALLOCATE,)
+                ):
+                    instructions.insert(last_idx, (OP_DEALLOCATE,))
 
         return instructions
 
@@ -378,6 +386,8 @@ def compile_disjunction(
         # CRITICAL: Clone seen_vars for this branch to prevent cross-contamination
         branch_seen = seen_vars.copy()
 
+        branch_start = len(instructions)
+
         # Compile branch goal (last only if no continuation)
         branch_is_last = len(continuation_goals) == 0
         branch_instrs = _compile_single_goal(
@@ -394,16 +404,25 @@ def compile_disjunction(
 
         # Check if branch ends with execute (tail call)
         branch_ends_with_execute = False
-        if len(instructions) > 0:
-            last_instr = instructions[-1]
-            if isinstance(last_instr, tuple) and last_instr[0] == OP_EXECUTE:
-                branch_ends_with_execute = True
+        last_idx = len(instructions) - 1
+        while last_idx >= branch_start:
+            instr = instructions[last_idx]
+            if isinstance(instr, tuple) and len(instr) == 2 and instr[0] == "LABEL":
+                last_idx -= 1
+                continue
+            break
+        if last_idx >= branch_start and instructions[last_idx][0] == OP_EXECUTE:
+            branch_ends_with_execute = True
 
         # CRITICAL: Insert deallocate before tail call if needed
         # Each branch that ends in execute needs its own deallocate
         if branch_ends_with_execute and perm_count > 0:
-            # Insert deallocate before the execute
-            instructions.insert(len(instructions) - 1, (OP_DEALLOCATE,))
+            if not (
+                last_idx > branch_start
+                and instructions[last_idx - 1] == (OP_DEALLOCATE,)
+            ):
+                instructions.insert(last_idx, (OP_DEALLOCATE,))
+                last_idx += 1  # Execute now shifted right by insert
 
         # CRITICAL: Jump to end after successful branch (prevents fall-through)
         # All branches except the last need this jump

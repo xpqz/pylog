@@ -313,6 +313,26 @@ class TestDisjunctionLabelGeneration:
         assert labels1.isdisjoint(labels2), "Labels across disjunctions must be unique"
 
 
+class TestDisjunctionJumpElimination:
+    """Ensure unreachable jumps are not emitted for tail-call branches."""
+
+    def test_nested_disjunction_tail_branches_emit_no_jump(self):
+        """(a ; b), (c ; d) should not emit unreachable OP_JUMP."""
+        clause = Clause(
+            head=Atom("p"),
+            body=[
+                Struct(";", (Atom("a"), Atom("b"))),
+                Struct(";", (Atom("c"), Atom("d"))),
+            ],
+        )
+
+        instructions = compile_clause(clause, module="user")
+
+        assert not any(
+            instr[0] == OP_JUMP for instr in instructions
+        ), f"Unexpected OP_JUMP in instructions: {instructions}"
+
+
 class TestEmptyBranches:
     """Test edge cases with single branches."""
 
