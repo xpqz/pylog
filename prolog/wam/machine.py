@@ -54,6 +54,7 @@ from prolog.wam.instructions import (
     OP_GET_VALUE,
     OP_GET_VARIABLE,
     OP_HALT,
+    OP_JUMP,
     OP_NECK_CUT,
     OP_NOOP,
     OP_PROCEED,
@@ -815,6 +816,21 @@ class Machine:
 
             # Advance P to next instruction
             self.P += 1
+        elif opcode == OP_JUMP:
+            # jump Label
+            # Unconditional jump to target offset (used in disjunction to skip alt branches)
+            (target_offset,) = args
+
+            # Validate target offset is within code area
+            if not isinstance(target_offset, int) or target_offset < 0:
+                self.halted = True
+                return False
+            if target_offset >= len(self.code):
+                self.halted = True
+                return False
+
+            # Jump to target offset
+            self.P = target_offset
         elif opcode == OP_GET_LEVEL:
             # get_level Yk
             (yk,) = args

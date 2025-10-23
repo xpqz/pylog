@@ -879,18 +879,86 @@ def finalize_clause(head_instructions, body_instructions, perm_count):
     return code
 
 
+def resolve_labels(instructions):
+    """Resolve label pseudo-instructions to numeric offsets.
+
+    This pass transforms the instruction list by:
+    1. Building a label-to-offset mapping (accounting for removed labels)
+    2. Removing ("LABEL", name) pseudo-instructions
+    3. Replacing label string references with numeric offsets
+
+    Args:
+        instructions: List of instruction tuples with possible ("LABEL", name)
+                     pseudo-instructions and label string references
+
+    Returns:
+        List of instruction tuples with numeric offsets, no LABEL pseudo-instructions
+
+    Example:
+        >>> raw = [
+        ...     (OP_TRY_ME_ELSE, "L1"),
+        ...     (OP_CALL, "p/0"),
+        ...     (OP_JUMP, "Lend"),
+        ...     ("LABEL", "L1"),
+        ...     (OP_TRUST_ME,),
+        ...     (OP_CALL, "q/0"),
+        ...     ("LABEL", "Lend"),
+        ...     (OP_PROCEED,)
+        ... ]
+        >>> resolved = resolve_labels(raw)
+        >>> # L1 at position 3 (after removing LABELs) -> offset 3
+        >>> # Lend at position 6 (after removing LABELs) -> offset 6
+        >>> resolved[0]  # try_me_else with numeric offset
+        (OP_TRY_ME_ELSE, 3)
+    """
+    # First pass: Build label-to-offset mapping
+    # Account for labels being removed by tracking how many we've seen
+    label_map = {}
+    labels_before = 0
+
+    for i, instr in enumerate(instructions):
+        if isinstance(instr, tuple) and len(instr) == 2 and instr[0] == "LABEL":
+            label_name = instr[1]
+            # Label points to next instruction, adjusted for removed labels
+            label_map[label_name] = i - labels_before
+            labels_before += 1
+
+    # Second pass: Remove labels and resolve references
+    resolved = []
+    for instr in instructions:
+        # Skip label pseudo-instructions
+        if isinstance(instr, tuple) and len(instr) == 2 and instr[0] == "LABEL":
+            continue
+
+        # Check if instruction references a label
+        if isinstance(instr, tuple) and len(instr) >= 2:
+            opcode = instr[0]
+            # try_me_else, retry_me_else, jump all have label as first arg
+            if opcode in (OP_TRY_ME_ELSE, OP_RETRY_ME_ELSE, OP_JUMP):
+                label_ref = instr[1]
+                if isinstance(label_ref, str) and label_ref in label_map:
+                    # Replace label string with numeric offset
+                    resolved.append((opcode, label_map[label_ref]))
+                    continue
+
+        # No label reference - keep instruction as-is
+        resolved.append(instr)
+
+    return resolved
+
+
 def compile_clause(clause, module="user"):
     """Compile a complete Prolog clause to WAM instructions.
 
     Convenience function that combines liveness analysis, register allocation,
-    and code generation into a single call.
+    and code generation into a single call. Resolves labels to numeric offsets.
 
     Args:
         clause: Clause AST node with head and body
         module: Module context for unqualified calls (default "user")
 
     Returns:
-        List of WAM instruction tuples
+        List of WAM instruction tuples with resolved labels (no pseudo-instructions)
 
     Example:
         >>> from prolog.ast.clauses import Clause
@@ -910,4 +978,7 @@ def compile_clause(clause, module="user"):
     body_instructions = compile_body(clause, register_map, module)
 
     # Finalize with frame management
-    return finalize_clause(head_instructions, body_instructions, perm_count)
+    raw_instructions = finalize_clause(head_instructions, body_instructions, perm_count)
+
+    # Resolve labels to numeric offsets
+    return resolve_labels(raw_instructions)

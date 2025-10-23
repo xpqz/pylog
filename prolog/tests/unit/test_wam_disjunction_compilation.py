@@ -600,6 +600,70 @@ class TestNestedDisjunctionContinuation:
         assert len(put_values) >= 1, "Should have put_value for X"
 
 
+class TestLabelResolution:
+    """Test label resolution to numeric offsets."""
+
+    def test_labels_resolved_to_numeric_offsets(self):
+        """Labels are resolved to numeric offsets, no pseudo-instructions remain.
+
+        CRITICAL: VM cannot execute LABEL pseudo-instructions or string offsets.
+        All label references must be resolved to numeric code offsets.
+        """
+        clause = Clause(head=Atom("p"), body=[Struct(";", (Atom("a"), Atom("b")))])
+
+        instructions = compile_clause(clause, module="user")
+
+        # Check no LABEL pseudo-instructions remain
+        for instr in instructions:
+            assert not (
+                isinstance(instr, tuple) and len(instr) == 2 and instr[0] == "LABEL"
+            ), f"Found unresolved LABEL pseudo-instruction: {instr}"
+
+        # Check try_me_else, retry_me_else, jump have numeric offsets
+        for instr in instructions:
+            if isinstance(instr, tuple) and len(instr) >= 2:
+                opcode = instr[0]
+                if opcode in (OP_TRY_ME_ELSE, OP_RETRY_ME_ELSE, OP_JUMP):
+                    offset = instr[1]
+                    assert isinstance(
+                        offset, int
+                    ), f"{opcode} must have int offset, got {type(offset)}: {offset}"
+                    assert (
+                        offset >= 0
+                    ), f"{opcode} offset must be non-negative, got {offset}"
+                    assert offset < len(
+                        instructions
+                    ), f"{opcode} offset {offset} exceeds code size {len(instructions)}"
+
+    def test_label_resolution_correctness(self):
+        """Label offsets point to correct instructions after resolution.
+
+        For (a ; b):
+        - try_me_else points to trust_me
+        - jump points to instruction after trust_me block
+        """
+        clause = Clause(head=Atom("test"), body=[Struct(";", (Atom("a"), Atom("b")))])
+
+        instructions = compile_clause(clause, module="user")
+
+        # Find try_me_else
+        try_idx = None
+        for i, instr in enumerate(instructions):
+            if instr[0] == OP_TRY_ME_ELSE:
+                try_idx = i
+                break
+
+        assert try_idx is not None, "Should have try_me_else"
+
+        # Get target offset from try_me_else
+        try_target = instructions[try_idx][1]
+
+        # Verify target points to trust_me
+        assert (
+            instructions[try_target][0] == OP_TRUST_ME
+        ), f"try_me_else should point to trust_me, got {instructions[try_target]}"
+
+
 class TestDisjunctionFailurePath:
     """Test disjunction failure leads to clause failure."""
 
