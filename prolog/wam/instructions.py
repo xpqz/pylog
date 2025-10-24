@@ -40,6 +40,9 @@ Phase 2 cut instructions:
 - OP_CUT: Prune all choicepoints above the level saved in Y register
 - OP_NECK_CUT: Prune choicepoint created by current clause (optimization)
 
+Phase 4 disjunction instructions:
+- OP_JUMP: Unconditional jump to label (for exiting disjunction branches)
+
 Phase 3 unify instruction family:
 - OP_UNIFY_VARIABLE: Unify structure argument with new variable (write mode) or read variable (read mode)
 - OP_UNIFY_VALUE: Unify structure argument with existing value (write mode) or read and unify (read mode)
@@ -81,6 +84,7 @@ OP_CATCH_SETUP = 26
 OP_CATCH_CLEANUP = 27
 OP_THROW = 28
 OP_CALL_BUILTIN = 29
+OP_JUMP = 30
 
 # Opcode name mapping for debugging and pretty-printing
 _OPCODE_NAMES = {
@@ -114,6 +118,7 @@ _OPCODE_NAMES = {
     OP_CATCH_CLEANUP: "catch_cleanup",
     OP_THROW: "throw",
     OP_CALL_BUILTIN: "call_builtin",
+    OP_JUMP: "jump",
 }
 
 # Reverse mapping for name->opcode lookup
@@ -151,6 +156,7 @@ _INSTRUCTION_ARITY = {
     OP_CATCH_CLEANUP: 0,  # catch_cleanup
     OP_THROW: 0,  # throw/1 uses ball in X[0]
     OP_CALL_BUILTIN: 1,  # call_builtin Symbol (builtin identifier)
+    OP_JUMP: 1,  # jump Label (unconditional jump)
 }
 
 __all__ = [
@@ -184,6 +190,7 @@ __all__ = [
     "OP_CATCH_CLEANUP",
     "OP_THROW",
     "OP_CALL_BUILTIN",
+    "OP_JUMP",
     "opcode_name",
     "name_to_opcode",
     "validate_instruction",
