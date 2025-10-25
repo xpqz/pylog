@@ -27,6 +27,8 @@ from prolog.wam.instructions import (
     OP_RETRY_ME_ELSE,
     OP_TRUST_ME,
     OP_JUMP,
+    OP_GET_LEVEL,
+    OP_CUT,
 )
 from prolog.wam.liveness import extract_vars, classify_vars
 from prolog.wam.regalloc import allocate_registers
@@ -37,6 +39,7 @@ __all__ = [
     "compile_body",
     "compile_clause",
     "compile_disjunction",
+    "compile_if_then_else",
     "_flatten_disjunction",
     "finalize_clause",
 ]
@@ -458,6 +461,148 @@ def compile_disjunction(
     return instructions
 
 
+def compile_if_then_else(
+    condition,
+    then_branch,
+    else_branch,
+    continuation_goals,
+    register_map,
+    module,
+    seen_vars,
+    perm_count=0,
+):
+    """Compile if-then-else with commit semantics using get_level and cut.
+
+    Pattern: (Cond -> Then ; Else), Continuation
+    Compiles to:
+        get_level Y0           # Save current B
+        try_me_else Lelse
+            <code for Cond>
+            cut Y0             # Commit: remove choicepoint
+            <code for Then>
+            <code for Continuation>
+            deallocate (if perm_count > 0 and ends in tail call)
+            jump Lend
+        Lelse:
+            trust_me
+            <code for Else>
+            <code for Continuation>
+            deallocate (if perm_count > 0 and ends in tail call)
+        Lend:
+
+    The key difference from regular disjunction is that successful execution
+    of the condition commits to the then-branch by cutting the choicepoint.
+
+    Args:
+        condition: AST term for condition to evaluate
+        then_branch: AST term for then-branch goal(s)
+        else_branch: AST term for else-branch goal(s)
+        continuation_goals: List of goals after the if-then-else
+        register_map: dict mapping var_id -> ("X"|"Y", index)
+        module: Current module context
+        seen_vars: Set of already-seen variable IDs
+        perm_count: Number of permanent variables
+
+    Returns:
+        List of instruction tuples
+    """
+    instructions = []
+
+    # Find an available Y register for storing the choicepoint level
+    # We need to allocate a new permanent variable for this
+    max_y = -1
+    for vid, (bank, idx) in register_map.items():
+        if bank == "Y" and idx > max_y:
+            max_y = idx
+    level_y_idx = max_y + 1
+    level_y_reg = ("Y", level_y_idx)
+
+    # Generate labels
+    else_label = _gen_label()
+    end_label = _gen_label()
+
+    # Save current choicepoint level
+    instructions.append((OP_GET_LEVEL, level_y_reg))
+
+    # Create choicepoint for else branch
+    instructions.append((OP_TRY_ME_ELSE, else_label))
+
+    # Compile condition with fresh seen_vars for this branch
+    cond_seen = seen_vars.copy()
+
+    # Flatten condition if it's a conjunction
+    cond_goals = _flatten_conjunction(condition)
+    for cond_goal in cond_goals:
+        cond_instrs = _compile_single_goal(
+            cond_goal, register_map, False, module, cond_seen
+        )
+        instructions.extend(cond_instrs)
+
+    # CRITICAL: Cut to commit to then-branch
+    instructions.append((OP_CUT, level_y_reg))
+
+    # Compile then-branch (handle nested if-then-else properly)
+    # Combine then-branch goals with continuation
+    then_goals = _flatten_conjunction(then_branch)
+    combined_then = then_goals + list(continuation_goals)
+
+    # Use _compile_continuation to handle nested if-then-else
+    then_cont_instrs = _compile_continuation(
+        combined_then,
+        register_map,
+        module,
+        cond_seen,
+        perm_count + 1,  # +1 for level Y register
+    )
+    instructions.extend(then_cont_instrs)
+
+    # Check if then-branch ends with execute
+    then_ends_with_execute = False
+    if instructions and instructions[-1][0] == OP_EXECUTE:
+        then_ends_with_execute = True
+
+    # Insert deallocate before tail call if needed
+    if then_ends_with_execute and perm_count > 0:
+        instructions.insert(-1, (OP_DEALLOCATE,))
+
+    # Jump to end (skip else branch)
+    if not then_ends_with_execute:
+        instructions.append((OP_JUMP, end_label))
+
+    # Else branch
+    instructions.append(("LABEL", else_label))
+    instructions.append((OP_TRUST_ME,))
+
+    # Compile else-branch with fresh seen_vars (handle nested if-then-else properly)
+    else_seen = seen_vars.copy()
+    else_goals = _flatten_conjunction(else_branch)
+    combined_else = else_goals + list(continuation_goals)
+
+    # Use _compile_continuation to handle nested if-then-else
+    else_cont_instrs = _compile_continuation(
+        combined_else,
+        register_map,
+        module,
+        else_seen,
+        perm_count + 1,  # +1 for level Y register
+    )
+    instructions.extend(else_cont_instrs)
+
+    # Check if else-branch ends with execute
+    else_ends_with_execute = False
+    if instructions and instructions[-1][0] == OP_EXECUTE:
+        else_ends_with_execute = True
+
+    # Insert deallocate before tail call if needed
+    if else_ends_with_execute and perm_count > 0:
+        instructions.insert(-1, (OP_DEALLOCATE,))
+
+    # End label
+    instructions.append(("LABEL", end_label))
+
+    return instructions
+
+
 def _compile_continuation(
     continuation_goals, register_map, module, seen_vars, perm_count=0
 ):
@@ -485,19 +630,58 @@ def _compile_continuation(
     for goal_idx, goal in enumerate(continuation_goals):
         # Check if goal is a disjunction (;/2)
         if isinstance(goal, Struct) and goal.functor == ";" and len(goal.args) == 2:
-            # Flatten nested disjunctions
-            branches = _flatten_disjunction(goal)
+            # Check if this is an if-then-else pattern: (Cond -> Then ; Else)
+            left_branch = goal.args[0]
+            right_branch = goal.args[1]
 
-            # CRITICAL: Pass remaining goals as continuation to nested disjunction
-            # This ensures each inner branch compiles the rest with its own seen_vars
-            remaining_goals = continuation_goals[goal_idx + 1 :]
-            nested_instrs = compile_disjunction(
-                branches, remaining_goals, register_map, module, seen_vars, perm_count
-            )
-            instructions.extend(nested_instrs)
+            if (
+                isinstance(left_branch, Struct)
+                and left_branch.functor == "->"
+                and len(left_branch.args) == 2
+            ):
+                # This is if-then-else: (Cond -> Then) ; Else
+                condition = left_branch.args[0]
+                then_branch = left_branch.args[1]
+                else_branch = right_branch
 
-            # Break out - nested compile_disjunction consumed the rest
-            break
+                # Get remaining goals after this if-then-else
+                remaining_goals = continuation_goals[goal_idx + 1 :]
+
+                # Compile if-then-else with special commit semantics
+                ite_instrs = compile_if_then_else(
+                    condition,
+                    then_branch,
+                    else_branch,
+                    remaining_goals,
+                    register_map,
+                    module,
+                    seen_vars,
+                    perm_count,
+                )
+                instructions.extend(ite_instrs)
+
+                # Break out - compile_if_then_else consumed the rest
+                break
+            else:
+                # Regular disjunction
+                # Flatten nested disjunctions
+                branches = _flatten_disjunction(goal)
+
+                # CRITICAL: Pass remaining goals as continuation to nested disjunction
+                # This ensures each inner branch compiles the rest with its own seen_vars
+                remaining_goals = continuation_goals[goal_idx + 1 :]
+                nested_instrs = compile_disjunction(
+                    branches,
+                    remaining_goals,
+                    register_map,
+                    module,
+                    seen_vars,
+                    perm_count,
+                )
+                instructions.extend(nested_instrs)
+
+                # Break out - nested compile_disjunction consumed the rest
+                break
         else:
             # Regular goal (may itself be a conjunction) - compile sequentially
             flat_goals = _flatten_conjunction(goal)
@@ -833,24 +1017,81 @@ def compile_body(clause, register_map, module="user", perm_count=0):
     for goal_idx, goal in enumerate(clause.body):
         is_last = goal_idx == num_goals - 1
 
-        # Check if goal is a disjunction (;/2)
+        # Check if goal is a disjunction (;/2) or if-then-else
         if isinstance(goal, Struct) and goal.functor == ";" and len(goal.args) == 2:
-            # Flatten nested disjunctions and compile
-            branches = _flatten_disjunction(goal)
+            # Check if this is if-then-else pattern: (Cond -> Then ; Else)
+            left_branch = goal.args[0]
+            right_branch = goal.args[1]
 
-            # Extract continuation goals (all goals after this disjunction)
+            if (
+                isinstance(left_branch, Struct)
+                and left_branch.functor == "->"
+                and len(left_branch.args) == 2
+            ):
+                # This is if-then-else: (Cond -> Then) ; Else
+                condition = left_branch.args[0]
+                then_branch = left_branch.args[1]
+                else_branch = right_branch
+
+                # Extract continuation goals (all goals after this if-then-else)
+                continuation_goals = clause.body[goal_idx + 1 :]
+
+                # Compile if-then-else
+                ite_instructions = compile_if_then_else(
+                    condition,
+                    then_branch,
+                    else_branch,
+                    continuation_goals,
+                    register_map,
+                    module,
+                    seen_vars,
+                    perm_count,
+                )
+                instructions.extend(ite_instructions)
+            else:
+                # Regular disjunction
+                # Flatten nested disjunctions and compile
+                branches = _flatten_disjunction(goal)
+
+                # Extract continuation goals (all goals after this disjunction)
+                continuation_goals = clause.body[goal_idx + 1 :]
+
+                # Compile disjunction with per-branch continuation
+                disj_instructions = compile_disjunction(
+                    branches,
+                    continuation_goals,
+                    register_map,
+                    module,
+                    seen_vars,
+                    perm_count,
+                )
+                instructions.extend(disj_instructions)
+
+            # CRITICAL: Break out of loop - continuation already compiled
+            break
+
+        # Check if goal is if-then without else (-> without ;)
+        elif isinstance(goal, Struct) and goal.functor == "->" and len(goal.args) == 2:
+            # (Cond -> Then) is equivalent to (Cond -> Then ; fail)
+            condition = goal.args[0]
+            then_branch = goal.args[1]
+            else_branch = Atom("fail")  # fail if condition doesn't hold
+
+            # Extract continuation goals
             continuation_goals = clause.body[goal_idx + 1 :]
 
-            # Compile disjunction with per-branch continuation
-            disj_instructions = compile_disjunction(
-                branches,
+            # Compile as if-then-else with fail as else branch
+            ite_instructions = compile_if_then_else(
+                condition,
+                then_branch,
+                else_branch,
                 continuation_goals,
                 register_map,
                 module,
                 seen_vars,
                 perm_count,
             )
-            instructions.extend(disj_instructions)
+            instructions.extend(ite_instructions)
 
             # CRITICAL: Break out of loop - continuation already compiled
             break
