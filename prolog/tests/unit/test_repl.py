@@ -12,6 +12,8 @@ from unittest.mock import Mock, patch
 
 from prolog.engine.engine import Engine
 from prolog.ast.terms import Atom, Int, List, Var
+from prolog.repl import PrologCompleter, PrologLexer, PrologREPL
+from pygments.token import Token
 
 
 def assert_engine_clean(engine):
@@ -31,7 +33,6 @@ class TestREPLCore:
 
     def test_repl_initialization(self):
         """Test that REPL initializes with an engine."""
-        from prolog.repl import PrologREPL
 
         repl = PrologREPL()
         assert repl.engine is not None
@@ -40,7 +41,6 @@ class TestREPLCore:
 
     def test_load_file_success(self, tmp_path):
         """Test loading a Prolog file."""
-        from prolog.repl import PrologREPL
 
         # Create a test file
         test_file = tmp_path / "test.pl"
@@ -64,7 +64,6 @@ class TestREPLCore:
 
     def test_load_file_not_found(self):
         """Test loading a non-existent file."""
-        from prolog.repl import PrologREPL
 
         repl = PrologREPL()
         result = repl.load_file("nonexistent.pl")
@@ -73,7 +72,6 @@ class TestREPLCore:
 
     def test_load_file_parse_error(self, tmp_path):
         """Test loading a file with parse errors."""
-        from prolog.repl import PrologREPL
 
         # Create a file with invalid syntax
         test_file = tmp_path / "invalid.pl"
@@ -91,7 +89,6 @@ class TestREPLCore:
 
     def test_execute_query_success(self):
         """Test executing a successful query."""
-        from prolog.repl import PrologREPL
 
         repl = PrologREPL()
         repl.engine.consult_string("parent(tom, bob). parent(bob, pat).")
@@ -105,7 +102,6 @@ class TestREPLCore:
 
     def test_execute_query_failure(self):
         """Test executing a failing query."""
-        from prolog.repl import PrologREPL
 
         repl = PrologREPL()
         repl.engine.consult_string("parent(tom, bob).")
@@ -117,7 +113,6 @@ class TestREPLCore:
 
     def test_execute_query_multiple_solutions(self):
         """Test query with multiple solutions."""
-        from prolog.repl import PrologREPL
 
         repl = PrologREPL()
         repl.engine.consult_string(
@@ -139,7 +134,6 @@ class TestREPLCore:
 
     def test_format_solution(self):
         """Test formatting solutions for display."""
-        from prolog.repl import PrologREPL
 
         repl = PrologREPL()
 
@@ -179,9 +173,13 @@ class TestREPLCore:
         # Unbound vars should show as _ or similar, not None
         assert "U = None" not in formatted
 
+        # Query variable that remains unbound should be omitted (prints true)
+        result = {"success": True, "bindings": {"Y": Var(0, "Y")}}
+        formatted = repl.format_solution(result)
+        assert formatted == "true"
+
     def test_execute_query_cleans_state_on_success(self):
         """Test that engine state is clean after successful query."""
-        from prolog.repl import PrologREPL
 
         repl = PrologREPL()
         repl.engine.consult_string("a. a.")
@@ -191,7 +189,6 @@ class TestREPLCore:
 
     def test_execute_query_cleans_state_on_failure(self):
         """Test that engine state is clean after failed query."""
-        from prolog.repl import PrologREPL
 
         repl = PrologREPL()
         repl.engine.consult_string("a.")
@@ -201,7 +198,6 @@ class TestREPLCore:
 
     def test_execute_query_all_cleans_state(self):
         """Test that engine state is clean after getting all solutions."""
-        from prolog.repl import PrologREPL
 
         repl = PrologREPL()
         repl.engine.consult_string("c(1). c(2). c(3).")
@@ -211,7 +207,6 @@ class TestREPLCore:
 
     def test_query_generator_stops_on_dot_frees_state(self):
         """Test that stopping a query generator cleans state."""
-        from prolog.repl import PrologREPL
 
         repl = PrologREPL()
         repl.engine.consult_string("n(1). n(2).")
@@ -224,7 +219,6 @@ class TestREPLCore:
 
     def test_multiple_consults_append_program(self, tmp_path):
         """Test that multiple consults append to program rather than replace."""
-        from prolog.repl import PrologREPL
 
         f1 = tmp_path / "p1.pl"
         f1.write_text("a(1).")
@@ -247,7 +241,6 @@ class TestREPLCommands:
 
     def test_help_command(self):
         """Test help command displays help text."""
-        from prolog.repl import PrologREPL
 
         repl = PrologREPL()
         help_text = repl.get_help_text()
@@ -270,7 +263,6 @@ class TestREPLCommands:
 
     def test_parse_command(self):
         """Test parsing different command types."""
-        from prolog.repl import PrologREPL
 
         repl = PrologREPL()
 
@@ -308,7 +300,6 @@ class TestREPLCommands:
 
     def test_parse_command_whitespace_and_missing_dot(self):
         """Test parsing commands with whitespace and missing dots."""
-        from prolog.repl import PrologREPL
 
         repl = PrologREPL()
 
@@ -345,7 +336,6 @@ class TestREPLInteraction:
     @patch("builtins.print")
     def test_repl_session_loop(self, mock_print, mock_prompt_session):
         """Test the main REPL loop with prompt_toolkit."""
-        from prolog.repl import PrologREPL
 
         # Mock user inputs
         mock_session = Mock()
@@ -379,7 +369,6 @@ class TestREPLInteraction:
     @patch("prolog.repl.PromptSession")
     def test_repl_handles_eof_and_keyboardinterrupt(self, mock_prompt_session):
         """Test REPL handles EOF and KeyboardInterrupt gracefully."""
-        from prolog.repl import PrologREPL
 
         mock_session = Mock()
         mock_session.prompt.side_effect = [KeyboardInterrupt, EOFError]
@@ -392,7 +381,6 @@ class TestREPLInteraction:
 
     def test_handle_query_with_continuation(self):
         """Test handling query with ; and . for multiple solutions."""
-        from prolog.repl import PrologREPL
 
         repl = PrologREPL()
         repl.engine.consult_string(
@@ -431,8 +419,6 @@ class TestREPLWithPromptToolkit:
 
     def test_syntax_highlighting(self):
         """Test that syntax highlighting is configured."""
-        from prolog.repl import PrologLexer
-        from pygments.token import Token
 
         lexer = PrologLexer()
 
@@ -448,7 +434,6 @@ class TestREPLWithPromptToolkit:
 
     def test_syntax_highlighting_handles_comments_numbers_vars(self):
         """Test syntax highlighting with comments, numbers, and variables."""
-        from prolog.repl import PrologLexer
 
         lexer = PrologLexer()
         code = "% comment\nparent(X, Y) :- X is 1+2."
@@ -457,8 +442,6 @@ class TestREPLWithPromptToolkit:
 
     def test_completer(self):
         """Test auto-completion for predicates."""
-        from prolog.repl import PrologCompleter
-        from unittest.mock import Mock
 
         # Create completer with some predicates
         completer = PrologCompleter()
@@ -485,8 +468,6 @@ class TestREPLWithPromptToolkit:
 
     def test_completer_updates_from_engine(self):
         """Test that completer reflects dynamic program changes."""
-        from prolog.repl import PrologCompleter, PrologREPL
-        from unittest.mock import Mock
 
         repl = PrologREPL()
         repl.engine.consult_string("parent(tom, bob).")
@@ -512,7 +493,6 @@ class TestREPLWithPromptToolkit:
 
     def test_history_persistence(self, tmp_path):
         """Test that command history is saved and loaded."""
-        from prolog.repl import PrologREPL
 
         history_file = tmp_path / ".pylog_history"
 
@@ -537,7 +517,6 @@ class TestREPLWithPromptToolkit:
 
     def test_history_load_missing_file_is_ok(self, tmp_path):
         """Test that loading non-existent history file doesn't raise."""
-        from prolog.repl import PrologREPL
 
         hist = tmp_path / ".none"
         repl = PrologREPL(history_file=str(hist))
@@ -550,7 +529,6 @@ class TestREPLErrorHandling:
 
     def test_division_by_zero(self):
         """Test that division by zero is handled gracefully."""
-        from prolog.repl import PrologREPL
 
         repl = PrologREPL()
 
@@ -561,7 +539,6 @@ class TestREPLErrorHandling:
 
     def test_arithmetic_evaluation_errors(self):
         """Test handling of arithmetic evaluation errors."""
-        from prolog.repl import PrologREPL
 
         repl = PrologREPL()
 
@@ -582,7 +559,6 @@ class TestREPLErrorHandling:
 
     def test_handle_parse_error(self):
         """Test handling of parse errors in queries."""
-        from prolog.repl import PrologREPL
 
         repl = PrologREPL()
 
@@ -596,7 +572,6 @@ class TestREPLErrorHandling:
 
     def test_handle_runtime_error(self):
         """Test handling of runtime errors."""
-        from prolog.repl import PrologREPL
 
         repl = PrologREPL()
 
@@ -608,7 +583,6 @@ class TestREPLErrorHandling:
 
     def test_handle_file_encoding_error(self, tmp_path):
         """Test handling files with encoding issues."""
-        from prolog.repl import PrologREPL
 
         # Create a file with invalid UTF-8
         test_file = tmp_path / "bad_encoding.pl"
@@ -621,7 +595,6 @@ class TestREPLErrorHandling:
 
     def test_query_timeout_protection(self):
         """Test protection against infinite loops."""
-        from prolog.repl import PrologREPL
 
         repl = PrologREPL()
         repl.engine.consult_string("loop :- loop.")

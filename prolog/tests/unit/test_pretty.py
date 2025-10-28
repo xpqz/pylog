@@ -335,11 +335,20 @@ class TestPrettySolution:
         """Pretty print solution with unbound variable."""
         # Unbound variables remain as variables
         bindings = {"X": Var(0, "X")}
-        assert pretty_solution(bindings) == "X = X"
+        assert pretty_solution(bindings) == "true"
 
         # Variable bound to another variable
         bindings = {"X": Var(1, "Y")}
         assert pretty_solution(bindings) == "X = Y"
+
+    def test_pretty_solution_variable_alias_chain(self):
+        """Pretty print solution with multiple variables sharing the same Var."""
+        bindings = {
+            "X": Var(0, "X"),
+            "Y": Var(0, "X"),
+            "Z": Var(0, "X"),
+        }
+        assert pretty_solution(bindings) == "X = Y, Y = Z"
 
     def test_pretty_solution_with_quoted_values(self):
         """Pretty print solution with values that need quoting."""

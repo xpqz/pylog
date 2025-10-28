@@ -415,11 +415,61 @@ def pretty_solution(bindings: Dict[str, Term]) -> str:
     if not bindings:
         return "true"
 
-    var_names = {}
-    binding_strs = []
+    # Track how many query variables point at each Var id so we can identify
+    # alias classes and skip trivial self-bindings that would print as X = X.
+    var_occurrences: Dict[int, int] = {}
+    for value in bindings.values():
+        if isinstance(value, Var):
+            var_occurrences[value.id] = var_occurrences.get(value.id, 0) + 1
+
+    # Build alias groups: map Var id -> sorted list of query variable names.
+    id_to_names: Dict[int, List[str]] = {}
+    for var_name, value in bindings.items():
+        if isinstance(value, Var):
+            id_to_names.setdefault(value.id, []).append(var_name)
+
+    for names in id_to_names.values():
+        names.sort()
+
+    # Build equality chains for alias groups (multiple query vars sharing a Var).
+    alias_parts = []
+    processed_names = set()
+    for var_id in sorted(id_to_names, key=lambda vid: id_to_names[vid][0]):
+        names = id_to_names[var_id]
+        if not names:
+            continue
+
+        canonical_value = bindings[names[0]]
+
+        # Single-variable groups: either skip trivial self-binding or defer to later.
+        if len(names) == 1:
+            if isinstance(canonical_value, Var) and canonical_value.hint == names[0]:
+                processed_names.add(names[0])
+            continue
+
+        processed_names.update(names)
+
+        # Emit a chain like X = Y, Y = Z for aliases.
+        for left, right in zip(names, names[1:]):
+            alias_parts.append(f"{left} = {right}")
+
+    var_names: Dict[int, str] = {}
+    binding_strs = alias_parts
+
     for var_name, value in sorted(bindings.items()):
+        if var_name in processed_names:
+            continue
+
+        if isinstance(value, Var):
+            # Skip trivial unbound self bindings (X = X).
+            if value.hint == var_name and var_occurrences.get(value.id, 0) <= 1:
+                continue
+
         value_str = pretty(value, var_names)
         binding_strs.append(f"{var_name} = {value_str}")
+
+    if not binding_strs:
+        return "true"
 
     return ", ".join(binding_strs)
 
