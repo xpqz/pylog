@@ -39,7 +39,7 @@ from pygments.token import (
 from prolog.engine.engine import Engine
 from prolog.ast.terms import Atom, Int, Var, Struct, List, Term
 from prolog.ast.clauses import Program
-from prolog.ast.pretty import pretty, pretty_clause
+from prolog.ast.pretty import pretty, pretty_clause, pretty_solution
 from prolog.parser import parser
 from prolog.parser.parser import parse_program
 from prolog.debug.sinks import PrettyTraceSink, JSONLTraceSink, CollectorSink
@@ -458,18 +458,10 @@ class PrologREPL:
             return "false"
 
         bindings = result.get("bindings", {})
-        if not bindings:
+        formatted = pretty_solution(bindings)
+        if formatted == "true":
             return "true"
-
-        # Sort variable names for deterministic output
-        sorted_vars = sorted(bindings.keys())
-        parts = []
-        for var in sorted_vars:
-            value = bindings[var]
-            formatted_value = self.pretty_print(value)
-            parts.append(f"{var} = {formatted_value}")
-
-        return "\n".join(parts)
+        return formatted
 
     def format_all_solutions(self, results: list[dict[str, Any]]) -> str:
         """Format all solutions for display.
@@ -1474,13 +1466,11 @@ def main():
             for res in results:
                 if res.get("success"):
                     bindings = res.get("bindings", {})
-                    if bindings:
-                        line = ", ".join(
-                            f"{k} = {pretty(v)}" for k, v in bindings.items()
-                        )
-                        print(line)
-                    else:
+                    formatted = pretty_solution(bindings)
+                    if formatted == "true":
                         print("true.")
+                    else:
+                        print(formatted)
                     printed_any = True
                 else:
                     print(f"Error: {res.get('error', 'unknown error')}")
@@ -1492,10 +1482,11 @@ def main():
             res = repl.execute_query(args.goal)
             if res.get("success"):
                 bindings = res.get("bindings", {})
-                if bindings:
-                    print(", ".join(f"{k} = {pretty(v)}" for k, v in bindings.items()))
-                else:
+                formatted = pretty_solution(bindings)
+                if formatted == "true":
                     print("true.")
+                else:
+                    print(formatted)
             else:
                 err = res.get("error")
                 if err:
