@@ -8,125 +8,179 @@ import pytest
 from pathlib import Path
 
 from prolog.ast.terms import Atom, Int, Var, Struct
-from prolog.ast.clauses import Clause
-from scripts.iso_test_operators import iso_test_operators, parse_iso_tests
+from scripts.iso_test_parser import (
+    ClauseScanner,
+    PatternDetector,
+    ISOTestKind,
+)
+
+
+class TestClauseScanner:
+    """Test clause scanning functionality."""
+
+    def test_scan_single_clause(self):
+        """Scan single simple clause."""
+        scanner = ClauseScanner("call(fail) should_fail.")
+        clauses = scanner.scan_clauses()
+        assert len(clauses) == 1
+        assert clauses[0][0] == "call(fail) should_fail."
+
+    def test_scan_multiple_clauses(self):
+        """Scan multiple clauses."""
+        text = "call(fail) should_fail.\ncall(!) should_give true."
+        scanner = ClauseScanner(text)
+        clauses = scanner.scan_clauses()
+        assert len(clauses) == 2
+
+    def test_scan_ignores_comments(self):
+        """Scanner ignores line comments."""
+        text = "% This is a comment\ncall(fail) should_fail.\n% Another comment"
+        scanner = ClauseScanner(text)
+        clauses = scanner.scan_clauses()
+        assert len(clauses) == 1
+
+    def test_scan_respects_parentheses(self):
+        """Scanner respects parentheses depth for dots."""
+        text = "call((a,b.c)) should_fail."
+        scanner = ClauseScanner(text)
+        clauses = scanner.scan_clauses()
+        assert len(clauses) == 1
+
+    def test_scan_respects_quoted_atoms(self):
+        """Scanner respects quoted atoms."""
+        text = "call('atom.with.dots') should_fail."
+        scanner = ClauseScanner(text)
+        clauses = scanner.scan_clauses()
+        assert len(clauses) == 1
+
+    def test_scan_handles_dot_dot_operator(self):
+        """Scanner distinguishes .. operator from clause terminator."""
+        text = "X in 1..10 should_give true."
+        scanner = ClauseScanner(text)
+        clauses = scanner.scan_clauses()
+        assert len(clauses) == 1
+
+
+class TestPatternDetector:
+    """Test pattern detection functionality."""
+
+    def test_find_should_fail_postfix(self):
+        """Detect should_fail postfix operator."""
+        pos = PatternDetector.find_operator_position(
+            "call(fail) should_fail", "should_fail"
+        )
+        assert pos is not None
+        assert pos == (11, 22)  # Position of "should_fail"
+
+    def test_find_should_give_infix(self):
+        """Detect should_give infix operator."""
+        pos = PatternDetector.find_operator_position(
+            "call(!) should_give true", "should_give"
+        )
+        assert pos is not None
+
+    def test_operator_not_inside_parens(self):
+        """Operator inside parentheses not detected at top level."""
+        pos = PatternDetector.find_operator_position(
+            "call((X=1 should_give Y=2))", "should_give"
+        )
+        assert pos is None
+
+    def test_operator_not_in_quoted_atom(self):
+        """Operator in quoted atom not detected."""
+        pos = PatternDetector.find_operator_position(
+            "call('should_fail') should_fail", "should_fail"
+        )
+        # Should find the second occurrence, not the quoted one
+        assert pos is not None
+        assert pos[0] >= 20  # After the quoted atom
+
+    def test_split_at_should_fail(self):
+        """Split clause at should_fail operator."""
+        result = PatternDetector.split_at_operator(
+            "call(fail) should_fail", "should_fail"
+        )
+        assert result is not None
+        left, right = result
+        assert left == "call(fail)"
+        assert right == ""
+
+    def test_split_at_should_give(self):
+        """Split clause at should_give operator."""
+        result = PatternDetector.split_at_operator(
+            "call(!) should_give true", "should_give"
+        )
+        assert result is not None
+        left, right = result
+        assert left == "call(!)"
+        assert right == "true"
 
 
 class TestISOTestParsing:
-    """Test parsing of ISO test patterns from iso.tst file.
+    """Test parsing of ISO test patterns."""
 
-    BLOCKER: Reader postfix operator support required.
-    The ISO test operators include postfix (should_fail) and infix
-    (should_give, should_throw) operators. The Reader's Pratt parser
-    currently has a hardcoded list of operator token types in
-    _get_infix_info() and does not implement postfix operator handling.
-
-    Required changes to Reader:
-    1. Add postfix operator support to parse_term loop
-    2. Make _get_infix_info/_get_postfix_info dynamic (query operator table)
-    3. Or: parse ISO tests as regular structures without operator support
-    """
-
-    @pytest.mark.skip(reason="Reader postfix operator support required")
     def test_parse_should_fail_pattern(self):
         """Parse a should_fail test pattern."""
-        code = "call(fail) should_fail."
-        with iso_test_operators():
-            clauses = parse_iso_tests(code)
-        assert len(clauses) == 1
-        clause = clauses[0]
-        assert isinstance(clause, Clause)
-        # Head is the pattern: should_fail(call(fail))
-        head = clause.head
-        assert isinstance(head, Struct)
-        assert head.functor == "should_fail"
-        assert len(head.args) == 1
-        # Goal is call(fail)
-        goal = head.args[0]
-        assert isinstance(goal, Struct)
-        assert goal.functor == "call"
-        assert len(goal.args) == 1
-        assert isinstance(goal.args[0], Atom)
-        assert goal.args[0].name == "fail"
+        test_case = PatternDetector.detect_pattern("call(fail) should_fail", 1, 0)
+        assert test_case is not None
+        assert test_case.kind == ISOTestKind.SHOULD_FAIL
+        assert isinstance(test_case.goal_term, Struct)
+        assert test_case.goal_term.functor == "call"
+        assert test_case.check_term is None
+        assert test_case.exception_term is None
+        assert not test_case.skipped
 
-    @pytest.mark.skip(reason="Reader infix operator dynamic lookup required")
     def test_parse_should_give_pattern(self):
         """Parse a should_give test pattern."""
-        code = "call(!) should_give true."
-        with iso_test_operators():
-            clauses = parse_iso_tests(code)
-        assert len(clauses) == 1
-        clause = clauses[0]
-        # Head is: should_give(call(!), true)
-        head = clause.head
-        assert isinstance(head, Struct)
-        assert head.functor == "should_give"
-        assert len(head.args) == 2
-        # Goal is call(!)
-        goal = head.args[0]
-        assert isinstance(goal, Struct)
-        assert goal.functor == "call"
-        # Check is true
-        check = head.args[1]
-        assert isinstance(check, Atom)
-        assert check.name == "true"
+        test_case = PatternDetector.detect_pattern("call(!) should_give true", 1, 0)
+        assert test_case is not None
+        assert test_case.kind == ISOTestKind.SHOULD_GIVE
+        assert isinstance(test_case.goal_term, Struct)
+        assert test_case.goal_term.functor == "call"
+        assert test_case.check_term is not None
+        assert isinstance(test_case.check_term, Atom)
+        assert test_case.check_term.name == "true"
 
-    @pytest.mark.skip(reason="Reader infix operator dynamic lookup required")
     def test_parse_should_throw_pattern(self):
         """Parse a should_throw test pattern."""
-        code = "call(_) should_throw error(instantiation_error,_)."
-        with iso_test_operators():
-            clauses = parse_iso_tests(code)
-        assert len(clauses) == 1
-        clause = clauses[0]
-        # Head is: should_throw(call(_), error(...))
-        head = clause.head
-        assert isinstance(head, Struct)
-        assert head.functor == "should_throw"
-        assert len(head.args) == 2
-        # Goal is call(_)
-        goal = head.args[0]
-        assert isinstance(goal, Struct)
-        assert goal.functor == "call"
-        # Exception pattern
-        exception = head.args[1]
-        assert isinstance(exception, Struct)
-        assert exception.functor == "error"
+        test_case = PatternDetector.detect_pattern(
+            "call(_) should_throw error(instantiation_error,_)", 1, 0
+        )
+        assert test_case is not None
+        assert test_case.kind == ISOTestKind.SHOULD_THROW
+        assert isinstance(test_case.goal_term, Struct)
+        assert test_case.goal_term.functor == "call"
+        assert test_case.exception_term is not None
+        assert isinstance(test_case.exception_term, Struct)
+        assert test_case.exception_term.functor == "error"
 
-    @pytest.mark.skip(reason="Reader prefix operator dynamic lookup required")
     def test_parse_fixme_pattern(self):
         """Parse a fixme (skip) test pattern."""
-        code = "fixme call(fail) should_fail."
-        with iso_test_operators():
-            clauses = parse_iso_tests(code)
-        assert len(clauses) == 1
-        clause = clauses[0]
-        # Head is: fixme(should_fail(call(fail)))
-        head = clause.head
-        assert isinstance(head, Struct)
-        assert head.functor == "fixme"
-        assert len(head.args) == 1
-        # Wrapped test is should_fail
-        wrapped = head.args[0]
-        assert isinstance(wrapped, Struct)
-        assert wrapped.functor == "should_fail"
+        test_case = PatternDetector.detect_pattern("fixme call(fail) should_fail", 1, 0)
+        assert test_case is not None
+        assert test_case.kind == ISOTestKind.SHOULD_FAIL
+        assert test_case.skipped is True
 
-    @pytest.mark.skip(reason="Reader infix operator dynamic lookup required")
     def test_parse_multiple_solutions_pattern(self):
         """Parse a multiple_solutions test pattern."""
-        code = "call((X=1;X=2)) should_give multiple_solutions(K, K==2, K==X)."
-        with iso_test_operators():
-            clauses = parse_iso_tests(code)
-        assert len(clauses) == 1
-        clause = clauses[0]
-        head = clause.head
-        assert isinstance(head, Struct)
-        assert head.functor == "should_give"
-        # Check is multiple_solutions
-        check = head.args[1]
-        assert isinstance(check, Struct)
-        assert check.functor == "multiple_solutions"
-        assert len(check.args) == 3
+        test_case = PatternDetector.detect_pattern(
+            "call((X=1;X=2)) should_give multiple_solutions(K, K==2, K==X)", 1, 0
+        )
+        assert test_case is not None
+        assert test_case.kind == ISOTestKind.SHOULD_GIVE
+        assert test_case.check_term is not None
+        assert isinstance(test_case.check_term, Struct)
+        assert test_case.check_term.functor == "multiple_solutions"
+        assert len(test_case.check_term.args) == 3
+
+    def test_parse_disjunction_with_operator(self):
+        """Parse pattern with disjunction around should_give."""
+        test_case = PatternDetector.detect_pattern("(X=1;X=2) should_give true", 1, 0)
+        assert test_case is not None
+        assert test_case.kind == ISOTestKind.SHOULD_GIVE
+        # Goal should be the disjunction
+        assert isinstance(test_case.goal_term, Struct)
+        assert test_case.goal_term.functor == ";"
 
 
 class TestISOTestExecution:
