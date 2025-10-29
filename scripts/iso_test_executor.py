@@ -14,7 +14,7 @@ from typing import Optional, List
 import time
 
 from prolog.ast.terms import Term, Var, Struct, Int
-from prolog.ast.clauses import Clause
+from prolog.ast.clauses import Clause, Program
 from prolog.engine.engine import Engine, PrologThrow
 from prolog.unify.store import Store
 from prolog.unify.unify import unify
@@ -121,6 +121,13 @@ class ISOTestExecutor:
         self.max_steps = max_steps
         self.timeout_ms = timeout_ms
 
+    @staticmethod
+    def _make_program(program: Optional[List[Clause]]) -> Program:
+        """Create Program object from optional clause list."""
+        if program is None:
+            return Program(tuple())
+        return Program(tuple(program))
+
     def run_should_fail(
         self, goal_term: Term, program: Optional[List[Clause]] = None
     ) -> ExecutionResult:
@@ -137,7 +144,8 @@ class ISOTestExecutor:
         start = time.time()
 
         try:
-            engine = Engine(program or [])
+            prog = self._make_program(program)
+            engine = Engine(prog)
             solutions = []
 
             # Run query and get solutions
@@ -194,7 +202,8 @@ class ISOTestExecutor:
             reader = Reader()
             combined_term = reader.read_term(combined_text)
 
-            engine = Engine(program or [])
+            prog = self._make_program(program)
+            engine = Engine(prog)
             solutions = engine.run([combined_term], max_solutions=1)
 
             duration_ms = (time.time() - start) * 1000
@@ -253,7 +262,8 @@ class ISOTestExecutor:
         start = time.time()
 
         try:
-            engine = Engine(program or [])
+            prog = self._make_program(program)
+            engine = Engine(prog)
 
             # Try to get first solution (should throw before yielding)
             thrown_exception = None
@@ -333,7 +343,8 @@ class ISOTestExecutor:
         start = time.time()
 
         try:
-            engine = Engine(program or [])
+            prog = self._make_program(program)
+            engine = Engine(prog)
 
             # Enumerate all solutions
             solutions = engine.run([goal_term], max_solutions=self.max_solutions)
@@ -355,7 +366,7 @@ class ISOTestExecutor:
                 k_binding = Struct("=", (Var(0, k_var_name), Int(i)))
                 check_query = Struct(",", (k_binding, solution_check_term))
 
-                engine_check = Engine(program or [])
+                engine_check = Engine(prog)
                 check_solutions = engine_check.run([check_query], max_solutions=1)
 
                 if len(check_solutions) == 0:
@@ -372,7 +383,7 @@ class ISOTestExecutor:
             k_binding = Struct("=", (Var(0, k_var_name), Int(n)))
             final_query = Struct(",", (k_binding, final_check_term))
 
-            engine_final = Engine(program or [])
+            engine_final = Engine(prog)
             final_solutions = engine_final.run([final_query], max_solutions=1)
 
             duration_ms = (time.time() - start) * 1000
