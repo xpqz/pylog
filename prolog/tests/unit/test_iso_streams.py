@@ -54,7 +54,7 @@ class TestVirtualFS:
         vfs = VirtualFS()
         content, perms = vfs.files["hello"]
 
-        assert content == b"hello\\n"
+        assert content == b"hello\n"
         assert perms == 0o644
 
 

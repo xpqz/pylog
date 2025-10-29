@@ -30,6 +30,7 @@ from prolog.engine.builtins.terms import register as register_terms
 from prolog.engine.builtins.solutions import register as register_solutions
 from prolog.engine.builtins.exceptions import register as register_exceptions
 from prolog.engine.builtins.dynamic_db import register as register_dynamic_db
+from prolog.engine.builtins.io_predicates import register as register_io
 
 
 def register_all(registry: Dict[Tuple[str, int], Callable]) -> None:
@@ -58,3 +59,6 @@ def register_all(registry: Dict[Tuple[str, int], Callable]) -> None:
 
     # Register dynamic database predicates
     register_dynamic_db(registry)
+
+    # Register I/O predicates
+    register_io(registry)
