@@ -11,7 +11,6 @@ import json
 import argparse
 from pathlib import Path
 from typing import List, Dict, Any, Optional
-from dataclasses import asdict
 import time
 
 from scripts.iso_test_parser import (
@@ -21,6 +20,20 @@ from scripts.iso_test_parser import (
     ISOTestKind,
 )
 from scripts.iso_test_executor import ISOTestExecutor, ExecutionStatus
+
+
+def _test_to_dict(test: ISOTestCase) -> Dict[str, Any]:
+    """Convert ISOTestCase to JSON-serializable dict."""
+    return {
+        "kind": test.kind.value,
+        "goal_term": str(test.goal_term),
+        "check_term": str(test.check_term) if test.check_term else None,
+        "exception_term": str(test.exception_term) if test.exception_term else None,
+        "skipped": test.skipped,
+        "clause_index": test.clause_index,
+        "line_number": test.line_number,
+        "source_text": test.source_text,
+    }
 
 
 class ISOTestRunner:
@@ -170,7 +183,7 @@ class ISOTestRunner:
             if skip_reason:
                 results.append(
                     {
-                        "test": asdict(test),
+                        "test": _test_to_dict(test),
                         "status": "skip",
                         "duration_ms": 0.0,
                         "skip_reason": skip_reason,
@@ -186,7 +199,7 @@ class ISOTestRunner:
             # Execute test
             exec_result = self._execute_test(test)
             result_dict = {
-                "test": asdict(test),
+                "test": _test_to_dict(test),
                 "status": exec_result.status.value,
                 "duration_ms": exec_result.duration_ms,
                 "expected": exec_result.expected,

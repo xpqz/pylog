@@ -26,16 +26,16 @@ make test-iso
 
 ```bash
 # First 100 tests
-uv run python scripts/run_iso_suite.py --max-tests 100 --verbose
+uv run python -m scripts.run_iso_suite --max-tests 100 --verbose
 
 # Filter by pattern
-uv run python scripts/run_iso_suite.py --match "call" --verbose
+uv run python -m scripts.run_iso_suite --match "call" --verbose
 
 # JSON output
-uv run python scripts/run_iso_suite.py --max-tests 50 --json
+uv run python -m scripts.run_iso_suite --max-tests 50 --json
 
 # Save report
-uv run python scripts/run_iso_suite.py --max-tests 200 --output results.json
+uv run python -m scripts.run_iso_suite --max-tests 200 --output results.json
 ```
 
 ## CLI Reference

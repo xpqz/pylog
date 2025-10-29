@@ -13,10 +13,10 @@ test-iso:  ## Run ISO Prolog conformance tests
 	uv run pytest -m iso
 
 iso-smoke:  ## Quick smoke test of ISO suite (first 100 tests)
-	uv run python scripts/run_iso_suite.py --max-tests 100 --verbose
+	uv run python -m scripts.run_iso_suite --max-tests 100 --verbose
 
 iso-full:  ## Run complete ISO suite (slow, all tests from iso.tst)
-	uv run python scripts/run_iso_suite.py --verbose
+	uv run python -m scripts.run_iso_suite --verbose
 
 test-prepush:  ## Run the same fast suite as the pre-push hook
 	uv run pytest -m "not slow and not stress and not iso"
