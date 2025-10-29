@@ -1,0 +1,21 @@
+# ISO Test Skip/XFAIL Configuration for PyLog
+#
+# Format: pattern # reason
+# Lines starting with # are comments
+# The pattern is matched against the source text of tests
+#
+# Tests are skipped if the pattern appears anywhere in the test source
+
+# call/1 with invalid arguments should throw type errors
+# PyLog doesn't validate callable types yet
+call(_)			should_throw error(instantiation_error,_) # Issue #XXX: call/1 type validation not implemented
+call(1)			should_throw error(type_error(callable,1),_) # Issue #XXX: call/1 type validation not implemented
+call((1;true))		should_throw error(type_error(callable # Issue #XXX: call/1 type validation not implemented
+
+# Cut behavior in disjunctions
+# PyLog's cut semantics may differ in complex disjunctions
+(call(!), fail; true)	should_give true # Issue #XXX: cut/disjunction interaction
+
+# multiple_solutions pattern tests
+# Pattern implementation is incomplete (doesn't apply solution bindings properly)
+multiple_solutions # Issue #XXX: multiple_solutions pattern needs solution binding application

@@ -63,6 +63,7 @@ markers = [
     "stress: marks tests as stress tests (deselect with '-m \"not stress\"')",
     "dev_mode: marks tests that should run in development mode",
     "iso_mode: marks tests that should run in ISO Prolog mode",
+    "iso: marks tests for ISO Prolog conformance suite",
     "timeout: marks tests with a timeout limit",
     "stage15: marks tests for Stage 1.5 (operator support)",
     "swi_baseline: marks tests that validate against SWI-Prolog behavior",

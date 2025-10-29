@@ -1,4 +1,4 @@
-.PHONY: help test test-fast test-prepush coverage coverage-html coverage-report clean format lint docs docs-serve docs-clean all install-git-hooks
+.PHONY: help test test-fast test-iso iso-smoke iso-full test-prepush coverage coverage-html coverage-report clean format lint docs docs-serve docs-clean all install-git-hooks
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -6,17 +6,26 @@ help:  ## Show this help
 test:  ## Run all tests
 	uv run pytest
 
-test-fast:  ## Run tests excluding slow/stress tests
-	uv run pytest -m "not slow and not stress"
+test-fast:  ## Run tests excluding slow/stress/iso tests
+	uv run pytest -m "not slow and not stress and not iso"
+
+test-iso:  ## Run ISO Prolog conformance tests
+	uv run pytest -m iso
+
+iso-smoke:  ## Quick smoke test of ISO suite (first 100 tests)
+	uv run python -m scripts.run_iso_suite --max-tests 100 --verbose
+
+iso-full:  ## Run complete ISO suite (slow, all tests from iso.tst)
+	uv run python -m scripts.run_iso_suite --verbose
 
 test-prepush:  ## Run the same fast suite as the pre-push hook
-	uv run pytest -m "not slow and not stress"
+	uv run pytest -m "not slow and not stress and not iso"
 
 coverage:  ## Run tests with coverage
 	uv run pytest --cov=prolog --cov-branch --cov-report=term-missing:skip-covered
 
-coverage-fast:  ## Run fast tests with coverage (exclude slow/stress)
-	uv run pytest -m "not slow and not stress" --cov=prolog --cov-branch --cov-report=term-missing:skip-covered
+coverage-fast:  ## Run fast tests with coverage (exclude slow/stress/iso)
+	uv run pytest -m "not slow and not stress and not iso" --cov=prolog --cov-branch --cov-report=term-missing:skip-covered
 
 coverage-html:  ## Generate HTML coverage report
 	uv run pytest --cov=prolog --cov-branch --cov-report=html --cov-report=term
