@@ -8,36 +8,125 @@ import pytest
 from pathlib import Path
 
 from prolog.ast.terms import Atom, Int, Var, Struct
+from prolog.ast.clauses import Clause
+from scripts.iso_test_operators import iso_test_operators, parse_iso_tests
 
 
 class TestISOTestParsing:
-    """Test parsing of ISO test patterns from iso.tst file."""
+    """Test parsing of ISO test patterns from iso.tst file.
 
-    @pytest.mark.skip(reason="Parser integration pending - need operator support")
+    BLOCKER: Reader postfix operator support required.
+    The ISO test operators include postfix (should_fail) and infix
+    (should_give, should_throw) operators. The Reader's Pratt parser
+    currently has a hardcoded list of operator token types in
+    _get_infix_info() and does not implement postfix operator handling.
+
+    Required changes to Reader:
+    1. Add postfix operator support to parse_term loop
+    2. Make _get_infix_info/_get_postfix_info dynamic (query operator table)
+    3. Or: parse ISO tests as regular structures without operator support
+    """
+
+    @pytest.mark.skip(reason="Reader postfix operator support required")
     def test_parse_should_fail_pattern(self):
         """Parse a should_fail test pattern."""
-        # Will be implemented once we add ISO test operators
-        pass
+        code = "call(fail) should_fail."
+        with iso_test_operators():
+            clauses = parse_iso_tests(code)
+        assert len(clauses) == 1
+        clause = clauses[0]
+        assert isinstance(clause, Clause)
+        # Head is the pattern: should_fail(call(fail))
+        head = clause.head
+        assert isinstance(head, Struct)
+        assert head.functor == "should_fail"
+        assert len(head.args) == 1
+        # Goal is call(fail)
+        goal = head.args[0]
+        assert isinstance(goal, Struct)
+        assert goal.functor == "call"
+        assert len(goal.args) == 1
+        assert isinstance(goal.args[0], Atom)
+        assert goal.args[0].name == "fail"
 
-    @pytest.mark.skip(reason="Parser integration pending - need operator support")
+    @pytest.mark.skip(reason="Reader infix operator dynamic lookup required")
     def test_parse_should_give_pattern(self):
         """Parse a should_give test pattern."""
-        pass
+        code = "call(!) should_give true."
+        with iso_test_operators():
+            clauses = parse_iso_tests(code)
+        assert len(clauses) == 1
+        clause = clauses[0]
+        # Head is: should_give(call(!), true)
+        head = clause.head
+        assert isinstance(head, Struct)
+        assert head.functor == "should_give"
+        assert len(head.args) == 2
+        # Goal is call(!)
+        goal = head.args[0]
+        assert isinstance(goal, Struct)
+        assert goal.functor == "call"
+        # Check is true
+        check = head.args[1]
+        assert isinstance(check, Atom)
+        assert check.name == "true"
 
-    @pytest.mark.skip(reason="Parser integration pending - need operator support")
+    @pytest.mark.skip(reason="Reader infix operator dynamic lookup required")
     def test_parse_should_throw_pattern(self):
         """Parse a should_throw test pattern."""
-        pass
+        code = "call(_) should_throw error(instantiation_error,_)."
+        with iso_test_operators():
+            clauses = parse_iso_tests(code)
+        assert len(clauses) == 1
+        clause = clauses[0]
+        # Head is: should_throw(call(_), error(...))
+        head = clause.head
+        assert isinstance(head, Struct)
+        assert head.functor == "should_throw"
+        assert len(head.args) == 2
+        # Goal is call(_)
+        goal = head.args[0]
+        assert isinstance(goal, Struct)
+        assert goal.functor == "call"
+        # Exception pattern
+        exception = head.args[1]
+        assert isinstance(exception, Struct)
+        assert exception.functor == "error"
 
-    @pytest.mark.skip(reason="Parser integration pending - need operator support")
+    @pytest.mark.skip(reason="Reader prefix operator dynamic lookup required")
     def test_parse_fixme_pattern(self):
         """Parse a fixme (skip) test pattern."""
-        pass
+        code = "fixme call(fail) should_fail."
+        with iso_test_operators():
+            clauses = parse_iso_tests(code)
+        assert len(clauses) == 1
+        clause = clauses[0]
+        # Head is: fixme(should_fail(call(fail)))
+        head = clause.head
+        assert isinstance(head, Struct)
+        assert head.functor == "fixme"
+        assert len(head.args) == 1
+        # Wrapped test is should_fail
+        wrapped = head.args[0]
+        assert isinstance(wrapped, Struct)
+        assert wrapped.functor == "should_fail"
 
-    @pytest.mark.skip(reason="Parser integration pending - need operator support")
+    @pytest.mark.skip(reason="Reader infix operator dynamic lookup required")
     def test_parse_multiple_solutions_pattern(self):
         """Parse a multiple_solutions test pattern."""
-        pass
+        code = "call((X=1;X=2)) should_give multiple_solutions(K, K==2, K==X)."
+        with iso_test_operators():
+            clauses = parse_iso_tests(code)
+        assert len(clauses) == 1
+        clause = clauses[0]
+        head = clause.head
+        assert isinstance(head, Struct)
+        assert head.functor == "should_give"
+        # Check is multiple_solutions
+        check = head.args[1]
+        assert isinstance(check, Struct)
+        assert check.functor == "multiple_solutions"
+        assert len(check.args) == 3
 
 
 class TestISOTestExecution:
