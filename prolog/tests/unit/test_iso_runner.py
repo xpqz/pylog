@@ -4,7 +4,6 @@ Unit tests for ISO test suite runner.
 Tests the core functionality of parsing and executing ISO test patterns.
 """
 
-import pytest
 from pathlib import Path
 
 from prolog.ast.terms import Atom, Int, Var, Struct
@@ -12,6 +11,11 @@ from scripts.iso_test_parser import (
     ClauseScanner,
     PatternDetector,
     ISOTestKind,
+)
+from scripts.iso_test_executor import (
+    ISOTestExecutor,
+    ExecutionStatus,
+    SubsumptionChecker,
 )
 
 
@@ -186,25 +190,59 @@ class TestISOTestParsing:
 class TestISOTestExecution:
     """Test execution of ISO test patterns."""
 
-    @pytest.mark.skip(reason="Engine API usage pending implementation")
     def test_should_fail_succeeds_on_zero_solutions(self):
         """should_fail test passes when goal has no solutions."""
-        pass
+        executor = ISOTestExecutor()
+        # fail has no solutions
+        result = executor.run_should_fail(Atom("fail"))
+        assert result.status == ExecutionStatus.PASS
 
-    @pytest.mark.skip(reason="Engine API usage pending implementation")
     def test_should_fail_fails_on_solutions(self):
         """should_fail test fails when goal has solutions."""
-        pass
+        executor = ISOTestExecutor()
+        # true has one solution
+        result = executor.run_should_fail(Atom("true"))
+        assert result.status == ExecutionStatus.FAIL
 
-    @pytest.mark.skip(reason="Engine API usage pending implementation")
     def test_should_give_with_simple_check(self):
         """should_give test with simple true check."""
-        pass
+        executor = ISOTestExecutor()
+        # call(!), !, true
+        result = executor.run_should_give("call(!)", "true")
+        assert result.status == ExecutionStatus.PASS
 
-    @pytest.mark.skip(reason="Engine API usage pending implementation")
     def test_should_give_with_unification_check(self):
         """should_give test with variable binding check."""
-        pass
+        executor = ISOTestExecutor()
+        # X=1, !, X==1
+        result = executor.run_should_give("X=1", "X==1")
+        assert result.status == ExecutionStatus.PASS
+
+    def test_should_give_failure_when_check_fails(self):
+        """should_give test fails when check doesn't hold."""
+        executor = ISOTestExecutor()
+        # X=1, !, X==2 (check fails)
+        result = executor.run_should_give("X=1", "X==2")
+        assert result.status == ExecutionStatus.FAIL
+
+    def test_should_throw_with_matching_exception(self):
+        """should_throw test passes with matching exception."""
+        executor = ISOTestExecutor()
+        # throw(my_error) should match error pattern
+        goal = Struct("throw", (Atom("my_error"),))
+        expected = Atom("my_error")
+        result = executor.run_should_throw(goal, expected)
+        assert result.status == ExecutionStatus.PASS
+
+    def test_should_throw_with_subsumption(self):
+        """should_throw test with variable subsumption."""
+        executor = ISOTestExecutor()
+        # throw(error(type, context)) should match error(type, _)
+        goal = Struct("throw", (Struct("error", (Atom("type"), Atom("context"))),))
+        # Expected pattern with variable
+        expected = Struct("error", (Atom("type"), Var(0, "_")))
+        result = executor.run_should_throw(goal, expected)
+        assert result.status == ExecutionStatus.PASS
 
 
 class TestISORunnerCore:
@@ -242,17 +280,33 @@ class TestExceptionSubsumption:
         """Exact exception term matches."""
         expected = Struct("error", (Atom("instantiation_error"), Var(1, "_")))
         thrown = Struct("error", (Atom("instantiation_error"), Atom("context")))
-        # Would use unify to check subsumption
-        # For now, just verify structure
-        assert expected.functor == thrown.functor
-        assert expected.args[0] == thrown.args[0]
+        # Use subsumption checker
+        assert SubsumptionChecker.subsumes(expected, thrown)
 
     def test_exception_with_variable_matches_any(self):
         """Exception pattern with variables acts as wildcard."""
         expected = Struct("error", (Var(1, "E"), Var(2, "_")))
         thrown = Struct("error", (Atom("type_error"), Atom("context")))
         # Variables in expected should match anything
-        assert expected.functor == thrown.functor
+        assert SubsumptionChecker.subsumes(expected, thrown)
+
+    def test_subsumption_fails_on_mismatch(self):
+        """Subsumption fails when structures don't match."""
+        expected = Struct("error", (Atom("type_error"), Var(1, "_")))
+        thrown = Struct("error", (Atom("instantiation_error"), Atom("context")))
+        # Different error types don't match
+        assert not SubsumptionChecker.subsumes(expected, thrown)
+
+    def test_subsumption_with_nested_structures(self):
+        """Subsumption works with nested structures."""
+        expected = Struct(
+            "error", (Struct("type_error", (Atom("atom"), Var(1, "X"))), Var(2, "_"))
+        )
+        thrown = Struct(
+            "error",
+            (Struct("type_error", (Atom("atom"), Int(123))), Atom("context")),
+        )
+        assert SubsumptionChecker.subsumes(expected, thrown)
 
 
 class TestMultipleSolutions:
