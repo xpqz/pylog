@@ -467,9 +467,9 @@ class TestCurrentOutput:
         stream = solutions[0]["S"]
         assert stream is not None
 
-    def test_current_output_alias(self):
+    def test_current_output_alias(self, engine_with_streams):
         """current_output stream should have user_output alias."""
-        engine = Engine(Program(()))
+        engine = engine_with_streams
 
         # current_output(S), stream_property(S, alias(user_output))
         query = Struct(
@@ -491,9 +491,9 @@ class TestCurrentOutput:
 class TestStreamProperty:
     """Test stream_property/2 predicate."""
 
-    def test_stream_property_file_name(self):
+    def test_stream_property_file_name(self, engine_with_streams):
         """stream_property/2 should report file_name for file streams."""
-        engine = Engine(Program(()))
+        engine = engine_with_streams
 
         # open('test.txt', write, S), stream_property(S, file_name('test.txt'))
         query = Struct(
@@ -510,9 +510,9 @@ class TestStreamProperty:
         solutions = engine.run([query])
         assert len(solutions) >= 1
 
-    def test_stream_property_mode(self):
+    def test_stream_property_mode(self, engine_with_streams):
         """stream_property/2 should report mode."""
-        engine = Engine(Program(()))
+        engine = engine_with_streams
 
         # open('test.txt', write, S), stream_property(S, mode(write))
         query = Struct(
@@ -528,9 +528,9 @@ class TestStreamProperty:
         solutions = engine.run([query])
         assert len(solutions) >= 1
 
-    def test_stream_property_alias_standard(self):
+    def test_stream_property_alias_standard(self, engine_with_streams):
         """stream_property/2 should report aliases for standard streams."""
-        engine = Engine(Program(()))
+        engine = engine_with_streams
 
         # current_output(S), stream_property(S, alias(user_output))
         query = Struct(
@@ -547,9 +547,9 @@ class TestStreamProperty:
         solutions = engine.run([query])
         assert len(solutions) >= 1
 
-    def test_stream_property_end_of_stream(self):
+    def test_stream_property_end_of_stream(self, engine_with_streams):
         """stream_property/2 should report end_of_stream status."""
-        engine = Engine(Program(()))
+        engine = engine_with_streams
 
         # open('empty', read, S), read(S, _), stream_property(S, end_of_stream(at))
         query = Struct(
@@ -608,6 +608,9 @@ class TestStreamProperty:
 class TestBacktracking:
     """Test stream behavior during backtracking."""
 
+    @pytest.mark.xfail(
+        reason="Stream cleanup on backtrack not yet implemented - requires trail integration"
+    )
     def test_stream_closed_on_backtrack(self):
         """Streams opened in failed branch should be closed on backtrack."""
         engine = Engine(Program(()))

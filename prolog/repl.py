@@ -210,18 +210,36 @@ class PrologREPL:
 
         # Find the lib directory relative to this file
         lib_dir = Path(__file__).parent / "lib"
-        lists_file = lib_dir / "lists.pl"
 
+        all_library_clauses = []
+
+        # Load lists.pl (provides member/2, append/3, etc.)
+        lists_file = lib_dir / "lists.pl"
         if lists_file.exists():
             try:
                 with open(lists_file, "r") as f:
                     program_text = f.read()
-
-                # Parse and add clauses to the program
                 clauses = parser.parse_program(program_text)
+                all_library_clauses.extend(clauses)
+            except Exception as e:
+                print(f"Warning: Could not load lists.pl: {e}")
 
+        # Load streams.pl (provides nondeterministic stream_property/2)
+        streams_file = lib_dir / "streams.pl"
+        if streams_file.exists():
+            try:
+                with open(streams_file, "r") as f:
+                    program_text = f.read()
+                clauses = parser.parse_program(program_text)
+                all_library_clauses.extend(clauses)
+            except Exception as e:
+                print(f"Warning: Could not load streams.pl: {e}")
+
+        # Add all library clauses to the program
+        if all_library_clauses:
+            try:
                 # Create new program with library clauses
-                all_clauses = list(self.program.clauses) + list(clauses)
+                all_clauses = list(self.program.clauses) + all_library_clauses
                 self.program = Program(tuple(all_clauses))
                 self.engine = Engine(self.program)
 
