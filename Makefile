@@ -1,4 +1,4 @@
-.PHONY: help test test-fast test-iso test-prepush coverage coverage-html coverage-report clean format lint docs docs-serve docs-clean all install-git-hooks
+.PHONY: help test test-fast test-iso iso-smoke test-prepush coverage coverage-html coverage-report clean format lint docs docs-serve docs-clean all install-git-hooks
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -11,6 +11,9 @@ test-fast:  ## Run tests excluding slow/stress/iso tests
 
 test-iso:  ## Run ISO Prolog conformance tests
 	uv run pytest -m iso
+
+iso-smoke:  ## Quick smoke test of ISO suite (first 100 tests)
+	uv run python scripts/run_iso_suite.py --max-tests 100 --verbose
 
 test-prepush:  ## Run the same fast suite as the pre-push hook
 	uv run pytest -m "not slow and not stress and not iso"
