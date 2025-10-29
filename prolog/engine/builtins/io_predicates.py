@@ -49,8 +49,8 @@ def register(registry: Dict[Tuple[str, int], Callable]) -> None:
     registry[("nl", 0)] = builtin_nl_0
     registry[("nl", 1)] = builtin_nl_1
     registry[("current_output", 1)] = builtin_current_output
-    # Don't register stream_property/2 as builtin - let Prolog wrapper handle it
-    # registry[("stream_property", 2)] = builtin_stream_property
+    # Keep the builtin for now, but the Prolog wrapper provides nondeterministic behavior
+    registry[("stream_property", 2)] = builtin_stream_property
     registry[("$stream_properties", 2)] = builtin_stream_properties
 
 
@@ -427,6 +427,52 @@ def builtin_current_output(engine, args: tuple) -> bool:
     if current_output:
         return engine.unify(stream_arg, Atom(current_output))
     return False
+
+
+def builtin_stream_property(engine, args: tuple) -> bool:
+    """stream_property(?Stream, ?Property).
+
+    Query or enumerate stream properties.
+    NOTE: This is a deterministic builtin. For nondeterministic backtracking,
+    load the Prolog wrapper from streams.pl which uses member/2.
+    """
+    if len(args) != 2:
+        return False
+
+    stream_arg = deref_term(engine, args[0])
+    property_arg = deref_term(engine, args[1])
+
+    manager = get_stream_manager()
+
+    # For simplicity in this initial implementation, we'll handle
+    # only the deterministic cases where both stream and property
+    # are specified or where stream is specified.
+
+    if isinstance(stream_arg, Atom):
+        stream_id = stream_arg.name
+
+        # Check if stream exists
+        if stream_id not in manager.streams:
+            return False
+
+        properties = manager.get_stream_properties(stream_id)
+
+        # If property is specified, check if it matches
+        if not isinstance(property_arg, Var):
+            for prop in properties:
+                if engine.unify(property_arg, prop):
+                    return True
+            return False
+        else:
+            # For now, unify with the first property
+            # A proper implementation would need to support backtracking
+            if properties:
+                return engine.unify(property_arg, properties[0])
+            return False
+    else:
+        # If stream not specified, enumerate streams
+        # For now, just fail - proper implementation needs backtracking
+        return False
 
 
 def builtin_stream_properties(engine, args: tuple) -> bool:
