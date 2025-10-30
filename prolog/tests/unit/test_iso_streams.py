@@ -572,9 +572,6 @@ class TestStreamProperty:
         solutions = engine.run([query])
         assert len(solutions) >= 1
 
-    @pytest.mark.xfail(
-        reason="findall doesn't properly handle free variables from outer context - see issue #427"
-    )
     def test_stream_property_backtrack(self, engine_with_streams):
         """stream_property/2 should backtrack over all properties."""
         engine = engine_with_streams
