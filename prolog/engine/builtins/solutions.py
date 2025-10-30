@@ -185,6 +185,16 @@ def collect_all_solutions(
 ) -> List[Term]:
     """Collect all solutions for a goal, instantiating template for each solution.
 
+    Uses a "reify-before-copy" strategy to preserve ISO semantics for outer bindings:
+    1. Reifies template and goal with the parent engine's current bindings
+    2. This materializes outer-bound variables into ground terms (constants)
+    3. Unbound variables remain as variables and get freshened when copied
+    4. Variable sharing between template and goal is preserved via shared var mapping
+
+    This ensures outer-bound variables act as constants in the sub-goal, matching
+    ISO behavior where findall(X, goal(Y), List) with Y already bound should use
+    Y's binding as a constant in the goal evaluation.
+
     Args:
         engine: The engine instance
         template: Template term to collect instances of
@@ -194,6 +204,12 @@ def collect_all_solutions(
     Returns:
         List of template instances for each solution
     """
+    # Reify template and goal with parent engine's current bindings FIRST
+    # This materializes any outer-bound variables into their ground values
+    # (e.g., X bound to red becomes Atom('red'), S bound to stream_1 becomes Atom('stream_1'))
+    reified_template = engine._reify_term(template)
+    reified_goal = engine._reify_term(goal)
+
     # Create a fresh engine instance to avoid state interference
     # Mirror parent engine configuration for performance parity while ensuring isolation
     # Use engine.__class__ to avoid circular import
@@ -208,10 +224,13 @@ def collect_all_solutions(
     )
 
     try:
-        # Copy template and goal with fresh variables for the sub-engine
+        # Now copy the reified terms with fresh variables for the sub-engine
+        # This preserves variable sharing between template and goal
         var_mapping = {}
-        template_copy = copy_term_recursive(template, var_mapping, sub_engine.store)
-        goal_copy = copy_term_recursive(goal, var_mapping, sub_engine.store)
+        template_copy = copy_term_recursive(
+            reified_template, var_mapping, sub_engine.store
+        )
+        goal_copy = copy_term_recursive(reified_goal, var_mapping, sub_engine.store)
 
         # Run the goal to collect all solutions
         solutions = sub_engine.solve(goal_copy)
