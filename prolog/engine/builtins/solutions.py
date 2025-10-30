@@ -185,6 +185,16 @@ def collect_all_solutions(
 ) -> List[Term]:
     """Collect all solutions for a goal, instantiating template for each solution.
 
+    Uses a "reify-before-copy" strategy to preserve ISO semantics for outer bindings:
+    1. Reifies template and goal with the parent engine's current bindings
+    2. This materializes outer-bound variables into ground terms (constants)
+    3. Unbound variables remain as variables and get freshened when copied
+    4. Variable sharing between template and goal is preserved via shared var mapping
+
+    This ensures outer-bound variables act as constants in the sub-goal, matching
+    ISO behavior where findall(X, goal(Y), List) with Y already bound should use
+    Y's binding as a constant in the goal evaluation.
+
     Args:
         engine: The engine instance
         template: Template term to collect instances of
