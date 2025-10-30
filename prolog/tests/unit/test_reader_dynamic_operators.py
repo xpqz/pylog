@@ -24,9 +24,9 @@ class TestPostfixOperators:
     def test_postfix_xf_operator_basic(self):
         """Postfix xf operator should be applied to left expression."""
         # Temporarily add should_fail as postfix operator
-        original = operators._operator_table.copy()
+        original = operators._OPERATOR_TABLE_MUTABLE.copy()
         try:
-            operators._operator_table[("should_fail", "postfix")] = (
+            operators._OPERATOR_TABLE_MUTABLE[("should_fail", "postfix")] = (
                 1110,
                 "xf",
                 "should_fail",
@@ -39,14 +39,19 @@ class TestPostfixOperators:
             expected = Struct("should_fail", (Atom("foo"),))
             assert result == expected
         finally:
-            operators._operator_table = original
+            operators._OPERATOR_TABLE_MUTABLE.clear()
+            operators._OPERATOR_TABLE_MUTABLE.update(original)
 
     def test_postfix_yf_operator_basic(self):
         """Postfix yf operator should be applied to left expression."""
         # Temporarily add test_yf as postfix operator
-        original = operators._operator_table.copy()
+        original = operators._OPERATOR_TABLE_MUTABLE.copy()
         try:
-            operators._operator_table[("test_yf", "postfix")] = (1100, "yf", "test_yf")
+            operators._OPERATOR_TABLE_MUTABLE[("test_yf", "postfix")] = (
+                1100,
+                "yf",
+                "test_yf",
+            )
 
             reader = Reader()
             result = reader.read_term("bar test_yf")
@@ -55,13 +60,14 @@ class TestPostfixOperators:
             expected = Struct("test_yf", (Atom("bar"),))
             assert result == expected
         finally:
-            operators._operator_table = original
+            operators._OPERATOR_TABLE_MUTABLE.clear()
+            operators._OPERATOR_TABLE_MUTABLE.update(original)
 
     def test_postfix_with_structure_argument(self):
         """Postfix operator applied to a structure."""
-        original = operators._operator_table.copy()
+        original = operators._OPERATOR_TABLE_MUTABLE.copy()
         try:
-            operators._operator_table[("should_fail", "postfix")] = (
+            operators._OPERATOR_TABLE_MUTABLE[("should_fail", "postfix")] = (
                 1110,
                 "xf",
                 "should_fail",
@@ -73,14 +79,19 @@ class TestPostfixOperators:
             expected = Struct("should_fail", (Struct("foo", (Var(0, "X"),)),))
             assert result == expected
         finally:
-            operators._operator_table = original
+            operators._OPERATOR_TABLE_MUTABLE.clear()
+            operators._OPERATOR_TABLE_MUTABLE.update(original)
 
     def test_postfix_precedence_constraint(self):
         """Postfix operator respects precedence constraints."""
-        original = operators._operator_table.copy()
+        original = operators._OPERATOR_TABLE_MUTABLE.copy()
         try:
             # Add postfix operator with precedence 500
-            operators._operator_table[("pf_op", "postfix")] = (500, "xf", "pf_op")
+            operators._OPERATOR_TABLE_MUTABLE[("pf_op", "postfix")] = (
+                500,
+                "xf",
+                "pf_op",
+            )
 
             reader = Reader()
             # The + has precedence 500, so: +(1, pf_op(2))
@@ -89,29 +100,35 @@ class TestPostfixOperators:
             expected = Struct("+", (Int(1), Struct("pf_op", (Int(2),))))
             assert result == expected
         finally:
-            operators._operator_table = original
+            operators._OPERATOR_TABLE_MUTABLE.clear()
+            operators._OPERATOR_TABLE_MUTABLE.update(original)
 
     def test_postfix_xf_associativity(self):
         """Postfix xf operator does not allow chaining of same precedence."""
-        original = operators._operator_table.copy()
+        original = operators._OPERATOR_TABLE_MUTABLE.copy()
         try:
             # Add two postfix operators with same precedence
-            operators._operator_table[("pf1", "postfix")] = (1100, "xf", "pf1")
-            operators._operator_table[("pf2", "postfix")] = (1100, "xf", "pf2")
+            operators._OPERATOR_TABLE_MUTABLE[("pf1", "postfix")] = (1100, "xf", "pf1")
+            operators._OPERATOR_TABLE_MUTABLE[("pf2", "postfix")] = (1100, "xf", "pf2")
 
             reader = Reader()
             # xf should not chain: X pf1 pf2 should fail or require parens
             with pytest.raises(ReaderError, match="postfix.*precedence"):
                 reader.read_term("X pf1 pf2")
         finally:
-            operators._operator_table = original
+            operators._OPERATOR_TABLE_MUTABLE.clear()
+            operators._OPERATOR_TABLE_MUTABLE.update(original)
 
     def test_postfix_yf_associativity_allows_chaining(self):
         """Postfix yf operator allows chaining of same precedence."""
-        original = operators._operator_table.copy()
+        original = operators._OPERATOR_TABLE_MUTABLE.copy()
         try:
             # Add yf postfix operator
-            operators._operator_table[("pf_yf", "postfix")] = (1100, "yf", "pf_yf")
+            operators._OPERATOR_TABLE_MUTABLE[("pf_yf", "postfix")] = (
+                1100,
+                "yf",
+                "pf_yf",
+            )
 
             reader = Reader()
             # yf should allow chaining: X pf_yf pf_yf → pf_yf(pf_yf(X))
@@ -120,18 +137,19 @@ class TestPostfixOperators:
             expected = Struct("pf_yf", (Struct("pf_yf", (Var(0, "X"),)),))
             assert result == expected
         finally:
-            operators._operator_table = original
+            operators._OPERATOR_TABLE_MUTABLE.clear()
+            operators._OPERATOR_TABLE_MUTABLE.update(original)
 
     def test_postfix_with_infix_combination(self):
         """Postfix and infix operators working together."""
-        original = operators._operator_table.copy()
+        original = operators._OPERATOR_TABLE_MUTABLE.copy()
         try:
-            operators._operator_table[("should_give", "infix")] = (
+            operators._OPERATOR_TABLE_MUTABLE[("should_give", "infix")] = (
                 1110,
                 "xfx",
                 "should_give",
             )
-            operators._operator_table[("should_fail", "postfix")] = (
+            operators._OPERATOR_TABLE_MUTABLE[("should_fail", "postfix")] = (
                 1110,
                 "xf",
                 "should_fail",
@@ -147,7 +165,8 @@ class TestPostfixOperators:
             )
             assert result == expected
         finally:
-            operators._operator_table = original
+            operators._OPERATOR_TABLE_MUTABLE.clear()
+            operators._OPERATOR_TABLE_MUTABLE.update(original)
 
 
 class TestDynamicOperatorLookup:
@@ -155,10 +174,10 @@ class TestDynamicOperatorLookup:
 
     def test_custom_infix_operator_recognition(self):
         """Custom infix operator should be recognized without code changes."""
-        original = operators._operator_table.copy()
+        original = operators._OPERATOR_TABLE_MUTABLE.copy()
         try:
             # Add custom infix operator not in hardcoded list
-            operators._operator_table[("should_give", "infix")] = (
+            operators._OPERATOR_TABLE_MUTABLE[("should_give", "infix")] = (
                 1110,
                 "xfx",
                 "should_give",
@@ -170,14 +189,19 @@ class TestDynamicOperatorLookup:
             expected = Struct("should_give", (Atom("foo"), Atom("bar")))
             assert result == expected
         finally:
-            operators._operator_table = original
+            operators._OPERATOR_TABLE_MUTABLE.clear()
+            operators._OPERATOR_TABLE_MUTABLE.update(original)
 
     def test_custom_prefix_operator_recognition(self):
         """Custom prefix operator should be recognized without code changes."""
-        original = operators._operator_table.copy()
+        original = operators._OPERATOR_TABLE_MUTABLE.copy()
         try:
             # Add custom prefix operator
-            operators._operator_table[("fixme", "prefix")] = (1200, "fy", "fixme")
+            operators._OPERATOR_TABLE_MUTABLE[("fixme", "prefix")] = (
+                1200,
+                "fy",
+                "fixme",
+            )
 
             reader = Reader()
             result = reader.read_term("fixme foo(X)")
@@ -185,14 +209,15 @@ class TestDynamicOperatorLookup:
             expected = Struct("fixme", (Struct("foo", (Var(0, "X"),)),))
             assert result == expected
         finally:
-            operators._operator_table = original
+            operators._OPERATOR_TABLE_MUTABLE.clear()
+            operators._OPERATOR_TABLE_MUTABLE.update(original)
 
     def test_word_operator_tokenization(self):
         """Word operators should produce tokens that can be looked up."""
-        original = operators._operator_table.copy()
+        original = operators._OPERATOR_TABLE_MUTABLE.copy()
         try:
             # Add word operators
-            operators._operator_table[("should_throw", "infix")] = (
+            operators._OPERATOR_TABLE_MUTABLE[("should_throw", "infix")] = (
                 1110,
                 "xfx",
                 "should_throw",
@@ -206,20 +231,25 @@ class TestDynamicOperatorLookup:
             )
             assert result == expected
         finally:
-            operators._operator_table = original
+            operators._OPERATOR_TABLE_MUTABLE.clear()
+            operators._OPERATOR_TABLE_MUTABLE.update(original)
 
     def test_multiple_custom_operators_together(self):
         """Multiple custom operators can be used together."""
-        original = operators._operator_table.copy()
+        original = operators._OPERATOR_TABLE_MUTABLE.copy()
         try:
             # Add multiple ISO test operators
-            operators._operator_table[("fixme", "prefix")] = (1200, "fy", "fixme")
-            operators._operator_table[("should_give", "infix")] = (
+            operators._OPERATOR_TABLE_MUTABLE[("fixme", "prefix")] = (
+                1200,
+                "fy",
+                "fixme",
+            )
+            operators._OPERATOR_TABLE_MUTABLE[("should_give", "infix")] = (
                 1110,
                 "xfx",
                 "should_give",
             )
-            operators._operator_table[("should_fail", "postfix")] = (
+            operators._OPERATOR_TABLE_MUTABLE[("should_fail", "postfix")] = (
                 1110,
                 "xf",
                 "should_fail",
@@ -234,7 +264,8 @@ class TestDynamicOperatorLookup:
             )
             assert result == expected
         finally:
-            operators._operator_table = original
+            operators._OPERATOR_TABLE_MUTABLE.clear()
+            operators._OPERATOR_TABLE_MUTABLE.update(original)
 
 
 class TestOperatorPrecedenceWithPostfix:
@@ -242,10 +273,10 @@ class TestOperatorPrecedenceWithPostfix:
 
     def test_postfix_lower_precedence_than_infix(self):
         """Postfix with lower precedence binds looser than infix."""
-        original = operators._operator_table.copy()
+        original = operators._OPERATOR_TABLE_MUTABLE.copy()
         try:
             # Postfix with precedence 1100, + has precedence 500
-            operators._operator_table[("pf", "postfix")] = (1100, "xf", "pf")
+            operators._OPERATOR_TABLE_MUTABLE[("pf", "postfix")] = (1100, "xf", "pf")
 
             reader = Reader()
             # 1 + 2 pf → pf(+(1, 2))
@@ -254,14 +285,15 @@ class TestOperatorPrecedenceWithPostfix:
             expected = Struct("pf", (Struct("+", (Int(1), Int(2))),))
             assert result == expected
         finally:
-            operators._operator_table = original
+            operators._OPERATOR_TABLE_MUTABLE.clear()
+            operators._OPERATOR_TABLE_MUTABLE.update(original)
 
     def test_postfix_higher_precedence_than_infix(self):
         """Postfix with higher precedence binds tighter than infix."""
-        original = operators._operator_table.copy()
+        original = operators._OPERATOR_TABLE_MUTABLE.copy()
         try:
             # Postfix with precedence 400 (tighter than + at 500)
-            operators._operator_table[("pf", "postfix")] = (400, "xf", "pf")
+            operators._OPERATOR_TABLE_MUTABLE[("pf", "postfix")] = (400, "xf", "pf")
 
             reader = Reader()
             # 1 + 2 pf → +(1, pf(2))
@@ -270,13 +302,14 @@ class TestOperatorPrecedenceWithPostfix:
             expected = Struct("+", (Int(1), Struct("pf", (Int(2),))))
             assert result == expected
         finally:
-            operators._operator_table = original
+            operators._OPERATOR_TABLE_MUTABLE.clear()
+            operators._OPERATOR_TABLE_MUTABLE.update(original)
 
     def test_parentheses_override_postfix_precedence(self):
         """Parentheses can override postfix operator precedence."""
-        original = operators._operator_table.copy()
+        original = operators._OPERATOR_TABLE_MUTABLE.copy()
         try:
-            operators._operator_table[("pf", "postfix")] = (500, "xf", "pf")
+            operators._OPERATOR_TABLE_MUTABLE[("pf", "postfix")] = (500, "xf", "pf")
 
             reader = Reader()
             # (1 + 2) pf → pf(+(1, 2))
@@ -285,7 +318,8 @@ class TestOperatorPrecedenceWithPostfix:
             expected = Struct("pf", (Struct("+", (Int(1), Int(2))),))
             assert result == expected
         finally:
-            operators._operator_table = original
+            operators._OPERATOR_TABLE_MUTABLE.clear()
+            operators._OPERATOR_TABLE_MUTABLE.update(original)
 
 
 class TestISOTestPatternOperators:
@@ -293,9 +327,13 @@ class TestISOTestPatternOperators:
 
     def test_fixme_prefix_operator(self):
         """fixme prefix operator (fy, 1200)."""
-        original = operators._operator_table.copy()
+        original = operators._OPERATOR_TABLE_MUTABLE.copy()
         try:
-            operators._operator_table[("fixme", "prefix")] = (1200, "fy", "fixme")
+            operators._OPERATOR_TABLE_MUTABLE[("fixme", "prefix")] = (
+                1200,
+                "fy",
+                "fixme",
+            )
 
             reader = Reader()
             result = reader.read_term("fixme foo(X) should_give bar")
@@ -306,13 +344,14 @@ class TestISOTestPatternOperators:
             assert isinstance(result, Struct)
             assert result.functor == "fixme"
         finally:
-            operators._operator_table = original
+            operators._OPERATOR_TABLE_MUTABLE.clear()
+            operators._OPERATOR_TABLE_MUTABLE.update(original)
 
     def test_should_fail_postfix_operator(self):
         """should_fail postfix operator (xf, 1110)."""
-        original = operators._operator_table.copy()
+        original = operators._OPERATOR_TABLE_MUTABLE.copy()
         try:
-            operators._operator_table[("should_fail", "postfix")] = (
+            operators._OPERATOR_TABLE_MUTABLE[("should_fail", "postfix")] = (
                 1110,
                 "xf",
                 "should_fail",
@@ -332,13 +371,14 @@ class TestISOTestPatternOperators:
             )
             assert result == expected
         finally:
-            operators._operator_table = original
+            operators._OPERATOR_TABLE_MUTABLE.clear()
+            operators._OPERATOR_TABLE_MUTABLE.update(original)
 
     def test_should_give_infix_operator(self):
         """should_give infix operator (xfx, 1110)."""
-        original = operators._operator_table.copy()
+        original = operators._OPERATOR_TABLE_MUTABLE.copy()
         try:
-            operators._operator_table[("should_give", "infix")] = (
+            operators._OPERATOR_TABLE_MUTABLE[("should_give", "infix")] = (
                 1110,
                 "xfx",
                 "should_give",
@@ -353,13 +393,14 @@ class TestISOTestPatternOperators:
             )
             assert result == expected
         finally:
-            operators._operator_table = original
+            operators._OPERATOR_TABLE_MUTABLE.clear()
+            operators._OPERATOR_TABLE_MUTABLE.update(original)
 
     def test_should_throw_infix_operator(self):
         """should_throw infix operator (xfx, 1110)."""
-        original = operators._operator_table.copy()
+        original = operators._OPERATOR_TABLE_MUTABLE.copy()
         try:
-            operators._operator_table[("should_throw", "infix")] = (
+            operators._OPERATOR_TABLE_MUTABLE[("should_throw", "infix")] = (
                 1110,
                 "xfx",
                 "should_throw",
@@ -374,25 +415,30 @@ class TestISOTestPatternOperators:
             )
             assert result == expected
         finally:
-            operators._operator_table = original
+            operators._OPERATOR_TABLE_MUTABLE.clear()
+            operators._OPERATOR_TABLE_MUTABLE.update(original)
 
     def test_iso_test_pattern_combination(self):
         """All ISO test operators can be used together."""
-        original = operators._operator_table.copy()
+        original = operators._OPERATOR_TABLE_MUTABLE.copy()
         try:
             # Add all ISO test operators
-            operators._operator_table[("fixme", "prefix")] = (1200, "fy", "fixme")
-            operators._operator_table[("should_fail", "postfix")] = (
+            operators._OPERATOR_TABLE_MUTABLE[("fixme", "prefix")] = (
+                1200,
+                "fy",
+                "fixme",
+            )
+            operators._OPERATOR_TABLE_MUTABLE[("should_fail", "postfix")] = (
                 1110,
                 "xf",
                 "should_fail",
             )
-            operators._operator_table[("should_give", "infix")] = (
+            operators._OPERATOR_TABLE_MUTABLE[("should_give", "infix")] = (
                 1110,
                 "xfx",
                 "should_give",
             )
-            operators._operator_table[("should_throw", "infix")] = (
+            operators._OPERATOR_TABLE_MUTABLE[("should_throw", "infix")] = (
                 1110,
                 "xfx",
                 "should_throw",
@@ -413,7 +459,8 @@ class TestISOTestPatternOperators:
             result4 = reader.read_term("fixme foo should_give bar")
             assert result4.functor == "fixme"
         finally:
-            operators._operator_table = original
+            operators._OPERATOR_TABLE_MUTABLE.clear()
+            operators._OPERATOR_TABLE_MUTABLE.update(original)
 
 
 class TestOperatorTableIsolation:
@@ -421,37 +468,43 @@ class TestOperatorTableIsolation:
 
     def test_operator_table_restoration(self):
         """Operator table should be restorable after modifications."""
-        original = operators._operator_table.copy()
+        original = operators._OPERATOR_TABLE_MUTABLE.copy()
         original_keys = set(original.keys())
 
         try:
             # Add temporary operator
-            operators._operator_table[("temp_op", "infix")] = (1100, "xfx", "temp_op")
-            assert ("temp_op", "infix") in operators._operator_table
+            operators._OPERATOR_TABLE_MUTABLE[("temp_op", "infix")] = (
+                1100,
+                "xfx",
+                "temp_op",
+            )
+            assert ("temp_op", "infix") in operators._OPERATOR_TABLE_MUTABLE
         finally:
-            operators._operator_table = original
+            operators._OPERATOR_TABLE_MUTABLE.clear()
+            operators._OPERATOR_TABLE_MUTABLE.update(original)
 
         # Verify restoration
-        assert set(operators._operator_table.keys()) == original_keys
-        assert ("temp_op", "infix") not in operators._operator_table
+        assert set(operators._OPERATOR_TABLE_MUTABLE.keys()) == original_keys
+        assert ("temp_op", "infix") not in operators._OPERATOR_TABLE_MUTABLE
 
     def test_multiple_temporary_modifications(self):
         """Multiple temporary modifications should work independently."""
-        original = operators._operator_table.copy()
+        original = operators._OPERATOR_TABLE_MUTABLE.copy()
 
         try:
             # First modification
-            operators._operator_table[("op1", "infix")] = (1100, "xfx", "op1")
+            operators._OPERATOR_TABLE_MUTABLE[("op1", "infix")] = (1100, "xfx", "op1")
             reader = Reader()
             result1 = reader.read_term("a op1 b")
             assert result1.functor == "op1"
 
             # Second modification
-            operators._operator_table[("op2", "postfix")] = (1100, "xf", "op2")
+            operators._OPERATOR_TABLE_MUTABLE[("op2", "postfix")] = (1100, "xf", "op2")
             result2 = reader.read_term("a op2")
             assert result2.functor == "op2"
         finally:
-            operators._operator_table = original
+            operators._OPERATOR_TABLE_MUTABLE.clear()
+            operators._OPERATOR_TABLE_MUTABLE.update(original)
 
 
 class TestEdgeCases:
@@ -459,9 +512,13 @@ class TestEdgeCases:
 
     def test_postfix_at_end_of_expression(self):
         """Postfix operator at end of expression."""
-        original = operators._operator_table.copy()
+        original = operators._OPERATOR_TABLE_MUTABLE.copy()
         try:
-            operators._operator_table[("end_op", "postfix")] = (1100, "xf", "end_op")
+            operators._OPERATOR_TABLE_MUTABLE[("end_op", "postfix")] = (
+                1100,
+                "xf",
+                "end_op",
+            )
 
             reader = Reader()
             result = reader.read_term("foo(bar(X)) end_op")
@@ -471,13 +528,18 @@ class TestEdgeCases:
             )
             assert result == expected
         finally:
-            operators._operator_table = original
+            operators._OPERATOR_TABLE_MUTABLE.clear()
+            operators._OPERATOR_TABLE_MUTABLE.update(original)
 
     def test_postfix_with_list_argument(self):
         """Postfix operator applied to a list."""
-        original = operators._operator_table.copy()
+        original = operators._OPERATOR_TABLE_MUTABLE.copy()
         try:
-            operators._operator_table[("list_op", "postfix")] = (1100, "xf", "list_op")
+            operators._OPERATOR_TABLE_MUTABLE[("list_op", "postfix")] = (
+                1100,
+                "xf",
+                "list_op",
+            )
 
             reader = Reader()
             result = reader.read_term("[1, 2, 3] list_op")
@@ -487,20 +549,26 @@ class TestEdgeCases:
             )
             assert result == expected
         finally:
-            operators._operator_table = original
+            operators._OPERATOR_TABLE_MUTABLE.clear()
+            operators._OPERATOR_TABLE_MUTABLE.update(original)
 
     def test_postfix_error_missing_left_operand(self):
         """Postfix operator without left operand should error."""
-        original = operators._operator_table.copy()
+        original = operators._OPERATOR_TABLE_MUTABLE.copy()
         try:
-            operators._operator_table[("pf_op", "postfix")] = (1100, "xf", "pf_op")
+            operators._OPERATOR_TABLE_MUTABLE[("pf_op", "postfix")] = (
+                1100,
+                "xf",
+                "pf_op",
+            )
 
             reader = Reader()
             # This should fail - postfix needs a left operand
             with pytest.raises(ReaderError):
                 reader.read_term("pf_op")
         finally:
-            operators._operator_table = original
+            operators._OPERATOR_TABLE_MUTABLE.clear()
+            operators._OPERATOR_TABLE_MUTABLE.update(original)
 
     def test_dynamic_operator_not_found_still_errors(self):
         """Undefined operators should still raise errors."""
@@ -512,9 +580,13 @@ class TestEdgeCases:
 
     def test_postfix_at_start_of_input_fails(self):
         """Postfix operator at start of input should fail (no left operand)."""
-        original = operators._operator_table.copy()
+        original = operators._OPERATOR_TABLE_MUTABLE.copy()
         try:
-            operators._operator_table[("pf_op", "postfix")] = (1100, "xf", "pf_op")
+            operators._OPERATOR_TABLE_MUTABLE[("pf_op", "postfix")] = (
+                1100,
+                "xf",
+                "pf_op",
+            )
 
             reader = Reader()
             # pf_op at start has no left operand
@@ -522,13 +594,14 @@ class TestEdgeCases:
             with pytest.raises(ReaderError, match="[Uu]nexpected"):
                 reader.read_term("pf_op")
         finally:
-            operators._operator_table = original
+            operators._OPERATOR_TABLE_MUTABLE.clear()
+            operators._OPERATOR_TABLE_MUTABLE.update(original)
 
     def test_parentheses_with_postfix(self):
         """Parenthesized expression followed by postfix."""
-        original = operators._operator_table.copy()
+        original = operators._OPERATOR_TABLE_MUTABLE.copy()
         try:
-            operators._operator_table[("pf", "postfix")] = (500, "xf", "pf")
+            operators._OPERATOR_TABLE_MUTABLE[("pf", "postfix")] = (500, "xf", "pf")
 
             reader = Reader()
             # (a) pf should be same as a pf
@@ -539,14 +612,15 @@ class TestEdgeCases:
             assert result1 == expected
             assert result2 == expected
         finally:
-            operators._operator_table = original
+            operators._OPERATOR_TABLE_MUTABLE.clear()
+            operators._OPERATOR_TABLE_MUTABLE.update(original)
 
     def test_prefix_postfix_sandwich(self):
         """Prefix and postfix operators together based on precedence."""
-        original = operators._operator_table.copy()
+        original = operators._OPERATOR_TABLE_MUTABLE.copy()
         try:
             # Prefix - at 200, postfix at 400
-            operators._operator_table[("pf", "postfix")] = (400, "xf", "pf")
+            operators._OPERATOR_TABLE_MUTABLE[("pf", "postfix")] = (400, "xf", "pf")
 
             reader = Reader()
             # -X pf: prefix - has precedence 200 (tighter), so: pf(-(X))
@@ -555,14 +629,15 @@ class TestEdgeCases:
             expected = Struct("pf", (Struct("-", (Var(0, "X"),)),))
             assert result == expected
         finally:
-            operators._operator_table = original
+            operators._OPERATOR_TABLE_MUTABLE.clear()
+            operators._OPERATOR_TABLE_MUTABLE.update(original)
 
     def test_prefix_postfix_sandwich_opposite_precedence(self):
         """Prefix and postfix with postfix tighter."""
-        original = operators._operator_table.copy()
+        original = operators._OPERATOR_TABLE_MUTABLE.copy()
         try:
             # Postfix at 100 (tighter than prefix - at 200)
-            operators._operator_table[("pf", "postfix")] = (100, "xf", "pf")
+            operators._OPERATOR_TABLE_MUTABLE[("pf", "postfix")] = (100, "xf", "pf")
 
             reader = Reader()
             # -X pf: postfix tighter, but - is prefix so it applies first to X
@@ -574,7 +649,8 @@ class TestEdgeCases:
             expected = Struct("pf", (Struct("-", (Var(0, "X"),)),))
             assert result == expected
         finally:
-            operators._operator_table = original
+            operators._OPERATOR_TABLE_MUTABLE.clear()
+            operators._OPERATOR_TABLE_MUTABLE.update(original)
 
 
 class TestISOPrecedenceInteractions:
@@ -582,9 +658,9 @@ class TestISOPrecedenceInteractions:
 
     def test_iso_operators_vs_semicolon_precedence(self):
         """ISO test operators at 1110 vs semicolon at 1100."""
-        original = operators._operator_table.copy()
+        original = operators._OPERATOR_TABLE_MUTABLE.copy()
         try:
-            operators._operator_table[("should_give", "infix")] = (
+            operators._OPERATOR_TABLE_MUTABLE[("should_give", "infix")] = (
                 1110,
                 "xfx",
                 "should_give",
@@ -611,13 +687,14 @@ class TestISOPrecedenceInteractions:
             )
             assert result == expected
         finally:
-            operators._operator_table = original
+            operators._OPERATOR_TABLE_MUTABLE.clear()
+            operators._OPERATOR_TABLE_MUTABLE.update(original)
 
     def test_should_fail_xf_rejects_chained_suffix(self):
         """should_fail as xf should reject chaining at same precedence."""
-        original = operators._operator_table.copy()
+        original = operators._OPERATOR_TABLE_MUTABLE.copy()
         try:
-            operators._operator_table[("should_fail", "postfix")] = (
+            operators._OPERATOR_TABLE_MUTABLE[("should_fail", "postfix")] = (
                 1110,
                 "xf",
                 "should_fail",
@@ -628,14 +705,19 @@ class TestISOPrecedenceInteractions:
             with pytest.raises(ReaderError, match="postfix|precedence|chain"):
                 reader.read_term("X should_fail should_fail")
         finally:
-            operators._operator_table = original
+            operators._OPERATOR_TABLE_MUTABLE.clear()
+            operators._OPERATOR_TABLE_MUTABLE.update(original)
 
     def test_fixme_prefix_fy_precedence(self):
         """fixme as fy (1200) wraps entire expression."""
-        original = operators._operator_table.copy()
+        original = operators._OPERATOR_TABLE_MUTABLE.copy()
         try:
-            operators._operator_table[("fixme", "prefix")] = (1200, "fy", "fixme")
-            operators._operator_table[("should_give", "infix")] = (
+            operators._OPERATOR_TABLE_MUTABLE[("fixme", "prefix")] = (
+                1200,
+                "fy",
+                "fixme",
+            )
+            operators._OPERATOR_TABLE_MUTABLE[("should_give", "infix")] = (
                 1110,
                 "xfx",
                 "should_give",
@@ -651,7 +733,8 @@ class TestISOPrecedenceInteractions:
             )
             assert result == expected
         finally:
-            operators._operator_table = original
+            operators._OPERATOR_TABLE_MUTABLE.clear()
+            operators._OPERATOR_TABLE_MUTABLE.update(original)
 
 
 class TestWordOperatorsAsFunctors:
@@ -699,10 +782,10 @@ class TestWordOperatorsAsFunctors:
 
     def test_custom_operator_without_prefix_as_functor(self):
         """Custom operator (not defined as prefix) can be used as functor."""
-        original = operators._operator_table.copy()
+        original = operators._OPERATOR_TABLE_MUTABLE.copy()
         try:
             # Add should_give as infix only (not prefix)
-            operators._operator_table[("should_give", "infix")] = (
+            operators._OPERATOR_TABLE_MUTABLE[("should_give", "infix")] = (
                 1110,
                 "xfx",
                 "should_give",
@@ -715,7 +798,8 @@ class TestWordOperatorsAsFunctors:
             expected = Struct("should_give", (Atom("a"), Atom("b")))
             assert result == expected
         finally:
-            operators._operator_table = original
+            operators._OPERATOR_TABLE_MUTABLE.clear()
+            operators._OPERATOR_TABLE_MUTABLE.update(original)
 
 
 class TestDynamicOperatorXFXChaining:
@@ -723,9 +807,9 @@ class TestDynamicOperatorXFXChaining:
 
     def test_dynamic_xfx_operator_non_chainable(self):
         """Dynamic xfx operators should enforce non-chainable rule."""
-        original = operators._operator_table.copy()
+        original = operators._OPERATOR_TABLE_MUTABLE.copy()
         try:
-            operators._operator_table[("custom_eq", "infix")] = (
+            operators._OPERATOR_TABLE_MUTABLE[("custom_eq", "infix")] = (
                 700,
                 "xfx",
                 "custom_eq",
@@ -736,13 +820,14 @@ class TestDynamicOperatorXFXChaining:
             with pytest.raises(ReaderError, match="xfx.*chain|non-chain"):
                 reader.read_term("X custom_eq Y custom_eq Z")
         finally:
-            operators._operator_table = original
+            operators._OPERATOR_TABLE_MUTABLE.clear()
+            operators._OPERATOR_TABLE_MUTABLE.update(original)
 
     def test_dynamic_xfx_with_parentheses_ok(self):
         """Dynamic xfx with parentheses should work."""
-        original = operators._operator_table.copy()
+        original = operators._OPERATOR_TABLE_MUTABLE.copy()
         try:
-            operators._operator_table[("custom_eq", "infix")] = (
+            operators._OPERATOR_TABLE_MUTABLE[("custom_eq", "infix")] = (
                 700,
                 "xfx",
                 "custom_eq",
@@ -758,7 +843,8 @@ class TestDynamicOperatorXFXChaining:
             )
             assert result == expected
         finally:
-            operators._operator_table = original
+            operators._OPERATOR_TABLE_MUTABLE.clear()
+            operators._OPERATOR_TABLE_MUTABLE.update(original)
 
 
 class TestErrorMessages:
@@ -766,9 +852,9 @@ class TestErrorMessages:
 
     def test_missing_right_arg_for_dynamic_infix(self):
         """Missing right argument for dynamic infix operator has good error."""
-        original = operators._operator_table.copy()
+        original = operators._OPERATOR_TABLE_MUTABLE.copy()
         try:
-            operators._operator_table[("custom_op", "infix")] = (
+            operators._OPERATOR_TABLE_MUTABLE[("custom_op", "infix")] = (
                 1100,
                 "xfx",
                 "custom_op",
@@ -778,16 +864,22 @@ class TestErrorMessages:
             with pytest.raises(ReaderError, match="[Mm]issing.*right.*custom_op"):
                 reader.read_term("foo custom_op")
         finally:
-            operators._operator_table = original
+            operators._OPERATOR_TABLE_MUTABLE.clear()
+            operators._OPERATOR_TABLE_MUTABLE.update(original)
 
     def test_xfx_chain_error_mentions_operator_name(self):
         """xfx chain error should mention the operator name."""
-        original = operators._operator_table.copy()
+        original = operators._OPERATOR_TABLE_MUTABLE.copy()
         try:
-            operators._operator_table[("my_xfx", "infix")] = (700, "xfx", "my_xfx")
+            operators._OPERATOR_TABLE_MUTABLE[("my_xfx", "infix")] = (
+                700,
+                "xfx",
+                "my_xfx",
+            )
 
             reader = Reader()
             with pytest.raises(ReaderError, match="my_xfx"):
                 reader.read_term("a my_xfx b my_xfx c")
         finally:
-            operators._operator_table = original
+            operators._OPERATOR_TABLE_MUTABLE.clear()
+            operators._OPERATOR_TABLE_MUTABLE.update(original)
