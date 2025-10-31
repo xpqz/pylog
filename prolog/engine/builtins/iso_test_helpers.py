@@ -15,12 +15,14 @@ Additionally provides utility predicates needed by the helpers:
 from typing import Dict, Tuple, Callable
 import platform
 from pathlib import Path
+from functools import cmp_to_key
 
 from prolog.ast.terms import Term, Atom, Var, Struct, List as PrologList, Int
 from prolog.unify.unify import unify
 from prolog.engine.trail_adapter import TrailAdapter
 from prolog.engine.runtime import Trail
 from prolog.engine.builtins.streams import get_stream_manager
+from prolog.engine.builtins.terms import structural_compare
 
 __all__ = [
     "register",
@@ -242,8 +244,8 @@ def builtin_iso_test_same_members(engine, args: tuple) -> bool:
     if sorted1 is None or sorted2 is None:
         return False
 
-    # Check structural equality (==)
-    return _structural_equal(sorted1, sorted2)
+    # Check structural equality using structural_compare (== returns 0)
+    return structural_compare(engine, sorted1, sorted2) == 0
 
 
 def builtin_subsumes_term(engine, args: tuple) -> bool:
@@ -517,50 +519,15 @@ def _rename_vars(term: Term, var_map: dict, engine) -> Term:
         return term
 
 
-def _copy_to_store(term: Term, store, engine) -> Term:
-    """Copy a term into a different store, creating fresh variables.
-
-    Args:
-        term: Term to copy
-        store: Destination store
-        engine: The Prolog engine
-
-    Returns:
-        Copy of term with variables in the new store
-    """
-    var_map = {}
-    return _copy_to_store_helper(term, store, engine, var_map)
-
-
-def _copy_to_store_helper(term: Term, store, engine, var_map: dict) -> Term:
-    """Helper for copying terms to a new store."""
-    term = _deref_term(engine, term)
-
-    if isinstance(term, Var):
-        if term.id not in var_map:
-            new_id = store.new_var()
-            var_map[term.id] = new_id
-        return Var(var_map[term.id], term.hint)
-
-    elif isinstance(term, Struct):
-        new_args = tuple(
-            _copy_to_store_helper(arg, store, engine, var_map) for arg in term.args
-        )
-        return Struct(term.functor, new_args)
-
-    elif isinstance(term, PrologList):
-        new_items = tuple(
-            _copy_to_store_helper(item, store, engine, var_map) for item in term.items
-        )
-        new_tail = _copy_to_store_helper(term.tail, store, engine, var_map)
-        return PrologList(new_items, new_tail)
-
-    else:
-        return term
+# Removed unused _copy_to_store and _copy_to_store_helper functions
 
 
 def _sort_list(engine, prolog_list: PrologList) -> PrologList:
-    """Sort a Prolog list and remove duplicates.
+    """Sort a Prolog list and remove duplicates using ISO standard ordering.
+
+    Uses structural_compare for both sorting and deduplication to ensure
+    consistent behavior with ISO Prolog semantics. This means Int(1) and
+    Float(1.0) are considered equal and only one is kept.
 
     Args:
         engine: The Prolog engine
@@ -592,22 +559,19 @@ def _sort_list(engine, prolog_list: PrologList) -> PrologList:
         # Move to tail
         current = current.tail
 
-    # Sort using standard term ordering
+    # Sort using standard term ordering via structural_compare
     try:
-        sorted_list = sorted(python_list, key=lambda t: _term_sort_key(t))
+        python_list.sort(key=cmp_to_key(lambda a, b: structural_compare(engine, a, b)))
 
-        # Remove duplicates while preserving order
+        # Remove duplicates by comparing adjacent elements
+        # After sorting, duplicates are adjacent
         deduplicated = []
-
-        for term in sorted_list:
-            # Use structural equality for deduplication
-            is_duplicate = False
-            for seen_term in deduplicated:
-                if _structural_equal(term, seen_term):
-                    is_duplicate = True
-                    break
-
-            if not is_duplicate:
+        for term in python_list:
+            # Check if this term is equal to the previous one
+            if (
+                not deduplicated
+                or structural_compare(engine, deduplicated[-1], term) != 0
+            ):
                 deduplicated.append(term)
 
         # Convert back to Prolog list
@@ -615,44 +579,6 @@ def _sort_list(engine, prolog_list: PrologList) -> PrologList:
 
     except Exception:
         return None
-
-
-def _term_sort_key(term: Term) -> tuple:
-    """Generate a sort key for standard term ordering.
-
-    Standard order: Variables < Numbers < Atoms < Compound terms
-
-    Args:
-        term: Term to generate key for
-
-    Returns:
-        Tuple that can be used for sorting
-    """
-    if isinstance(term, Var):
-        return (0, term.id)
-    elif isinstance(term, Int):
-        return (1, 0, term.value)
-    elif isinstance(term, Atom):
-        return (2, term.name)
-    elif isinstance(term, Struct):
-        # Sort by arity, then functor, then args
-        return (
-            3,
-            len(term.args),
-            term.functor,
-            tuple(_term_sort_key(arg) for arg in term.args),
-        )
-    elif isinstance(term, PrologList):
-        # Lists are compound terms
-        return (
-            3,
-            len(term.items) + 1,
-            ".",
-            tuple(_term_sort_key(item) for item in term.items),
-        )
-    else:
-        # Fallback
-        return (4, str(term))
 
 
 def _python_list_to_prolog(items: list) -> PrologList:
@@ -673,47 +599,3 @@ def _python_list_to_prolog(items: list) -> PrologList:
         result = PrologList((item,), result)
 
     return result
-
-
-def _structural_equal(term1: Term, term2: Term) -> bool:
-    """Check if two terms are structurally equal (==).
-
-    Args:
-        term1: First term
-        term2: Second term
-
-    Returns:
-        True if structurally equal
-    """
-    # Same type check
-    if type(term1) is not type(term2):
-        return False
-
-    if isinstance(term1, Var):
-        return term1.id == term2.id
-
-    elif isinstance(term1, Atom):
-        return term1.name == term2.name
-
-    elif isinstance(term1, Int):
-        return term1.value == term2.value
-
-    elif isinstance(term1, Struct):
-        if term1.functor != term2.functor:
-            return False
-        if len(term1.args) != len(term2.args):
-            return False
-        return all(_structural_equal(a1, a2) for a1, a2 in zip(term1.args, term2.args))
-
-    elif isinstance(term1, PrologList):
-        if len(term1.items) != len(term2.items):
-            return False
-        if not all(
-            _structural_equal(i1, i2) for i1, i2 in zip(term1.items, term2.items)
-        ):
-            return False
-        return _structural_equal(term1.tail, term2.tail)
-
-    else:
-        # Fallback to Python equality
-        return term1 == term2

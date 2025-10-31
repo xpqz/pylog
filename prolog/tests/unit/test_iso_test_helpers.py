@@ -7,7 +7,7 @@ stream handling, and list comparison.
 
 import platform
 from prolog.engine.engine import Engine
-from prolog.ast.terms import Atom
+from prolog.ast.terms import Atom, Int, List as PrologList
 from prolog.ast.clauses import Program
 from prolog.engine.builtins.streams import get_stream_manager
 
@@ -64,6 +64,27 @@ class TestIsoTestEnsureLoaded:
         assert len(results) == 0
 
         results = list(engine.query("iso_test_ensure_loaded(a, b)"))
+        assert len(results) == 0
+
+    def test_load_non_atom_argument_fails(self):
+        """Test that non-atom argument fails."""
+        engine = Engine(Program(()))
+        # Integer argument should fail
+        results = list(engine.query("iso_test_ensure_loaded(123)"))
+        assert len(results) == 0
+
+        # Structure argument should fail
+        results = list(engine.query("iso_test_ensure_loaded(file(path))"))
+        assert len(results) == 0
+
+    def test_load_file_with_parse_error_fails(self, tmp_path):
+        """Test that file with parse errors fails gracefully."""
+        test_file = tmp_path / "bad_syntax.pl"
+        test_file.write_text("fact(a :- invalid syntax here")
+
+        engine = Engine(Program(()))
+        results = list(engine.query(f"iso_test_ensure_loaded('{test_file}')"))
+        # Should fail gracefully without crashing
         assert len(results) == 0
 
 
@@ -333,6 +354,91 @@ class TestIsoTestSameMembers:
 
         results = list(engine.query("iso_test_same_members([1], [2], [3])"))
         assert len(results) == 0
+
+
+class TestSortPredicate:
+    """Test sort/2 predicate with mixed types and ordering."""
+
+    def test_sort_integer_deduplication(self):
+        """Test that sort/2 removes duplicate integers correctly.
+
+        Tests the deduplication logic by ensuring duplicate integers are
+        removed while preserving one copy of each unique value.
+        """
+        engine = Engine(Program(()))
+        # sort([3, 1, 2, 1, 3, 2], S) should deduplicate to [1, 2, 3]
+        results = list(engine.query("sort([3, 1, 2, 1, 3, 2], S)"))
+        assert len(results) == 1
+
+        sorted_list = results[0]["S"]
+        # Should have 3 unique elements
+        items = []
+        current = sorted_list
+        while isinstance(current, PrologList) and current.items:
+            items.extend(current.items)
+            current = current.tail
+
+        assert len(items) == 3
+        assert isinstance(items[0], Int)
+        assert items[0].value == 1
+        assert isinstance(items[1], Int)
+        assert items[1].value == 2
+        assert isinstance(items[2], Int)
+        assert items[2].value == 3
+
+    def test_sort_compound_ordering_with_at_less(self):
+        """Test that sort/2 ordering aligns with @</2 behavior."""
+        engine = Engine(Program(()))
+
+        # Define a test to verify ordering
+        engine.consult_string(
+            """
+            test_ordering(L) :-
+                sort([f(2), f(1), a, 1], L).
+        """
+        )
+
+        results = list(engine.query("test_ordering(L)"))
+        assert len(results) == 1
+
+        # Standard order: numbers < atoms < compound terms
+        # So should be [1, a, f(1), f(2)]
+        sorted_list = results[0]["L"]
+        items = []
+        current = sorted_list
+        while isinstance(current, PrologList) and current.items:
+            items.extend(current.items)
+            current = current.tail
+
+        assert len(items) == 4
+        # First should be number (1)
+        assert isinstance(items[0], Int)
+        assert items[0].value == 1
+        # Second should be atom (a)
+        assert isinstance(items[1], Atom)
+        assert items[1].name == "a"
+
+    def test_sort_list_ordering(self):
+        """Test that sort/2 correctly orders lists as compound terms."""
+        engine = Engine(Program(()))
+
+        results = list(engine.query("sort([[2], [1], atom, 5], S)"))
+        assert len(results) == 1
+
+        sorted_list = results[0]["S"]
+        items = []
+        current = sorted_list
+        while isinstance(current, PrologList) and current.items:
+            items.extend(current.items)
+            current = current.tail
+
+        assert len(items) == 4
+        # Standard order: numbers < atoms < lists
+        # So should be [5, atom, [1], [2]]
+        assert isinstance(items[0], Int)  # 5
+        assert isinstance(items[1], Atom)  # atom
+        assert isinstance(items[2], PrologList)  # [1]
+        assert isinstance(items[3], PrologList)  # [2]
 
 
 class TestIsoTestHelpersIntegration:
