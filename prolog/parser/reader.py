@@ -321,6 +321,52 @@ class PrattParser:
             if not token:
                 break
 
+            # First, check for postfix operator
+            postfix_info = self._get_postfix_info(token)
+            if postfix_info:
+                precedence, assoc_type, canonical = postfix_info
+
+                # Check precedence constraint
+                if precedence > min_precedence:
+                    break
+
+                # Consume the postfix operator
+                self.stream.consume()
+
+                # Handle unsupported operators
+                if not is_stage1_supported(token.value, "postfix"):
+                    if self.strict_unsupported:
+                        raise ReaderError(
+                            f"Unsupported operator '{token.value}' in Stage 1",
+                            position=token.position,
+                            token=token.value,
+                        )
+                    else:
+                        logger.warning(
+                            f"Unsupported operator '{token.value}' used (will parse but may fail at runtime)"
+                        )
+
+                # Build postfix structure
+                left = Struct(token.value, (left,))
+
+                # For xf (non-associative), don't allow chaining at same precedence
+                # Update min_precedence to prevent same-precedence postfix operators
+                if assoc_type == "xf":
+                    # Check if there's another postfix operator at same precedence
+                    next_token = self.stream.peek()
+                    if next_token:
+                        next_postfix_info = self._get_postfix_info(next_token)
+                        if next_postfix_info and next_postfix_info[0] == precedence:
+                            raise ReaderError(
+                                f"xf postfix operator '{token.value}' cannot chain with '{next_token.value}' at same precedence; add parentheses",
+                                position=next_token.position,
+                                token=next_token.value,
+                            )
+                # For yf (associative), allow chaining by continuing the loop
+
+                # Continue to check for more postfix or infix operators
+                continue
+
             # Check for infix operator
             op_info = self._get_infix_info(token)
             if not op_info:
@@ -687,6 +733,49 @@ class PrattParser:
                 if token.type == "COMMA":
                     break
 
+                # First, check for postfix operator
+                postfix_info = self._get_postfix_info(token)
+                if postfix_info:
+                    precedence, assoc_type, canonical = postfix_info
+
+                    # Check precedence constraint
+                    if precedence > min_precedence:
+                        break
+
+                    # Consume the postfix operator
+                    self.stream.consume()
+
+                    # Handle unsupported operators
+                    if not is_stage1_supported(token.value, "postfix"):
+                        if self.strict_unsupported:
+                            raise ReaderError(
+                                f"Unsupported operator '{token.value}' in Stage 1",
+                                position=token.position,
+                                token=token.value,
+                            )
+                        else:
+                            logger.warning(
+                                f"Unsupported operator '{token.value}' used (will parse but may fail at runtime)"
+                            )
+
+                    # Build postfix structure
+                    left = Struct(token.value, (left,))
+
+                    # For xf (non-associative), check for chaining at same precedence
+                    if assoc_type == "xf":
+                        next_token = self.stream.peek()
+                        if next_token and next_token.type != "COMMA":
+                            next_postfix_info = self._get_postfix_info(next_token)
+                            if next_postfix_info and next_postfix_info[0] == precedence:
+                                raise ReaderError(
+                                    f"xf postfix operator '{token.value}' cannot chain with '{next_token.value}' at same precedence; add parentheses",
+                                    position=next_token.position,
+                                    token=next_token.value,
+                                )
+
+                    # Continue to check for more postfix or infix operators
+                    continue
+
                 # Check for infix operator
                 op_info = self._get_infix_info(token)
                 if not op_info:
@@ -765,54 +854,32 @@ class PrattParser:
         return result
 
     def _get_infix_info(self, token: Token) -> Optional[Tuple[int, str, str]]:
-        """Get operator info for infix position."""
-        if token.type in [
-            "COMMA",
-            "SEMICOLON",
-            "EQUALS",
-            "LT",
-            "GT",
-            "PLUS",
-            "MINUS",
-            "STAR",
-            "SLASH",
-            "ARROW",
-            "DOUBLE_SLASH",
-            "EQ_COLON_EQ",
-            "EQ_BACKSLASH_EQ",
-            "BACKSLASH_EQ",
-            "BACKSLASH_EQEQ",
-            "AT_LT",
-            "AT_GT",
-            "AT_EQ_LT",
-            "AT_GT_EQ",
-            "EQ_LT",
-            "GT_EQ",
-            "DOUBLE_EQ",
-            "DOUBLE_STAR",
-            "MOD",
-            "IS",
-            "IN",
-            "DOT_DOT",
-            "HASH_EQ",
-            "HASH_BACKSLASH_EQ",
-            "HASH_LT",
-            "HASH_GT",
-            "HASH_EQ_LT",
-            "HASH_GT_EQ",
-            "HASH_LT_EQ_GT",
-            "HASH_EQ_EQ_GT",
-            "HASH_LT_EQ_EQ",
-            "HASH_BACKSLASH_SLASH",
-        ]:
-            return get_operator_info(token.value, "infix")
-        return None
+        """Get operator info for infix position.
+
+        Uses dynamic lookup from operator table instead of hardcoded token types.
+        This allows custom operators to be recognized without code changes.
+        """
+        # Try to get operator info for this token's value
+        # This works for any operator in the table, not just hardcoded ones
+        return get_operator_info(token.value, "infix")
 
     def _get_prefix_info(self, token: Token) -> Optional[Tuple[int, str, str]]:
-        """Get operator info for prefix position."""
-        if token.type in ["PLUS", "MINUS", "BACKSLASH_PLUS", "@"]:
-            return get_operator_info(token.value, "prefix")
-        return None
+        """Get operator info for prefix position.
+
+        Uses dynamic lookup from operator table instead of hardcoded token types.
+        This allows custom operators to be recognized without code changes.
+        """
+        # Try to get operator info for this token's value
+        # This works for any operator in the table, not just hardcoded ones
+        return get_operator_info(token.value, "prefix")
+
+    def _get_postfix_info(self, token: Token) -> Optional[Tuple[int, str, str]]:
+        """Get operator info for postfix position.
+
+        Uses dynamic lookup from operator table.
+        Returns (precedence, associativity, canonical) tuple if found.
+        """
+        return get_operator_info(token.value, "postfix")
 
 
 class Reader:
