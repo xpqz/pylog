@@ -19,6 +19,8 @@ The following builtin groups are currently implemented:
 - **exceptions**: Exception handling (throw/1, catch/3)
 
 - **dynamic_db**: Dynamic database operations (dynamic/1, assertz/1, asserta/1, retract/1, retractall/1, abolish/1)
+
+- **iso_test_helpers**: ISO test suite helper predicates (iso_test_ensure_loaded/1, iso_test_variant/2, iso_test_os/1, iso_test_non_repositionable_stream/1, iso_test_same_members/2, subsumes_term/2, sort/2)
 """
 
 from typing import Dict, Tuple, Callable
@@ -31,6 +33,9 @@ from prolog.engine.builtins.solutions import register as register_solutions
 from prolog.engine.builtins.exceptions import register as register_exceptions
 from prolog.engine.builtins.dynamic_db import register as register_dynamic_db
 from prolog.engine.builtins.io_predicates import register as register_io
+from prolog.engine.builtins.iso_test_helpers import (
+    register as register_iso_test_helpers,
+)
 
 
 def register_all(registry: Dict[Tuple[str, int], Callable]) -> None:
@@ -62,3 +67,6 @@ def register_all(registry: Dict[Tuple[str, int], Callable]) -> None:
 
     # Register I/O predicates
     register_io(registry)
+
+    # Register ISO test helper predicates
+    register_iso_test_helpers(registry)
