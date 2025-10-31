@@ -34,6 +34,7 @@ class Stream:
     alias: Optional[str] = None
     position: int = 0
     at_end: bool = False
+    repositionable: bool = True  # Most streams are repositionable by default
 
     def close(self):
         """Close the stream."""
@@ -60,6 +61,22 @@ class StandardStream(Stream):
     def close(self):
         """Standard streams should not be closed."""
         pass  # Don't close standard streams
+
+
+@dataclass
+class NonRepositionableStream(Stream):
+    """Non-repositionable stream for ISO test purposes.
+
+    This stream type cannot be repositioned (seeked). Used primarily
+    for testing stream positioning error handling.
+    """
+
+    buffer: io.StringIO = field(default_factory=io.StringIO)
+    repositionable: bool = field(default=False, init=False)
+
+    def close(self):
+        """Close the non-repositionable stream."""
+        self.buffer.close()
 
 
 class VirtualFS:
@@ -206,6 +223,27 @@ class StreamManager:
 
         stream = InMemoryStream(
             stream_id=stream_id, mode=mode, file_name=file_name, buffer=buffer
+        )
+
+        self.streams[stream_id] = stream
+        return stream_id
+
+    def open_non_repositionable_stream(self, content: str = "abc") -> str:
+        """Open a non-repositionable stream for testing.
+
+        Args:
+            content: Initial content for the stream
+
+        Returns:
+            Stream ID
+        """
+        stream_id = self._next_stream_id()
+
+        # Create buffer with content
+        buffer = io.StringIO(content)
+
+        stream = NonRepositionableStream(
+            stream_id=stream_id, mode="read", buffer=buffer
         )
 
         self.streams[stream_id] = stream

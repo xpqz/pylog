@@ -9,6 +9,7 @@ import platform
 from prolog.engine.engine import Engine
 from prolog.ast.terms import Atom
 from prolog.ast.clauses import Program
+from prolog.engine.builtins.streams import get_stream_manager
 
 
 class TestIsoTestEnsureLoaded:
@@ -208,20 +209,30 @@ class TestIsoTestNonRepositionableStream:
         results = list(engine.query("iso_test_non_repositionable_stream(S)"))
         assert len(results) == 1
 
-        # The stream should be bound to something
+        # The stream should be bound to an atom representing the stream ID
         stream = results[0]["S"]
-        assert stream is not None
+        assert isinstance(stream, Atom)
+
+        # Verify the stream is registered in the StreamManager
+        stream_manager = get_stream_manager()
+        stream_obj = stream_manager.get_stream(stream.name)
+        assert stream_obj is not None
+        assert stream_obj.mode == "read"
 
     def test_stream_is_not_repositionable(self):
-        """Test that the created stream cannot be repositioned."""
+        """Test that the created stream is marked as non-repositionable."""
         engine = Engine(Program(()))
 
         # Create a non-repositionable stream
         results = list(engine.query("iso_test_non_repositionable_stream(S)"))
         assert len(results) == 1
 
-        # TODO: When set_stream_position/2 is implemented, verify it fails
-        # For now, just verify the stream was created
+        stream_id = results[0]["S"].name
+        stream_manager = get_stream_manager()
+        stream_obj = stream_manager.get_stream(stream_id)
+
+        # Verify the stream is marked as non-repositionable
+        assert stream_obj.repositionable is False
 
     def test_multiple_calls_create_different_streams(self):
         """Test that multiple calls create independent streams."""
@@ -234,10 +245,10 @@ class TestIsoTestNonRepositionableStream:
         assert len(results1) == 1
         assert len(results2) == 1
 
-        # Streams should be different (not the same object)
-        # Note: This tests that each call creates a new stream
-        # The exact representation depends on how streams are implemented
-        # We just verify that both calls succeeded
+        # Streams should be different
+        stream1 = results1[0]["S1"]
+        stream2 = results2[0]["S2"]
+        assert stream1.name != stream2.name
 
     def test_wrong_arity(self):
         """Test that wrong arity fails."""

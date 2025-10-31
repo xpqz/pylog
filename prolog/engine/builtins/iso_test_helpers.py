@@ -14,13 +14,13 @@ Additionally provides utility predicates needed by the helpers:
 
 from typing import Dict, Tuple, Callable
 import platform
-import io
 from pathlib import Path
 
 from prolog.ast.terms import Term, Atom, Var, Struct, List as PrologList, Int
 from prolog.unify.unify import unify
 from prolog.engine.trail_adapter import TrailAdapter
 from prolog.engine.runtime import Trail
+from prolog.engine.builtins.streams import get_stream_manager
 
 __all__ = [
     "register",
@@ -173,9 +173,12 @@ def builtin_iso_test_os(engine, args: tuple) -> bool:
 def builtin_iso_test_non_repositionable_stream(engine, args: tuple) -> bool:
     """iso_test_non_repositionable_stream(-Stream) - Create a non-repositionable stream.
 
-    Creates a stream that cannot be repositioned (seeked). This is typically
-    used for testing stream positioning errors. The stream is created from a
-    StringIO object which is not seekable in the same way as file streams.
+    Creates a properly registered stream that cannot be repositioned (seeked).
+    This is used for testing stream positioning errors. The stream is registered
+    with the global StreamManager and can be used with other stream operations.
+
+    The stream is marked as non-repositionable (repositionable=False) so that
+    operations like set_stream_position/2 will properly raise permission errors.
 
     Args:
         engine: The Prolog engine
@@ -190,23 +193,14 @@ def builtin_iso_test_non_repositionable_stream(engine, args: tuple) -> bool:
     stream_arg = args[0]
     trail_adapter = TrailAdapter(engine.trail, engine=engine, store=engine.store)
 
-    # Create a non-repositionable stream using StringIO
-    # This creates a stream from a string buffer which is non-seekable
-    # in the context of Prolog stream positioning
-    content = "abc"
-    stream = io.StringIO(content)
+    # Get the global stream manager
+    stream_manager = get_stream_manager()
 
-    # Wrap the stream in a Prolog term
-    # For now, we use a structure to represent the stream
-    # Format: stream(id, io_object)
-    # We'll use a unique ID based on object id
-    stream_id = id(stream)
-    stream_term = Struct("$stream", (Int(stream_id),))
+    # Create a non-repositionable stream with default content "abc"
+    stream_id = stream_manager.open_non_repositionable_stream("abc")
 
-    # Store the stream in the engine's stream table
-    # (this assumes engine has a stream management system)
-    # For basic implementation, we just create the term
-    # A full implementation would register this stream properly
+    # Return the stream ID as an atom (standard Prolog stream representation)
+    stream_term = Atom(stream_id)
 
     # Unify with the argument
     return unify(
