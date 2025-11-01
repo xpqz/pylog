@@ -370,16 +370,58 @@ class ISOTestRunner:
         # Consult harness.pl
         harness_path = Path("iso_test_js/harness.pl")
         if not harness_path.exists():
-            raise FileNotFoundError(f"harness.pl not found at {harness_path}")
+            # Gracefully report missing harness
+            return {
+                "summary": {
+                    "total": 0,
+                    "passed": 0,
+                    "failed": 0,
+                    "skipped": 0,
+                    "errored": 1,
+                    "duration_ms": (time.time() - start_time) * 1000,
+                },
+                "results": [],
+                "error": f"harness.pl not found at {harness_path}",
+            }
 
         harness_text = harness_path.read_text()
-        engine.consult_string(harness_text)
+
+        # Directives (:- op(...)) aren’t supported yet; catch parse errors
+        try:
+            engine.consult_string(harness_text)
+        except Exception as e:
+            return {
+                "summary": {
+                    "total": 0,
+                    "passed": 0,
+                    "failed": 0,
+                    "skipped": 0,
+                    "errored": 1,
+                    "duration_ms": (time.time() - start_time) * 1000,
+                },
+                "results": [],
+                "error": f"Failed to consult harness.pl: {e}",
+            }
 
         # Consult auxiliaries.pl if exists
         aux_path = Path("iso_test_js/auxiliaries.pl")
         if aux_path.exists():
             aux_text = aux_path.read_text()
-            engine.consult_string(aux_text)
+            try:
+                engine.consult_string(aux_text)
+            except Exception as e:
+                return {
+                    "summary": {
+                        "total": 0,
+                        "passed": 0,
+                        "failed": 0,
+                        "skipped": 0,
+                        "errored": 1,
+                        "duration_ms": (time.time() - start_time) * 1000,
+                    },
+                    "results": [],
+                    "error": f"Failed to consult auxiliaries.pl: {e}",
+                }
 
         # Capture output from harness execution
         output_buffer = io.StringIO()
@@ -655,11 +697,32 @@ def main():
             print(f"\nJSON report written to: {args.output}")
 
     # Exit code based on failures
-    summary = report["summary"]
-    if summary["failed"] > 0 or summary["errored"] > 0:
-        return 1
-    if args.fail_on_skip and summary["skipped"] > 0:
-        return 1
+    summary = report.get("summary", {})
+
+    # For comparison mode, check both python and harness results
+    if report.get("mode") == "compare":
+        python_summary = report.get("python", {}).get("summary", {})
+        harness_summary = report.get("harness", {}).get("summary", {})
+
+        if (
+            python_summary.get("failed", 0) > 0
+            or python_summary.get("errored", 0) > 0
+            or harness_summary.get("failed", 0) > 0
+            or harness_summary.get("errored", 0) > 0
+        ):
+            return 1
+
+        if args.fail_on_skip and (
+            python_summary.get("skipped", 0) > 0
+            or harness_summary.get("skipped", 0) > 0
+        ):
+            return 1
+    else:
+        # Single mode
+        if summary.get("failed", 0) > 0 or summary.get("errored", 0) > 0:
+            return 1
+        if args.fail_on_skip and summary.get("skipped", 0) > 0:
+            return 1
 
     return 0
 
