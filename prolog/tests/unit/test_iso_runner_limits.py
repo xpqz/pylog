@@ -213,6 +213,25 @@ class TestEngineBudgetContract:
         assert elapsed_ms < 20000, f"deadline not applied, took {elapsed_ms:.0f}ms"
 
     @pytest.mark.timeout(30)
+    def test_reset_clears_the_deadline(self):
+        """reset() must not leave a stale deadline behind.
+
+        run() recomputes the deadline, so a stale value cannot currently leak
+        into a later run. The invariant is asserted anyway because reset()
+        clears every other budget field, and an inconsistent reset is the kind
+        of thing a future caller reads as intentional.
+        """
+        engine = Engine(program(mk_rule("loop", (), Atom("loop"))), max_time_ms=300)
+        engine.run([Atom("loop")])
+        assert engine.time_exhausted is True
+
+        engine.reset()
+
+        assert engine._deadline is None
+        assert engine.time_exhausted is False
+        assert engine.steps_exhausted is False
+
+    @pytest.mark.timeout(30)
     def test_exhaustion_flags_are_cleared_between_runs(self):
         """A later, well-behaved run must not inherit an earlier verdict."""
         engine = Engine(program(mk_rule("loop", (), Atom("loop"))), max_steps=100)
