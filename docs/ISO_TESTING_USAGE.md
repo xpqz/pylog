@@ -212,10 +212,26 @@ This avoids mutating engine state and treats variables in expected as wildcards.
 Default limits prevent runaway queries:
 
 - `max_solutions`: 10000 solutions per query
-- `max_steps`: 1000000 steps per query
-- `timeout_ms`: Optional timeout (not set by default)
+- `max_steps`: 1000000 steps per query, or `None` for no limit
+- `timeout_ms`: Optional wall-clock timeout per test (not set by default)
 
 Override via CLI flags or when instantiating `ISOTestExecutor`.
+
+Both bounds are checked inside the engine's goal loop, between steps, so
+neither can interrupt a single long-running step. A runaway loop inside a
+builtin has to be fixed at source rather than contained here.
+
+That is a deliberate choice. Enforcing the timeout by preemption instead - a
+signal handler raising into whatever is executing - does bound arbitrary code,
+but the exception can surface while unrelated code holds a lock and leave it
+held. Under `pytest --cov` that wedged the coverage tracer's data lock and
+every subsequent test blocked on it, so preemption was removed.
+
+Either bound being hit is reported as an `ERROR` result carrying the reason,
+never as a pass or a fail. This matters for `should_fail` tests in particular:
+an exhausted run leaves no solutions behind, which is indistinguishable from
+genuine failure if only the solution count is inspected, so reporting it as a
+verdict would manufacture a false conformance pass.
 
 ## Future Work
 
