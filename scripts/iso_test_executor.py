@@ -8,13 +8,10 @@ Implements execution of parsed ISO test patterns:
 - multiple_solutions: enumerate and verify per-solution checks
 """
 
-from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import Enum
 from typing import Optional, List
 import functools
-import signal
-import threading
 import time
 
 from prolog.ast.terms import Term, Var, Struct, Int
@@ -38,46 +35,16 @@ class StepsExhausted(Exception):
     """
 
 
-@contextmanager
-def time_limit(timeout_ms: Optional[int]):
-    """Bound the enclosed block to timeout_ms of wall-clock time.
-
-    Uses a POSIX interval timer, so it preempts arbitrary Python execution -
-    including a runaway loop inside a builtin, which the engine's step budget
-    cannot interrupt because that is only checked in the goal loop.
-
-    Where the timer is unavailable (no setitimer, or not on the main thread,
-    since signal handlers only run there) the block is executed unbounded
-    rather than refused: a missing backstop must not stop tests from running.
-    Callers that need a hard bound should not rely on this alone.
-    """
-    unavailable = (
-        timeout_ms is None
-        or not hasattr(signal, "setitimer")
-        or threading.current_thread() is not threading.main_thread()
-    )
-    if unavailable:
-        yield
-        return
-
-    def on_alarm(signum, frame):
-        raise ExecutionTimeout(f"timeout after {timeout_ms}ms")
-
-    previous = signal.signal(signal.SIGALRM, on_alarm)
-    signal.setitimer(signal.ITIMER_REAL, timeout_ms / 1000.0)
-    try:
-        yield
-    finally:
-        signal.setitimer(signal.ITIMER_REAL, 0)
-        signal.signal(signal.SIGALRM, previous)
-
-
 def bounded(expected: str):
-    """Apply the executor's safety limits to a run_* method.
+    """Report a test's budget exhaustion as an ERROR rather than a verdict.
 
-    Converts a timeout or step-budget exhaustion into an ERROR result, so that
-    neither can be mistaken for a conformance verdict and neither aborts the
-    surrounding suite run.
+    Both budgets are enforced inside the engine's goal loop, which checks them
+    between steps; this only translates the outcome. Enforcing them by
+    preemption instead - a signal handler raising into whatever is running -
+    is not an option: the exception can surface while unrelated code holds a
+    lock and leave it held, wedging every later test. The tradeoff is that
+    neither budget can interrupt a single long-running step, so a runaway
+    builtin has to be fixed at source rather than contained here.
     """
 
     def decorate(method):
@@ -85,8 +52,7 @@ def bounded(expected: str):
         def wrapper(self, *args, **kwargs):
             start = time.time()
             try:
-                with time_limit(self.timeout_ms):
-                    return method(self, *args, **kwargs)
+                return method(self, *args, **kwargs)
             except ExecutionTimeout as e:
                 return ExecutionResult(
                     status=ExecutionStatus.ERROR,
@@ -217,12 +183,14 @@ class ISOTestExecutor:
         return Program(tuple(program))
 
     def _new_engine(self, prog: Program) -> Engine:
-        """Create an engine carrying this executor's step budget."""
-        return Engine(prog, max_steps=self.max_steps)
+        """Create an engine carrying this executor's step and time budgets."""
+        return Engine(prog, max_steps=self.max_steps, max_time_ms=self.timeout_ms)
 
     @staticmethod
     def _check_budget(engine: Engine) -> None:
-        """Raise if the engine stopped because its step budget ran out."""
+        """Raise if the engine stopped because a budget ran out."""
+        if engine.time_exhausted:
+            raise ExecutionTimeout(f"timeout after {engine.max_time_ms}ms")
         if engine.steps_exhausted:
             raise StepsExhausted(
                 f"step budget exhausted after {engine.max_steps} steps"

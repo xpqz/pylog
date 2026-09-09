@@ -5,10 +5,17 @@ The runner documents two per-test safety controls in docs/ISO_TESTING_USAGE.md,
 non-terminating test must be recorded and the run must continue, rather than
 hanging the whole suite.
 
-The two controls are not interchangeable. The step budget is checked in the
-engine's goal loop, so it cannot interrupt a runaway loop inside a builtin's
-own Python code; the wall-clock timeout can. Both are therefore tested against
-their own failure mode.
+Both are enforced inside the engine's goal loop, between steps, and neither
+can interrupt a single long-running step. That is deliberate: enforcing the
+timeout by preemption instead - a signal handler raising into whatever happens
+to be executing - was tried and is unsafe, because the exception can surface
+while unrelated code holds a lock and leave it held, wedging every later test.
+A runaway loop inside a builtin therefore has to be fixed at source, as the
+functor/3 arity guard does, rather than contained here.
+
+They still catch different things and are tested separately: the step budget
+bounds work, the timeout bounds elapsed time, and a goal can exhaust either
+one without the other.
 """
 
 import time
@@ -49,6 +56,26 @@ class TestExecutorTimeout:
 
         assert result.error_message is not None
         assert "timeout" in result.error_message.lower()
+
+    @pytest.mark.timeout(60)
+    def test_timeout_leaves_the_process_usable(self):
+        """A fired timeout must not disturb unrelated work afterwards.
+
+        Regression test. The first implementation enforced the timeout with a
+        SIGALRM handler that raised into whatever was running. Under coverage
+        that exception surfaced inside the tracer while it held its data lock,
+        so the lock stayed held and every later engine run blocked on it. A
+        plain query after a timeout is the cheapest way to catch that class of
+        breakage.
+        """
+        executor = ISOTestExecutor(timeout_ms=500, max_steps=None)
+
+        executor.run_should_fail(Atom("loop"), program=looping_program())
+
+        # Fresh executor, no budget at all: must behave completely normally.
+        clean = ISOTestExecutor(timeout_ms=None, max_steps=None)
+        assert clean.run_should_fail(Atom("fail")).status is ExecutionStatus.PASS
+        assert clean.run_should_fail(Atom("true")).status is ExecutionStatus.FAIL
 
     @pytest.mark.timeout(60)
     def test_timeout_applies_to_should_throw(self):

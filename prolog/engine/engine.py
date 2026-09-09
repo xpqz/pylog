@@ -2,6 +2,7 @@
 
 import json
 import os
+import time
 from typing import Dict, List, Optional, Any, Tuple
 from prolog.ast.terms import (
     Term,
@@ -117,6 +118,7 @@ class Engine:
         max_solutions: Optional[int] = None,
         trace: bool = False,
         max_steps: Optional[int] = None,
+        max_time_ms: Optional[int] = None,
         use_indexing: bool = False,
         debug: bool = False,
         use_streaming: bool = False,
@@ -192,11 +194,16 @@ class Engine:
         self.trace = trace
         self._trace_log: List[str] = []  # For debugging
         self.max_steps = max_steps  # Step budget for infinite loop detection
+        self.max_time_ms = max_time_ms  # Wall-clock budget per run()
         self._steps_taken = 0  # Counter for steps executed
-        # True when the last run() stopped because max_steps ran out. Callers
+        self._deadline = None  # monotonic() cutoff for this run, if any
+        # Single flag so the hot loop pays one boolean test when unbounded.
+        self._bounded = max_steps is not None or max_time_ms is not None
+        # True when the last run() stopped because a budget ran out. Callers
         # need this to tell an exhausted run from a genuine failure: both end
         # with no further solutions, so the solution list alone is ambiguous.
         self.steps_exhausted = False
+        self.time_exhausted = False
         self.mode = mode  # Engine mode: "dev" or "iso"
 
         # Add write_stamp for tracer
@@ -324,6 +331,7 @@ class Engine:
         self._debug_trail_writes = 0
         self._steps_taken = 0
         self.steps_exhausted = False
+        self.time_exhausted = False
         self._next_frame_id = 0
         self._cut_barrier = None
         self._last_exit_info = None
@@ -662,6 +670,12 @@ class Engine:
         # Reset step counter for new query
         self._steps_taken = 0
         self.steps_exhausted = False
+        self.time_exhausted = False
+        self._deadline = (
+            time.monotonic() + self.max_time_ms / 1000.0
+            if self.max_time_ms is not None
+            else None
+        )
 
         # Reset tracer for new query run
         if self.tracer:
@@ -674,14 +688,24 @@ class Engine:
 
         # Main single iterative loop
         while True:
-            # Check step budget
-            if self.max_steps is not None:
+            # Check budgets. Both are checked here rather than enforced by
+            # preemption: raising asynchronously (from a signal handler, say)
+            # can land inside code holding a lock and leave it held. The cost
+            # is that neither bound can interrupt a single long-running step,
+            # so a runaway builtin has to be fixed at source instead.
+            if self._bounded:
                 self._steps_taken += 1
-                if self._steps_taken > self.max_steps:
+                if self.max_steps is not None and self._steps_taken > self.max_steps:
                     # Step budget exceeded - stop execution. Flag it so the
                     # caller can distinguish this from a genuine failure.
                     self.steps_exhausted = True
                     break
+                # Clock reads are throttled: one per 1024 steps keeps this off
+                # the hot path while still resolving to a few ms of wall time.
+                if self._deadline is not None and not self._steps_taken & 0x3FF:
+                    if time.monotonic() > self._deadline:
+                        self.time_exhausted = True
+                        break
 
             try:
                 # Pop next goal

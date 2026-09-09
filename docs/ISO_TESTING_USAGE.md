@@ -217,15 +217,15 @@ Default limits prevent runaway queries:
 
 Override via CLI flags or when instantiating `ISOTestExecutor`.
 
-The two bounds catch different things and are not interchangeable:
+Both bounds are checked inside the engine's goal loop, between steps, so
+neither can interrupt a single long-running step. A runaway loop inside a
+builtin has to be fixed at source rather than contained here.
 
-- `max_steps` is checked in the engine's goal loop, so it bounds a
-  non-terminating Prolog goal but cannot interrupt a runaway loop inside a
-  builtin's own Python code.
-- `timeout_ms` uses a POSIX interval timer and so preempts arbitrary
-  execution, including inside a builtin. Where the timer is unavailable (no
-  `setitimer`, or not running on the main thread) the test runs unbounded
-  rather than being refused, so it is a backstop and not a guarantee.
+That is a deliberate choice. Enforcing the timeout by preemption instead - a
+signal handler raising into whatever is executing - does bound arbitrary code,
+but the exception can surface while unrelated code holds a lock and leave it
+held. Under `pytest --cov` that wedged the coverage tracer's data lock and
+every subsequent test blocked on it, so preemption was removed.
 
 Either bound being hit is reported as an `ERROR` result carrying the reason,
 never as a pass or a fail. This matters for `should_fail` tests in particular:
