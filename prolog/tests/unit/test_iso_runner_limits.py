@@ -23,7 +23,8 @@ import time
 import pytest
 
 from prolog.ast.terms import Atom, Int, Struct, Var
-from prolog.tests.helpers import mk_rule
+from prolog.engine.engine import Engine
+from prolog.tests.helpers import mk_rule, program
 from scripts.iso_test_executor import ExecutionStatus, ISOTestExecutor
 
 
@@ -174,6 +175,55 @@ class TestExecutorMaxSteps:
         # true/0 succeeds, so a should_fail test on it is a genuine FAIL.
         assert result.status is ExecutionStatus.FAIL
         assert result.error_message is None
+
+
+class TestEngineBudgetContract:
+    """Contract the executor relies on when it hands budgets to the engine."""
+
+    @pytest.mark.timeout(30)
+    def test_max_steps_assigned_after_construction_is_honoured(self):
+        """Assigning engine.max_steps post-construction must take effect.
+
+        Regression test. An earlier version cached "is any budget set?" in
+        __init__ to keep the goal loop cheap, which silently ignored later
+        assignment to max_steps. Callers do exactly that: the REPL's timeout
+        protection sets it per query, as do several library tests.
+        """
+        engine = Engine(program(mk_rule("loop", (), Atom("loop"))))
+        assert engine.max_steps is None
+
+        engine.max_steps = 100
+        solutions = engine.run([Atom("loop")])
+
+        assert solutions == []
+        assert engine.steps_exhausted is True
+
+    @pytest.mark.timeout(30)
+    def test_max_time_ms_assigned_after_construction_is_honoured(self):
+        """The wall-clock budget must be live in the same way."""
+        engine = Engine(program(mk_rule("loop", (), Atom("loop"))))
+
+        engine.max_time_ms = 300
+        start = time.time()
+        solutions = engine.run([Atom("loop")])
+        elapsed_ms = (time.time() - start) * 1000
+
+        assert solutions == []
+        assert engine.time_exhausted is True
+        assert elapsed_ms < 20000, f"deadline not applied, took {elapsed_ms:.0f}ms"
+
+    @pytest.mark.timeout(30)
+    def test_exhaustion_flags_are_cleared_between_runs(self):
+        """A later, well-behaved run must not inherit an earlier verdict."""
+        engine = Engine(program(mk_rule("loop", (), Atom("loop"))), max_steps=100)
+        engine.run([Atom("loop")])
+        assert engine.steps_exhausted is True
+
+        engine.max_steps = 1000000
+        engine.run([Atom("true")])
+
+        assert engine.steps_exhausted is False
+        assert engine.time_exhausted is False
 
 
 class TestFunctorArityGuardUnderRunner:

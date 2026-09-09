@@ -197,8 +197,6 @@ class Engine:
         self.max_time_ms = max_time_ms  # Wall-clock budget per run()
         self._steps_taken = 0  # Counter for steps executed
         self._deadline = None  # monotonic() cutoff for this run, if any
-        # Single flag so the hot loop pays one boolean test when unbounded.
-        self._bounded = max_steps is not None or max_time_ms is not None
         # True when the last run() stopped because a budget ran out. Callers
         # need this to tell an exhausted run from a genuine failure: both end
         # with no further solutions, so the solution list alone is ambiguous.
@@ -693,7 +691,11 @@ class Engine:
             # can land inside code holding a lock and leave it held. The cost
             # is that neither bound can interrupt a single long-running step,
             # so a runaway builtin has to be fixed at source instead.
-            if self._bounded:
+            # Read both budgets live rather than caching whether one is set:
+            # callers assign engine.max_steps after construction (the REPL's
+            # timeout protection and several tests do), and a cached flag
+            # would silently ignore them.
+            if self.max_steps is not None or self._deadline is not None:
                 self._steps_taken += 1
                 if self.max_steps is not None and self._steps_taken > self.max_steps:
                     # Step budget exceeded - stop execution. Flag it so the
