@@ -19,3 +19,22 @@ call((1;true))		should_throw error(type_error(callable # Issue #XXX: call/1 type
 # multiple_solutions pattern tests
 # Pattern implementation is incomplete (doesn't apply solution bindings properly)
 multiple_solutions # Issue #XXX: multiple_solutions pattern needs solution binding application
+
+# ---------------------------------------------------------------------------
+# Known deliberate divergences from this test file (NOT skipped)
+#
+# PyLog conforms to SWI first and ISO second. Where SWI diverges from the ISO
+# test file, PyLog follows SWI, and the affected test is expected to be
+# recorded as a FAIL rather than being hidden here.
+#
+#   iso.tst:214  A is 9223372036854775808, functor(_,f,A)
+#                        should_throw error(representation_error(max_arity), _)
+#
+#     SWI reports max_arity as unbounded and raises
+#     error(resource_error(stack), _) for an unallocatable arity. PyLog raises
+#     resource_error(stack) to match, so the ISO expectation of
+#     representation_error(max_arity) does not hold.
+#
+#     Deliberately left unskipped: this probe used to hang the whole suite, and
+#     letting it run keeps that regression covered at suite level. See
+#     TestFunctorMaxArity in prolog/tests/unit/test_functor.py.

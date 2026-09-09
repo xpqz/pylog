@@ -202,3 +202,57 @@ def test_full_suite_no_errors():
 
     # Should have substantial number of tests
     assert summary["total"] > 100, "Expected more than 100 tests in suite"
+
+
+@pytest.mark.iso
+@pytest.mark.slow
+@pytest.mark.timeout(600)
+def test_suite_progresses_past_functor_max_arity_probe():
+    """Regression: the suite must run past iso.tst:213 without stalling.
+
+    The full suite used to make no further progress at iso.tst:214
+
+        A is 9223372036854775808, functor(_,f,A)
+                should_throw error(representation_error(max_arity), _).
+
+    because functor/3 construction had no arity bound. This window spans that
+    test, so completing it proves the stall is gone. A per-test timeout is
+    configured so that any future hang in this window is reported as a bounded
+    error rather than stalling the run.
+
+    The probe is deliberately left unskipped, so it keeps exercising the arity
+    guard here. It is expected to be recorded as a FAIL rather than a PASS:
+    PyLog follows SWI and raises resource_error(stack), where this ISO test
+    asks for representation_error(max_arity). What matters for this regression
+    is that the probe terminates and is reported, not which way it goes.
+    """
+    test_file = Path("iso_test_js/iso.tst")
+    skip_config = Path("iso_test_js/pylog.skip")
+
+    if not test_file.exists():
+        pytest.skip(f"ISO test file not found: {test_file}")
+
+    runner = ISOTestRunner(max_tests=250, timeout_ms=10000, verbose=False)
+    if skip_config.exists():
+        runner.load_skip_config(skip_config)
+
+    report = runner.run_suite(test_file)
+    summary = report["summary"]
+
+    # The window must have run to completion, past the stalling test.
+    assert summary["total"] > 200, f"Suite stopped early: {summary['total']} tests"
+
+    # The probe itself must now be reported, and must not be a timeout or a
+    # bail-out: "error" is the executor's status for a timeout or an internal
+    # fault, so a pass/fail verdict is what proves the guard returned normally.
+    probe = [
+        r
+        for r in report["results"]
+        if "9223372036854775808" in r["test"]["source_text"]
+    ]
+    assert probe, "functor max_arity probe not found in results"
+    for r in probe:
+        assert r["status"] in (
+            "pass",
+            "fail",
+        ), f"probe did not terminate cleanly: {r['status']} {r.get('error_message')}"

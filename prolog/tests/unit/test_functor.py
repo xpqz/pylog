@@ -7,8 +7,11 @@ fail (return empty solution set) rather than throwing ISO errors. ISO error
 behavior (instantiation_error, type_error, etc.) to be added in later stages.
 """
 
+import pytest
+
 from prolog.ast.terms import Atom, Var, Struct, Int, List
-from prolog.engine.engine import Engine
+from prolog.engine.engine import MAX_ARITY, Engine
+from prolog.engine.errors import PrologThrow
 from prolog.tests.helpers import mk_fact, program
 
 
@@ -588,3 +591,143 @@ class TestFunctorAdditionalCases:
         )
 
         assert len(results) == 0  # Should fail
+
+
+class TestFunctorMaxArity:
+    """Test functor/3 construction against the implementation arity limit.
+
+    Deliberate exception to this module's dev-mode error policy. A requested
+    arity above MAX_ARITY is not a type or instantiation error but a hard
+    resource limit, and silent failure would be semantically wrong:
+    functor(X, f, HugeN) failing would assert that no such term exists, rather
+    than that this implementation cannot build it.
+
+    Conformance target is SWI, which reports max_arity as unbounded and raises
+    error(resource_error(stack), _) when a requested arity cannot be allocated.
+    PyLog therefore raises resource_error(stack) too, and NOT the
+    representation_error(max_arity) that iso_test_js/iso.tst:214 expects. That
+    ISO expectation is a known, deliberate divergence; see the note in
+    iso_test_js/pylog.skip.
+
+    The threshold itself does diverge from SWI: SWI serves arities up to ~1e8,
+    where PyLog needs roughly 17s and 540MB for 1e6 because every argument is a
+    distinct store cell. MAX_ARITY is set at the edge of what PyLog can
+    actually build rather than at SWI's much higher ceiling.
+    """
+
+    @pytest.mark.timeout(30)
+    def test_arity_two_to_the_63_throws_resource_error(self):
+        """Regression for the iso.tst:214 hang.
+
+        Query: A is 9223372036854775808, functor(_,f,A)
+
+        Must raise error(resource_error(stack), _) promptly rather than looping
+        while allocating 2^63 fresh variables.
+        """
+        engine = Engine(program())
+
+        with pytest.raises(PrologThrow) as exc:
+            engine.run(
+                [Struct("functor", (Var(0, "X"), Atom("f"), Int(9223372036854775808)))]
+            )
+
+        ball = exc.value.ball
+        assert isinstance(ball, Struct)
+        assert ball.functor == "error"
+        assert ball.args[0] == Struct("resource_error", (Atom("stack"),))
+
+    @pytest.mark.timeout(30)
+    def test_arity_just_above_limit_throws_resource_error(self):
+        """Test the boundary: MAX_ARITY + 1 exceeds the limit."""
+        engine = Engine(program())
+
+        with pytest.raises(PrologThrow) as exc:
+            engine.run(
+                [Struct("functor", (Var(0, "X"), Atom("f"), Int(MAX_ARITY + 1)))]
+            )
+
+        ball = exc.value.ball
+        assert isinstance(ball, Struct)
+        assert ball.functor == "error"
+        assert ball.args[0] == Struct("resource_error", (Atom("stack"),))
+
+    def test_max_arity_is_representable_and_below_two_to_the_63(self):
+        """The limit must be a positive int well below the iso.tst probe value."""
+        assert isinstance(MAX_ARITY, int)
+        assert MAX_ARITY > 0
+        assert MAX_ARITY < 9223372036854775808
+
+    def test_arity_within_limit_still_constructs(self):
+        """Arities at or below the limit are unaffected by the guard."""
+        engine = Engine(program())
+
+        results = engine.run([Struct("functor", (Var(0, "X"), Atom("foo"), Int(255)))])
+
+        assert len(results) == 1
+        x = results[0]["X"]
+        assert isinstance(x, Struct)
+        assert x.functor == "foo"
+        assert len(x.args) == 255
+        assert all(isinstance(arg, Var) for arg in x.args)
+
+    @pytest.mark.timeout(30)
+    def test_over_limit_arity_is_catchable(self):
+        """The resource error must be an ordinary catchable Prolog ball."""
+        engine = Engine(program())
+
+        results = engine.run(
+            [
+                Struct(
+                    "catch",
+                    (
+                        Struct("functor", (Var(0, "X"), Atom("f"), Int(MAX_ARITY + 1))),
+                        Var(1, "E"),
+                        Atom("true"),
+                    ),
+                )
+            ]
+        )
+
+        assert len(results) == 1
+        ball = results[0]["E"]
+        assert isinstance(ball, Struct)
+        assert ball.functor == "error"
+        assert ball.args[0] == Struct("resource_error", (Atom("stack"),))
+
+    @pytest.mark.timeout(30)
+    def test_negative_arity_policy_unchanged_by_guard(self):
+        """Negative arity keeps its existing dev-mode behaviour (failure)."""
+        engine = Engine(program())
+
+        results = engine.run([Struct("functor", (Var(0, "X"), Atom("f"), Int(-1)))])
+
+        assert results == []
+
+
+@pytest.mark.swi_baseline
+class TestFunctorMaxAritySwiBaseline:
+    """Validate the arity-limit error term against SWI itself."""
+
+    def test_swi_raises_resource_error_stack_for_huge_arity(self, swi):
+        """SWI's formal error term for the iso.tst probe is resource_error(stack).
+
+        This is what PyLog conforms to, in preference to the ISO test file's
+        representation_error(max_arity).
+        """
+        formal = swi.onevar(
+            "",
+            "catch(functor(_,f,9223372036854775808), error(F,_), true)",
+            "F",
+        )
+
+        assert formal == ["resource_error(stack)"]
+
+    def test_swi_constructs_arity_within_pylog_limit(self, swi):
+        """An arity PyLog accepts must be one SWI accepts too."""
+        arity = swi.onevar(
+            "",
+            "functor(T,f,255), functor(T,_,A)",
+            "A",
+        )
+
+        assert arity == ["255"]
