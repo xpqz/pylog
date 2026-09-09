@@ -8,9 +8,13 @@ Implements execution of parsed ISO test patterns:
 - multiple_solutions: enumerate and verify per-solution checks
 """
 
+from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import Enum
 from typing import Optional, List
+import functools
+import signal
+import threading
 import time
 
 from prolog.ast.terms import Term, Var, Struct, Int
@@ -19,6 +23,90 @@ from prolog.engine.engine import Engine, PrologThrow
 from prolog.unify.store import Store
 from prolog.unify.unify import unify
 from prolog.parser.reader import Reader, ReaderError
+
+
+class ExecutionTimeout(Exception):
+    """Raised when a test exceeds its wall-clock budget."""
+
+
+class StepsExhausted(Exception):
+    """Raised when a test exhausts its engine step budget.
+
+    Distinct from a plain failure: the engine stops stepping and leaves no
+    further solutions behind, which is indistinguishable from genuine failure
+    if only the solution list is inspected.
+    """
+
+
+@contextmanager
+def time_limit(timeout_ms: Optional[int]):
+    """Bound the enclosed block to timeout_ms of wall-clock time.
+
+    Uses a POSIX interval timer, so it preempts arbitrary Python execution -
+    including a runaway loop inside a builtin, which the engine's step budget
+    cannot interrupt because that is only checked in the goal loop.
+
+    Where the timer is unavailable (no setitimer, or not on the main thread,
+    since signal handlers only run there) the block is executed unbounded
+    rather than refused: a missing backstop must not stop tests from running.
+    Callers that need a hard bound should not rely on this alone.
+    """
+    unavailable = (
+        timeout_ms is None
+        or not hasattr(signal, "setitimer")
+        or threading.current_thread() is not threading.main_thread()
+    )
+    if unavailable:
+        yield
+        return
+
+    def on_alarm(signum, frame):
+        raise ExecutionTimeout(f"timeout after {timeout_ms}ms")
+
+    previous = signal.signal(signal.SIGALRM, on_alarm)
+    signal.setitimer(signal.ITIMER_REAL, timeout_ms / 1000.0)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
+
+
+def bounded(expected: str):
+    """Apply the executor's safety limits to a run_* method.
+
+    Converts a timeout or step-budget exhaustion into an ERROR result, so that
+    neither can be mistaken for a conformance verdict and neither aborts the
+    surrounding suite run.
+    """
+
+    def decorate(method):
+        @functools.wraps(method)
+        def wrapper(self, *args, **kwargs):
+            start = time.time()
+            try:
+                with time_limit(self.timeout_ms):
+                    return method(self, *args, **kwargs)
+            except ExecutionTimeout as e:
+                return ExecutionResult(
+                    status=ExecutionStatus.ERROR,
+                    duration_ms=(time.time() - start) * 1000,
+                    expected=expected,
+                    actual="timeout",
+                    error_message=str(e),
+                )
+            except StepsExhausted as e:
+                return ExecutionResult(
+                    status=ExecutionStatus.ERROR,
+                    duration_ms=(time.time() - start) * 1000,
+                    expected=expected,
+                    actual="step budget exhausted",
+                    error_message=str(e),
+                )
+
+        return wrapper
+
+    return decorate
 
 
 class ExecutionStatus(Enum):
@@ -106,7 +194,7 @@ class ISOTestExecutor:
     def __init__(
         self,
         max_solutions: int = 10000,
-        max_steps: int = 1000000,
+        max_steps: Optional[int] = 1000000,
         timeout_ms: Optional[int] = None,
     ):
         """
@@ -114,7 +202,7 @@ class ISOTestExecutor:
 
         Args:
             max_solutions: Maximum solutions to enumerate
-            max_steps: Maximum execution steps per query
+            max_steps: Maximum execution steps per query, or None for no limit
             timeout_ms: Optional timeout in milliseconds
         """
         self.max_solutions = max_solutions
@@ -128,6 +216,19 @@ class ISOTestExecutor:
             return Program(tuple())
         return Program(tuple(program))
 
+    def _new_engine(self, prog: Program) -> Engine:
+        """Create an engine carrying this executor's step budget."""
+        return Engine(prog, max_steps=self.max_steps)
+
+    @staticmethod
+    def _check_budget(engine: Engine) -> None:
+        """Raise if the engine stopped because its step budget ran out."""
+        if engine.steps_exhausted:
+            raise StepsExhausted(
+                f"step budget exhausted after {engine.max_steps} steps"
+            )
+
+    @bounded("zero solutions")
     def run_should_fail(
         self, goal_term: Term, program: Optional[List[Clause]] = None
     ) -> ExecutionResult:
@@ -145,11 +246,12 @@ class ISOTestExecutor:
 
         try:
             prog = self._make_program(program)
-            engine = Engine(prog)
+            engine = self._new_engine(prog)
             solutions = []
 
             # Run query and get solutions
             solutions = engine.run([goal_term], max_solutions=self.max_solutions)
+            self._check_budget(engine)
 
             duration_ms = (time.time() - start) * 1000
 
@@ -168,6 +270,10 @@ class ISOTestExecutor:
                     actual=f"{len(solutions)} solution(s)",
                 )
 
+        except (ExecutionTimeout, StepsExhausted):
+            # Handled by the @bounded wrapper; must not be reported as a
+            # generic executor error.
+            raise
         except Exception as e:
             duration_ms = (time.time() - start) * 1000
             return ExecutionResult(
@@ -178,6 +284,7 @@ class ISOTestExecutor:
                 error_message=str(e),
             )
 
+    @bounded("success with check satisfied")
     def run_should_give(
         self, goal_text: str, check_text: str, program: Optional[List[Clause]] = None
     ) -> ExecutionResult:
@@ -203,8 +310,9 @@ class ISOTestExecutor:
             combined_term = reader.read_term(combined_text)
 
             prog = self._make_program(program)
-            engine = Engine(prog)
+            engine = self._new_engine(prog)
             solutions = engine.run([combined_term], max_solutions=1)
+            self._check_budget(engine)
 
             duration_ms = (time.time() - start) * 1000
 
@@ -223,6 +331,10 @@ class ISOTestExecutor:
                     actual="failure (no solutions)",
                 )
 
+        except (ExecutionTimeout, StepsExhausted):
+            # Handled by the @bounded wrapper; must not be reported as a
+            # generic executor error.
+            raise
         except ReaderError as e:
             duration_ms = (time.time() - start) * 1000
             return ExecutionResult(
@@ -242,6 +354,7 @@ class ISOTestExecutor:
                 error_message=str(e),
             )
 
+    @bounded("expected exception")
     def run_should_throw(
         self,
         goal_term: Term,
@@ -263,12 +376,13 @@ class ISOTestExecutor:
 
         try:
             prog = self._make_program(program)
-            engine = Engine(prog)
+            engine = self._new_engine(prog)
 
             # Try to get first solution (should throw before yielding)
             thrown_exception = None
             try:
                 solutions = engine.run([goal_term], max_solutions=1)
+                self._check_budget(engine)
                 # If we get solutions without throwing, that's a failure
                 duration_ms = (time.time() - start) * 1000
                 return ExecutionResult(
@@ -306,6 +420,10 @@ class ISOTestExecutor:
                     actual=f"exception {thrown_exception} (no match)",
                 )
 
+        except (ExecutionTimeout, StepsExhausted):
+            # Handled by the @bounded wrapper; must not be reported as a
+            # generic executor error.
+            raise
         except Exception as e:
             duration_ms = (time.time() - start) * 1000
             return ExecutionResult(
@@ -316,6 +434,7 @@ class ISOTestExecutor:
                 error_message=str(e),
             )
 
+    @bounded("multiple_solutions check")
     def run_multiple_solutions(
         self,
         goal_term: Term,
@@ -344,10 +463,11 @@ class ISOTestExecutor:
 
         try:
             prog = self._make_program(program)
-            engine = Engine(prog)
+            engine = self._new_engine(prog)
 
             # Enumerate all solutions
             solutions = engine.run([goal_term], max_solutions=self.max_solutions)
+            self._check_budget(engine)
 
             if len(solutions) == 0:
                 duration_ms = (time.time() - start) * 1000
@@ -366,8 +486,9 @@ class ISOTestExecutor:
                 k_binding = Struct("=", (Var(0, k_var_name), Int(i)))
                 check_query = Struct(",", (k_binding, solution_check_term))
 
-                engine_check = Engine(prog)
+                engine_check = self._new_engine(prog)
                 check_solutions = engine_check.run([check_query], max_solutions=1)
+                self._check_budget(engine_check)
 
                 if len(check_solutions) == 0:
                     duration_ms = (time.time() - start) * 1000
@@ -383,8 +504,9 @@ class ISOTestExecutor:
             k_binding = Struct("=", (Var(0, k_var_name), Int(n)))
             final_query = Struct(",", (k_binding, final_check_term))
 
-            engine_final = Engine(prog)
+            engine_final = self._new_engine(prog)
             final_solutions = engine_final.run([final_query], max_solutions=1)
+            self._check_budget(engine_final)
 
             duration_ms = (time.time() - start) * 1000
 
@@ -403,6 +525,10 @@ class ISOTestExecutor:
                     actual="FinalCheck failed",
                 )
 
+        except (ExecutionTimeout, StepsExhausted):
+            # Handled by the @bounded wrapper; must not be reported as a
+            # generic executor error.
+            raise
         except Exception as e:
             duration_ms = (time.time() - start) * 1000
             return ExecutionResult(

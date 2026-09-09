@@ -10,7 +10,8 @@ behavior (instantiation_error, type_error, etc.) to be added in later stages.
 import pytest
 
 from prolog.ast.terms import Atom, Var, Struct, Int, List
-from prolog.engine.engine import MAX_ARITY, Engine
+from prolog.engine.engine import Engine
+from prolog.engine.limits import MAX_ARITY
 from prolog.engine.errors import PrologThrow
 from prolog.tests.helpers import mk_fact, program
 

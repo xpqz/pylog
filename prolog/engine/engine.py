@@ -193,6 +193,10 @@ class Engine:
         self._trace_log: List[str] = []  # For debugging
         self.max_steps = max_steps  # Step budget for infinite loop detection
         self._steps_taken = 0  # Counter for steps executed
+        # True when the last run() stopped because max_steps ran out. Callers
+        # need this to tell an exhausted run from a genuine failure: both end
+        # with no further solutions, so the solution list alone is ambiguous.
+        self.steps_exhausted = False
         self.mode = mode  # Engine mode: "dev" or "iso"
 
         # Add write_stamp for tracer
@@ -319,6 +323,7 @@ class Engine:
         self._debug_frame_pops = 0
         self._debug_trail_writes = 0
         self._steps_taken = 0
+        self.steps_exhausted = False
         self._next_frame_id = 0
         self._cut_barrier = None
         self._last_exit_info = None
@@ -656,6 +661,7 @@ class Engine:
 
         # Reset step counter for new query
         self._steps_taken = 0
+        self.steps_exhausted = False
 
         # Reset tracer for new query run
         if self.tracer:
@@ -672,7 +678,9 @@ class Engine:
             if self.max_steps is not None:
                 self._steps_taken += 1
                 if self._steps_taken > self.max_steps:
-                    # Step budget exceeded - stop execution
+                    # Step budget exceeded - stop execution. Flag it so the
+                    # caller can distinguish this from a genuine failure.
+                    self.steps_exhausted = True
                     break
 
             try:

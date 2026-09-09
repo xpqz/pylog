@@ -212,10 +212,26 @@ This avoids mutating engine state and treats variables in expected as wildcards.
 Default limits prevent runaway queries:
 
 - `max_solutions`: 10000 solutions per query
-- `max_steps`: 1000000 steps per query
-- `timeout_ms`: Optional timeout (not set by default)
+- `max_steps`: 1000000 steps per query, or `None` for no limit
+- `timeout_ms`: Optional wall-clock timeout per test (not set by default)
 
 Override via CLI flags or when instantiating `ISOTestExecutor`.
+
+The two bounds catch different things and are not interchangeable:
+
+- `max_steps` is checked in the engine's goal loop, so it bounds a
+  non-terminating Prolog goal but cannot interrupt a runaway loop inside a
+  builtin's own Python code.
+- `timeout_ms` uses a POSIX interval timer and so preempts arbitrary
+  execution, including inside a builtin. Where the timer is unavailable (no
+  `setitimer`, or not running on the main thread) the test runs unbounded
+  rather than being refused, so it is a backstop and not a guarantee.
+
+Either bound being hit is reported as an `ERROR` result carrying the reason,
+never as a pass or a fail. This matters for `should_fail` tests in particular:
+an exhausted run leaves no solutions behind, which is indistinguishable from
+genuine failure if only the solution count is inspected, so reporting it as a
+verdict would manufacture a false conformance pass.
 
 ## Future Work
 
