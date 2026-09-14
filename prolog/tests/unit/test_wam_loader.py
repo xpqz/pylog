@@ -266,6 +266,21 @@ class TestYRegisterHandling:
         result = load_program(bytecode)
         assert result["code"][0] == (OP_GET_VARIABLE, 0, 1)
 
+    def test_load_x_register_tuple(self):
+        """X registers as ("X", idx) tuples are handled.
+
+        The register allocator produces ("X", i) and ("Y", i) pairs and
+        codegen passes them straight into unify_variable and unify_value, so
+        refusing the X form rejects the compiler's own output.
+        """
+        bytecode = {
+            "code": [(OP_UNIFY_VARIABLE, ("X", 1))],
+            "symbols": {"user:p/1": 0},
+        }
+
+        result = load_program(bytecode)
+        assert result["code"][0] == (OP_UNIFY_VARIABLE, ("X", 1))
+
 
 class TestCompletePrograms:
     """Test loading complete programs."""

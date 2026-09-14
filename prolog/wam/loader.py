@@ -87,7 +87,10 @@ def _is_nonneg_int(x: object) -> bool:
 
 
 def _validate_xy_reg(operand: object) -> None:
-    # Accept Xi as int or Yi as ("Y", idx)
+    # Accept Xi as a bare int, and either bank as ("X", idx) or ("Y", idx).
+    # The register allocator produces the pair form for both banks and codegen
+    # passes it through unchanged, so rejecting ("X", idx) would refuse the
+    # compiler's own output.
     if isinstance(operand, int):
         if operand < 0:
             raise BytecodeLoadError(
@@ -96,7 +99,7 @@ def _validate_xy_reg(operand: object) -> None:
         return
     if isinstance(operand, tuple) and len(operand) == 2:
         kind, idx = operand
-        if kind == "Y" and isinstance(idx, int) and idx >= 0:
+        if kind in ("X", "Y") and isinstance(idx, int) and idx >= 0:
             return
     raise BytecodeLoadError("invalid XY register operand", code="BAD_REGISTER")
 

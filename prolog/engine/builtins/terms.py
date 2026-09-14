@@ -12,6 +12,8 @@ engine refactoring plan.
 from typing import Dict, Tuple, Callable, Optional
 from prolog.ast.terms import Term, Atom, Int, Float, Var, Struct, List as PrologList
 from prolog.unify.unify import unify
+from prolog.engine.errors import PrologThrow
+from prolog.engine.limits import MAX_ARITY
 from prolog.engine.trail_adapter import TrailAdapter
 
 __all__ = [
@@ -225,6 +227,19 @@ def builtin_functor(engine, args: tuple) -> bool:
 
         if arity.value < 0:
             return False
+
+        # An arity beyond what we can allocate is a resource limit, not one of
+        # this module's dev-mode type failures, so it throws rather than
+        # failing: failing would claim no such term exists, when the truth is
+        # that this implementation cannot build it. Matches SWI, which raises
+        # error(resource_error(stack), _) for an unallocatable arity.
+        if arity.value > MAX_ARITY:
+            raise PrologThrow(
+                Struct(
+                    "error",
+                    (Struct("resource_error", (Atom("stack"),)), Atom("functor/3")),
+                )
+            )
 
         # Construct based on functor type
         if isinstance(functor, Atom):
