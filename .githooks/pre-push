@@ -4,6 +4,27 @@ set -euo pipefail
 # Pre-push hook: run fast unit suite as a gate.
 # Uses uv if available, falls back to pytest directly.
 
+# Git feeds the hook one line per ref being pushed:
+#   <local ref> <local sha> <remote ref> <remote sha>
+# A deletion carries an all-zero local sha, and pushes no commits, so there is
+# nothing for the suite to gate. Deleting a batch of merged branches otherwise
+# costs a full test run per branch.
+push_has_commits=0
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [ -n "${local_sha:-}" ] || continue
+  # Any non-zero character means this is a real update rather than a deletion.
+  # Matching on the character class rather than a literal string of zeros keeps
+  # this correct for both sha-1 and sha-256 repositories.
+  case "$local_sha" in
+  *[!0]*) push_has_commits=1 ;;
+  esac
+done
+
+if [ "$push_has_commits" -eq 0 ]; then
+  echo "No commits to push; skipping the test run."
+  exit 0
+fi
+
 echo "Running fast unit tests before push (skip with --no-verify)..."
 
 if command -v uv >/dev/null 2>&1; then
@@ -14,4 +35,3 @@ fi
 
 echo "Fast unit tests passed. Proceeding with push."
 exit 0
-
