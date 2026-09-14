@@ -37,7 +37,7 @@ Frame and choicepoint manipulation will be implemented in subsequent phases.
 Phase 0 provides only the data structure scaffolding.
 """
 
-from prolog.wam.heap import is_ref, is_str, new_con, new_ref, new_str
+from prolog.wam.heap import TAG_CON, is_ref, is_str, new_con, new_ref, new_str
 from prolog.wam.instructions import (
     OP_ALLOCATE,
     OP_CALL,
@@ -66,6 +66,9 @@ from prolog.wam.instructions import (
     OP_SET_X,
     OP_THROW,
     OP_TRUST_ME,
+    OP_UNIFY_CONSTANT,
+    OP_UNIFY_VALUE,
+    OP_UNIFY_VARIABLE,
     OP_TRY_ME_ELSE,
 )
 from prolog.wam.builtins import dispatch_builtin
@@ -272,6 +275,49 @@ class Machine:
         # Y registers start at E + 3 (after prev_E, saved_CP, n_slots)
         addr = self.E + 3 + yi
         self.frames[addr] = value
+
+    def read_xy(self, operand):
+        """Read the X or Y register an instruction operand names.
+
+        The register allocator hands codegen ("X", i) and ("Y", i) pairs and
+        codegen passes them through as unify operands, while put/get
+        instructions and hand-written code use a bare int for an X register.
+        All three shapes address the same two banks, so they are resolved in
+        one place rather than at each use.
+        """
+        if isinstance(operand, tuple):
+            bank, idx = operand
+            if bank == "Y":
+                return self.get_y(idx)
+            operand = idx
+        while len(self.X) <= operand:
+            self.X.append(None)
+        return self.X[operand]
+
+    def write_xy(self, operand, value) -> None:
+        """Write the X or Y register an instruction operand names."""
+        if isinstance(operand, tuple):
+            bank, idx = operand
+            if bank == "Y":
+                self.set_y(idx, value)
+                return
+            operand = idx
+        while len(self.X) <= operand:
+            self.X.append(None)
+        self.X[operand] = value
+
+    def structure_arg_addr(self):
+        """Address of the structure argument S points at, or None if invalid.
+
+        An argument slot holds either a cell written into it directly, as
+        unify_variable and unify_constant do, or the address of a cell
+        elsewhere on the heap, as unify_value writes. The address of the
+        argument is S in the first case and the slot's contents in the second.
+        """
+        if self.S is None or self.S < 0 or self.S >= len(self.heap):
+            return None
+        slot = self.heap[self.S]
+        return slot if isinstance(slot, int) else self.S
 
     def register_predicate(self, name: str, address: int) -> None:
         """Register predicate entry point in symbol table.
@@ -962,6 +1008,88 @@ class Machine:
                 # Halt machine with error
                 self.halted = True
                 return False
+        elif opcode == OP_UNIFY_VARIABLE:
+            # unify_variable Xi|Yi
+            # Read mode takes the structure argument into the register; write
+            # mode creates a fresh REF in the argument slot.
+            (xy,) = args
+
+            if self.unify_mode == "read":
+                addr = self.structure_arg_addr()
+                if addr is None:
+                    self.halted = True
+                    return False
+                self.write_xy(xy, addr)
+                self.S += 1
+            elif self.unify_mode == "write":
+                self.write_xy(xy, new_ref(self))
+                self.S += 1
+            else:
+                # Neither get_structure nor put_structure has run
+                self.halted = True
+                return False
+            self.P += 1
+        elif opcode == OP_UNIFY_VALUE:
+            # unify_value Xi|Yi
+            # Read mode unifies the register against the structure argument;
+            # write mode writes the register's address into the slot.
+            (xy,) = args
+            value = self.read_xy(xy)
+
+            if self.unify_mode == "read":
+                addr = self.structure_arg_addr()
+                if value is None or addr is None:
+                    self.halted = True
+                    return False
+                if not unify(self, value, addr):
+                    self.halted = True
+                    return False
+                self.S += 1
+            elif self.unify_mode == "write":
+                self.heap.append(value)
+                self.H += 1
+                self.S += 1
+            else:
+                self.halted = True
+                return False
+            self.P += 1
+        elif opcode == OP_UNIFY_CONSTANT:
+            # unify_constant C
+            # Read mode matches the structure argument the way get_constant
+            # matches an argument register; write mode lays the constant down
+            # in the argument slot.
+            (const_value,) = args
+
+            if self.unify_mode == "read":
+                arg_addr = self.structure_arg_addr()
+                if arg_addr is None:
+                    self.halted = True
+                    return False
+                addr = deref(self, arg_addr)
+                cell = self.heap[addr]
+                if cell[0] == TAG_CON:
+                    if cell[1] != const_value:
+                        # Mismatch: fail without allocation
+                        self.halted = True
+                        return False
+                elif is_ref(cell):
+                    const_addr = new_con(self, const_value)
+                    if not bind(self, addr, const_addr):
+                        # Binding failed (occurs-check)
+                        self.halted = True
+                        return False
+                else:
+                    # Type mismatch (STR or LIST)
+                    self.halted = True
+                    return False
+                self.S += 1
+            elif self.unify_mode == "write":
+                new_con(self, const_value)
+                self.S += 1
+            else:
+                self.halted = True
+                return False
+            self.P += 1
         else:
             # Unknown opcode - halt with error
             self.halted = True

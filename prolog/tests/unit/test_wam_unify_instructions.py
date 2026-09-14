@@ -12,8 +12,10 @@ and unify_value line for line, and no code generator emits them.
 
 from prolog.wam.heap import TAG_CON, TAG_REF, TAG_STR, new_con, new_ref, new_str
 from prolog.wam.instructions import (
+    OP_ALLOCATE,
     OP_GET_STRUCTURE,
     OP_PUT_STRUCTURE,
+    OP_UNIFY_CONSTANT,
     OP_UNIFY_VALUE,
     OP_UNIFY_VARIABLE,
 )
@@ -755,3 +757,159 @@ class TestSRegisterManagement:
 
         m.step()  # unify_variable
         assert m.S == initial_s + 2
+
+
+class TestUnifyConstant:
+    """unify_constant, which has no counterpart in the Phase 1 families.
+
+    wam-dev's code generator emits it for a constant in a structure argument,
+    so it is required for any clause head carrying one, but neither branch
+    ever implemented it. Its two modes mirror the instruction either side of
+    it: in read mode it behaves as get_constant does against the argument at
+    S, and in write mode it lays the constant down in the argument slot the
+    way unify_variable lays down a REF.
+    """
+
+    def test_write_mode_lays_down_the_constant(self):
+        """In write mode the constant is written into the argument slot."""
+        m = Machine()
+        m.code = [
+            (OP_PUT_STRUCTURE, ("f", 1), 0),
+            (OP_UNIFY_CONSTANT, 42),
+        ]
+
+        m.step()
+        assert m.unify_mode == "write"
+        arg_addr = m.S
+        initial_h = m.H
+
+        m.step()
+
+        assert m.H == initial_h + 1
+        assert m.heap[arg_addr] == (TAG_CON, 42)
+        assert m.S == arg_addr + 1
+
+    def test_read_mode_matches_an_equal_constant(self):
+        """In read mode a matching constant succeeds and advances S."""
+        m = Machine()
+        const_addr = new_con(m, 42)
+        m.X = [const_addr]
+        m.code = [
+            (OP_PUT_STRUCTURE, ("f", 1), 1),
+            (OP_UNIFY_VALUE, 0),
+            (OP_GET_STRUCTURE, ("f", 1), 1),
+            (OP_UNIFY_CONSTANT, 42),
+        ]
+
+        m.step()
+        m.step()
+        m.step()
+        assert m.unify_mode == "read"
+        arg_slot = m.S
+
+        assert m.step() is True
+        assert m.halted is False
+        assert m.S == arg_slot + 1
+
+    def test_read_mode_fails_on_a_different_constant(self):
+        """A mismatch halts rather than binding anything."""
+        m = Machine()
+        const_addr = new_con(m, 42)
+        m.X = [const_addr]
+        m.code = [
+            (OP_PUT_STRUCTURE, ("f", 1), 1),
+            (OP_UNIFY_VALUE, 0),
+            (OP_GET_STRUCTURE, ("f", 1), 1),
+            (OP_UNIFY_CONSTANT, 99),
+        ]
+
+        m.step()
+        m.step()
+        m.step()
+
+        assert m.step() is False
+        assert m.halted is True
+
+    def test_read_mode_binds_an_unbound_argument(self):
+        """An unbound argument is bound to the constant."""
+        m = Machine()
+        m.code = [
+            (OP_PUT_STRUCTURE, ("f", 1), 0),
+            (OP_UNIFY_VARIABLE, 1),
+            (OP_GET_STRUCTURE, ("f", 1), 0),
+            (OP_UNIFY_CONSTANT, 7),
+        ]
+
+        m.step()
+        m.step()
+        m.step()
+        assert m.unify_mode == "read"
+
+        assert m.step() is True
+        assert m.halted is False
+
+        # The REF the second instruction created is now bound to the constant.
+        bound = deref(m, m.X[1])
+        assert m.heap[bound] == (TAG_CON, 7)
+
+    def test_increments_p(self):
+        """Both modes advance P by one."""
+        m = Machine()
+        m.code = [
+            (OP_PUT_STRUCTURE, ("f", 1), 0),
+            (OP_UNIFY_CONSTANT, 1),
+        ]
+
+        m.step()
+        p_before = m.P
+        m.step()
+
+        assert m.P == p_before + 1
+
+
+class TestRegisterBanks:
+    """The unify family must accept the operand shapes actually emitted.
+
+    The register allocator hands codegen ("X", i) and ("Y", i) pairs and
+    codegen passes them straight through as unify operands, while the rest of
+    the machine and the hand-written tests use a bare int for an X register.
+    All three shapes have to work.
+    """
+
+    def test_bare_int_operand_is_an_x_register(self):
+        m = Machine()
+        m.code = [
+            (OP_PUT_STRUCTURE, ("f", 1), 0),
+            (OP_UNIFY_VARIABLE, 1),
+        ]
+
+        m.run()
+
+        assert m.X[1] == 2
+
+    def test_x_bank_operand_is_an_x_register(self):
+        """("X", i) must behave exactly as the bare int i does."""
+        m = Machine()
+        m.code = [
+            (OP_PUT_STRUCTURE, ("f", 1), 0),
+            (OP_UNIFY_VARIABLE, ("X", 1)),
+        ]
+
+        m.run()
+
+        assert m.halted is False or m.P == len(m.code)
+        assert m.X[1] == 2
+
+    def test_y_bank_operand_addresses_the_frame(self):
+        """("Y", i) reads and writes the current environment frame."""
+        m = Machine()
+        m.code = [
+            (OP_ALLOCATE, 1),
+            (OP_PUT_STRUCTURE, ("f", 1), 0),
+            (OP_UNIFY_VARIABLE, ("Y", 0)),
+        ]
+
+        m.run()
+
+        assert m.get_y(0) is not None
+        assert m.heap[m.get_y(0)] == (TAG_REF, m.get_y(0))
