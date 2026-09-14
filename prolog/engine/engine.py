@@ -657,16 +657,9 @@ class Engine:
         # Set cutoff after allocating all query variables
         self._initial_var_cutoff = len(self.store.cells)
 
-        # Check if max_solutions is 0 - no point in running
-        if self.max_solutions == 0:
-            # Clean up state before returning
-            self.trail.unwind_to(0, self.store)
-            self._shrink_goal_stack_to(0)
-            self.frame_stack.clear()
-            self.cp_stack.clear()
-            return self.solutions
-
-        # Reset step counter for new query
+        # Reset the budgets for this run. This happens before the early
+        # return below so that the flags always describe the current call:
+        # a caller reading them must never be shown a previous run's verdict.
         self._steps_taken = 0
         self.steps_exhausted = False
         self.time_exhausted = False
@@ -675,6 +668,15 @@ class Engine:
             if self.max_time_ms is not None
             else None
         )
+
+        # Check if max_solutions is 0 - no point in running
+        if self.max_solutions == 0:
+            # Clean up state before returning
+            self.trail.unwind_to(0, self.store)
+            self._shrink_goal_stack_to(0)
+            self.frame_stack.clear()
+            self.cp_stack.clear()
+            return self.solutions
 
         # Reset tracer for new query run
         if self.tracer:
@@ -693,9 +695,8 @@ class Engine:
             # is that neither bound can interrupt a single long-running step,
             # so a runaway builtin has to be fixed at source instead.
             # Read both budgets live rather than caching whether one is set:
-            # callers assign engine.max_steps after construction (the REPL's
-            # timeout protection and several tests do), and a cached flag
-            # would silently ignore them.
+            # callers assign engine.max_steps after construction (several
+            # library tests do), and a cached flag would silently ignore them.
             if self.max_steps is not None or self._deadline is not None:
                 self._steps_taken += 1
                 if self.max_steps is not None and self._steps_taken > self.max_steps:
@@ -3459,6 +3460,12 @@ class Engine:
         Returns:
             List of solution dictionaries
         """
+        # Clear the previous run's verdict up front: parsing can raise, and
+        # the goal loop is what sets these. Without this a caller that reads
+        # them after a query that failed to parse sees the run before it.
+        self.steps_exhausted = False
+        self.time_exhausted = False
+
         # Add ?- and . if not present
         if not query_text.strip().startswith("?-"):
             query_text = "?- " + query_text

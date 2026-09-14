@@ -378,10 +378,16 @@ class PrologREPL:
     def execute_query_with_timeout(
         self, query_text: str, timeout_ms: int
     ) -> dict[str, Any]:
-        """Execute a query with a timeout using step limits.
+        """Execute a query under a wall-clock budget.
 
-        Uses the engine's built-in max_steps parameter to prevent infinite loops.
-        Estimates steps based on timeout: ~10000 steps per 100ms.
+        The engine enforces the deadline between steps in its goal loop and
+        reports the verdict through `time_exhausted`, so the budget is handed
+        over as the milliseconds asked for. It is not converted into a step
+        count: steps per millisecond vary by orders of magnitude with the goal,
+        so any such conversion bounds something other than the requested time.
+
+        A single long-running step cannot be interrupted, so a runaway builtin
+        still blocks the REPL. That is a property of the engine's bounds.
 
         Args:
             query_text: The Prolog query to execute
@@ -390,21 +396,18 @@ class PrologREPL:
         Returns:
             Dictionary with 'success' and optional 'bindings' or 'error'
         """
-        # Save current max_steps setting
-        old_max_steps = self.engine.max_steps
-
-        # Set temporary step limit based on timeout
-        # Rough estimate: 10000 steps per 100ms
-        self.engine.max_steps = timeout_ms * 100
-        self.engine._steps_taken = 0  # Reset step counter
+        old_max_time_ms = self.engine.max_time_ms
+        self.engine.max_time_ms = timeout_ms
 
         try:
             self._cleanup_query_state()
             solutions = list(self.engine.query(query_text))
 
-            # Check if we hit the step limit (>= because counter increments before check)
-            if self.engine._steps_taken >= self.engine.max_steps:
-                return {"success": False, "error": "Query timeout: exceeded step limit"}
+            if self.engine.time_exhausted:
+                return {
+                    "success": False,
+                    "error": f"Query timeout: exceeded {timeout_ms}ms",
+                }
 
             if solutions:
                 return {"success": True, "bindings": solutions[0]}
@@ -413,8 +416,7 @@ class PrologREPL:
         except Exception as e:
             return {"success": False, "error": str(e)}
         finally:
-            # Restore original max_steps setting
-            self.engine.max_steps = old_max_steps
+            self.engine.max_time_ms = old_max_time_ms
             self._cleanup_query_state()
 
     def query_generator(self, query_text: str) -> Generator[dict[str, Any], None, None]:
