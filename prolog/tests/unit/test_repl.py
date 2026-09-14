@@ -774,3 +774,20 @@ class TestREPLQueryTimeout:
 
         assert "_steps_taken" not in source
         assert "max_steps" not in source
+
+    @pytest.mark.timeout(30)
+    def test_a_parse_error_does_not_inherit_an_earlier_verdict(self):
+        """An engine reused after a timeout must not still claim to be timed out.
+
+        The flags are set inside the goal loop, and a query that fails to
+        parse never reaches it. Left alone, `time_exhausted` would still be
+        reporting the previous query's verdict to anyone who reads it.
+        """
+        repl = slow_repl()
+        repl.execute_query_with_timeout("count(10000)", SLOW_TIMEOUT_MS)
+        assert repl.engine.time_exhausted is True
+
+        result = repl.execute_query_with_timeout("count(", SLOW_TIMEOUT_MS)
+
+        assert result["success"] is False
+        assert repl.engine.time_exhausted is False

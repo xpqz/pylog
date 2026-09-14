@@ -232,6 +232,42 @@ class TestEngineBudgetContract:
         assert engine.steps_exhausted is False
 
     @pytest.mark.timeout(30)
+    def test_a_call_that_never_runs_clears_the_flags(self):
+        """A query that does not reach the goal loop reports no verdict.
+
+        The flags are set between steps, so a call that fails before the loop
+        starts - a query that does not parse - would otherwise leave the
+        previous run's verdict standing on a reused engine.
+        """
+        engine = Engine(
+            program(mk_rule("loop", (), Atom("loop"))),
+            max_time_ms=200,
+        )
+        engine.run([Atom("loop")])
+        assert engine.time_exhausted is True
+
+        with pytest.raises(Exception):
+            engine.query("loop(")
+
+        assert engine.time_exhausted is False
+        assert engine.steps_exhausted is False
+
+    @pytest.mark.timeout(30)
+    def test_a_run_that_returns_early_clears_the_flags(self):
+        """Nor does a run that is short-circuited before the loop."""
+        engine = Engine(
+            program(mk_rule("loop", (), Atom("loop"))),
+            max_time_ms=200,
+        )
+        engine.run([Atom("loop")])
+        assert engine.time_exhausted is True
+
+        engine.run([Atom("loop")], max_solutions=0)
+
+        assert engine.time_exhausted is False
+        assert engine.steps_exhausted is False
+
+    @pytest.mark.timeout(30)
     def test_exhaustion_flags_are_cleared_between_runs(self):
         """A later, well-behaved run must not inherit an earlier verdict."""
         engine = Engine(program(mk_rule("loop", (), Atom("loop"))), max_steps=100)
