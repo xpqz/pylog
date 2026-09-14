@@ -186,8 +186,8 @@ class TestEngineBudgetContract:
 
         Regression test. An earlier version cached "is any budget set?" in
         __init__ to keep the goal loop cheap, which silently ignored later
-        assignment to max_steps. Callers do exactly that: the REPL's timeout
-        protection sets it per query, as do several library tests.
+        assignment to max_steps. Callers do exactly that: several library
+        tests set it per query.
         """
         engine = Engine(program(mk_rule("loop", (), Atom("loop"))))
         assert engine.max_steps is None

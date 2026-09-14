@@ -693,9 +693,8 @@ class Engine:
             # is that neither bound can interrupt a single long-running step,
             # so a runaway builtin has to be fixed at source instead.
             # Read both budgets live rather than caching whether one is set:
-            # callers assign engine.max_steps after construction (the REPL's
-            # timeout protection and several tests do), and a cached flag
-            # would silently ignore them.
+            # callers assign engine.max_steps after construction (several
+            # library tests do), and a cached flag would silently ignore them.
             if self.max_steps is not None or self._deadline is not None:
                 self._steps_taken += 1
                 if self.max_steps is not None and self._steps_taken > self.max_steps:
