@@ -1,0 +1,34 @@
+% Author: Joachim Schimpf, 2013,2017
+% This code is given to the public domain "as is". Use at your own risk.
+
+This folder contains everything necessary for running
+a set of tests on an ISO-Prolog system.
+
+Files:
+
+        harness.pl      the test harness, i.e. the code that performs
+                        the testing (written in pure ISO-Prolog)
+
+        auxiliaries.pl  auxiliary predicates used by the tests themselves
+                        (not pure ISO-Prolog, may require editing for
+                        your specific Prolog system)
+
+        iso.tst         the actual test patterns
+
+        <other files>   accessed by the tests (do not edit)
+
+
+Running the tests:
+
+1. Edit auxiliaries.pl, adapting the definitions to your system
+2. Run your Prolog system
+3. Compile/load harness.pl and auxiliaries.pl
+4. Run the query test('iso.tst').
+
+
+Adding tests:
+
+See harness.pl for the syntax of test patterns.
+The given tests in iso.tst focus on error handling and corner cases
+of functionality.  More basic functionality test should be added.
+

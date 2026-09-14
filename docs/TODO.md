@@ -1,196 +1,47 @@
-# TODO: Stage -1 (Unifier Workbench)
+# TODO
 
-## Phase 1: Core Data Structures
+Current work is tracked in GitHub issues, grouped under epics. This file is the
+index; it does not restate what the issues already say.
 
-### 1. Store Implementation
+- Issues: https://github.com/xpqz/pylog/issues
+- Epics carry the `epic` label and hold the per-stage task lists.
 
-#### Cell Dataclass
-- [x] Write test for Cell creation with unbound state
-- [x] Write test for Cell creation with bound state  
-- [x] Write test for Cell rank field default
-- [x] Implement Cell dataclass
-- [x] Verify tests pass
+## Open epics
 
-#### Store.new_var()
-- [x] Write test: new_var returns sequential IDs starting from 0
-- [x] Write test: new_var creates unbound cell with self-reference
-- [x] Write test: new_var sets rank to 0
-- [x] Write test: hint parameter is optional and not stored
-- [x] Implement Store.__init__ 
-- [x] Implement Store.new_var()
-- [x] Verify tests pass
+| Epic | Scope | State |
+|------|-------|-------|
+| [#381](https://github.com/xpqz/pylog/issues/381) | WAM Phase 4: full control features and core builtins | Disjunction, arithmetic and type-check builtins merged to `wam-dev`. If-then-else ([#383](https://github.com/xpqz/pylog/issues/383)) open in PR [#410](https://github.com/xpqz/pylog/pull/410). |
+| [#414](https://github.com/xpqz/pylog/issues/414) | Run the original `harness.pl` inside PyLog (ISO Phase B) | B1-B3 merged. Remaining: [#423](https://github.com/xpqz/pylog/issues/423) Python runner as fallback, [#419](https://github.com/xpqz/pylog/issues/419) reporting and CI integration. |
+| [#301](https://github.com/xpqz/pylog/issues/301) | Web REPL via Pyodide | Stages 0-2 delivered. Remaining: [#296](https://github.com/xpqz/pylog/issues/296) streaming, [#297](https://github.com/xpqz/pylog/issues/297) terminal features, [#298](https://github.com/xpqz/pylog/issues/298) persistence, [#299](https://github.com/xpqz/pylog/issues/299) trace UI, [#300](https://github.com/xpqz/pylog/issues/300) production polish. |
 
-#### Store.deref() - Basic
-- [x] Write test: deref of unbound root returns ("UNBOUND", varid)
-- [x] Write test: deref of bound var returns ("BOUND", varid, term)
-- [x] Write test: deref follows single parent link
-- [x] Write test: deref follows chain of parent links
-- [x] Write test: deref without compress has no side effects
-- [x] Implement Store.deref() without compression
-- [x] Verify tests pass
+## Other open items
 
-#### Store.deref() - Path Compression
-- [x] Write test: compression only when compress=True AND trail provided
-- [x] Write test: no compression for paths < 4 nodes
-- [x] Write test: compression for paths >= 4 nodes updates parents
-- [x] Write test: compression adds trail entries for each compressed link
-- [x] Implement path compression in Store.deref()
-- [x] Verify tests pass
+- [#432](https://github.com/xpqz/pylog/issues/432) Directive support for `:- op(...)` and friends
+- [#397](https://github.com/xpqz/pylog/issues/397) Duplication in `asm.py`
 
-#### Store.deref() - Additional Tests
-- [x] Write test: order-agnostic trail assertions
-- [x] Write test: undoability of compression
-- [x] Write test: no-op compression (re-compress already compressed)
-- [x] Write test: compression to bound root
-- [x] Write test: invalid varid handling
-- [x] Write test: rank invariants during compression
+## ISO conformance
 
-### 2. Term Representation
+`iso_test_js/iso.tst` is the conformance suite; see
+[ISO_TESTING_USAGE.md](ISO_TESTING_USAGE.md) for how to run it and
+`iso_test_js/pylog.skip` for skips and deliberate divergences.
 
-#### Basic Terms
-- [x] Write test for Atom creation and immutability
-- [x] Write test for Int creation and immutability
-- [x] Write test for Var creation with id and optional hint
-- [x] Implement Atom, Int, Var classes
-- [x] Verify tests pass
+Conformance is measured, not assumed. Run `make iso-full` for the current
+numbers rather than quoting a figure from here. Two standing caveats:
 
-#### Compound Terms
-- [x] Write test for Struct creation and immutability
-- [x] Write test for List creation with default empty tail
-- [x] Write test for List creation with custom tail
-- [x] Implement Struct, List classes
-- [x] Verify tests pass
+- A large block of clauses in the suite still fails to parse and so is not
+  counted at all.
+- PyLog follows SWI in preference to this test file, so some recorded failures
+  are deliberate divergences rather than gaps. The runner does not yet
+  distinguish the two; that is part of [#419](https://github.com/xpqz/pylog/issues/419).
 
-### 3. Trail Implementation
+## Completed stages
 
-#### Basic Trail Operations
-- [x] Write test: push adds entry to trail
-- [x] Write test: mark returns current position
-- [x] Write test: clear empties trail
-- [x] Implement Trail class with push, mark, clear
-- [x] Verify tests pass
+Per-stage checklists from the staged build-out, kept for reference:
 
-#### Trail Undo
-- [x] Write test: undo_to with 'parent' entry restores ref
-- [x] Write test: undo_to with 'bind' entry restores cell
-- [x] Write test: undo_to with 'rank' entry restores rank
-- [x] Write test: undo_to removes entries back to mark
-- [x] Implement undo_to function
-- [x] Verify tests pass
-
-#### Trail Context Manager
-- [x] Write test: trail_guard yields mark
-- [x] Write test: trail_guard calls undo_to on exception
-- [x] Write test: trail_guard doesn't undo on success
-- [x] Implement trail_guard context manager
-- [x] Verify tests pass
-
-### 4. Unification Helpers
-
-#### union_vars()
-- [x] Write test: union_vars with equal roots returns True
-- [x] Write test: union by rank (smaller joins larger)
-- [x] Write test: equal ranks increment winner's rank
-- [x] Write test: trail entries created for parent and rank changes
-- [x] Implement union_vars()
-- [x] Verify tests pass
-
-#### bind_root_to_term()
-- [x] Write test: bind unbound root to atom
-- [x] Write test: bind unbound root to struct
-- [x] Write test: trail entry created with old cell copy
-- [x] Write test: binding already bound root fails
-- [x] Implement bind_root_to_term()
-- [x] Verify tests pass
-
-#### deref_term()
-- [x] Write test: non-var returns ('NONVAR', term)
-- [x] Write test: unbound var returns ('VAR', root_vid)
-- [x] Write test: bound var returns ('NONVAR', dereferenced_term)
-- [x] Write test: no side effects (no compression)
-- [x] Implement deref_term()
-- [x] Verify tests pass
-
-### 5. Basic Unification (without occurs check)
-
-#### Atomic Unification
-- [x] Write test: unify equal atoms succeeds
-- [x] Write test: unify different atoms fails
-- [x] Write test: unify equal ints succeeds
-- [x] Write test: unify different ints fails
-- [x] Implement atom/int cases in unify()
-- [x] Verify tests pass
-
-#### Variable Unification
-- [x] Write test: unify var with atom binds var
-- [x] Write test: unify var with struct binds var
-- [x] Write test: unify two vars creates union
-- [x] Write test: unify var with itself succeeds (no-op)
-- [x] Implement variable cases in unify()
-- [x] Verify tests pass
-
-#### Structural Unification
-- [x] Write test: structs with different functors fail
-- [x] Write test: structs with different arities fail
-- [x] Write test: structs with same shape unify args
-- [x] Write test: nested structs unify recursively
-- [x] Write test: lists unify items and tails
-- [x] Implement structural cases in unify()
-- [x] Verify tests pass
-
-### 6. Occurs Check
-
-#### occurs() Function
-- [x] Write test: var doesn't occur in atom
-- [x] Write test: var doesn't occur in different var
-- [x] Write test: var occurs in itself
-- [x] Write test: var occurs in struct containing it
-- [x] Write test: var occurs in deeply nested structure
-- [x] Write test: handles cyclic structures safely
-- [x] Implement occurs() function
-- [x] Verify tests pass
-
-#### Unification with Occurs Check
-- [x] Write test: X = f(X) fails when occurs_check=True
-- [x] Write test: X = f(X) succeeds when occurs_check=False
-- [x] Write test: X = Y, Y = f(X) fails when occurs_check=True
-- [x] Integrate occurs check into unify()
-- [x] Verify tests pass
-
-### 7. Property Tests
-
-#### Symmetry
-- [x] Write property test: unify(A, B) == unify(B, A)
-- [x] Generate random terms of various types
-- [x] Run 1000+ cases
-- [x] Verify property holds
-
-#### Idempotence  
-- [x] Write property test: second unify produces no trail entries
-- [x] Test on successful unifications
-- [x] Verify property holds
-
-#### Trail Invertibility
-- [x] Write property test: undo_to(mark) restores exact state
-- [x] Test with random unification sequences
-- [x] Verify property holds
-
-### 8. Stress Tests
-
-#### Large Structures
-- [x] Write test: 10000-element list unification
-- [x] Write test: 1000-level nested structures
-- [x] Verify no stack overflow (iterative)
-
-#### Many Variables
-- [x] Write test: create 100000 variables
-- [x] Write test: long union chains
-- [x] Verify performance acceptable
-
-## Completion Criteria
-
-- [x] All unit tests pass
-- [x] All property tests pass with 1000+ cases
-- [x] No Python recursion in implementation
-- [x] Stress tests complete without errors
-- [x] Code committed with tests
+- [Stage -1](TODO--1.md) Unifier workbench
+- [Stage 0](TODO-0.md) Core shapes and explicit stacks
+- [Stage 1](TODO-1.md) Minimal ISO builtins, operator-free
+- [Stage 1.5](TODO-1.5.md) Operators via reader
+- [Stage 2](TODO-2.md) Indexing for performance
+- [Stage 3](TODO-3.md) Debug and observability
+- [Stage 4](TODO-4.md) Attributed variables

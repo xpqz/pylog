@@ -39,7 +39,7 @@ from pygments.token import (
 from prolog.engine.engine import Engine
 from prolog.ast.terms import Atom, Int, Var, Struct, List, Term
 from prolog.ast.clauses import Program
-from prolog.ast.pretty import pretty, pretty_clause
+from prolog.ast.pretty import pretty, pretty_clause, pretty_solution
 from prolog.parser import parser
 from prolog.parser.parser import parse_program
 from prolog.debug.sinks import PrettyTraceSink, JSONLTraceSink, CollectorSink
@@ -210,18 +210,36 @@ class PrologREPL:
 
         # Find the lib directory relative to this file
         lib_dir = Path(__file__).parent / "lib"
-        lists_file = lib_dir / "lists.pl"
 
+        all_library_clauses = []
+
+        # Load lists.pl (provides member/2, append/3, etc.)
+        lists_file = lib_dir / "lists.pl"
         if lists_file.exists():
             try:
                 with open(lists_file, "r") as f:
                     program_text = f.read()
-
-                # Parse and add clauses to the program
                 clauses = parser.parse_program(program_text)
+                all_library_clauses.extend(clauses)
+            except Exception as e:
+                print(f"Warning: Could not load lists.pl: {e}")
 
+        # Load streams.pl (provides nondeterministic stream_property/2)
+        streams_file = lib_dir / "streams.pl"
+        if streams_file.exists():
+            try:
+                with open(streams_file, "r") as f:
+                    program_text = f.read()
+                clauses = parser.parse_program(program_text)
+                all_library_clauses.extend(clauses)
+            except Exception as e:
+                print(f"Warning: Could not load streams.pl: {e}")
+
+        # Add all library clauses to the program
+        if all_library_clauses:
+            try:
                 # Create new program with library clauses
-                all_clauses = list(self.program.clauses) + list(clauses)
+                all_clauses = list(self.program.clauses) + all_library_clauses
                 self.program = Program(tuple(all_clauses))
                 self.engine = Engine(self.program)
 
@@ -360,10 +378,16 @@ class PrologREPL:
     def execute_query_with_timeout(
         self, query_text: str, timeout_ms: int
     ) -> dict[str, Any]:
-        """Execute a query with a timeout using step limits.
+        """Execute a query under a wall-clock budget.
 
-        Uses the engine's built-in max_steps parameter to prevent infinite loops.
-        Estimates steps based on timeout: ~10000 steps per 100ms.
+        The engine enforces the deadline between steps in its goal loop and
+        reports the verdict through `time_exhausted`, so the budget is handed
+        over as the milliseconds asked for. It is not converted into a step
+        count: steps per millisecond vary by orders of magnitude with the goal,
+        so any such conversion bounds something other than the requested time.
+
+        A single long-running step cannot be interrupted, so a runaway builtin
+        still blocks the REPL. That is a property of the engine's bounds.
 
         Args:
             query_text: The Prolog query to execute
@@ -372,21 +396,18 @@ class PrologREPL:
         Returns:
             Dictionary with 'success' and optional 'bindings' or 'error'
         """
-        # Save current max_steps setting
-        old_max_steps = self.engine.max_steps
-
-        # Set temporary step limit based on timeout
-        # Rough estimate: 10000 steps per 100ms
-        self.engine.max_steps = timeout_ms * 100
-        self.engine._steps_taken = 0  # Reset step counter
+        old_max_time_ms = self.engine.max_time_ms
+        self.engine.max_time_ms = timeout_ms
 
         try:
             self._cleanup_query_state()
             solutions = list(self.engine.query(query_text))
 
-            # Check if we hit the step limit (>= because counter increments before check)
-            if self.engine._steps_taken >= self.engine.max_steps:
-                return {"success": False, "error": "Query timeout: exceeded step limit"}
+            if self.engine.time_exhausted:
+                return {
+                    "success": False,
+                    "error": f"Query timeout: exceeded {timeout_ms}ms",
+                }
 
             if solutions:
                 return {"success": True, "bindings": solutions[0]}
@@ -395,8 +416,7 @@ class PrologREPL:
         except Exception as e:
             return {"success": False, "error": str(e)}
         finally:
-            # Restore original max_steps setting
-            self.engine.max_steps = old_max_steps
+            self.engine.max_time_ms = old_max_time_ms
             self._cleanup_query_state()
 
     def query_generator(self, query_text: str) -> Generator[dict[str, Any], None, None]:
@@ -458,18 +478,10 @@ class PrologREPL:
             return "false"
 
         bindings = result.get("bindings", {})
-        if not bindings:
+        formatted = pretty_solution(bindings)
+        if formatted == "true":
             return "true"
-
-        # Sort variable names for deterministic output
-        sorted_vars = sorted(bindings.keys())
-        parts = []
-        for var in sorted_vars:
-            value = bindings[var]
-            formatted_value = self.pretty_print(value)
-            parts.append(f"{var} = {formatted_value}")
-
-        return "\n".join(parts)
+        return formatted
 
     def format_all_solutions(self, results: list[dict[str, Any]]) -> str:
         """Format all solutions for display.
@@ -1474,13 +1486,11 @@ def main():
             for res in results:
                 if res.get("success"):
                     bindings = res.get("bindings", {})
-                    if bindings:
-                        line = ", ".join(
-                            f"{k} = {pretty(v)}" for k, v in bindings.items()
-                        )
-                        print(line)
-                    else:
+                    formatted = pretty_solution(bindings)
+                    if formatted == "true":
                         print("true.")
+                    else:
+                        print(formatted)
                     printed_any = True
                 else:
                     print(f"Error: {res.get('error', 'unknown error')}")
@@ -1492,10 +1502,11 @@ def main():
             res = repl.execute_query(args.goal)
             if res.get("success"):
                 bindings = res.get("bindings", {})
-                if bindings:
-                    print(", ".join(f"{k} = {pretty(v)}" for k, v in bindings.items()))
-                else:
+                formatted = pretty_solution(bindings)
+                if formatted == "true":
                     print("true.")
+                else:
+                    print(formatted)
             else:
                 err = res.get("error")
                 if err:

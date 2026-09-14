@@ -7,11 +7,16 @@ These tests verify the REPL functionality including:
 - Interactive commands
 """
 
+import inspect
+import time
+
 import pytest
 from unittest.mock import Mock, patch
 
 from prolog.engine.engine import Engine
 from prolog.ast.terms import Atom, Int, List, Var
+from prolog.repl import PrologCompleter, PrologLexer, PrologREPL
+from pygments.token import Token
 
 
 def assert_engine_clean(engine):
@@ -31,7 +36,6 @@ class TestREPLCore:
 
     def test_repl_initialization(self):
         """Test that REPL initializes with an engine."""
-        from prolog.repl import PrologREPL
 
         repl = PrologREPL()
         assert repl.engine is not None
@@ -40,7 +44,6 @@ class TestREPLCore:
 
     def test_load_file_success(self, tmp_path):
         """Test loading a Prolog file."""
-        from prolog.repl import PrologREPL
 
         # Create a test file
         test_file = tmp_path / "test.pl"
@@ -64,7 +67,6 @@ class TestREPLCore:
 
     def test_load_file_not_found(self):
         """Test loading a non-existent file."""
-        from prolog.repl import PrologREPL
 
         repl = PrologREPL()
         result = repl.load_file("nonexistent.pl")
@@ -73,7 +75,6 @@ class TestREPLCore:
 
     def test_load_file_parse_error(self, tmp_path):
         """Test loading a file with parse errors."""
-        from prolog.repl import PrologREPL
 
         # Create a file with invalid syntax
         test_file = tmp_path / "invalid.pl"
@@ -91,7 +92,6 @@ class TestREPLCore:
 
     def test_execute_query_success(self):
         """Test executing a successful query."""
-        from prolog.repl import PrologREPL
 
         repl = PrologREPL()
         repl.engine.consult_string("parent(tom, bob). parent(bob, pat).")
@@ -105,7 +105,6 @@ class TestREPLCore:
 
     def test_execute_query_failure(self):
         """Test executing a failing query."""
-        from prolog.repl import PrologREPL
 
         repl = PrologREPL()
         repl.engine.consult_string("parent(tom, bob).")
@@ -117,7 +116,6 @@ class TestREPLCore:
 
     def test_execute_query_multiple_solutions(self):
         """Test query with multiple solutions."""
-        from prolog.repl import PrologREPL
 
         repl = PrologREPL()
         repl.engine.consult_string(
@@ -139,7 +137,6 @@ class TestREPLCore:
 
     def test_format_solution(self):
         """Test formatting solutions for display."""
-        from prolog.repl import PrologREPL
 
         repl = PrologREPL()
 
@@ -179,9 +176,13 @@ class TestREPLCore:
         # Unbound vars should show as _ or similar, not None
         assert "U = None" not in formatted
 
+        # Query variable that remains unbound should be omitted (prints true)
+        result = {"success": True, "bindings": {"Y": Var(0, "Y")}}
+        formatted = repl.format_solution(result)
+        assert formatted == "true"
+
     def test_execute_query_cleans_state_on_success(self):
         """Test that engine state is clean after successful query."""
-        from prolog.repl import PrologREPL
 
         repl = PrologREPL()
         repl.engine.consult_string("a. a.")
@@ -191,7 +192,6 @@ class TestREPLCore:
 
     def test_execute_query_cleans_state_on_failure(self):
         """Test that engine state is clean after failed query."""
-        from prolog.repl import PrologREPL
 
         repl = PrologREPL()
         repl.engine.consult_string("a.")
@@ -201,7 +201,6 @@ class TestREPLCore:
 
     def test_execute_query_all_cleans_state(self):
         """Test that engine state is clean after getting all solutions."""
-        from prolog.repl import PrologREPL
 
         repl = PrologREPL()
         repl.engine.consult_string("c(1). c(2). c(3).")
@@ -211,7 +210,6 @@ class TestREPLCore:
 
     def test_query_generator_stops_on_dot_frees_state(self):
         """Test that stopping a query generator cleans state."""
-        from prolog.repl import PrologREPL
 
         repl = PrologREPL()
         repl.engine.consult_string("n(1). n(2).")
@@ -224,7 +222,6 @@ class TestREPLCore:
 
     def test_multiple_consults_append_program(self, tmp_path):
         """Test that multiple consults append to program rather than replace."""
-        from prolog.repl import PrologREPL
 
         f1 = tmp_path / "p1.pl"
         f1.write_text("a(1).")
@@ -247,7 +244,6 @@ class TestREPLCommands:
 
     def test_help_command(self):
         """Test help command displays help text."""
-        from prolog.repl import PrologREPL
 
         repl = PrologREPL()
         help_text = repl.get_help_text()
@@ -270,7 +266,6 @@ class TestREPLCommands:
 
     def test_parse_command(self):
         """Test parsing different command types."""
-        from prolog.repl import PrologREPL
 
         repl = PrologREPL()
 
@@ -308,7 +303,6 @@ class TestREPLCommands:
 
     def test_parse_command_whitespace_and_missing_dot(self):
         """Test parsing commands with whitespace and missing dots."""
-        from prolog.repl import PrologREPL
 
         repl = PrologREPL()
 
@@ -345,7 +339,6 @@ class TestREPLInteraction:
     @patch("builtins.print")
     def test_repl_session_loop(self, mock_print, mock_prompt_session):
         """Test the main REPL loop with prompt_toolkit."""
-        from prolog.repl import PrologREPL
 
         # Mock user inputs
         mock_session = Mock()
@@ -379,7 +372,6 @@ class TestREPLInteraction:
     @patch("prolog.repl.PromptSession")
     def test_repl_handles_eof_and_keyboardinterrupt(self, mock_prompt_session):
         """Test REPL handles EOF and KeyboardInterrupt gracefully."""
-        from prolog.repl import PrologREPL
 
         mock_session = Mock()
         mock_session.prompt.side_effect = [KeyboardInterrupt, EOFError]
@@ -392,7 +384,6 @@ class TestREPLInteraction:
 
     def test_handle_query_with_continuation(self):
         """Test handling query with ; and . for multiple solutions."""
-        from prolog.repl import PrologREPL
 
         repl = PrologREPL()
         repl.engine.consult_string(
@@ -431,8 +422,6 @@ class TestREPLWithPromptToolkit:
 
     def test_syntax_highlighting(self):
         """Test that syntax highlighting is configured."""
-        from prolog.repl import PrologLexer
-        from pygments.token import Token
 
         lexer = PrologLexer()
 
@@ -448,7 +437,6 @@ class TestREPLWithPromptToolkit:
 
     def test_syntax_highlighting_handles_comments_numbers_vars(self):
         """Test syntax highlighting with comments, numbers, and variables."""
-        from prolog.repl import PrologLexer
 
         lexer = PrologLexer()
         code = "% comment\nparent(X, Y) :- X is 1+2."
@@ -457,8 +445,6 @@ class TestREPLWithPromptToolkit:
 
     def test_completer(self):
         """Test auto-completion for predicates."""
-        from prolog.repl import PrologCompleter
-        from unittest.mock import Mock
 
         # Create completer with some predicates
         completer = PrologCompleter()
@@ -485,8 +471,6 @@ class TestREPLWithPromptToolkit:
 
     def test_completer_updates_from_engine(self):
         """Test that completer reflects dynamic program changes."""
-        from prolog.repl import PrologCompleter, PrologREPL
-        from unittest.mock import Mock
 
         repl = PrologREPL()
         repl.engine.consult_string("parent(tom, bob).")
@@ -512,7 +496,6 @@ class TestREPLWithPromptToolkit:
 
     def test_history_persistence(self, tmp_path):
         """Test that command history is saved and loaded."""
-        from prolog.repl import PrologREPL
 
         history_file = tmp_path / ".pylog_history"
 
@@ -537,7 +520,6 @@ class TestREPLWithPromptToolkit:
 
     def test_history_load_missing_file_is_ok(self, tmp_path):
         """Test that loading non-existent history file doesn't raise."""
-        from prolog.repl import PrologREPL
 
         hist = tmp_path / ".none"
         repl = PrologREPL(history_file=str(hist))
@@ -550,7 +532,6 @@ class TestREPLErrorHandling:
 
     def test_division_by_zero(self):
         """Test that division by zero is handled gracefully."""
-        from prolog.repl import PrologREPL
 
         repl = PrologREPL()
 
@@ -561,7 +542,6 @@ class TestREPLErrorHandling:
 
     def test_arithmetic_evaluation_errors(self):
         """Test handling of arithmetic evaluation errors."""
-        from prolog.repl import PrologREPL
 
         repl = PrologREPL()
 
@@ -582,7 +562,6 @@ class TestREPLErrorHandling:
 
     def test_handle_parse_error(self):
         """Test handling of parse errors in queries."""
-        from prolog.repl import PrologREPL
 
         repl = PrologREPL()
 
@@ -596,7 +575,6 @@ class TestREPLErrorHandling:
 
     def test_handle_runtime_error(self):
         """Test handling of runtime errors."""
-        from prolog.repl import PrologREPL
 
         repl = PrologREPL()
 
@@ -608,7 +586,6 @@ class TestREPLErrorHandling:
 
     def test_handle_file_encoding_error(self, tmp_path):
         """Test handling files with encoding issues."""
-        from prolog.repl import PrologREPL
 
         # Create a file with invalid UTF-8
         test_file = tmp_path / "bad_encoding.pl"
@@ -621,7 +598,6 @@ class TestREPLErrorHandling:
 
     def test_query_timeout_protection(self):
         """Test protection against infinite loops."""
-        from prolog.repl import PrologREPL
 
         repl = PrologREPL()
         repl.engine.consult_string("loop :- loop.")
@@ -634,3 +610,184 @@ class TestREPLErrorHandling:
         error_msg = result.get("error", "").lower()
         assert "timeout" in error_msg or "limit" in error_msg
         assert_engine_clean(repl.engine)
+
+
+# Deep recursion is the workload that exposes the difference between a step
+# budget and a wall-clock one: it runs at roughly a thousand steps per second,
+# two orders of magnitude below the failure-driven backtracking the old
+# steps-per-millisecond estimate was tuned for. Under that estimate a 200ms
+# request ran count(10000) for 20 seconds before reporting "exceeded step
+# limit".
+COUNTDOWN = """
+count(0).
+count(N) :- N > 0, M is N - 1, count(M).
+"""
+
+SLOW_TIMEOUT_MS = 200
+
+
+def slow_repl():
+    """A REPL whose `count/1` takes far longer than any sane step estimate."""
+    repl = PrologREPL()
+    repl.engine.consult_string(COUNTDOWN)
+    return repl
+
+
+class TestREPLQueryTimeout:
+    """`execute_query_with_timeout` is bounded by wall clock, not by steps.
+
+    The engine takes a first-class `max_time_ms` and enforces a monotonic
+    deadline in its goal loop, so the REPL must hand it the requested
+    milliseconds rather than guessing how many steps fit inside them. Steps
+    per millisecond vary by orders of magnitude with the goal, so the guess
+    is unrelated to the timeout actually asked for.
+    """
+
+    @pytest.mark.timeout(30)
+    def test_timeout_bounds_wall_clock_not_steps(self):
+        """A goal that is slow per step must stop near the requested time."""
+        repl = slow_repl()
+
+        start = time.monotonic()
+        result = repl.execute_query_with_timeout("count(10000)", SLOW_TIMEOUT_MS)
+        elapsed_ms = (time.monotonic() - start) * 1000
+
+        assert result["success"] is False
+        assert "timeout" in result["error"].lower()
+        # Generous: the deadline is only checked every 1024 steps, and a slow
+        # step can carry past it. Two seconds still fails the step estimate,
+        # which runs this goal for twenty.
+        assert elapsed_ms < 2000, f"timeout not honoured, took {elapsed_ms:.0f}ms"
+
+    @pytest.mark.timeout(30)
+    def test_timeout_does_not_stop_early(self):
+        """The budget must not cut a query off well before it is due.
+
+        The step estimate is wrong in both directions: on cheap goals it
+        expires long before the requested time has passed.
+        """
+        repl = slow_repl()
+
+        start = time.monotonic()
+        repl.execute_query_with_timeout("count(10000)", SLOW_TIMEOUT_MS)
+        elapsed_ms = (time.monotonic() - start) * 1000
+
+        assert (
+            elapsed_ms >= SLOW_TIMEOUT_MS * 0.5
+        ), f"gave up after {elapsed_ms:.0f}ms of a {SLOW_TIMEOUT_MS}ms budget"
+
+    @pytest.mark.timeout(30)
+    def test_timeout_uses_engine_time_budget(self):
+        """The engine must record a wall-clock exhaustion, not a step one."""
+        repl = slow_repl()
+
+        repl.execute_query_with_timeout("count(10000)", SLOW_TIMEOUT_MS)
+
+        assert repl.engine.time_exhausted is True
+        assert repl.engine.steps_exhausted is False
+
+    @pytest.mark.timeout(30)
+    def test_step_budget_is_left_alone(self):
+        """The call must not repurpose max_steps to express a duration.
+
+        A caller that has set its own step budget keeps it, and one that has
+        not is not given a fabricated one.
+        """
+        repl = slow_repl()
+        assert repl.engine.max_steps is None
+
+        repl.execute_query_with_timeout("count(10000)", SLOW_TIMEOUT_MS)
+        assert repl.engine.max_steps is None
+
+        repl.engine.max_steps = 5_000_000
+        repl.execute_query_with_timeout("count(10000)", SLOW_TIMEOUT_MS)
+        assert repl.engine.max_steps == 5_000_000
+
+    @pytest.mark.timeout(30)
+    def test_time_budget_is_restored(self):
+        """The engine's own max_time_ms survives the call."""
+        repl = slow_repl()
+        assert repl.engine.max_time_ms is None
+
+        repl.execute_query_with_timeout("count(10000)", SLOW_TIMEOUT_MS)
+        assert repl.engine.max_time_ms is None
+
+        repl.engine.max_time_ms = 60_000
+        repl.execute_query_with_timeout("count(10000)", SLOW_TIMEOUT_MS)
+        assert repl.engine.max_time_ms == 60_000
+
+    @pytest.mark.timeout(30)
+    def test_time_budget_is_restored_after_an_error(self):
+        """Including when the query does not parse."""
+        repl = slow_repl()
+        repl.engine.max_time_ms = 60_000
+
+        result = repl.execute_query_with_timeout("count(", SLOW_TIMEOUT_MS)
+
+        assert result["success"] is False
+        assert repl.engine.max_time_ms == 60_000
+
+    @pytest.mark.timeout(30)
+    def test_no_solutions_is_not_reported_as_a_timeout(self):
+        """A query that genuinely fails must be distinguishable from one cut off.
+
+        Under the step estimate both fall through to {"success": False}, so a
+        caller cannot tell "this goal has no solutions" from "I stopped
+        looking".
+        """
+        repl = slow_repl()
+
+        result = repl.execute_query_with_timeout("count(-1)", 10_000)
+
+        assert result["success"] is False
+        assert "error" not in result
+        assert repl.engine.time_exhausted is False
+
+    @pytest.mark.timeout(30)
+    def test_solution_is_returned_when_the_query_finishes_in_time(self):
+        """The budget must not disturb the ordinary path."""
+        repl = slow_repl()
+
+        result = repl.execute_query_with_timeout("count(10)", 10_000)
+
+        assert result["success"] is True
+        assert repl.engine.time_exhausted is False
+        assert_engine_clean(repl.engine)
+
+    @pytest.mark.timeout(30)
+    def test_engine_is_clean_after_a_timeout(self):
+        """A cut-off query leaves no stacks or trail behind."""
+        repl = slow_repl()
+
+        repl.execute_query_with_timeout("count(10000)", SLOW_TIMEOUT_MS)
+
+        assert_engine_clean(repl.engine)
+
+    def test_timeout_reads_no_engine_private_state(self):
+        """The call reports exhaustion through the engine's public flags.
+
+        `Engine.steps_exhausted` and `Engine.time_exhausted` say directly what
+        the old code inferred from `_steps_taken` and the exact comparison the
+        goal loop happens to use.
+        """
+        source = inspect.getsource(PrologREPL.execute_query_with_timeout)
+
+        assert "_steps_taken" not in source
+        assert "max_steps" not in source
+
+    @pytest.mark.timeout(30)
+    def test_a_parse_error_does_not_inherit_an_earlier_verdict(self):
+        """An engine reused after a timeout must not still claim to be timed out.
+
+        The flags are set inside the goal loop, and a query that fails to
+        parse never reaches it. Left alone, `time_exhausted` would still be
+        reporting the previous query's verdict to anyone who reads it.
+        """
+        repl = slow_repl()
+        repl.execute_query_with_timeout("count(10000)", SLOW_TIMEOUT_MS)
+        assert repl.engine.time_exhausted is True
+
+        result = repl.execute_query_with_timeout("count(", SLOW_TIMEOUT_MS)
+
+        assert result["success"] is False
+        assert repl.engine.time_exhausted is False
